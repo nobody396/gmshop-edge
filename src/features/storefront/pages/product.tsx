@@ -37,28 +37,33 @@ import {
 	getStorefrontProductFn,
 	listStorefrontCatalogFn,
 } from "#/features/storefront/server/catalog";
+import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
+import { getLocale } from "#/paraglide/runtime";
 
 type Product = Awaited<ReturnType<typeof getStorefrontProductFn>>;
 type SellableItem = Product["sellableItems"][number];
 
 export function StorefrontProductPage({ productId }: { productId: string }) {
+	const locale = getLocale();
 	const session = authClient.useSession();
 	const product = useQuery({
-		queryKey: ["storefront", "product", productId],
-		queryFn: () => getStorefrontProductFn({ data: { productId } }),
+		queryKey: ["storefront", "product", locale, productId],
+		queryFn: () => getStorefrontProductFn({ data: { locale, productId } }),
 		staleTime: 30_000,
 	});
 	const relatedProducts = useQuery({
 		queryKey: [
 			"storefront",
 			"related-products",
+			locale,
 			productId,
 			product.data?.tags[0] ?? "",
 		],
 		queryFn: () =>
 			listStorefrontCatalogFn({
 				data: {
+					locale,
 					search: "",
 					tag: product.data?.tags[0] ?? "",
 					sort: "featured",
@@ -126,7 +131,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 		quantity <= maximumQuantity;
 	const entitlement = selectedItem ? entitlementSummary(selectedItem) : null;
 	const delivery = selectedItem
-		? deliveryPromise(selectedItem.deliveryType)
+		? deliveryPromise(selectedItem.deliveryType, selectedItem.fulfillmentSource)
 		: null;
 	const purchaseLimit = selectedItem
 		? purchaseLimitSummary(selectedItem)
@@ -286,6 +291,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 							<p className="text-muted-foreground">{m.store_select_plan()}</p>
 						)}
 					</div>
+					{selectedItem ? <SkuPolicyPanel sellableItem={selectedItem} /> : null}
 					{selectedItem ? (
 						<div className="mt-5 grid gap-3">
 							{delivery ? (
@@ -456,6 +462,37 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 				</section>
 			) : null}
 		</div>
+	);
+}
+
+function SkuPolicyPanel({ sellableItem }: { sellableItem: SellableItem }) {
+	const fields = [
+		[m.store_sku_policy_delivery(), sellableItem.policy.delivery],
+		[m.store_sku_policy_delivery_time(), sellableItem.policy.deliveryTime],
+		[m.store_sku_policy_coverage(), sellableItem.policy.coverage],
+		[m.store_sku_policy_warranty(), sellableItem.policy.warranty],
+		[m.store_sku_policy_restrictions(), sellableItem.policy.restrictions],
+	].filter((field): field is [string, string] => Boolean(field[1]));
+	if (!fields.length) return null;
+	return (
+		<section className="mt-6 grid gap-3 sm:grid-cols-2">
+			{fields.map(([label, value], index) => (
+				<div
+					className={cn(
+						"rounded-xl border border-border/70 bg-muted/25 p-4",
+						index === fields.length - 1 && fields.length % 2 === 1
+							? "sm:col-span-2"
+							: "",
+					)}
+					key={label}
+				>
+					<p className="font-medium text-foreground text-sm">{label}</p>
+					<p className="mt-1.5 whitespace-pre-wrap text-muted-foreground text-sm leading-6">
+						{value}
+					</p>
+				</div>
+			))}
+		</section>
 	);
 }
 
@@ -634,7 +671,12 @@ function isAvailable(sellableItem: SellableItem) {
 		sellableItem.availableStock >= sellableItem.minimumQuantity
 	);
 }
-function deliveryPromise(type: SellableItem["deliveryType"]) {
+function deliveryPromise(
+	type: SellableItem["deliveryType"],
+	fulfillmentSource: SellableItem["fulfillmentSource"],
+) {
+	if (type === "stock" && fulfillmentSource === "manual")
+		return m.store_delivery_promise_manual();
 	switch (type) {
 		case "stock":
 			return m.store_delivery_promise_card();

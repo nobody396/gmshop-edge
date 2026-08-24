@@ -16,7 +16,7 @@ const MAX_CATALOG_PRODUCTS = 10_000;
 
 const cachedCatalogSchema = z.object({
 	version: z.literal(1),
-	provider: z.enum(["acg", "dujiao_next", "gmshop_edge"]),
+	provider: z.enum(["acg", "dujiao_next", "gmshop_edge", "shared_stock"]),
 	normalizedApiOrigin: z.string(),
 	protocolVersion: z.string(),
 	syncedAt: z.number().int().nonnegative(),

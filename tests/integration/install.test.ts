@@ -39,6 +39,9 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0002_glamorous_pete_wisdom.sql",
 			"0003_product_tag_names.sql",
 			"0004_plain_prima.sql",
+			"0005_woozy_baron_strucker.sql",
+			"0006_normal_ego.sql",
+			"0007_happy_bloodstrike.sql",
 		]);
 		const legacyTables = await database
 			.prepare(

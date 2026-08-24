@@ -1,0 +1,1 @@
+ALTER TABLE `product_sellable_items` ADD `policy_json` text DEFAULT '{}' NOT NULL;

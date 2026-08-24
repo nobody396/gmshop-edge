@@ -6,6 +6,7 @@ export function storefrontStockExpression(
 ) {
 	return `CASE
 		WHEN ${productAlias}.product_type <> 'stock' THEN -1
+		WHEN ${itemAlias}.fulfillment_source = 'manual' THEN -1
 		WHEN ${itemAlias}.fulfillment_source = 'supplier' THEN COALESCE((
 			SELECT binding.stock_quantity
 			FROM supplier_bindings binding

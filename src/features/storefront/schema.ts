@@ -9,6 +9,10 @@ export const storefrontListSchema = z.object({
 		.default("featured"),
 });
 
+export const storefrontCatalogSchema = storefrontListSchema.extend({
+	locale: z.enum(supportedLocales).default("zh-CN"),
+});
+
 export const cartItemSchema = z.object({
 	sellableItemId: z.uuid(),
 	quantity: z.number().int().min(1).max(1_000),
@@ -45,6 +49,7 @@ export const cartRemoveSchema = z.object({
 
 export const productIdSchema = z.object({
 	productId: z.uuid(),
+	locale: z.enum(supportedLocales).default("zh-CN"),
 });
 
 const orderInputValueSchema = z.union([

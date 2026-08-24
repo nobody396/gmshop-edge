@@ -85,7 +85,7 @@ export const listSupplierSourcesFn = createServerFn({ method: "GET" }).handler(
 			)
 			.bind(Date.now())
 			.all<{
-				provider: "acg" | "dujiao_next" | "gmshop_edge";
+				provider: "acg" | "dujiao_next" | "gmshop_edge" | "shared_stock";
 				normalized_api_origin: string;
 				protocol_version: string;
 				base_url: string;

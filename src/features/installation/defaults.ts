@@ -1,5 +1,5 @@
 export const initialCommerceSettings = [
-	{ key: "site.name", value: "GMShop Edge" },
+	{ key: "site.name", value: "老实人AI" },
 	{ key: "site.description", value: "" },
 	{ key: "site.seo_title", value: "" },
 	{ key: "site.seo_description", value: "" },

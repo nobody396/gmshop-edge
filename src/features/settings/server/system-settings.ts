@@ -66,7 +66,7 @@ const definitions = {
 export type SettingKey = keyof typeof definitions;
 
 const defaults: Record<SettingKey, SettingValue> = {
-	"site.name": "GMShop Edge",
+	"site.name": "老实人AI",
 	"site.description": "",
 	"site.seo_title": "",
 	"site.seo_description": "",

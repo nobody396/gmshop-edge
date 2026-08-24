@@ -83,6 +83,7 @@ function CheckoutState({
 }
 
 export function StorefrontCheckoutPage() {
+	const locale = getLocale();
 	const navigate = useNavigate();
 	const { currency: paymentCurrency } = useCurrency();
 	const session = authClient.useSession();
@@ -158,11 +159,12 @@ export function StorefrontCheckoutPage() {
 			queryKey: [
 				"storefront",
 				"product",
+				locale,
 				item.productId ?? item.sellableItemId,
 			],
 			queryFn: () =>
 				getStorefrontProductFn({
-					data: { productId: item.productId ?? "" },
+					data: { locale, productId: item.productId ?? "" },
 				}),
 			enabled: Boolean(item.productId),
 			staleTime: 30_000,

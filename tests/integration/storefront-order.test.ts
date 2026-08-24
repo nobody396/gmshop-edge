@@ -164,6 +164,31 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 		expect(state).toEqual({ supplier_orders: 0, local_stock: 0 });
 	});
 
+	it("accepts a manual-procurement item without preloaded stock", async () => {
+		await database.batch([
+			database
+				.prepare(
+					"UPDATE product_sellable_items SET fulfillment_source = 'manual', supplier_status = NULL WHERE id = ?",
+				)
+				.bind(sellableItemId),
+			database
+				.prepare("DELETE FROM stock_entries WHERE sellable_item_id = ?")
+				.bind(sellableItemId),
+		]);
+		await expect(
+			createStoreOrder(database, {
+				sellableItemId,
+				quantity: 2,
+				email: "manual-buyer@example.com",
+				idempotencyKey: "manual-procurement-checkout",
+				customerNote: "",
+			}),
+		).resolves.toMatchObject({
+			status: "pending_payment",
+			totalMinor: "2000",
+		});
+	});
+
 	it("snapshots fixed-term policy without a redundant billing enum", async () => {
 		await database
 			.prepare("UPDATE product_sellable_items SET duration_ms = ? WHERE id = ?")

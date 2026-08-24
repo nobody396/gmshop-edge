@@ -762,6 +762,7 @@ function keyOf(source: Source) {
 
 function providerLabel(provider: Source["provider"]) {
 	if (provider === "acg") return "异次元发卡";
+	if (provider === "shared_stock") return "异次元发卡 · 共享店铺";
 	return provider === "gmshop_edge"
 		? m.supplier_provider_gmshop_edge()
 		: "独角数卡 Next";

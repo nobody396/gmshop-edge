@@ -7,6 +7,7 @@ import { sensitiveProofSchema } from "#/features/auth/reauthentication-schema";
 import { verifySensitiveAdminAction } from "#/features/auth/server/reauthenticate";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
+import { completeManualDelivery } from "#/features/fulfillment/server/process";
 import { DomainError } from "#/lib/domain-error";
 import { getCloudflareEnv } from "#/server/db.server";
 import { loadRequestRuntimeConfig } from "#/server/runtime-config";
@@ -27,6 +28,9 @@ const listInput = z.object({
 });
 
 const idInput = z.object({ id: z.uuid() });
+const completeManualInput = idInput.extend({
+	content: z.string().trim().min(1).max(64_000),
+});
 const revealInput = sensitiveProofSchema.extend({ id: z.uuid() });
 
 export const listDeliveriesFn = createServerFn({ method: "GET" })
@@ -220,6 +224,40 @@ export const retryDeliveryFn = createServerFn({ method: "POST" })
 		if (context.env.COMMERCE_QUEUE)
 			await publishPendingDeliveries(context.db, context.env.COMMERCE_QUEUE, 1);
 		return { id: data.id, status: "pending" as const };
+	});
+
+export const completeManualDeliveryFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof completeManualInput>) =>
+		completeManualInput.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const context = await deliveryContext("update");
+		const result = await completeManualDelivery(
+			context.db,
+			data.id,
+			data.content,
+		);
+		if (!result.duplicate) {
+			const now = Date.now();
+			await context.db
+				.prepare(
+					`INSERT INTO audit_logs
+					 (id, actor_user_id, action, target_type, target_id, request_id,
+					  ip_address, after, created_at)
+					 VALUES (?, ?, 'delivery.manually_completed', 'delivery', ?, ?, ?, ?, ?)`,
+				)
+				.bind(
+					crypto.randomUUID(),
+					context.user.id,
+					data.id,
+					context.request.headers.get("x-request-id"),
+					context.request.headers.get("cf-connecting-ip"),
+					JSON.stringify({ status: result.status }),
+					now,
+				)
+				.run();
+		}
+		return result;
 	});
 
 export const revealDeliveryContentFn = createServerFn({ method: "POST" })

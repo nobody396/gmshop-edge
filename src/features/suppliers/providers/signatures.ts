@@ -13,6 +13,22 @@ export function signAcgForm(
 	return md5(values.join("&"));
 }
 
+// Mirrors acg-faka SharedValidation: drop the sign field, ksort byte-wise,
+// drop empty-string values, then md5(k=v&...&key=appKey). The upstream signs
+// the urldecode(http_build_query(...)) form, which is the identity of the raw
+// k=v join, so no percent-encoding is applied here.
+export function signSharedStockForm(
+	input: Readonly<Record<string, string>>,
+	appKey: string,
+): string {
+	const values = Object.entries(input)
+		.filter(([key, value]) => key !== "sign" && value !== "")
+		.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+		.map(([key, value]) => `${key}=${value}`);
+	values.push(`key=${appKey}`);
+	return md5(values.join("&"));
+}
+
 export function signDujiaoNextRequest(input: {
 	method: string;
 	path: string;
@@ -60,7 +76,9 @@ export function providerRequestNumber(
 	const digest = createHash("sha256")
 		.update(`${provider}\n${supplierOrderId}\n${accountId}`)
 		.digest("hex");
-	return provider === "acg" ? digest.slice(0, 24) : `gm_${digest.slice(0, 40)}`;
+	if (provider === "acg") return digest.slice(0, 24);
+	if (provider === "shared_stock") return `ss_${digest.slice(0, 32)}`;
+	return `gm_${digest.slice(0, 40)}`;
 }
 
 function md5(value: string): string {

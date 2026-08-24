@@ -39,7 +39,7 @@ type SellableItemContext = {
 	product_name: string;
 	definition_version_id: string | null;
 	download_asset_count: number;
-	fulfillment_source: "local" | "supplier";
+	fulfillment_source: "local" | "manual" | "supplier";
 	supplier_status: "not_applicable" | "available" | "unavailable";
 };
 
@@ -521,6 +521,7 @@ async function assertStockAvailability(
 	sellableItem: SellableItemContext,
 	quantity: number,
 ) {
+	if (sellableItem.fulfillment_source === "manual") return;
 	if (sellableItem.fulfillment_source === "supplier") {
 		await assertSupplierAvailability(
 			db,

@@ -51,7 +51,7 @@ type PaymentCreationContext = {
 };
 
 type OrderItem = EntitlementOrderItem & {
-	fulfillment_source: "local" | "supplier";
+	fulfillment_source: "local" | "manual" | "supplier";
 	supplier_status: string | null;
 	supplier_binding_id: string | null;
 	supplier_provider: string | null;
@@ -1094,13 +1094,20 @@ function fulfillmentStatements(
 	const supplierStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "supplier";
+	const manualStock =
+		item.delivery_component_type === "stock" &&
+		item.fulfillment_source === "manual";
+	const awaitingSupply = supplierStock || manualStock;
 	if (supplierStock && !supplierBindingReady(item))
 		throw new DomainError(
 			"supplier_binding_unavailable",
 			409,
 			"Supplier binding unavailable",
 		);
-	if (item.delivery_component_type === "stock" && !supplierStock) {
+	if (
+		item.delivery_component_type === "stock" &&
+		item.fulfillment_source === "local"
+	) {
 		statements.push(
 			db
 				.prepare(
@@ -1141,11 +1148,11 @@ function fulfillmentStatements(
 					deliveryId,
 					item.id,
 					`initial:${item.id}`,
-					supplierStock,
+					awaitingSupply,
 					item.id,
 					item.quantity,
 					now,
-					supplierStock,
+					awaitingSupply,
 					item.id,
 					item.quantity,
 					now,
@@ -1265,31 +1272,32 @@ function fulfillmentStatements(
 				requireDownloadAsset: item.delivery_component_type === "download",
 			}),
 		);
-	statements.push(
-		db
-			.prepare(
-				`INSERT INTO outbox_events
+	if (!manualStock)
+		statements.push(
+			db
+				.prepare(
+					`INSERT INTO outbox_events
 			 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
 			  status, attempt_count, created_at, updated_at)
 			 SELECT ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?
 			 FROM shop_orders WHERE id = ? AND status = 'paid'`,
-			)
-			.bind(
-				crypto.randomUUID(),
-				supplierStock ? "supplier.requested" : "delivery.requested",
-				supplierStock ? "supplier_order" : "delivery",
-				supplierStock ? supplierOrderId : deliveryId,
-				supplierStock
-					? `supplier-requested:${supplierOrderId}`
-					: `delivery-requested:${deliveryId}`,
-				supplierStock
-					? JSON.stringify({ supplierOrderId })
-					: JSON.stringify({ deliveryId, orderItemId: item.id }),
-				now,
-				now,
-				orderId,
-			),
-	);
+				)
+				.bind(
+					crypto.randomUUID(),
+					supplierStock ? "supplier.requested" : "delivery.requested",
+					supplierStock ? "supplier_order" : "delivery",
+					supplierStock ? supplierOrderId : deliveryId,
+					supplierStock
+						? `supplier-requested:${supplierOrderId}`
+						: `delivery-requested:${deliveryId}`,
+					supplierStock
+						? JSON.stringify({ supplierOrderId })
+						: JSON.stringify({ deliveryId, orderItemId: item.id }),
+					now,
+					now,
+					orderId,
+				),
+		);
 	return statements;
 }
 

@@ -273,18 +273,24 @@ export function SupplierAccountsPage() {
 								? "acg"
 								: values.provider === "gmshop_edge"
 									? "gmshop_edge"
-									: "dujiao_next";
+									: values.provider === "shared_stock"
+										? "shared_stock"
+										: "dujiao_next";
 						const credentials =
 							provider === "acg"
 								? values.apiId || values.appKey
 									? { apiId: values.apiId, appKey: values.appKey }
 									: undefined
-								: values.apiKey || values.apiSecret
-									? {
-											apiKey: values.apiKey,
-											apiSecret: values.apiSecret,
-										}
-									: undefined;
+								: provider === "shared_stock"
+									? values.apiId || values.appKey
+										? { appId: values.apiId, appKey: values.appKey }
+										: undefined
+									: values.apiKey || values.apiSecret
+										? {
+												apiKey: values.apiKey,
+												apiSecret: values.apiSecret,
+											}
+										: undefined;
 						await saveSupplierAccountFn({
 							data: {
 								id: account?.id,
@@ -337,6 +343,7 @@ function accountFormSchema(editing: boolean) {
 					{ value: "acg", label: "异次元发卡" },
 					{ value: "dujiao_next", label: "独角数卡 Next" },
 					{ value: "gmshop_edge", label: m.supplier_provider_gmshop_edge() },
+					{ value: "shared_stock", label: "异次元发卡 · 共享店铺" },
 				],
 			},
 		},
@@ -390,7 +397,8 @@ function accountFormSchema(editing: boolean) {
 			name: "apiId",
 			label: m.supplier_api_id(),
 			tooltip: credentialTooltip,
-			hidden: (values: Record<string, unknown>) => values.provider !== "acg",
+			hidden: (values: Record<string, unknown>) =>
+				values.provider !== "acg" && values.provider !== "shared_stock",
 			required: !editing,
 			fieldProps: {
 				autoCapitalize: "none",
@@ -403,7 +411,8 @@ function accountFormSchema(editing: boolean) {
 			label: m.supplier_app_key(),
 			valueType: "password" as const,
 			tooltip: credentialTooltip,
-			hidden: (values: Record<string, unknown>) => values.provider !== "acg",
+			hidden: (values: Record<string, unknown>) =>
+				values.provider !== "acg" && values.provider !== "shared_stock",
 			required: !editing,
 			fieldProps: {
 				autoComplete: "new-password",
@@ -487,6 +496,7 @@ function accountValues(account: Account | null) {
 
 function providerLabel(provider: string) {
 	if (provider === "acg") return "异次元发卡";
+	if (provider === "shared_stock") return "异次元发卡 · 共享店铺";
 	return provider === "gmshop_edge"
 		? m.supplier_provider_gmshop_edge()
 		: "独角数卡 Next";

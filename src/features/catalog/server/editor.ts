@@ -120,18 +120,19 @@ export async function duplicateProduct(
 			context.db.$client
 				.prepare(
 					`INSERT INTO product_sellable_items
-						 (id, product_id, name, duration_ms, usage_limit, access_limit,
+						 (id, product_id, name, policy_json, duration_ms, usage_limit, access_limit,
 						  renewal_mode, email_mode, show_on_order_page, allow_resend,
 						  low_stock_threshold, version, currency, currency_decimals,
 						  list_price_minor, price_minor,
 						  cost_minor, minimum_quantity, maximum_quantity, maximum_per_customer,
 						  sort_order, enabled, created_at, updated_at)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				)
 				.bind(
 					sellableItemId,
 					productId,
 					row.name,
+					row.policy_json ?? "{}",
 					row.duration_ms ?? null,
 					row.usage_limit ?? null,
 					row.access_limit ?? null,
@@ -238,6 +239,7 @@ export const getProductEditorFn = createServerFn({ method: "GET" })
 				enabled: Boolean(sellableItem.enabled),
 				fulfillmentSource: String(sellableItem.fulfillment_source) as
 					| "local"
+					| "manual"
 					| "supplier",
 				supplierStatus:
 					sellableItem.supplier_status == null
@@ -253,7 +255,9 @@ export const getProductEditorFn = createServerFn({ method: "GET" })
 								id: String(sellableItem.supplier_binding_id),
 								provider: String(sellableItem.supplier_provider) as
 									| "acg"
-									| "dujiao_next",
+									| "dujiao_next"
+									| "gmshop_edge"
+									| "shared_stock",
 								normalizedApiOrigin: String(sellableItem.supplier_api_origin),
 								upstreamProductId: String(sellableItem.upstream_product_id),
 								upstreamSkuId: String(sellableItem.upstream_sku_id),
@@ -638,6 +642,14 @@ export async function checkProduct(context: EditorContext, productId: string) {
 					),
 				);
 		}
+		if (row.type === "stock" && row.fulfillment_source === "manual")
+			warnings.push(
+				issue(
+					"manual_fulfillment_required",
+					"Paid orders require an operator to procure and enter delivery content",
+					`sellableItem:${String(row.id)}`,
+				),
+			);
 		if (row.type === "download") {
 			const asset = await context.db.$client
 				.prepare(
