@@ -174,6 +174,145 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 	};
 }
 
+type ManualDeliveryContext = Omit<DeliveryContext, "status"> & {
+	status: "awaiting_supply" | "pending" | "processing" | "delivered" | "failed";
+	fulfillment_source: string;
+};
+
+export async function completeManualDelivery(
+	db: D1Database,
+	deliveryId: string,
+	content: string,
+) {
+	const plaintext = content.trim();
+	if (!plaintext || plaintext.length > 64_000)
+		throw new DomainError(
+			"manual_delivery_content_invalid",
+			400,
+			"Manual delivery content is required and must not exceed 64000 characters",
+		);
+	const delivery = await db
+		.prepare(
+			`SELECT dr.id, dr.status, dr.delivery_type, dr.content_encrypted,
+			 dr.order_item_id, item.fulfillment_source,
+			 oi.order_id, oi.quantity, o.status AS order_status, o.version AS order_version
+			 FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
+			 JOIN product_sellable_items item ON item.id = oi.sellable_item_id
+			 JOIN shop_orders o ON o.id = oi.order_id WHERE dr.id = ? LIMIT 1`,
+		)
+		.bind(deliveryId)
+		.first<ManualDeliveryContext>();
+	if (!delivery)
+		throw new DomainError("delivery_not_found", 404, "Delivery not found");
+	if (delivery.status === "delivered")
+		return { id: delivery.id, status: "delivered", duplicate: true };
+	if (
+		delivery.delivery_type !== "stock" ||
+		delivery.fulfillment_source !== "manual"
+	)
+		throw new DomainError(
+			"delivery_not_manual",
+			409,
+			"Delivery is not configured for manual fulfillment",
+		);
+	if (delivery.status !== "awaiting_supply")
+		throw new DomainError(
+			"manual_delivery_not_awaiting_supply",
+			409,
+			"Manual delivery is not awaiting supply",
+		);
+	const runtime = await loadRuntimeConfig(db);
+	if (!runtime.commerceSecret)
+		throw new DomainError(
+			"delivery_secret_unavailable",
+			503,
+			"Delivery configuration unavailable",
+		);
+	const encrypted = await encryptDeliveryContent(
+		plaintext,
+		runtime.commerceSecret,
+	);
+	const now = Date.now();
+	const nextStatus = await nextOrderStatus(db, delivery.order_id, delivery.id);
+	const nextVersion = delivery.order_version + 1;
+	const statements: D1PreparedStatement[] = [
+		db
+			.prepare(
+				`UPDATE delivery_records SET status = 'delivered', content_encrypted = ?,
+				 content_key_version = 1, attempt_count = attempt_count + 1,
+				 next_attempt_at = NULL, error_code = NULL, delivered_at = ?, updated_at = ?
+				 WHERE id = ? AND status = 'awaiting_supply'`,
+			)
+			.bind(encrypted, now, now, delivery.id),
+		db
+			.prepare(
+				`UPDATE shop_orders SET status = ?,
+				 completed_at = CASE WHEN ? = 'completed' THEN ? ELSE completed_at END,
+				 version = ?, updated_at = ?
+				 WHERE id = ? AND status = ? AND version = ?`,
+			)
+			.bind(
+				nextStatus,
+				nextStatus,
+				now,
+				nextVersion,
+				now,
+				delivery.order_id,
+				delivery.order_status,
+				delivery.order_version,
+			),
+		db
+			.prepare(
+				`INSERT INTO shop_order_events
+				 (id, order_id, event_type, visibility, from_status, to_status, order_version,
+				  actor_type, created_at)
+				 SELECT ?, id, 'delivery_progressed', 'customer', ?, ?, ?, 'admin', ?
+				 FROM shop_orders WHERE id = ? AND status = ? AND version = ?`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				delivery.order_status,
+				nextStatus,
+				nextVersion,
+				now,
+				delivery.order_id,
+				nextStatus,
+				nextVersion,
+			),
+		db
+			.prepare(
+				`INSERT INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+				  status, attempt_count, created_at, updated_at)
+				 SELECT ?, 'delivery.ready', 'delivery', ?, ?, ?, 'pending', 0, ?, ?
+				 FROM delivery_records WHERE id = ? AND status = 'delivered'
+				 ON CONFLICT(idempotency_key) DO NOTHING`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				delivery.id,
+				`delivery-ready:${delivery.id}`,
+				JSON.stringify({
+					deliveryId: delivery.id,
+					orderId: delivery.order_id,
+				}),
+				now,
+				now,
+				delivery.id,
+			),
+		...activateEntitlementGrantStatements(db, delivery.order_item_id, now),
+	];
+	const results = await db.batch(statements);
+	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+		return { id: delivery.id, status: "delivered", duplicate: true };
+	return {
+		id: delivery.id,
+		status: "delivered",
+		orderStatus: nextStatus,
+		duplicate: false,
+	};
+}
+
 async function nextOrderStatus(
 	db: D1Database,
 	orderId: string,

@@ -11,9 +11,9 @@ export type SiteBrand = {
 };
 
 export const defaultSiteBrand: SiteBrand = {
-	name: "GMShop Edge",
+	name: "老实人AI",
 	logoUrl: "/favicon.png",
-	title: "GMShop Edge",
+	title: "老实人AI 商城",
 	customHtml: "",
-	defaultLocale: "en-US",
+	defaultLocale: "zh-CN",
 };

@@ -22,12 +22,14 @@ async function resolveDnsOverHttps(hostname: string, type: "A" | "AAAA") {
 	const url = new URL("https://cloudflare-dns.com/dns-query");
 	url.searchParams.set("name", hostname);
 	url.searchParams.set("type", type);
+	// workerd rejects redirect: "error"; manual plus the 3xx check below keeps
+	// the same no-redirect guarantee on every runtime.
 	const response = await fetch(url, {
 		headers: { Accept: "application/dns-json" },
-		redirect: "error",
+		redirect: "manual",
 		signal: AbortSignal.timeout(5_000),
 	});
-	if (!response.ok)
+	if (!response.ok || (response.status >= 300 && response.status < 400))
 		throw new DomainError(
 			"supplier_dns_unavailable",
 			503,

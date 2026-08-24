@@ -24,6 +24,7 @@ import {
 import type { storefrontListSchema } from "#/features/storefront/schema";
 import { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { m } from "#/paraglide/messages";
+import { getLocale } from "#/paraglide/runtime";
 
 export function HomePage({
 	searchParams,
@@ -33,9 +34,11 @@ export function HomePage({
 	const brand = useSiteBrand();
 	const navigate = useNavigate({ from: "/" });
 	const [draftSearch, setDraftSearch] = useState(searchParams.search);
+	const locale = getLocale();
 	const catalog = useQuery({
-		queryKey: ["storefront", "catalog", searchParams],
-		queryFn: () => listStorefrontCatalogFn({ data: searchParams }),
+		queryKey: ["storefront", "catalog", locale, searchParams],
+		queryFn: () =>
+			listStorefrontCatalogFn({ data: { ...searchParams, locale } }),
 		staleTime: 30_000,
 	});
 	useEffect(() => {
@@ -71,10 +74,7 @@ export function HomePage({
 						</h1>
 					</div>
 					<div className="lg:pb-1">
-						<p className="max-w-xl text-pretty text-muted-foreground leading-7 sm:text-lg">
-							{m.store_hero_subtitle()}
-						</p>
-						<form className="relative mt-6" onSubmit={submit}>
+						<form className="relative" onSubmit={submit}>
 							<Search className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 							<Input
 								aria-label={m.store_search_placeholder()}

@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Eye, MoreHorizontal, RotateCcw } from "lucide-react";
+import { CircleCheck, Eye, MoreHorizontal, RotateCcw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ProButton } from "#/components/pro/base/button";
@@ -17,6 +17,7 @@ import {
 	DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
 import {
+	completeManualDeliveryFn,
 	listDeliveriesFn,
 	retryDeliveryFn,
 	revealDeliveryContentFn,
@@ -36,6 +37,7 @@ export function DeliveryCenterPage() {
 	const client = useQueryClient();
 	const [refreshKey, setRefreshKey] = useState(0);
 	const [revealing, setRevealing] = useState<Delivery | null>(null);
+	const [completing, setCompleting] = useState<Delivery | null>(null);
 	const [revealed, setRevealed] = useState<string | null>(null);
 	const refresh = useCallback(() => {
 		setRefreshKey((value) => value + 1);
@@ -72,6 +74,15 @@ export function DeliveryCenterPage() {
 		onSuccess: (result) => {
 			setRevealing(null);
 			setRevealed(result.content);
+		},
+		onError: showError,
+	});
+	const completeManual = useMutation({
+		mutationFn: completeManualDeliveryFn,
+		onSuccess: async () => {
+			setCompleting(null);
+			toast.success(m.delivery_manual_complete_success());
+			await refresh();
 		},
 		onError: showError,
 	});
@@ -119,6 +130,12 @@ export function DeliveryCenterPage() {
 							</ProButton>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
+							{row.original.status === "awaiting_supply" ? (
+								<DropdownMenuItem onClick={() => setCompleting(row.original)}>
+									<CircleCheck />
+									{m.delivery_manual_complete()}
+								</DropdownMenuItem>
+							) : null}
 							{row.original.status === "failed" ? (
 								<DropdownMenuItem
 									disabled={retry.isPending}
@@ -176,6 +193,31 @@ export function DeliveryCenterPage() {
 					onFinish={async (values) => {
 						await reveal.mutateAsync({
 							data: { id: revealing.id, ...proof(values) },
+						});
+					}}
+					onFinishFailed={showError}
+				/>
+			) : null}
+			{completing ? (
+				<ModalForm
+					key={completing.id}
+					open
+					onOpenChange={(open) => !open && setCompleting(null)}
+					title={m.delivery_manual_complete_title()}
+					schema={[
+						{
+							name: "content",
+							label: m.delivery_manual_content(),
+							valueType: "textarea" as const,
+							required: true,
+						},
+					]}
+					onFinish={async (values) => {
+						await completeManual.mutateAsync({
+							data: {
+								id: completing.id,
+								content: String(values.content ?? ""),
+							},
 						});
 					}}
 					onFinishFailed={showError}

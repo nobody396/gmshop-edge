@@ -69,9 +69,19 @@ export function StorefrontProductCard({
 					)}
 					{product.deliveryTypes.includes("stock") && available ? (
 						<div className="absolute end-3 top-3">
-							<Badge className="bg-emerald-400 text-emerald-950">
+							<Badge
+								className={
+									product.hasAutomaticFulfillment
+										? "bg-emerald-400 text-emerald-950"
+										: "bg-amber-200 text-amber-950"
+								}
+							>
 								<Zap />
-								{m.store_auto_delivery()}
+								{product.hasManualFulfillment && product.hasAutomaticFulfillment
+									? m.store_mixed_delivery()
+									: product.hasManualFulfillment
+										? m.store_manual_delivery()
+										: m.store_auto_delivery()}
 							</Badge>
 						</div>
 					) : null}

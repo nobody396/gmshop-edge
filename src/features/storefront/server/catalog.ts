@@ -1,20 +1,33 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { z } from "zod";
+import { z } from "zod";
 import { buildDefinitionListSchema } from "#/features/builds/schema";
 import {
 	productIdSchema,
-	storefrontListSchema,
+	storefrontCatalogSchema,
 } from "#/features/storefront/schema";
 import { DomainError } from "#/lib/domain-error";
+import type { SupportedLocale } from "#/lib/locales";
 import { getDb } from "#/server/db.server";
+import {
+	localizeProduct,
+	localizeSellableItem,
+} from "../catalog-localizations";
 import { selectStorefrontProductRow } from "./product-query";
 import { storefrontStockExpression } from "./stock-availability";
 
 type Row = Record<string, unknown>;
 
+const sellableItemPolicySchema = z.object({
+	delivery: z.string().max(500).default(""),
+	deliveryTime: z.string().max(500).default(""),
+	coverage: z.string().max(1_000).default(""),
+	warranty: z.string().max(1_000).default(""),
+	restrictions: z.string().max(2_000).default(""),
+});
+
 export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
-	.validator((input: z.input<typeof storefrontListSchema>) =>
-		storefrontListSchema.parse(input),
+	.validator((input: z.input<typeof storefrontCatalogSchema>) =>
+		storefrontCatalogSchema.parse(input),
 	)
 	.handler(async ({ data }) => {
 		const db = getDb().$client;
@@ -54,11 +67,17 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			 p.cover_object_key, p.updated_at,
 			 p.tag_names AS tags_json,
 			 s.id AS sellable_item_id, s.price_minor, s.list_price_minor, s.currency, s.currency_decimals,
-			 (SELECT ps.price_minor FROM product_sellable_items ps
+				 (SELECT ps.price_minor FROM product_sellable_items ps
 			  WHERE ps.product_id = p.id AND ps.enabled = 1
 			  ORDER BY length(ps.price_minor) DESC, ps.price_minor DESC, ps.id LIMIT 1) AS max_price_minor,
-			 json_array(p.product_type) AS delivery_types,
-			 ${storefrontStockExpression("p", "s")} AS available_stock,
+				 json_array(p.product_type) AS delivery_types,
+				 EXISTS (SELECT 1 FROM product_sellable_items manual_item
+				  WHERE manual_item.product_id = p.id AND manual_item.enabled = 1
+				   AND manual_item.fulfillment_source = 'manual') AS has_manual_fulfillment,
+				 EXISTS (SELECT 1 FROM product_sellable_items automatic_item
+				  WHERE automatic_item.product_id = p.id AND automatic_item.enabled = 1
+				   AND automatic_item.fulfillment_source <> 'manual') AS has_automatic_fulfillment,
+				 ${storefrontStockExpression("p", "s")} AS available_stock,
 			 COALESCE((SELECT SUM(item.quantity) FROM shop_order_items item JOIN shop_orders sold_order ON sold_order.id = item.order_id WHERE item.product_id = p.id AND sold_order.status IN ('paid','completed','fulfilling','refunding','refunded')), 0) AS sales_count
 			 FROM products p
 			 JOIN product_sellable_items s ON s.id = (
@@ -74,31 +93,39 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				name: String(row.name),
 				productCount: Number(row.product_count),
 			})),
-			products: rows(products).map((row) => ({
-				id: String(row.id),
-				name: String(row.name),
-				description: row.description == null ? null : String(row.description),
-				productType: String(row.product_type) as
-					| "stock"
-					| "download"
-					| "automation",
-				tags: JSON.parse(String(row.tags_json)) as string[],
-				coverUrl: row.cover_object_key
-					? `/api/shop/products/${row.id}/cover?v=${row.updated_at}`
-					: null,
-				sellableItemId: String(row.sellable_item_id),
-				priceMinor: String(row.price_minor),
-				maxPriceMinor: String(row.max_price_minor),
-				listPriceMinor:
-					row.list_price_minor == null ? null : String(row.list_price_minor),
-				currency: String(row.currency),
-				currencyDecimals: Number(row.currency_decimals),
-				availableStock: Number(row.available_stock),
-				salesCount: Number(row.sales_count),
-				deliveryTypes: JSON.parse(String(row.delivery_types)) as Array<
-					"stock" | "download" | "automation"
-				>,
-			})),
+			products: rows(products).map((row) => {
+				const localized = localizeProduct(String(row.id), data.locale, {
+					name: String(row.name),
+					description: row.description == null ? "" : String(row.description),
+				});
+				return {
+					id: String(row.id),
+					name: localized.name,
+					description: localized.description || null,
+					productType: String(row.product_type) as
+						| "stock"
+						| "download"
+						| "automation",
+					tags: JSON.parse(String(row.tags_json)) as string[],
+					coverUrl: row.cover_object_key
+						? `/api/shop/products/${row.id}/cover?v=${row.updated_at}`
+						: null,
+					sellableItemId: String(row.sellable_item_id),
+					priceMinor: String(row.price_minor),
+					maxPriceMinor: String(row.max_price_minor),
+					listPriceMinor:
+						row.list_price_minor == null ? null : String(row.list_price_minor),
+					currency: String(row.currency),
+					currencyDecimals: Number(row.currency_decimals),
+					availableStock: Number(row.available_stock),
+					hasManualFulfillment: Boolean(row.has_manual_fulfillment),
+					hasAutomaticFulfillment: Boolean(row.has_automatic_fulfillment),
+					salesCount: Number(row.sales_count),
+					deliveryTypes: JSON.parse(String(row.delivery_types)) as Array<
+						"stock" | "download" | "automation"
+					>,
+				};
+			}),
 		};
 	});
 
@@ -137,11 +164,15 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 				)
 				.bind(product.id),
 		]);
-		return {
-			id: String(product.id),
+		const localizedProduct = localizeProduct(String(product.id), data.locale, {
 			name: String(product.name),
 			description:
-				product.description == null ? null : String(product.description),
+				product.description == null ? "" : String(product.description),
+		});
+		return {
+			id: String(product.id),
+			name: localizedProduct.name,
+			description: localizedProduct.description || null,
 			productType: String(product.product_type) as
 				| "stock"
 				| "download"
@@ -150,7 +181,9 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 			coverUrl: product.cover_object_key
 				? `/api/shop/products/${product.id}/cover?v=${product.updated_at}`
 				: null,
-			sellableItems: rows(itemsResult).map(presentSellableItem),
+			sellableItems: rows(itemsResult).map((row) =>
+				presentSellableItem(row, data.locale),
+			),
 			inputs: presentInputs(rows(inputsResult)),
 			media: rows(mediaResult).map((row) => ({
 				id: String(row.id),
@@ -161,10 +194,20 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 		};
 	});
 
-function presentSellableItem(row: Row) {
+function presentSellableItem(row: Row, locale: SupportedLocale) {
+	const fallbackPolicy = parseSellableItemPolicy(row.policy_json);
+	const localized = localizeSellableItem(
+		String(row.id),
+		locale,
+		{
+			name: String(row.name),
+			policy: fallbackPolicy,
+		},
+		String(row.fulfillment_source) as "local" | "manual" | "supplier",
+	);
 	return {
 		id: String(row.id),
-		name: String(row.name),
+		name: localized.name,
 		listPriceMinor:
 			row.list_price_minor == null ? null : String(row.list_price_minor),
 		priceMinor: String(row.price_minor),
@@ -181,6 +224,10 @@ function presentSellableItem(row: Row) {
 			| "stock"
 			| "download"
 			| "automation",
+		fulfillmentSource: String(row.fulfillment_source) as
+			| "local"
+			| "manual"
+			| "supplier",
 		durationMs: nullableNumber(row.duration_ms),
 		usageLimit: nullableNumber(row.usage_limit),
 		accessLimit: nullableNumber(row.access_limit),
@@ -189,7 +236,19 @@ function presentSellableItem(row: Row) {
 		showOnOrderPage: Boolean(row.show_on_order_page),
 		allowResend: Boolean(row.allow_resend),
 		availableStock: Number(row.available_stock),
+		policy: localized.policy,
 	};
+}
+
+function parseSellableItemPolicy(value: unknown) {
+	try {
+		const parsed = sellableItemPolicySchema.safeParse(
+			typeof value === "string" ? JSON.parse(value) : value,
+		);
+		return parsed.success ? parsed.data : sellableItemPolicySchema.parse({});
+	} catch {
+		return sellableItemPolicySchema.parse({});
+	}
 }
 function presentInputs(versionRows: Row[]) {
 	return versionRows.flatMap((row) => {

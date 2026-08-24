@@ -8,10 +8,12 @@ import {
 import { AcgAdapter } from "#/features/suppliers/providers/acg";
 import { DujiaoNextAdapter } from "#/features/suppliers/providers/dujiao-next";
 import { GmshopEdgeAdapter } from "#/features/suppliers/providers/gmshop-edge";
+import { SharedStockAdapter } from "#/features/suppliers/providers/shared-stock";
 import {
 	providerRequestNumber,
 	signAcgForm,
 	signDujiaoNextRequest,
+	signSharedStockForm,
 } from "#/features/suppliers/providers/signatures";
 import {
 	createSupplierCredentialVault,
@@ -162,6 +164,27 @@ describe("supplier provider signatures", () => {
 		expect(
 			providerRequestNumber("dujiao_next", "order-1", "account-a"),
 		).toMatch(/^gm_[a-f0-9]{40}$/);
+		expect(
+			providerRequestNumber("shared_stock", "order-1", "account-a"),
+		).toMatch(/^ss_[a-f0-9]{32}$/);
+	});
+
+	it("signs SharedStock forms the way acg-faka SharedValidation does", () => {
+		const expected = createHash("md5")
+			.update("app_id=10001&code=GPT-1&num=2&key=secret")
+			.digest("hex");
+		expect(
+			signSharedStockForm(
+				{
+					sign: "forged",
+					num: "2",
+					code: "GPT-1",
+					ignored: "",
+					app_id: "10001",
+				},
+				"secret",
+			),
+		).toBe(expected);
 	});
 });
 
@@ -414,5 +437,357 @@ describe("ACG adapter", () => {
 			cards: ["CARD-1", "CARD-2"],
 		});
 		expect(bodies[0]).toContain("trade_no=trade-123");
+	});
+});
+
+describe("SharedStock adapter", () => {
+	function adapterWith(responses: (input: Request) => unknown) {
+		const requests: Request[] = [];
+		const adapter = new SharedStockAdapter({
+			baseUrl: "https://supplier.example",
+			appId: "10001",
+			appKey: "secret",
+			currency: "CNY",
+			currencyDecimals: 2,
+			fetcher: async (input, init) => {
+				const request = new Request(input, init);
+				requests.push(request);
+				return Response.json(responses(request));
+			},
+		});
+		return { adapter, requests };
+	}
+
+	it("signs the connect form body and normalizes the balance", async () => {
+		const { adapter, requests } = adapterWith(() => ({
+			code: 200,
+			msg: "success",
+			data: { shopName: "上游店铺", balance: "88.50" },
+		}));
+		await expect(adapter.testConnection()).resolves.toEqual({
+			siteName: "上游店铺",
+			balance: { amountMinor: "8850", currency: "CNY" },
+		});
+		const request = requests[0];
+		expect(request?.url).toBe(
+			"https://supplier.example/shared/authentication/connect",
+		);
+		const body = new URLSearchParams(await request?.text());
+		expect(body.get("app_id")).toBe("10001");
+		expect(body.get("sign")).toBe(
+			signSharedStockForm({ app_id: "10001" }, "secret"),
+		);
+	});
+
+	it("falls back to the legacy SharedStock plugin when core routes are absent", async () => {
+		const urls: string[] = [];
+		const adapter = new SharedStockAdapter({
+			baseUrl: "https://supplier.example",
+			appId: "10001",
+			appKey: "secret",
+			currency: "CNY",
+			currencyDecimals: 2,
+			fetcher: async (input, init) => {
+				const request = new Request(input, init);
+				urls.push(request.url);
+				const path = new URL(request.url).pathname;
+				return path.startsWith("/shared/")
+					? new Response("<!doctype html><title>当前插件未启用</title>", {
+							status: 200,
+							headers: { "Content-Type": "text/html" },
+						})
+					: Response.json({
+							code: 200,
+							msg: "success",
+							data: path.endsWith("/items")
+								? []
+								: { shopName: "旧版上游", balance: "10.00" },
+						});
+			},
+		});
+		await expect(adapter.testConnection()).resolves.toEqual({
+			siteName: "旧版上游",
+			balance: { amountMinor: "1000", currency: "CNY" },
+		});
+		expect(urls[0]).toBe(
+			"https://supplier.example/shared/authentication/connect",
+		);
+		expect(urls[1]).toBe(
+			"https://supplier.example/plugin/SharedStock/api/connect",
+		);
+		await expect(
+			adapter.listProducts({ page: 1, pageSize: 20 }),
+		).resolves.toEqual({ total: 0, products: [] });
+		expect(urls[2]).toBe(
+			"https://supplier.example/plugin/SharedStock/api/items",
+		);
+	});
+
+	it("flattens the shared category tree into code-keyed products", async () => {
+		const { adapter } = adapterWith(() => ({
+			code: 200,
+			data: [
+				{
+					id: 1,
+					name: "会员专区",
+					children: [
+						{
+							id: 11,
+							code: "GPT-PLUS",
+							name: "GPT Plus 代开",
+							description: "描述",
+							cover: "/assets/cache/general/cover.jpg",
+							price: "99.00",
+							stock: "7",
+						},
+					],
+				},
+				{ id: 2, name: "空分类", children: [] },
+			],
+		}));
+		await expect(
+			adapter.listProducts({ page: 1, pageSize: 20 }),
+		).resolves.toEqual({
+			total: 1,
+			products: [
+				{
+					id: "GPT-PLUS",
+					name: "GPT Plus 代开",
+					description: "描述",
+					imageUrls: [
+						"https://supplier.example/assets/cache/general/cover.jpg",
+					],
+					categoryNames: ["会员专区"],
+					active: true,
+					skus: [
+						{
+							id: "GPT-PLUS",
+							name: "GPT Plus 代开",
+							costMinor: "9900",
+							stockQuantity: 7,
+							active: true,
+						},
+					],
+				},
+			],
+		});
+	});
+
+	it("exposes INI category prices as independently purchasable shared SKUs", async () => {
+		const { adapter } = adapterWith(() => ({
+			code: 200,
+			data: [
+				{
+					id: 7,
+					name: "ChatGPT",
+					children: [
+						{
+							id: 69,
+							code: "CODEX-CREDIT",
+							name: "Codex 点数",
+							description: "描述",
+							cover: "",
+							price: "75.00",
+							stock: "58",
+							config:
+								"[category]\n250点数额度=75\n500点数额度=145\n1000点数额度=276",
+						},
+					],
+				},
+			],
+		}));
+		const result = await adapter.listProducts({ page: 1, pageSize: 20 });
+		expect(result.products[0]?.skus).toEqual([
+			{
+				id: "CODEX-CREDIT::250%E7%82%B9%E6%95%B0%E9%A2%9D%E5%BA%A6",
+				name: "250点数额度",
+				costMinor: "7500",
+				stockQuantity: 58,
+				active: true,
+			},
+			{
+				id: "CODEX-CREDIT::500%E7%82%B9%E6%95%B0%E9%A2%9D%E5%BA%A6",
+				name: "500点数额度",
+				costMinor: "14500",
+				stockQuantity: 58,
+				active: true,
+			},
+			{
+				id: "CODEX-CREDIT::1000%E7%82%B9%E6%95%B0%E9%A2%9D%E5%BA%A6",
+				name: "1000点数额度",
+				costMinor: "27600",
+				stockQuantity: 58,
+				active: true,
+			},
+		]);
+	});
+
+	it("prefers the factory price when reading a sku", async () => {
+		const { adapter, requests } = adapterWith(() => ({
+			code: 200,
+			data: {
+				count: 12,
+				delivery_way: 0,
+				price: "99.00",
+				user_price: "88.00",
+				factory_price: "85.50",
+			},
+		}));
+		await expect(adapter.getSku("GPT-PLUS", "GPT-PLUS")).resolves.toEqual({
+			id: "GPT-PLUS",
+			name: "GPT-PLUS",
+			costMinor: "8550",
+			stockQuantity: 12,
+			active: true,
+		});
+		const body = new URLSearchParams(await requests[0]?.text());
+		expect(body.get("sharedCode")).toBe("GPT-PLUS");
+	});
+
+	it("checks category stock and valuation before purchasing a shared variant", async () => {
+		const { adapter, requests } = adapterWith((request) => {
+			const path = new URL(request.url).pathname;
+			return path.endsWith("/valuation")
+				? { code: 200, data: { price: "145.00" } }
+				: {
+						code: 200,
+						data: {
+							count: 16,
+							delivery_way: 0,
+							price: "75.00",
+							user_price: "75.00",
+							factory_price: "0",
+							config: "[category]\n250点数额度=75",
+						},
+					};
+		});
+		const skuId = "CODEX-CREDIT::500%E7%82%B9%E6%95%B0%E9%A2%9D%E5%BA%A6";
+		await expect(adapter.getSku("CODEX-CREDIT", skuId)).resolves.toEqual({
+			id: skuId,
+			name: "500点数额度",
+			costMinor: "14500",
+			stockQuantity: 16,
+			active: true,
+		});
+		expect(requests).toHaveLength(2);
+		const inventory = new URLSearchParams(await requests[0]?.text());
+		const valuation = new URLSearchParams(await requests[1]?.text());
+		expect(inventory.get("race")).toBe("500点数额度");
+		expect(valuation.get("race")).toBe("500点数额度");
+		expect(valuation.get("num")).toBe("1");
+	});
+
+	it("trades with a request_no and returns delivered cards", async () => {
+		const { adapter, requests } = adapterWith(() => ({
+			code: 200,
+			msg: "success",
+			data: {
+				url: "https://supplier.example/record",
+				amount: "85.50",
+				tradeNo: "20260822120000333",
+				secret: "账号A----密码A\n账号B----密码B",
+				leave_message: "",
+				stock: 5,
+			},
+		}));
+		await expect(
+			adapter.submitOrder({
+				skuId: "GPT-PLUS",
+				quantity: 2,
+				requestNo: "ss_abc123",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toEqual({
+			status: "supplied",
+			upstreamOrderId: "20260822120000333",
+			cards: ["账号A----密码A", "账号B----密码B"],
+		});
+		const body = new URLSearchParams(await requests[0]?.text());
+		expect(body.get("shared_code")).toBe("GPT-PLUS");
+		expect(body.get("num")).toBe("2");
+		expect(body.get("request_no")).toBe("ss_abc123");
+	});
+
+	it("passes the selected category race when trading a shared variant", async () => {
+		const { adapter, requests } = adapterWith(() => ({
+			code: 200,
+			msg: "success",
+			data: {
+				url: "",
+				amount: "145.00",
+				tradeNo: "20260824140000111",
+				secret: "CODEX-CDK",
+			},
+		}));
+		await expect(
+			adapter.submitOrder({
+				skuId: "CODEX-CREDIT::500%E7%82%B9%E6%95%B0%E9%A2%9D%E5%BA%A6",
+				quantity: 1,
+				requestNo: "ss_codex500",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toMatchObject({ status: "supplied", cards: ["CODEX-CDK"] });
+		const body = new URLSearchParams(await requests[0]?.text());
+		expect(body.get("shared_code")).toBe("CODEX-CREDIT");
+		expect(body.get("race")).toBe("500点数额度");
+	});
+
+	it("maps a duplicate request_no rejection to the uncertain path", async () => {
+		const { adapter } = adapterWith(() => ({
+			code: 0,
+			msg: "The request ID already exists",
+		}));
+		await expect(
+			adapter.submitOrder({
+				skuId: "GPT-PLUS",
+				quantity: 1,
+				requestNo: "ss_abc123",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).rejects.toMatchObject({ code: "supplier_request_uncertain" });
+	});
+
+	it("reconciles a known upstream order through query", async () => {
+		const { adapter, requests } = adapterWith(() => ({
+			code: 200,
+			data: {
+				secret: "CARD-9",
+				widget: null,
+				status: 1,
+			},
+		}));
+		await expect(
+			adapter.reconcileOrder({
+				upstreamOrderId: "20260822120000333",
+				skuId: "GPT-PLUS",
+				quantity: 1,
+				requestNo: "ss_abc123",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toEqual({
+			status: "supplied",
+			upstreamOrderId: "20260822120000333",
+			cards: ["CARD-9"],
+		});
+		const body = new URLSearchParams(await requests[0]?.text());
+		expect(body.get("tradeNo")).toBe("20260822120000333");
+	});
+
+	it("keeps an order uncertain when the upstream trade number is unknown", async () => {
+		const { adapter } = adapterWith(() => ({ code: 200, data: {} }));
+		await expect(
+			adapter.reconcileOrder({
+				upstreamOrderId: null,
+				skuId: "GPT-PLUS",
+				quantity: 1,
+				requestNo: "ss_abc123",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).rejects.toMatchObject({ code: "supplier_request_uncertain" });
 	});
 });

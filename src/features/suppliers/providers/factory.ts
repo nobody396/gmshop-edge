@@ -3,11 +3,13 @@ import {
 	dujiaoNextCredentialsSchema,
 	gmshopEdgeCredentialsSchema,
 	type SupplierProvider,
+	sharedStockCredentialsSchema,
 } from "../schema";
 import type { SupplierCredentials } from "../secrets";
 import { AcgAdapter } from "./acg";
 import { DujiaoNextAdapter } from "./dujiao-next";
 import { GmshopEdgeAdapter } from "./gmshop-edge";
+import { SharedStockAdapter } from "./shared-stock";
 import type { SupplierAdapter } from "./types";
 
 export function createSupplierAdapter(input: {
@@ -35,6 +37,17 @@ export function createSupplierAdapter(input: {
 			baseUrl: input.baseUrl,
 			apiKey: credentials.apiKey,
 			apiSecret: credentials.apiSecret,
+			currency: input.currency,
+			currencyDecimals: input.currencyDecimals,
+			fetcher: input.fetcher,
+		});
+	}
+	if (input.provider === "shared_stock") {
+		const credentials = sharedStockCredentialsSchema.parse(input.credentials);
+		return new SharedStockAdapter({
+			baseUrl: input.baseUrl,
+			appId: credentials.appId,
+			appKey: credentials.appKey,
 			currency: input.currency,
 			currencyDecimals: input.currencyDecimals,
 			fetcher: input.fetcher,

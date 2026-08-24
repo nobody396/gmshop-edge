@@ -1,4 +1,4 @@
-export const SITE_URL = "https://gmshop-edge.pages.dev";
+export const SITE_URL = "https://laoshirenvip.com";
 
 export function absoluteSiteUrl(pathOrUrl: string) {
 	if (/^https?:\/\//.test(pathOrUrl)) return pathOrUrl;

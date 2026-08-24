@@ -1,7 +1,10 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
-import { processDelivery } from "#/features/fulfillment/server/process";
+import {
+	completeManualDelivery,
+	processDelivery,
+} from "#/features/fulfillment/server/process";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import {
 	createShopPayment,
@@ -199,6 +202,80 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 			outbox: 2,
 			delivery_outbox: 1,
 		});
+	});
+
+	it("accepts payment for manual procurement and delivers operator-supplied content", async () => {
+		await database.batch([
+			database
+				.prepare(
+					"UPDATE product_sellable_items SET fulfillment_source = 'manual', supplier_status = NULL WHERE id = 'sellableItem-card'",
+				)
+				.bind(),
+			database
+				.prepare(
+					"DELETE FROM stock_entries WHERE sellable_item_id = 'sellableItem-card'",
+				)
+				.bind(),
+		]);
+		await expect(
+			processShopPaymentEvent(
+				database,
+				channelId,
+				succeededEvent("evt_manual_delivery"),
+			),
+		).resolves.toEqual({ duplicate: false, status: "succeeded" });
+		const waiting = await database
+			.prepare(
+				`SELECT dr.id, dr.status,
+				 (SELECT COUNT(*) FROM supplier_orders WHERE order_item_id = ?) AS supplier_orders,
+				 (SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = dr.id) AS delivery_outbox
+				 FROM delivery_records dr WHERE dr.order_item_id = ?`,
+			)
+			.bind(orderItemId, orderItemId)
+			.first<{
+				id: string;
+				status: string;
+				supplier_orders: number;
+				delivery_outbox: number;
+			}>();
+		expect(waiting).toMatchObject({
+			status: "awaiting_supply",
+			supplier_orders: 0,
+			delivery_outbox: 0,
+		});
+		await expect(
+			completeManualDelivery(
+				database,
+				waiting?.id ?? "",
+				"https://shop.example/redeem/MANUAL-CDK-1234",
+			),
+		).resolves.toMatchObject({
+			status: "delivered",
+			orderStatus: "completed",
+			duplicate: false,
+		});
+		const completed = await database
+			.prepare(
+				`SELECT dr.content_encrypted, dr.status AS delivery_status,
+				 o.status AS order_status,
+				 (SELECT COUNT(*) FROM outbox_events
+				  WHERE event_type = 'delivery.ready' AND aggregate_id = dr.id) AS ready_events
+				 FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
+				 JOIN shop_orders o ON o.id = oi.order_id WHERE dr.id = ?`,
+			)
+			.bind(waiting?.id)
+			.first<Record<string, unknown>>();
+		expect(completed).toMatchObject({
+			delivery_status: "delivered",
+			order_status: "completed",
+			ready_events: 1,
+		});
+		expect(
+			await decryptDeliveryContent(
+				String(completed?.content_encrypted),
+				"commerce-test-secret",
+			),
+		).toBe("https://shop.example/redeem/MANUAL-CDK-1234");
 	});
 
 	it("makes provider event replay idempotent", async () => {

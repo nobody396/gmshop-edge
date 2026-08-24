@@ -2,7 +2,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Settings, ShoppingCart } from "lucide-react";
+import {
+	ExternalLink,
+	Headphones,
+	Radio,
+	Send,
+	Settings,
+	ShoppingCart,
+} from "lucide-react";
 import { type ComponentProps, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import { Button } from "#/components/ui/button";
@@ -79,6 +86,7 @@ export function PublicHeader() {
 						))}
 					</nav>
 					<div className="flex items-center gap-1 ps-1">
+						<CustomerSupport />
 						<CartAction />
 						<DesktopSettings
 							currencySelection={currencySelection}
@@ -90,6 +98,74 @@ export function PublicHeader() {
 				</div>
 			</div>
 		</header>
+	);
+}
+
+const telegramSupportUrl = "https://t.me/bettercalljerrys";
+const telegramChannelUrl = "https://t.me/laoshirenai";
+
+function CustomerSupport() {
+	return (
+		<Popover>
+			<PopoverTrigger asChild>
+				<Button className="gap-2 rounded-full" variant="ghost">
+					<Headphones className="size-4" />
+					{m.store_support()}
+				</Button>
+			</PopoverTrigger>
+			<PopoverContent align="end" className="w-80 p-2">
+				<div className="px-3 pt-2 pb-3">
+					<p className="font-medium">{m.store_support_title()}</p>
+					<p className="mt-1 text-muted-foreground text-sm leading-5">
+						{m.store_support_description()}
+					</p>
+				</div>
+				<SupportLink
+					description="@bettercalljerrys"
+					href={telegramSupportUrl}
+					icon={Send}
+					label={m.store_support_private()}
+				/>
+				<SupportLink
+					description={m.store_support_channel_description()}
+					href={telegramChannelUrl}
+					icon={Radio}
+					label={m.store_support_channel()}
+				/>
+			</PopoverContent>
+		</Popover>
+	);
+}
+
+function SupportLink({
+	description,
+	href,
+	icon: Icon,
+	label,
+}: {
+	description: string;
+	href: string;
+	icon: typeof Send;
+	label: string;
+}) {
+	return (
+		<a
+			className="flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-muted"
+			href={href}
+			rel="noreferrer"
+			target="_blank"
+		>
+			<span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+				<Icon className="size-4" />
+			</span>
+			<span className="min-w-0 flex-1">
+				<span className="block font-medium text-sm">{label}</span>
+				<span className="block truncate text-muted-foreground text-xs">
+					{description}
+				</span>
+			</span>
+			<ExternalLink className="size-4 text-muted-foreground" />
+		</a>
 	);
 }
 

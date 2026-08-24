@@ -156,11 +156,11 @@ describe("checkout brand settings", () => {
 			"D1 unavailable",
 		);
 		await expect(loadSiteBrandOrDefault(unavailable, cache)).resolves.toEqual({
-			name: "GMShop Edge",
+			name: "老实人AI",
 			logoUrl: "/favicon.png",
-			title: "GMShop Edge",
+			title: "老实人AI 商城",
 			customHtml: "",
-			defaultLocale: "en-US",
+			defaultLocale: "zh-CN",
 		});
 	});
 
@@ -194,11 +194,11 @@ describe("checkout brand settings", () => {
 
 	it("returns safe defaults before customization", async () => {
 		await expect(loadSiteBrand(database)).resolves.toEqual({
-			name: "GMShop Edge",
+			name: "老实人AI",
 			logoUrl: "/favicon.png",
-			title: "GMShop Edge",
+			title: "老实人AI",
 			customHtml: "",
-			defaultLocale: "en-US",
+			defaultLocale: "zh-CN",
 		});
 	});
 
@@ -211,11 +211,11 @@ describe("checkout brand settings", () => {
 		try {
 			const emptyDatabase = await empty.getD1Database("DB");
 			await expect(loadSiteBrandOrDefault(emptyDatabase)).resolves.toEqual({
-				name: "GMShop Edge",
+				name: "老实人AI",
 				logoUrl: "/favicon.png",
-				title: "GMShop Edge",
+				title: "老实人AI 商城",
 				customHtml: "",
-				defaultLocale: "en-US",
+				defaultLocale: "zh-CN",
 			});
 		} finally {
 			await empty.dispose();
