@@ -196,10 +196,15 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 
 function presentSellableItem(row: Row, locale: SupportedLocale) {
 	const fallbackPolicy = parseSellableItemPolicy(row.policy_json);
-	const localized = localizeSellableItem(String(row.id), locale, {
-		name: String(row.name),
-		policy: fallbackPolicy,
-	});
+	const localized = localizeSellableItem(
+		String(row.id),
+		locale,
+		{
+			name: String(row.name),
+			policy: fallbackPolicy,
+		},
+		String(row.fulfillment_source) as "local" | "manual" | "supplier",
+	);
 	return {
 		id: String(row.id),
 		name: localized.name,

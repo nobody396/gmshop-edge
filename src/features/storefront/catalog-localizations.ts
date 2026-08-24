@@ -258,6 +258,17 @@ export function localizeSellableItem(
 	id: string,
 	locale: SupportedLocale,
 	fallback: SellableItemLocalization,
+	fulfillmentSource?: "local" | "manual" | "supplier",
 ) {
-	return locale === "en-US" ? (sellableItemEnglish[id] ?? fallback) : fallback;
+	if (locale !== "en-US") return fallback;
+	const localized = sellableItemEnglish[id] ?? fallback;
+	if (fulfillmentSource !== "manual") return localized;
+	return {
+		...localized,
+		policy: {
+			...localized.policy,
+			delivery: manual,
+			deliveryTime: within24Hours,
+		},
+	};
 }
