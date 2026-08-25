@@ -19,17 +19,10 @@ type SellableItemLocalization = {
 };
 
 const automatic = "Automatically delivered after payment confirmation";
-const immediate =
-	"Immediate delivery; view delivery status and contents on the order page";
-const manual = "Manually processed after payment confirmation";
-const within24Hours =
-	"Delivered within 24 hours; view delivery status and contents on the order page";
-const within6Hours =
-	"Delivered within 6 hours; view delivery status and contents on the order page";
-const within3Hours =
-	"Delivered within 3 hours; view delivery status and contents on the order page";
-const within12Hours =
-	"Delivered within 12 hours; view delivery status and contents on the order page";
+const standardDeliveryTime =
+	"Usually completed within 1–30 minutes. During peak periods, delivery may take longer but will not exceed 3 hours. Track delivery status and contents on the order page.";
+const immediate = standardDeliveryTime;
+const manual = "Processed online after payment confirmation";
 
 const productEnglish: Record<string, ProductLocalization> = {
 	"2a794b89-3bb9-49d4-8691-0d13a1606869": {
@@ -55,7 +48,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	"a48aeca2-90bf-4adf-8cfa-f18204373435": {
 		name: "Grok Membership",
 		description:
-			"SuperGrok and Grok Heavy memberships. Select a plan to review automatic or manual delivery, timing, and warranty terms.",
+			"SuperGrok membership recharge, currently available as a three-month plan. Review delivery timing, renewal, and after-sales terms before purchase.",
 	},
 	"02e4bae2-1d3f-411f-a360-b7e2e6fc9069": {
 		name: "Gemini and Google Accounts",
@@ -145,7 +138,7 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: {
 			...codexAutomaticPolicy,
 			delivery: manual,
-			deliveryTime: within24Hours,
+			deliveryTime: standardDeliveryTime,
 		},
 	},
 	"efa6e9ae-f8a6-4cf7-b99c-72e51e68dace": {
@@ -184,7 +177,7 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		name: "SuperGrok — 1 month",
 		policy: policy(
 			manual,
-			within24Hours,
+			standardDeliveryTime,
 			"Early renewal is supported but replaces the current term and does not stack.",
 			"30-day subscription warranty; early cancellation is handled according to days used.",
 			"Account bans and account-level risk controls are excluded.",
@@ -204,7 +197,7 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		name: "SuperGrok Heavy — 1 month",
 		policy: policy(
 			manual,
-			within24Hours,
+			standardDeliveryTime,
 			"Subject to the current partner-channel rules; benefits are not guaranteed to match standard SuperGrok.",
 			"24-hour subscription warranty after delivery.",
 			"The 24-hour warranty is not the delivery time. Account bans are excluded; this short-warranty product is not the same as an official direct recharge.",
@@ -269,19 +262,12 @@ export function localizeSellableItem(
 	if (locale !== "en-US") return fallback;
 	const localized = sellableItemEnglish[id] ?? fallback;
 	if (fulfillmentSource !== "manual") return localized;
-	const deliveryTime = fallback.policy.deliveryTime.includes("3小时")
-		? within3Hours
-		: fallback.policy.deliveryTime.includes("6小时")
-			? within6Hours
-			: fallback.policy.deliveryTime.includes("12小时")
-				? within12Hours
-				: within24Hours;
 	return {
 		...localized,
 		policy: {
 			...localized.policy,
 			delivery: manual,
-			deliveryTime,
+			deliveryTime: standardDeliveryTime,
 		},
 	};
 }
