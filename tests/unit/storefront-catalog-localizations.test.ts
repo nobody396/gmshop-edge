@@ -14,6 +14,7 @@ const fallback = {
 
 describe("storefront catalog localizations", () => {
 	it.each([
+		["3小时内交付；可在订单页查看交付状态和内容", "3 hours"],
 		["6小时内交付；可在订单页查看交付状态和内容", "6 hours"],
 		["12小时内交付；可在订单页查看交付状态和内容", "12 hours"],
 		["24小时内交付；可在订单页查看交付状态和内容", "24 hours"],
