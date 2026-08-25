@@ -464,6 +464,7 @@ export async function processShopPaymentEvent(
 		db,
 		channelId,
 		event.providerPaymentId,
+		event.merchantOrderId ?? null,
 	);
 	validateEventMoney(context, event);
 	if (context.attempt_status === "succeeded") {
@@ -947,6 +948,7 @@ async function loadPaymentContext(
 	db: D1Database,
 	channelId: string,
 	providerPaymentId: string,
+	merchantOrderId: string | null,
 ) {
 	const context = await db
 		.prepare(
@@ -963,9 +965,12 @@ async function loadPaymentContext(
 			 LEFT JOIN wallet_topups topup ON topup.id = pa.wallet_topup_id
 			 LEFT JOIN users topup_user ON topup_user.id = topup.user_id
 			 JOIN payment_channels pc ON pc.id = pa.channel_id
-			 WHERE pa.channel_id = ? AND pa.provider_payment_id = ? LIMIT 1`,
+			 WHERE pa.channel_id = ? AND (
+			  pa.provider_payment_id = ? OR
+			  (? IS NOT NULL AND pa.provider_payment_id LIKE '%:' || ?)
+			 ) LIMIT 1`,
 		)
-		.bind(channelId, providerPaymentId)
+		.bind(channelId, providerPaymentId, merchantOrderId, merchantOrderId)
 		.first<PaymentContext>();
 	if (!context)
 		throw new DomainError(

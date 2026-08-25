@@ -282,6 +282,28 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("matches a ZPay callback by merchant order id when create omitted its trade number", async () => {
+		const merchantOrderId = "44444444444444448444444444444444";
+		await database
+			.prepare(
+				"UPDATE payment_attempts SET provider_payment_id = ? WHERE id = ?",
+			)
+			.bind(`${merchantOrderId}:${merchantOrderId}`, attemptId)
+			.run();
+		await expect(
+			processShopPaymentEvent(database, channelId, {
+				...succeededEvent("evt-zpay-merchant-fallback"),
+				providerPaymentId: `zpay-trade-number:${merchantOrderId}`,
+				merchantOrderId,
+			}),
+		).resolves.toEqual({ duplicate: false, status: "succeeded" });
+		await expect(paymentState(database)).resolves.toMatchObject({
+			order_status: "paid",
+			payment_status: "succeeded",
+			receipts: 1,
+		});
+	});
+
 	it("accepts payment for manual procurement and delivers operator-supplied content", async () => {
 		await database.batch([
 			database

@@ -12,8 +12,15 @@ export async function handleShopPaymentWebhookRequest(
 		const result = await handleShopPaymentWebhook(request, channelId, env.DB);
 		await publishPendingDeliveries(env.DB, env.COMMERCE_QUEUE);
 		await publishPendingSupplierOrders(env.DB, env.COMMERCE_QUEUE);
-		if (result.provider === "gmpay" || result.provider === "epay")
+		if (result.provider === "gmpay")
 			return new Response("ok", {
+				headers: {
+					"Cache-Control": "no-store",
+					"Content-Type": "text/plain; charset=utf-8",
+				},
+			});
+		if (result.provider === "epay")
+			return new Response("success", {
 				headers: {
 					"Cache-Control": "no-store",
 					"Content-Type": "text/plain; charset=utf-8",
