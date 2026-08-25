@@ -4,7 +4,11 @@ import { createMultiStoreOrder } from "./multi-order";
 export async function createStoreOrder(
 	db: D1Database,
 	rawInput: unknown,
-	access: { userId?: string; identityEmail?: string } = {},
+	access: {
+		userId?: string;
+		identityEmail?: string;
+		pricingChannelId?: string;
+	} = {},
 ) {
 	return createMultiStoreOrder(
 		db,

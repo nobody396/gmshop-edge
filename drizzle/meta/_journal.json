@@ -57,6 +57,13 @@
       "when": 1787558507396,
       "tag": "0007_happy_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787656319292,
+      "tag": "0008_typical_tana_nile",
+      "breakpoints": true
     }
   ]
 }

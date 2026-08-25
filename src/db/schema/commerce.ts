@@ -1033,6 +1033,37 @@ export const paymentChannels = sqliteTable(
 	],
 );
 
+export const sellableItemChannelPrices = sqliteTable(
+	"sellable_item_channel_prices",
+	{
+		id: text("id").primaryKey(),
+		sellableItemId: text("sellable_item_id")
+			.notNull()
+			.references(() => productSellableItems.id, { onDelete: "cascade" }),
+		channelId: text("channel_id")
+			.notNull()
+			.references(() => paymentChannels.id, { onDelete: "cascade" }),
+		priceMinor: text("price_minor").notNull(),
+		enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+		...timestamps,
+	},
+	(table) => [
+		uniqueIndex("sellable_item_channel_prices_item_channel_uidx").on(
+			table.sellableItemId,
+			table.channelId,
+		),
+		index("sellable_item_channel_prices_channel_enabled_idx").on(
+			table.channelId,
+			table.enabled,
+			table.sellableItemId,
+		),
+		check(
+			"sellable_item_channel_prices_price_minor_check",
+			moneyCheck(table.priceMinor),
+		),
+	],
+);
+
 export const exchangeRates = sqliteTable(
 	"exchange_rates",
 	{

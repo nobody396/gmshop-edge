@@ -135,6 +135,45 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		).resolves.toEqual({ amount_minor: "1031" });
 	});
 
+	it("does not add a channel fee after a fixed channel price was snapshotted", async () => {
+		await database.batch([
+			database
+				.prepare("UPDATE payment_channels SET fee_bps = 300 WHERE id = ?")
+				.bind(channelId),
+			database
+				.prepare(
+					`INSERT INTO sellable_item_channel_prices
+					 (id,sellable_item_id,channel_id,price_minor,enabled,created_at,updated_at)
+					 VALUES ('fixed-channel-payment','sellableItem-card',?,'1000',1,1,1)`,
+				)
+				.bind(channelId),
+		]);
+		const fetcher = vi.fn(
+			async (_input: RequestInfo | URL, init?: RequestInit) => {
+				const body = new URLSearchParams(String(init?.body));
+				expect(body.get("line_items[0][price_data][unit_amount]")).toBe("1000");
+				return Response.json({
+					id: "cs_fixed_channel_price",
+					url: "https://checkout.stripe.example/cs_fixed_channel_price",
+					expires_at: null,
+				});
+			},
+		);
+		await createShopPayment(
+			database,
+			{
+				orderId,
+				channelId,
+				idempotencyKey: "create-payment-fixed-channel-price",
+				paymentCurrency: "CNY",
+				successUrl: "https://shop.example/orders/GM100001",
+				cancelUrl: "https://shop.example/orders/GM100001",
+				payerIp: "192.0.2.10",
+			},
+			fetcher,
+		);
+	});
+
 	it("claims concurrent payment creation once before calling the provider", async () => {
 		let releaseProvider: (() => void) | undefined;
 		let providerStarted: (() => void) | undefined;

@@ -51,6 +51,7 @@ type PaymentCreationContext = {
 	default_network: string;
 	fee_bps: number;
 	fixed_fee_minor: string;
+	fixed_channel_pricing: number;
 };
 
 type OrderItem = EntitlementOrderItem & {
@@ -106,7 +107,15 @@ export async function createShopPayment(
 			 o.total_minor AS amount_minor, o.currency, o.currency_decimals,
 			 o.contact_email,
 			 pc.id AS channel_id, pc.provider, pc.credential_encrypted,
-			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor
+			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor,
+			 NOT EXISTS (
+			  SELECT 1 FROM shop_order_items order_item
+			  WHERE order_item.order_id = o.id AND NOT EXISTS (
+			   SELECT 1 FROM sellable_item_channel_prices channel_price
+			   WHERE channel_price.sellable_item_id = order_item.sellable_item_id
+			    AND channel_price.channel_id = pc.id AND channel_price.enabled = 1
+			  )
+			 ) AS fixed_channel_pricing
 			 FROM shop_orders o JOIN payment_channels pc ON pc.id = ?
 			 WHERE o.id = ? AND pc.enabled = 1 LIMIT 1`,
 		)
@@ -122,8 +131,8 @@ export async function createShopPayment(
 		throw new DomainError("order_not_payable", 409, "Order cannot be paid");
 	const paymentAmountMinor = grossUpPaymentAmount(
 		context.amount_minor,
-		context.fee_bps,
-		context.fixed_fee_minor,
+		context.fixed_channel_pricing ? 0 : context.fee_bps,
+		context.fixed_channel_pricing ? "0" : context.fixed_fee_minor,
 	);
 	const quote = await quotePaymentCurrency(db, {
 		amountMinor: paymentAmountMinor,

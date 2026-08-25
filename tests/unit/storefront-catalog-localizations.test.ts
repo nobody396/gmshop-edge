@@ -14,11 +14,11 @@ const fallback = {
 
 describe("storefront catalog localizations", () => {
 	it.each([
-		["3小时内交付；可在订单页查看交付状态和内容", "3 hours"],
-		["6小时内交付；可在订单页查看交付状态和内容", "6 hours"],
-		["12小时内交付；可在订单页查看交付状态和内容", "12 hours"],
-		["24小时内交付；可在订单页查看交付状态和内容", "24 hours"],
-	])("keeps English delivery copy aligned with runtime manual fulfillment", (deliveryTime, expected) => {
+		"3小时内交付；可在订单页查看交付状态和内容",
+		"6小时内交付；可在订单页查看交付状态和内容",
+		"12小时内交付；可在订单页查看交付状态和内容",
+		"24小时内交付；可在订单页查看交付状态和内容",
+	])("standardizes English online-delivery timing", (deliveryTime) => {
 		const item = localizeSellableItem(
 			"983f6e73-061e-419d-a7d5-8ac5ec5648ab",
 			"en-US",
@@ -30,9 +30,10 @@ describe("storefront catalog localizations", () => {
 		);
 
 		expect(item.policy.delivery).toBe(
-			"Manually processed after payment confirmation",
+			"Processed online after payment confirmation",
 		);
-		expect(item.policy.deliveryTime).toContain(expected);
+		expect(item.policy.deliveryTime).toContain("1–30 minutes");
+		expect(item.policy.deliveryTime).toContain("3 hours");
 		expect(item.policy.coverage).toContain("Renewal is supported");
 	});
 });

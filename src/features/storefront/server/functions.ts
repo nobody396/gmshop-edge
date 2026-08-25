@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import type { z } from "zod";
+import { z } from "zod";
 import { requireStorefrontPermission } from "#/features/access/storefront-access";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
@@ -79,6 +79,10 @@ export const trackCommerceEventFn = createServerFn({ method: "POST" })
 		return { accepted: true };
 	});
 
+const checkoutPaymentChannelsSchema = z.object({
+	sellableItemIds: z.array(z.uuid()).min(1).max(100),
+});
+
 export const listCheckoutPaymentChannelsFn = createServerFn({
 	method: "GET",
 }).handler(async () => {
@@ -88,7 +92,7 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 			`SELECT id, name, provider, fee_bps, fixed_fee_minor,
 			        logo_object_key, logo_updated_at
 			 FROM payment_channels
-				 WHERE enabled = 1 ORDER BY sort_order, name, id`,
+			 WHERE enabled = 1 ORDER BY sort_order, name, id`,
 		)
 		.all<{
 			id: string;
@@ -111,6 +115,68 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 				: null,
 	}));
 });
+
+export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof checkoutPaymentChannelsSchema>) =>
+		checkoutPaymentChannelsSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		requireStorefrontPermission("guest", "catalog.read");
+		const db = getDb().$client;
+		const [channelsResult, pricesResult] = await db.batch([
+			db.prepare(
+				`SELECT id, name, provider, fee_bps, fixed_fee_minor,
+			        logo_object_key, logo_updated_at
+			 FROM payment_channels
+				 WHERE enabled = 1 ORDER BY sort_order, name, id`,
+			),
+			db
+				.prepare(
+					`SELECT channel_id, sellable_item_id, price_minor
+					 FROM sellable_item_channel_prices
+					 WHERE enabled = 1 AND sellable_item_id IN (${data.sellableItemIds
+							.map(() => "?")
+							.join(", ")})`,
+				)
+				.bind(...data.sellableItemIds),
+		]);
+		if (!channelsResult || !pricesResult)
+			throw new DomainError(
+				"payment_channel_unavailable",
+				503,
+				"Payment channel unavailable",
+			);
+		const rows = channelsResult.results as Array<{
+			id: string;
+			name: string;
+			provider: string;
+			fee_bps: number;
+			fixed_fee_minor: string;
+			logo_object_key: string | null;
+			logo_updated_at: number | null;
+		}>;
+		const prices = pricesResult.results as Array<{
+			channel_id: string;
+			sellable_item_id: string;
+			price_minor: string;
+		}>;
+		return rows.map((channel) => ({
+			id: channel.id,
+			name: channel.name,
+			provider: channel.provider,
+			feeBps: channel.fee_bps,
+			fixedFeeMinor: channel.fixed_fee_minor,
+			logoUrl:
+				channel.logo_object_key && channel.logo_updated_at
+					? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
+					: null,
+			itemPrices: Object.fromEntries(
+				prices
+					.filter((price) => price.channel_id === channel.id)
+					.map((price) => [price.sellable_item_id, price.price_minor]),
+			),
+		}));
+	});
 
 export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 	.validator((input: z.input<typeof checkoutStoreOrderSchema>) =>
@@ -135,6 +201,10 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 		const order = await createStoreOrder(db, input, {
 			userId: account?.user.id,
 			identityEmail: account?.user.email,
+			pricingChannelId:
+				data.walletPayment || !data.paymentChannelId
+					? undefined
+					: data.paymentChannelId,
 		});
 		if (account && "items" in data && !order.duplicate) {
 			const sellableItemIds = data.items.map((item) => item.sellableItemId);

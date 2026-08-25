@@ -18,6 +18,7 @@ const downloadItemId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const downloadComponentId = downloadItemId;
 const automationProductId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const automationItemId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const channelId = "dddddddd-1111-4ddd-8ddd-dddddddddddd";
 
 async function createStoreOrder(
 	database: D1Database,
@@ -30,7 +31,7 @@ async function createStoreOrder(
 		customerNote: string;
 		inputValues?: Record<string, unknown>;
 	},
-	access: { userId?: string } = {},
+	access: { userId?: string; pricingChannelId?: string } = {},
 ) {
 	const { sellableItemId, quantity, inputValues = {}, ...checkout } = input;
 	return createMultiStoreOrder(
@@ -97,6 +98,50 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 			.prepare("SELECT COUNT(*) AS count FROM users")
 			.first<{ count: number }>();
 		expect(users?.count).toBe(0);
+	});
+
+	it("snapshots the fixed price selected for a payment channel", async () => {
+		await database.batch([
+			database
+				.prepare(
+					`INSERT INTO payment_channels
+				 (id,provider,name,currency,fee_bps,fixed_fee_minor,enabled,created_at,updated_at)
+				 VALUES (?,'gmpay','USDT','CNY',300,'0',1,1,1)`,
+				)
+				.bind(channelId),
+			database
+				.prepare(
+					`INSERT INTO sellable_item_channel_prices
+				 (id,sellable_item_id,channel_id,price_minor,enabled,created_at,updated_at)
+				 VALUES ('channel-price-test',?,?, '1200',1,1,1)`,
+				)
+				.bind(sellableItemId, channelId),
+		]);
+
+		const result = await createStoreOrder(
+			database,
+			{
+				sellableItemId,
+				quantity: 2,
+				email: "channel-price@example.com",
+				idempotencyKey: "checkout-channel-price",
+				customerNote: "",
+			},
+			{ pricingChannelId: channelId },
+		);
+		const snapshot = await database
+			.prepare(
+				`SELECT o.subtotal_minor,o.total_minor,oi.unit_price_minor
+				 FROM shop_orders o JOIN shop_order_items oi ON oi.order_id=o.id
+				 WHERE o.id=?`,
+			)
+			.bind(result.id)
+			.first<Record<string, unknown>>();
+		expect(snapshot).toMatchObject({
+			subtotal_minor: "2400",
+			total_minor: "2400",
+			unit_price_minor: "1200",
+		});
 	});
 
 	it("accepts fresh supplier stock without purchasing upstream before payment", async () => {
