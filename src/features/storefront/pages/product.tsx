@@ -130,9 +130,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 		maximumQuantity != null &&
 		quantity <= maximumQuantity;
 	const entitlement = selectedItem ? entitlementSummary(selectedItem) : null;
-	const delivery = selectedItem
-		? deliveryPromise(selectedItem.deliveryType, selectedItem.fulfillmentSource)
-		: null;
+	const delivery = selectedItem ? deliveryPromise(selectedItem) : null;
 	const purchaseLimit = selectedItem
 		? purchaseLimitSummary(selectedItem)
 		: null;
@@ -671,13 +669,13 @@ function isAvailable(sellableItem: SellableItem) {
 		sellableItem.availableStock >= sellableItem.minimumQuantity
 	);
 }
-function deliveryPromise(
-	type: SellableItem["deliveryType"],
-	fulfillmentSource: SellableItem["fulfillmentSource"],
-) {
-	if (type === "stock" && fulfillmentSource === "manual")
-		return m.store_delivery_promise_manual();
-	switch (type) {
+function deliveryPromise(sellableItem: SellableItem) {
+	if (
+		sellableItem.deliveryType === "stock" &&
+		sellableItem.fulfillmentSource === "manual"
+	)
+		return sellableItem.policy.deliveryTime;
+	switch (sellableItem.deliveryType) {
 		case "stock":
 			return m.store_delivery_promise_card();
 		case "download":

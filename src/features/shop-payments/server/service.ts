@@ -5,6 +5,7 @@ import {
 	type EntitlementOrderItem,
 } from "#/features/entitlements/server/ledger";
 import { quotePaymentCurrency } from "#/features/exchange-rates/server/quote";
+import { grossUpPaymentAmount } from "#/features/shop-payments/fees";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import { epusdtMerchantOrderId } from "#/features/shop-payments/providers/epusdt";
@@ -48,6 +49,8 @@ type PaymentCreationContext = {
 	credential_encrypted: string | null;
 	default_token: string;
 	default_network: string;
+	fee_bps: number;
+	fixed_fee_minor: string;
 };
 
 type OrderItem = EntitlementOrderItem & {
@@ -103,7 +106,7 @@ export async function createShopPayment(
 			 o.total_minor AS amount_minor, o.currency, o.currency_decimals,
 			 o.contact_email,
 			 pc.id AS channel_id, pc.provider, pc.credential_encrypted,
-			 pc.default_token, pc.default_network
+			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor
 			 FROM shop_orders o JOIN payment_channels pc ON pc.id = ?
 			 WHERE o.id = ? AND pc.enabled = 1 LIMIT 1`,
 		)
@@ -117,8 +120,13 @@ export async function createShopPayment(
 		);
 	if (context.order_status !== "pending_payment")
 		throw new DomainError("order_not_payable", 409, "Order cannot be paid");
+	const paymentAmountMinor = grossUpPaymentAmount(
+		context.amount_minor,
+		context.fee_bps,
+		context.fixed_fee_minor,
+	);
 	const quote = await quotePaymentCurrency(db, {
-		amountMinor: context.amount_minor,
+		amountMinor: paymentAmountMinor,
 		currency: context.currency,
 		currencyDecimals: context.currency_decimals,
 		paymentCurrency: input.paymentCurrency ?? context.currency,
@@ -270,7 +278,7 @@ export async function createWalletTopupPayment(
 	const context = await db
 		.prepare(
 			`SELECT u.email, pc.id AS channel_id, pc.provider, pc.credential_encrypted,
-			 pc.default_token, pc.default_network,
+			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor,
 			 COALESCE((SELECT json_extract(value, '$') FROM system_settings
 			  WHERE key = 'commerce.default_currency'), 'USD') AS currency,
 			 COALESCE((SELECT CAST(json_extract(value, '$') AS INTEGER) FROM system_settings
@@ -286,6 +294,8 @@ export async function createWalletTopupPayment(
 			credential_encrypted: string | null;
 			default_token: string;
 			default_network: string;
+			fee_bps: number;
+			fixed_fee_minor: string;
 			currency: string;
 			currency_decimals: number;
 		}>();
@@ -295,8 +305,13 @@ export async function createWalletTopupPayment(
 			404,
 			"Payment channel unavailable",
 		);
+	const paymentAmountMinor = grossUpPaymentAmount(
+		input.amountMinor,
+		context.fee_bps,
+		context.fixed_fee_minor,
+	);
 	const quote = await quotePaymentCurrency(db, {
-		amountMinor: input.amountMinor,
+		amountMinor: paymentAmountMinor,
 		currency: context.currency,
 		currencyDecimals: context.currency_decimals,
 		paymentCurrency: input.paymentCurrency ?? context.currency,

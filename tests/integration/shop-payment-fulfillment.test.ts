@@ -96,6 +96,45 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("grosses up customer payment when the selected channel charges a fee", async () => {
+		await database
+			.prepare("UPDATE payment_channels SET fee_bps = 300 WHERE id = ?")
+			.bind(channelId)
+			.run();
+		const fetcher = vi.fn(
+			async (_input: RequestInfo | URL, init?: RequestInit) => {
+				const body = new URLSearchParams(String(init?.body));
+				expect(body.get("line_items[0][price_data][unit_amount]")).toBe("1031");
+				return Response.json({
+					id: "cs_channel_fee",
+					url: "https://checkout.stripe.example/cs_channel_fee",
+					expires_at: null,
+				});
+			},
+		);
+		await createShopPayment(
+			database,
+			{
+				orderId,
+				channelId,
+				idempotencyKey: "create-payment-channel-fee",
+				paymentCurrency: "CNY",
+				successUrl: "https://shop.example/orders/GM100001",
+				cancelUrl: "https://shop.example/orders/GM100001",
+				payerIp: "192.0.2.10",
+			},
+			fetcher,
+		);
+		await expect(
+			database
+				.prepare(
+					"SELECT amount_minor FROM payment_attempts WHERE idempotency_key = ?",
+				)
+				.bind("create-payment-channel-fee")
+				.first(),
+		).resolves.toEqual({ amount_minor: "1031" });
+	});
+
 	it("claims concurrent payment creation once before calling the provider", async () => {
 		let releaseProvider: (() => void) | undefined;
 		let providerStarted: (() => void) | undefined;

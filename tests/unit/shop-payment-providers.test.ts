@@ -140,31 +140,33 @@ describe("shop payment providers", () => {
 		).resolves.toMatchObject({ type: "payment_pending" });
 	});
 
-	it("creates EPay redirects and verifies its GET callback", async () => {
+	it("creates standard ZPay orders and verifies its callback", async () => {
 		const fetcher = vi.fn(
 			async (input: RequestInfo | URL, init?: RequestInit) => {
-				expect(String(input)).toBe("https://pay.example.com/submit.php");
-				expect(init?.redirect).toBe("manual");
-				const body = new URLSearchParams(String(init?.body));
+				expect(String(input)).toBe("https://pay.example.com/mapi.php");
+				expect(init?.body).toBeInstanceOf(FormData);
+				const body = init?.body as FormData;
 				expect(body.get("type")).toBe("wxpay");
-				expect(body.get("token")).toBe("usdt");
-				expect(body.get("network")).toBe("tron");
+				expect(body.get("name")).toBe("老实人AI 额度");
+				expect(body.get("clientip")).toBe("203.0.113.9");
 				expect(body.get("sign_type")).toBe("MD5");
-				return new Response(null, {
-					status: 302,
-					headers: { location: "/pay/checkout-counter/trade-epay-1" },
+				return Response.json({
+					code: 1,
+					msg: "success",
+					trade_no: "trade-epay-1",
+					payurl2: "https://pay.example.com/pay/trade-epay-1",
 				});
 			},
 		);
 		await expect(
 			epayPaymentProvider.createPayment(
-				paymentInput({ defaultToken: "usdt", defaultNetwork: "tron" }),
+				paymentInput({ payerIp: "203.0.113.9" }),
 				{ ...epusdtCredential(), paymentMethod: "wxpay" },
 				fetcher,
 			),
 		).resolves.toEqual({
-			providerPaymentId: "trade-epay-1",
-			checkoutUrl: "https://pay.example.com/pay/checkout-counter/trade-epay-1",
+			providerPaymentId: "trade-epay-1:11111111111141118111111111111111",
+			checkoutUrl: "https://pay.example.com/pay/trade-epay-1",
 			expiresAt: null,
 		});
 
@@ -192,7 +194,7 @@ describe("shop payment providers", () => {
 				epusdtCredential(),
 			),
 		).resolves.toMatchObject({
-			providerPaymentId: "trade-epay-1",
+			providerPaymentId: "trade-epay-1:11111111111141118111111111111111",
 			amountDecimal: "123.4500",
 			merchantOrderId: "11111111111141118111111111111111",
 		});

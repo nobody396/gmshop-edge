@@ -24,6 +24,10 @@ const immediate =
 const manual = "Manually processed after payment confirmation";
 const within24Hours =
 	"Delivered within 24 hours; view delivery status and contents on the order page";
+const within6Hours =
+	"Delivered within 6 hours; view delivery status and contents on the order page";
+const within12Hours =
+	"Delivered within 12 hours; view delivery status and contents on the order page";
 
 const productEnglish: Record<string, ProductLocalization> = {
 	"2a794b89-3bb9-49d4-8691-0d13a1606869": {
@@ -263,12 +267,17 @@ export function localizeSellableItem(
 	if (locale !== "en-US") return fallback;
 	const localized = sellableItemEnglish[id] ?? fallback;
 	if (fulfillmentSource !== "manual") return localized;
+	const deliveryTime = fallback.policy.deliveryTime.includes("6小时")
+		? within6Hours
+		: fallback.policy.deliveryTime.includes("12小时")
+			? within12Hours
+			: within24Hours;
 	return {
 		...localized,
 		policy: {
 			...localized.policy,
 			delivery: manual,
-			deliveryTime: within24Hours,
+			deliveryTime,
 		},
 	};
 }
