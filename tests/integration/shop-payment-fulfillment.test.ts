@@ -56,7 +56,7 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 			paymentCurrency: "USD",
 			successUrl: "https://shop.example/orders/GM100001",
 			cancelUrl: "https://shop.example/orders/GM100001",
-			payerIp: "192.0.2.10",
+			payerIp: "2001:db8::10",
 		};
 		await expect(createShopPayment(database, input, fetcher)).resolves.toEqual({
 			id: expect.any(String),
