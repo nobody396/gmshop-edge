@@ -484,31 +484,92 @@ export async function reconcilePendingShopPayments(
 	let failed = 0;
 	for (const attempt of attempts.results) {
 		try {
-			const credential = await loadCredential(db, attempt.credential_encrypted);
-			const query = await getPaymentProvider(attempt.provider).queryPayment(
-				attempt.provider_payment_id,
-				credential,
-				fetcher,
-			);
-			if (query.status !== "succeeded") {
+			const result = await reconcilePaymentAttempt(db, attempt, fetcher, now);
+			if (result !== "succeeded") {
 				pending += 1;
 				continue;
 			}
-			await processShopPaymentEvent(db, attempt.channel_id, {
-				providerEventId: `payment-reconcile:${attempt.channel_id}:${attempt.id}`,
-				providerPaymentId: attempt.provider_payment_id,
-				type: "payment_succeeded",
-				amountMinor: query.amountMinor ?? attempt.amount_minor,
-				currency: query.currency ?? attempt.currency,
-				merchantOrderId: null,
-				payloadDigest: `payment-reconcile:${attempt.id}`,
-			});
 			succeeded += 1;
 		} catch {
 			failed += 1;
 		}
 	}
 	return { scanned: attempts.results.length, succeeded, pending, failed };
+}
+
+export async function reconcileShopOrderPayment(
+	db: D1Database,
+	orderId: string,
+	fetcher: typeof fetch = fetch,
+	now = Date.now(),
+) {
+	const attempt = await db
+		.prepare(
+			`SELECT pa.id,pa.channel_id,pa.provider_payment_id,pa.amount_minor,pa.currency,
+			 pc.provider,pc.credential_encrypted
+			 FROM payment_attempts pa JOIN payment_channels pc ON pc.id=pa.channel_id
+			 JOIN shop_orders o ON o.id=pa.order_id
+			 WHERE pa.order_id=? AND pa.status IN ('pending','expired')
+			  AND o.status IN ('pending_payment','expired')
+			  AND pa.provider_payment_id IS NOT NULL
+			  AND pc.enabled=1 AND pc.provider IN ('epay','gmpay')
+			  AND pa.updated_at<=?
+			 ORDER BY pa.created_at DESC,pa.id DESC LIMIT 1`,
+		)
+		.bind(orderId, now - 3_000)
+		.first<ReconcilePaymentAttempt>();
+	if (!attempt) return { checked: false, status: "pending" as const };
+	try {
+		return {
+			checked: true,
+			status: await reconcilePaymentAttempt(db, attempt, fetcher, now),
+		};
+	} catch {
+		return { checked: true, status: "failed" as const };
+	}
+}
+
+type ReconcilePaymentAttempt = {
+	id: string;
+	channel_id: string;
+	provider_payment_id: string;
+	amount_minor: string;
+	currency: string;
+	provider: string;
+	credential_encrypted: string | null;
+};
+
+async function reconcilePaymentAttempt(
+	db: D1Database,
+	attempt: ReconcilePaymentAttempt,
+	fetcher: typeof fetch,
+	now: number,
+) {
+	const credential = await loadCredential(db, attempt.credential_encrypted);
+	const query = await getPaymentProvider(attempt.provider).queryPayment(
+		attempt.provider_payment_id,
+		credential,
+		fetcher,
+	);
+	if (query.status !== "succeeded") {
+		await db
+			.prepare(
+				"UPDATE payment_attempts SET updated_at=? WHERE id=? AND status IN ('pending','expired')",
+			)
+			.bind(now, attempt.id)
+			.run();
+		return "pending" as const;
+	}
+	await processShopPaymentEvent(db, attempt.channel_id, {
+		providerEventId: `payment-reconcile:${attempt.channel_id}:${attempt.id}`,
+		providerPaymentId: attempt.provider_payment_id,
+		type: "payment_succeeded",
+		amountMinor: query.amountMinor ?? attempt.amount_minor,
+		currency: query.currency ?? attempt.currency,
+		merchantOrderId: null,
+		payloadDigest: `payment-reconcile:${attempt.id}`,
+	});
+	return "succeeded" as const;
 }
 
 export async function processShopPaymentEvent(

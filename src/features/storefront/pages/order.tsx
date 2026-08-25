@@ -39,12 +39,10 @@ import {
 } from "#/features/storefront/payment-clock";
 import { safeStorePaymentUrl } from "#/features/storefront/payment-url";
 import { storeOrderLookupSchema } from "#/features/storefront/schema";
+import { openAccountAfterSaleCaseFn } from "#/features/storefront/server/account-functions";
 import {
-	getAccountOrderFn,
-	openAccountAfterSaleCaseFn,
-} from "#/features/storefront/server/account-functions";
-import {
-	getStoreOrderFn,
+	type getStoreOrderFn,
+	refreshStoreOrderFn,
 	retryStorePaymentFn,
 } from "#/features/storefront/server/functions";
 import { formatDateTime, formatMinorAmountWithSymbol } from "#/lib/format";
@@ -78,9 +76,12 @@ export function StorefrontOrderPage({
 	const order = useQuery({
 		queryKey: ["storefront", "order", orderNumber, guestEmail],
 		queryFn: () =>
-			accountOrder
-				? getAccountOrderFn({ data: { orderNumber } })
-				: getStoreOrderFn({ data: { orderNumber, email: guestEmail } }),
+			refreshStoreOrderFn({
+				data: {
+					orderNumber,
+					email: accountOrder ? undefined : guestEmail,
+				},
+			}),
 		enabled:
 			Boolean(accountOrder) ||
 			(guestAccessReady &&
@@ -156,6 +157,9 @@ export function StorefrontOrderPage({
 			delivery.status === "delivered" &&
 			delivery.hasContent &&
 			delivery.showOnOrderPage,
+	);
+	const awaitingManualDelivery = data.deliveries.some(
+		(delivery) => delivery.status === "awaiting_supply",
 	);
 	const downloadableAssets = data.downloads.filter(
 		(asset) =>
@@ -430,6 +434,21 @@ export function StorefrontOrderPage({
 											</Button>
 										) : null}
 									</div>
+								) : null}
+								{data.status !== "pending_payment" && awaitingManualDelivery ? (
+									<section className="grid gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-5">
+										<div className="flex items-start gap-3">
+											<Clock3 className="mt-0.5 size-5 shrink-0 text-primary" />
+											<div className="grid gap-1.5">
+												<strong>
+													{m.store_manual_delivery_pending_title()}
+												</strong>
+												<p className="text-muted-foreground text-sm">
+													{m.store_manual_delivery_pending_description()}
+												</p>
+											</div>
+										</div>
+									</section>
 								) : null}
 								{data.status !== "pending_payment" &&
 								(claimableDeliveries.length || downloadableAssets.length) ? (

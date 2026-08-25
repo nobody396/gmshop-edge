@@ -8,6 +8,7 @@ import {
 	completeFreeStoreOrder,
 	completeWalletStoreOrder,
 	createShopPayment,
+	reconcileShopOrderPayment,
 } from "#/features/shop-payments/server/service";
 import {
 	checkoutStoreOrderSchema,
@@ -338,6 +339,28 @@ export const getStoreOrderFn = createServerFn({ method: "POST" })
 const retryStorePaymentSchema = storeOrderLookupSchema.extend({
 	email: storeOrderLookupSchema.shape.email.optional(),
 });
+
+export const refreshStoreOrderFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof retryStorePaymentSchema>) =>
+		retryStorePaymentSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const request = getRequest();
+		const db = getDb(request).$client;
+		const account = await resolveStoreAccount(db, request);
+		requireStorefrontPermission(account ? "customer" : "guest", "order.lookup");
+		let order = await getStoreOrder(db, data, { userId: account?.user.id });
+		if (order.status !== "pending_payment") return order;
+		const reconciliation = await reconcileShopOrderPayment(db, order.id);
+		if (!reconciliation.checked) return order;
+		const queue = getCloudflareEnv(request).COMMERCE_QUEUE;
+		if (queue) {
+			await publishPendingDeliveries(db, queue);
+			await publishPendingSupplierOrders(db, queue);
+		}
+		order = await getStoreOrder(db, data, { userId: account?.user.id });
+		return order;
+	});
 
 export const retryStorePaymentFn = createServerFn({ method: "POST" })
 	.validator((input: z.input<typeof retryStorePaymentSchema>) =>

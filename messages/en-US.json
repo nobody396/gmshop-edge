@@ -1118,6 +1118,8 @@
 	"store_payment_retry_failed": "Unable to retry payment",
 	"store_order_payment_remaining": "Complete payment within {time}",
 	"store_order_payment_expired": "The payment window for this order has ended",
+	"store_manual_delivery_pending_title": "Payment received — your order is being processed",
+	"store_manual_delivery_pending_description": "Usually completed within 1–30 minutes and no later than 3 hours during peak periods. Delivery content will appear on this page; do not pay again.",
 	"store_price_range": "{minimum}–{maximum}",
 	"store_sales": "{count} sold",
 	"store_input_required": "Required",
