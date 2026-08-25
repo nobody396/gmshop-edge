@@ -85,7 +85,8 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 	requireStorefrontPermission("guest", "catalog.read");
 	const rows = await getDb()
 		.$client.prepare(
-			`SELECT id, name, provider, logo_object_key, logo_updated_at
+			`SELECT id, name, provider, fee_bps, fixed_fee_minor,
+			        logo_object_key, logo_updated_at
 			 FROM payment_channels
 				 WHERE enabled = 1 ORDER BY sort_order, name, id`,
 		)
@@ -93,6 +94,8 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 			id: string;
 			name: string;
 			provider: string;
+			fee_bps: number;
+			fixed_fee_minor: string;
 			logo_object_key: string | null;
 			logo_updated_at: number | null;
 		}>();
@@ -100,6 +103,8 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 		id: channel.id,
 		name: channel.name,
 		provider: channel.provider,
+		feeBps: channel.fee_bps,
+		fixedFeeMinor: channel.fixed_fee_minor,
 		logoUrl:
 			channel.logo_object_key && channel.logo_updated_at
 				? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)

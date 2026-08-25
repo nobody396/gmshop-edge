@@ -31,6 +31,7 @@ import {
 	StoreMoney,
 	useCurrency,
 } from "#/features/exchange-rates/currency-context";
+import { paymentSurchargeAmount } from "#/features/shop-payments/fees";
 import {
 	useLocalCart,
 	writeLocalCart,
@@ -183,6 +184,19 @@ export function StorefrontCheckoutPage() {
 		queryFn: () => listCheckoutPaymentChannelsFn(),
 		enabled: Boolean(currencyItem && total > 0n && !signInRequired),
 	});
+	const selectedChannel = channels.data?.find(
+		(channel) => channel.id === paymentChannelId,
+	);
+	const surcharge = selectedChannel
+		? BigInt(
+				paymentSurchargeAmount(
+					total.toString(),
+					selectedChannel.feeBps,
+					selectedChannel.fixedFeeMinor,
+				),
+			)
+		: 0n;
+	const payableTotal = total + surcharge;
 	const wallet = useQuery({
 		queryKey: ["wallet"],
 		queryFn: () => getWalletFn(),
@@ -495,6 +509,26 @@ export function StorefrontCheckoutPage() {
 									/>
 								</strong>
 							) : null}
+							{surcharge > 0n && currencyItem && "currency" in currencyItem ? (
+								<div className="mt-4 grid gap-2 text-sm">
+									<div className="flex items-center justify-between text-muted-foreground">
+										<span>{m.store_payment_channel_fee()}</span>
+										<StoreMoney
+											amountMinor={surcharge.toString()}
+											currency={currencyItem.currency ?? "USD"}
+											decimals={currencyItem.currencyDecimals ?? 2}
+										/>
+									</div>
+									<div className="flex items-center justify-between font-medium">
+										<span>{m.store_payment_amount_due()}</span>
+										<StoreMoney
+											amountMinor={payableTotal.toString()}
+											currency={currencyItem.currency ?? "USD"}
+											decimals={currencyItem.currencyDecimals ?? 2}
+										/>
+									</div>
+								</div>
+							) : null}
 						</div>
 						{total > 0n && !signInRequired ? (
 							<fieldset
@@ -554,6 +588,13 @@ export function StorefrontCheckoutPage() {
 											<span className="font-medium leading-snug">
 												{channel.name}
 											</span>
+											{channel.feeBps > 0 ? (
+												<span className="text-muted-foreground text-xs">
+													{m.store_payment_fee_rate({
+														rate: (channel.feeBps / 100).toFixed(2),
+													})}
+												</span>
+											) : null}
 										</label>
 									))}
 								</div>
