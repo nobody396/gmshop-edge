@@ -732,7 +732,7 @@
 	"store_all_tags": "全部分类",
 	"store_auto_delivery": "付款后自动交付",
 	"store_manual_delivery": "在线快速交付",
-	"store_mixed_delivery": "按规格自动或人工",
+	"store_mixed_delivery": "按规格自动或在线快速交付",
 	"store_sku_policy_delivery": "交付方式",
 	"store_sku_policy_delivery_time": "交付时效",
 	"store_sku_policy_coverage": "覆盖与续费",

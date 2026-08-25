@@ -55,6 +55,11 @@ const productEnglish: Record<string, ProductLocalization> = {
 		description:
 			"Annual Gemini Pro accounts, activation on your own account, and aged Google mailboxes. Select a plan to review delivery and after-sales coverage.",
 	},
+	"d0000000-0000-4000-8000-000000000001": {
+		name: "Payment and Delivery Test Product",
+		description:
+			"For testing USDT, Alipay, automatic delivery, and fast online delivery only. Not a regular product.",
+	},
 };
 
 function policy(
@@ -241,6 +246,26 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 			"Account product; not a membership renewal.",
 			"Delivered credentials are guaranteed to pass the initial verification only; long-term stability is not guaranteed.",
 			"Other Google services are not guaranteed. Do not use for bulk mail, fraud, or policy violations. Maintain the password and 2FA after receipt.",
+		),
+	},
+	"d0000000-0000-4000-8000-000000000002": {
+		name: "Test 1 — automatic delivery",
+		policy: policy(
+			automatic,
+			"Delivered immediately after payment confirmation; view the test content on the order page.",
+			"For payment and delivery workflow testing only.",
+			"Test products do not include after-sales benefits.",
+			"For testing only; purchase one item per order.",
+		),
+	},
+	"d0000000-0000-4000-8000-000000000003": {
+		name: "Test 2 — fast online delivery",
+		policy: policy(
+			manual,
+			standardDeliveryTime,
+			"For payment and delivery workflow testing only.",
+			"Test products do not include after-sales benefits.",
+			"For testing only; purchase one item per order.",
 		),
 	},
 };
