@@ -41,7 +41,7 @@ const callbackSchema = z.object({
 const paymentSubject = "老实人AI 额度";
 
 export const epayPaymentProvider: PaymentProviderAdapter = {
-	checkoutPresentation: "redirect",
+	checkoutPresentation: "qr",
 	refundMode: "manual",
 	async createPayment(input, rawCredential, fetcher = fetch) {
 		const credential = epayCredentialSchema.parse(rawCredential);

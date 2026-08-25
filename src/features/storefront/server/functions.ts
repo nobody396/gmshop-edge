@@ -198,13 +198,49 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 			});
 			return { order, payment, accountOrder: Boolean(account) };
 		} catch (error) {
-			const failed = await db
+			let failed = await db
 				.prepare(
 					`SELECT id, status FROM payment_attempts WHERE order_id = ?
 					 ORDER BY created_at DESC, id DESC LIMIT 1`,
 				)
 				.bind(order.id)
 				.first<{ id: string; status: string }>();
+			if (!failed) {
+				const now = Date.now();
+				const fallbackId = crypto.randomUUID();
+				await db
+					.prepare(
+						`INSERT INTO payment_attempts
+						 (id, order_id, channel_id, idempotency_key, status, amount_minor,
+						  currency, currency_decimals, exchange_rate, exchange_rate_direction,
+						  exchange_rate_source, exchange_rate_adjustment_bps,
+						  exchange_rate_observed_at, failure_code, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, 'failed', ?, ?, ?, '1', 'parity', 'parity', 0,
+						  ?, ?, ?, ?)
+						 ON CONFLICT(idempotency_key) DO NOTHING`,
+					)
+					.bind(
+						fallbackId,
+						order.id,
+						data.paymentChannelId,
+						`checkout:${order.id}:${data.paymentChannelId}:${data.paymentCurrency ?? order.currency}`,
+						order.totalMinor,
+						order.currency,
+						order.currencyDecimals,
+						now,
+						error instanceof DomainError ? error.code : "payment_create_failed",
+						now,
+						now,
+					)
+					.run();
+				failed = await db
+					.prepare(
+						`SELECT id, status FROM payment_attempts WHERE order_id = ?
+						 ORDER BY created_at DESC, id DESC LIMIT 1`,
+					)
+					.bind(order.id)
+					.first<{ id: string; status: string }>();
+			}
 			if (failed?.status !== "failed") throw error;
 			return {
 				order,

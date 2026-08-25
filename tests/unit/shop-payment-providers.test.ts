@@ -9,6 +9,10 @@ import { stripePaymentProvider } from "#/features/shop-payments/providers/stripe
 import { hmacSha256Hex } from "#/features/shop-payments/signature";
 
 describe("shop payment providers", () => {
+	it("presents ZPay checkout URLs as QR codes", () => {
+		expect(epayPaymentProvider.checkoutPresentation).toBe("qr");
+	});
+
 	it("matches the current GMPay HMAC-SHA256 signature vector", async () => {
 		await expect(
 			signGmpay(
