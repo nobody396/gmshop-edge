@@ -580,7 +580,10 @@ export async function processShopPaymentEvent(
 			409,
 			"Payment subject is invalid",
 		);
-	if (context.order_status !== "pending_payment")
+	if (
+		!context.order_status ||
+		!["pending_payment", "expired"].includes(context.order_status)
+	)
 		throw new DomainError(
 			"order_not_payable",
 			409,
@@ -593,6 +596,9 @@ export async function processShopPaymentEvent(
 		.all<OrderItem>();
 	const now = Date.now();
 	const nextVersion = context.order_version + 1;
+	const previousOrderStatus = context.order_status as
+		| "pending_payment"
+		| "expired";
 	const statements: D1PreparedStatement[] = [
 		paymentEventStatement(
 			db,
@@ -605,26 +611,35 @@ export async function processShopPaymentEvent(
 		db
 			.prepare(
 				`UPDATE payment_attempts SET status = 'succeeded', succeeded_at = ?,
-			 updated_at = ?, failure_code = NULL WHERE id = ? AND status IN ('created', 'pending')`,
+				 updated_at = ?, failure_code = NULL WHERE id = ?
+				 AND status IN ('created', 'pending', 'expired')`,
 			)
 			.bind(now, now, context.attempt_id),
 		db
 			.prepare(
 				`UPDATE shop_orders SET status = 'paid', paid_minor = total_minor,
-			 paid_at = ?, version = ?, updated_at = ?
-			 WHERE id = ? AND status = 'pending_payment' AND version = ?`,
+				 paid_at = ?, cancelled_at = NULL, version = ?, updated_at = ?
+				 WHERE id = ? AND status = ? AND version = ?`,
 			)
-			.bind(now, nextVersion, now, context.order_id, context.order_version),
+			.bind(
+				now,
+				nextVersion,
+				now,
+				context.order_id,
+				previousOrderStatus,
+				context.order_version,
+			),
 		db
 			.prepare(
 				`INSERT INTO shop_order_events
 			 (id, order_id, event_type, visibility, from_status, to_status, order_version,
 			  note, actor_type, created_at)
-			 SELECT ?, id, 'payment_succeeded', 'customer', 'pending_payment', 'paid', ?,
-			  NULL, 'provider', ? FROM shop_orders WHERE id = ? AND status = 'paid' AND version = ?`,
+				 SELECT ?, id, 'payment_succeeded', 'customer', ?, 'paid', ?,
+				  NULL, 'provider', ? FROM shop_orders WHERE id = ? AND status = 'paid' AND version = ?`,
 			)
 			.bind(
 				crypto.randomUUID(),
+				previousOrderStatus,
 				nextVersion,
 				now,
 				context.order_id,
@@ -636,8 +651,8 @@ export async function processShopPaymentEvent(
 	statements.push(
 		db
 			.prepare(
-				`UPDATE coupon_redemptions SET status = 'consumed', updated_at = ?
-				 WHERE order_id = ? AND status = 'reserved'`,
+				`UPDATE coupon_redemptions SET status = 'consumed', released_at = NULL,
+				 updated_at = ? WHERE order_id = ? AND status IN ('reserved', 'released')`,
 			)
 			.bind(now, context.order_id),
 		db

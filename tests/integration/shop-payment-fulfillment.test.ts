@@ -304,6 +304,46 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("accepts a verified late callback after the local order expired", async () => {
+		await database.batch([
+			database
+				.prepare(
+					"UPDATE shop_orders SET status = 'expired', version = 2, cancelled_at = 2 WHERE id = ?",
+				)
+				.bind(orderId),
+			database
+				.prepare(
+					"UPDATE payment_attempts SET status = 'expired', failure_code = 'order_expired' WHERE id = ?",
+				)
+				.bind(attemptId),
+		]);
+		await expect(
+			processShopPaymentEvent(
+				database,
+				channelId,
+				succeededEvent("evt-late-payment"),
+			),
+		).resolves.toEqual({ duplicate: false, status: "succeeded" });
+		const state = await database
+			.prepare(
+				`SELECT o.status AS order_status,o.version,o.cancelled_at,
+				 pa.status AS payment_status,pa.failure_code,
+				 (SELECT COUNT(*) FROM delivery_records WHERE order_item_id = ?) deliveries
+				 FROM shop_orders o JOIN payment_attempts pa ON pa.order_id=o.id
+				 WHERE o.id=?`,
+			)
+			.bind(orderItemId, orderId)
+			.first<Record<string, unknown>>();
+		expect(state).toMatchObject({
+			order_status: "paid",
+			version: 3,
+			cancelled_at: null,
+			payment_status: "succeeded",
+			failure_code: null,
+			deliveries: 1,
+		});
+	});
+
 	it("accepts payment for manual procurement and delivers operator-supplied content", async () => {
 		await database.batch([
 			database
