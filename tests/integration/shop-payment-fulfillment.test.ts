@@ -9,6 +9,7 @@ import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import {
 	createShopPayment,
 	processShopPaymentEvent,
+	reconcilePendingShopPayments,
 } from "#/features/shop-payments/server/service";
 import { revealStoreDelivery } from "#/features/storefront/server/delivery-reveal";
 import { encryptSecret } from "#/lib/secrets";
@@ -341,6 +342,41 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 			payment_status: "succeeded",
 			failure_code: null,
 			deliveries: 1,
+		});
+	});
+
+	it("reconciles a paid ZPay order when its callback was missed", async () => {
+		const credential = await encryptSecret(
+			JSON.stringify({
+				baseUrl: "https://zpay.example",
+				pid: "1000",
+				secretKey: "zpay-secret-key",
+				paymentMethod: "alipay",
+			}),
+			"commerce-test-secret",
+			"payment-credential",
+		);
+		await database.batch([
+			database
+				.prepare(
+					"UPDATE payment_channels SET provider='epay',credential_encrypted=? WHERE id=?",
+				)
+				.bind(credential, channelId),
+			database
+				.prepare(
+					"UPDATE payment_attempts SET provider_payment_id='merchant-order:merchant-order' WHERE id=?",
+				)
+				.bind(attemptId),
+		]);
+		const fetcher = vi.fn(async () => Response.json({ code: 1, status: 1 }));
+		await expect(
+			reconcilePendingShopPayments(database, fetcher, 1_000),
+		).resolves.toEqual({ scanned: 1, succeeded: 1, pending: 0, failed: 0 });
+		expect(fetcher).toHaveBeenCalledTimes(1);
+		await expect(paymentState(database)).resolves.toMatchObject({
+			order_status: "paid",
+			payment_status: "succeeded",
+			receipts: 1,
 		});
 	});
 

@@ -449,6 +449,68 @@ export async function handleShopPaymentWebhook(
 	};
 }
 
+export async function reconcilePendingShopPayments(
+	db: D1Database,
+	fetcher: typeof fetch = fetch,
+	now = Date.now(),
+	limit = 20,
+) {
+	const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+	const attempts = await db
+		.prepare(
+			`SELECT pa.id,pa.channel_id,pa.provider_payment_id,pa.amount_minor,pa.currency,
+			 pc.provider,pc.credential_encrypted
+			 FROM payment_attempts pa JOIN payment_channels pc ON pc.id=pa.channel_id
+			 JOIN shop_orders o ON o.id=pa.order_id
+			 WHERE pa.status IN ('pending','expired')
+			  AND o.status IN ('pending_payment','expired')
+			  AND pa.provider_payment_id IS NOT NULL
+			  AND pc.enabled=1 AND pc.provider IN ('epay','gmpay')
+			  AND pa.created_at>=?
+			 ORDER BY pa.created_at,pa.id LIMIT ?`,
+		)
+		.bind(now - 86_400_000, boundedLimit)
+		.all<{
+			id: string;
+			channel_id: string;
+			provider_payment_id: string;
+			amount_minor: string;
+			currency: string;
+			provider: string;
+			credential_encrypted: string | null;
+		}>();
+	let succeeded = 0;
+	let pending = 0;
+	let failed = 0;
+	for (const attempt of attempts.results) {
+		try {
+			const credential = await loadCredential(db, attempt.credential_encrypted);
+			const query = await getPaymentProvider(attempt.provider).queryPayment(
+				attempt.provider_payment_id,
+				credential,
+				fetcher,
+			);
+			if (query.status !== "succeeded") {
+				pending += 1;
+				continue;
+			}
+			await processShopPaymentEvent(db, attempt.channel_id, {
+				providerEventId: `payment-reconcile:${attempt.channel_id}:${attempt.id}`,
+				providerPaymentId: attempt.provider_payment_id,
+				type: "payment_succeeded",
+				amountMinor: query.amountMinor ?? attempt.amount_minor,
+				currency: query.currency ?? attempt.currency,
+				merchantOrderId: null,
+				payloadDigest: `payment-reconcile:${attempt.id}`,
+			});
+			succeeded += 1;
+		} catch {
+			failed += 1;
+		}
+	}
+	return { scanned: attempts.results.length, succeeded, pending, failed };
+}
+
 export async function processShopPaymentEvent(
 	db: D1Database,
 	channelId: string,
