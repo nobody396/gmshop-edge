@@ -45,6 +45,7 @@ export type AuthEnv = {
 };
 
 export const trustedAccountLinkingProviders = ["telegram", "google"] as const;
+export const requireLocalEmailVerificationForTrustedLinking = false;
 
 export function createAuth(db: AppDb, env: AuthEnv) {
 	const authProviders = env.AUTH_PROVIDERS ?? [defaultCredentialProvider];
@@ -78,6 +79,8 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 			accountLinking: {
 				enabled: true,
 				trustedProviders: [...trustedAccountLinkingProviders],
+				requireLocalEmailVerified:
+					requireLocalEmailVerificationForTrustedLinking,
 				allowDifferentEmails: true,
 			},
 		},
