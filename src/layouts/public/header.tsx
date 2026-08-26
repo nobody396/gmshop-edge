@@ -101,7 +101,7 @@ export function PublicHeader() {
 	);
 }
 
-const telegramSupportUrl = "https://t.me/bettercalljerrys";
+const telegramSupportUrl = "https://t.me/laoshirenai_support_bot";
 const telegramChannelUrl = "https://t.me/laoshirenai";
 
 function CustomerSupport() {
@@ -121,7 +121,7 @@ function CustomerSupport() {
 					</p>
 				</div>
 				<SupportLink
-					description="@bettercalljerrys"
+					description="@laoshirenai_support_bot"
 					href={telegramSupportUrl}
 					icon={Send}
 					label={m.store_support_private()}

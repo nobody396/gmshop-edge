@@ -116,6 +116,21 @@ describe("public header settings", () => {
 		expect(container.querySelectorAll('a[href="/sign-in"]')).toHaveLength(1);
 	});
 
+	it("routes Telegram support through the storefront bot, not a private account", () => {
+		act(() => root.render(<PublicHeader />));
+		const support = Array.from(container.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support"),
+		);
+		act(() => support?.click());
+
+		expect(
+			document.querySelector('a[href="https://t.me/laoshirenai_support_bot"]'),
+		).not.toBeNull();
+		expect(
+			document.querySelector('a[href="https://t.me/bettercalljerrys"]'),
+		).toBeNull();
+	});
+
 	it("replaces settings with the avatar and hides internal identity email", () => {
 		mocks.root = true;
 		mocks.session.data = {
