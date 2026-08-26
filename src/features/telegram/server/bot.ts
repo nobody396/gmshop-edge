@@ -15,7 +15,10 @@ import {
 	telegramSettingKeys,
 	upsertTelegramSetting,
 } from "../settings";
-import { updateSupportAdministratorMirror } from "./support-admins";
+import {
+	authorizeSupportAdministrator,
+	updateSupportAdministratorMirror,
+} from "./support-admins";
 import { miniAppUrl, telegramRuntime } from "./sync";
 import {
 	closeWebConversationFromTopic,
@@ -582,17 +585,11 @@ async function relayAdministratorMessage(db: D1Database, ctx: Context) {
 	)
 		return;
 	if (!message.message_thread_id) return;
-	const fresh =
-		settings.lastAdminSyncAt &&
-		settings.lastAdminSyncAt >= Date.now() - 180_000;
-	if (!fresh) return;
-	const administrator = await db
-		.prepare(
-			`SELECT 1 AS allowed FROM telegram_support_administrators
-			 WHERE support_chat_id = ? AND telegram_user_id = ? LIMIT 1`,
-		)
-		.bind(settings.supportChatId, String(ctx.from.id))
-		.first<{ allowed: number }>();
+	const administrator = await authorizeSupportAdministrator(db, ctx.api, {
+		supportChatId: settings.supportChatId,
+		telegramUserId: String(ctx.from.id),
+		lastAdminSyncAt: settings.lastAdminSyncAt,
+	});
 	if (!administrator) return;
 	const webConversation = await findWebConversationByTopic(
 		db,

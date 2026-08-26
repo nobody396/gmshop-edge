@@ -16,6 +16,7 @@ import { authClient } from "#/features/auth/auth-client";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
+import { webSupportPollIntervalMs } from "../web-support-contract";
 import {
 	decryptWebSupportReply,
 	getWebSupportIdentity,
@@ -129,11 +130,23 @@ export function WebSupportWidget() {
 	useEffect(() => {
 		void poll();
 		if (!open) return;
-		const interval = window.setInterval(() => {
+		const pollWhenAvailable = () => {
 			if (document.visibilityState === "visible" && navigator.onLine)
 				void poll();
-		}, 3000);
-		return () => window.clearInterval(interval);
+		};
+		const interval = window.setInterval(
+			pollWhenAvailable,
+			webSupportPollIntervalMs,
+		);
+		window.addEventListener("focus", pollWhenAvailable);
+		window.addEventListener("online", pollWhenAvailable);
+		document.addEventListener("visibilitychange", pollWhenAvailable);
+		return () => {
+			window.clearInterval(interval);
+			window.removeEventListener("focus", pollWhenAvailable);
+			window.removeEventListener("online", pollWhenAvailable);
+			document.removeEventListener("visibilitychange", pollWhenAvailable);
+		};
 	}, [open, poll]);
 
 	useEffect(() => {

@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
 	parseDevice,
 	webSupportConversationSchema,
+	webSupportPollIntervalMs,
 } from "#/features/telegram/web-support-contract";
 
 describe("Telegram web support", () => {
+	it("checks for administrator replies within one second", () => {
+		expect(webSupportPollIntervalMs).toBe(1_000);
+	});
+
 	it("classifies common desktop, phone, and tablet user agents", () => {
 		expect(
 			parseDevice(
