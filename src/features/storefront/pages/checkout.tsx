@@ -41,6 +41,7 @@ import {
 	trackCommerceEvent,
 } from "#/features/storefront/commerce-events";
 import { writeGuestOrderEmail } from "#/features/storefront/order-access-storage";
+import { safeStorePaymentUrl } from "#/features/storefront/payment-url";
 import {
 	getStoreCartFn,
 	previewStoreCartFn,
@@ -299,8 +300,19 @@ export function StorefrontCheckoutPage() {
 
 	const checkout = useMutation({
 		mutationFn: checkoutStoreOrderFn,
-		onSuccess: ({ accountOrder, order }) => {
+		onSuccess: ({ accountOrder, order, payment }) => {
 			if (!buyNow && !session.data?.user) writeLocalCart([]);
+			const selectedProvider = channels.data?.find(
+				(channel) => channel.id === paymentChannelId,
+			)?.provider;
+			const hostedCheckoutUrl =
+				selectedProvider === "gmpay"
+					? safeStorePaymentUrl(payment?.checkoutUrl ?? null)
+					: null;
+			if (hostedCheckoutUrl) {
+				window.location.assign(hostedCheckoutUrl);
+				return;
+			}
 			if (accountOrder) {
 				void navigate({
 					to: "/account/orders/$orderNumber",
