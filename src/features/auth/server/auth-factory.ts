@@ -44,6 +44,8 @@ export type AuthEnv = {
 	SESSION_MAX_AGE_SECONDS?: number;
 };
 
+export const trustedAccountLinkingProviders = ["telegram", "google"] as const;
+
 export function createAuth(db: AppDb, env: AuthEnv) {
 	const authProviders = env.AUTH_PROVIDERS ?? [defaultCredentialProvider];
 	const emailProvider = authProviders.find(
@@ -75,7 +77,7 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 		account: {
 			accountLinking: {
 				enabled: true,
-				trustedProviders: ["telegram"],
+				trustedProviders: [...trustedAccountLinkingProviders],
 				allowDifferentEmails: true,
 			},
 		},
