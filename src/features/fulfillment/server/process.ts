@@ -179,6 +179,107 @@ type ManualDeliveryContext = Omit<DeliveryContext, "status"> & {
 	fulfillment_source: string;
 };
 
+export async function startManualDelivery(db: D1Database, deliveryId: string) {
+	const delivery = await db
+		.prepare(
+			`SELECT dr.id, dr.status, dr.delivery_type, dr.content_encrypted,
+			 dr.order_item_id, item.fulfillment_source,
+			 oi.order_id, oi.quantity, o.status AS order_status, o.version AS order_version
+			 FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
+			 JOIN product_sellable_items item ON item.id = oi.sellable_item_id
+			 JOIN shop_orders o ON o.id = oi.order_id WHERE dr.id = ? LIMIT 1`,
+		)
+		.bind(deliveryId)
+		.first<ManualDeliveryContext>();
+	if (!delivery)
+		throw new DomainError("delivery_not_found", 404, "Delivery not found");
+	if (
+		delivery.delivery_type !== "stock" ||
+		delivery.fulfillment_source !== "manual"
+	)
+		throw new DomainError(
+			"delivery_not_manual",
+			409,
+			"Delivery is not configured for manual fulfillment",
+		);
+	if (delivery.status === "processing")
+		return {
+			id: delivery.id,
+			status: "processing" as const,
+			orderStatus: delivery.order_status,
+			duplicate: true,
+		};
+	if (delivery.status !== "awaiting_supply")
+		throw new DomainError(
+			"manual_delivery_not_awaiting_supply",
+			409,
+			"Manual delivery is not awaiting supply",
+		);
+	if (!["paid", "fulfilling"].includes(delivery.order_status))
+		throw new DomainError(
+			"manual_delivery_order_not_ready",
+			409,
+			"Order is not ready for manual processing",
+		);
+	const now = Date.now();
+	const nextOrderStatus = "fulfilling";
+	const nextVersion = delivery.order_version + 1;
+	const results = await db.batch([
+		db
+			.prepare(
+				`UPDATE delivery_records SET status = 'processing', updated_at = ?
+				 WHERE id = ? AND status = 'awaiting_supply'`,
+			)
+			.bind(now, delivery.id),
+		db
+			.prepare(
+				`UPDATE shop_orders SET status = ?, version = ?, updated_at = ?
+				 WHERE id = ? AND status = ? AND version = ?`,
+			)
+			.bind(
+				nextOrderStatus,
+				nextVersion,
+				now,
+				delivery.order_id,
+				delivery.order_status,
+				delivery.order_version,
+			),
+		db
+			.prepare(
+				`INSERT INTO shop_order_events
+				 (id, order_id, event_type, visibility, from_status, to_status, order_version,
+				  actor_type, created_at)
+				 SELECT ?, id, 'fulfillment_started', 'customer', ?, ?, ?, 'admin', ?
+				 FROM shop_orders WHERE id = ? AND status = ? AND version = ?`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				delivery.order_status,
+				nextOrderStatus,
+				nextVersion,
+				now,
+				delivery.order_id,
+				nextOrderStatus,
+				nextVersion,
+			),
+	]);
+	if (
+		Number(results[0]?.meta.changes ?? 0) !== 1 ||
+		Number(results[1]?.meta.changes ?? 0) !== 1
+	)
+		throw new DomainError(
+			"manual_delivery_start_conflict",
+			409,
+			"Manual delivery changed concurrently",
+		);
+	return {
+		id: delivery.id,
+		status: "processing" as const,
+		orderStatus: nextOrderStatus,
+		duplicate: false,
+	};
+}
+
 export async function completeManualDelivery(
 	db: D1Database,
 	deliveryId: string,
@@ -215,11 +316,11 @@ export async function completeManualDelivery(
 			409,
 			"Delivery is not configured for manual fulfillment",
 		);
-	if (delivery.status !== "awaiting_supply")
+	if (!["awaiting_supply", "processing"].includes(delivery.status))
 		throw new DomainError(
 			"manual_delivery_not_awaiting_supply",
 			409,
-			"Manual delivery is not awaiting supply",
+			"Manual delivery is not awaiting supply or processing",
 		);
 	const runtime = await loadRuntimeConfig(db);
 	if (!runtime.commerceSecret)
@@ -241,7 +342,7 @@ export async function completeManualDelivery(
 				`UPDATE delivery_records SET status = 'delivered', content_encrypted = ?,
 				 content_key_version = 1, attempt_count = attempt_count + 1,
 				 next_attempt_at = NULL, error_code = NULL, delivered_at = ?, updated_at = ?
-				 WHERE id = ? AND status = 'awaiting_supply'`,
+				 WHERE id = ? AND status IN ('awaiting_supply', 'processing')`,
 			)
 			.bind(encrypted, now, now, delivery.id),
 		db

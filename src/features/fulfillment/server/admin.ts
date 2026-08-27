@@ -7,7 +7,10 @@ import { sensitiveProofSchema } from "#/features/auth/reauthentication-schema";
 import { verifySensitiveAdminAction } from "#/features/auth/server/reauthenticate";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
-import { completeManualDelivery } from "#/features/fulfillment/server/process";
+import {
+	completeManualDelivery,
+	startManualDelivery,
+} from "#/features/fulfillment/server/process";
 import { DomainError } from "#/lib/domain-error";
 import { getCloudflareEnv } from "#/server/db.server";
 import { loadRequestRuntimeConfig } from "#/server/runtime-config";
@@ -224,6 +227,34 @@ export const retryDeliveryFn = createServerFn({ method: "POST" })
 		if (context.env.COMMERCE_QUEUE)
 			await publishPendingDeliveries(context.db, context.env.COMMERCE_QUEUE, 1);
 		return { id: data.id, status: "pending" as const };
+	});
+
+export const startManualDeliveryFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof idInput>) => idInput.parse(input))
+	.handler(async ({ data }) => {
+		const context = await deliveryContext("update");
+		const result = await startManualDelivery(context.db, data.id);
+		if (!result.duplicate) {
+			const now = Date.now();
+			await context.db
+				.prepare(
+					`INSERT INTO audit_logs
+					 (id, actor_user_id, action, target_type, target_id, request_id,
+					  ip_address, after, created_at)
+					 VALUES (?, ?, 'delivery.manual_processing_started', 'delivery', ?, ?, ?, ?, ?)`,
+				)
+				.bind(
+					crypto.randomUUID(),
+					context.user.id,
+					data.id,
+					context.request.headers.get("x-request-id"),
+					context.request.headers.get("cf-connecting-ip"),
+					JSON.stringify({ status: result.status }),
+					now,
+				)
+				.run();
+		}
+		return result;
 	});
 
 export const completeManualDeliveryFn = createServerFn({ method: "POST" })

@@ -4,6 +4,7 @@ import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import {
 	completeManualDelivery,
 	processDelivery,
+	startManualDelivery,
 } from "#/features/fulfillment/server/process";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import {
@@ -418,6 +419,20 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 			status: "awaiting_supply",
 			supplier_orders: 0,
 			delivery_outbox: 0,
+		});
+		await expect(
+			startManualDelivery(database, waiting?.id ?? ""),
+		).resolves.toMatchObject({
+			status: "processing",
+			orderStatus: "fulfilling",
+			duplicate: false,
+		});
+		await expect(
+			startManualDelivery(database, waiting?.id ?? ""),
+		).resolves.toMatchObject({
+			status: "processing",
+			orderStatus: "fulfilling",
+			duplicate: true,
 		});
 		await expect(
 			completeManualDelivery(
