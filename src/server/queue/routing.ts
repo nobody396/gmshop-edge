@@ -1,6 +1,7 @@
 import { dispatchBuild } from "#/features/builds/providers/github-actions";
 import { processDelivery } from "#/features/fulfillment/server/process";
 import { processNotificationDelivery } from "#/features/notifications/server/delivery";
+import { flushPendingCommerceNotifications } from "#/features/notifications/server/flush";
 import { processShopRefund } from "#/features/shop-payments/server/refunds";
 import { processSupplierOrder } from "#/features/suppliers/server/process";
 import type { CommerceQueueMessage } from "#/server/queue/types";
@@ -18,6 +19,7 @@ export async function handleQueue(
 			)),
 		);
 	}
+	await flushPendingCommerceNotifications(env.DB, env.COMMERCE_QUEUE, 100);
 	const oldest = batch.messages.reduce(
 		(ageMs, message) =>
 			Math.max(ageMs, Date.now() - message.timestamp.getTime()),

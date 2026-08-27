@@ -1,4 +1,5 @@
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
+import { flushPendingCommerceNotifications } from "#/features/notifications/server/flush";
 import { handleShopPaymentWebhook } from "#/features/shop-payments/server/service";
 import { publishPendingSupplierOrders } from "#/features/suppliers/server/outbox";
 import { DomainError } from "#/lib/domain-error";
@@ -12,6 +13,7 @@ export async function handleShopPaymentWebhookRequest(
 		const result = await handleShopPaymentWebhook(request, channelId, env.DB);
 		await publishPendingDeliveries(env.DB, env.COMMERCE_QUEUE);
 		await publishPendingSupplierOrders(env.DB, env.COMMERCE_QUEUE);
+		await flushPendingCommerceNotifications(env.DB, env.COMMERCE_QUEUE);
 		if (result.provider === "gmpay")
 			return new Response("ok", {
 				headers: {
