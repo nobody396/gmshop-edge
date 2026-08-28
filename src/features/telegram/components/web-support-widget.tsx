@@ -16,7 +16,10 @@ import { authClient } from "#/features/auth/auth-client";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
-import { webSupportPollIntervalMs } from "../web-support-contract";
+import {
+	webSupportOpenEvent,
+	webSupportPollIntervalMs,
+} from "../web-support-contract";
 import {
 	decryptWebSupportReply,
 	getWebSupportIdentity,
@@ -77,6 +80,12 @@ export function WebSupportWidget() {
 	useEffect(() => {
 		if (sessionEmail) setEmail(sessionEmail);
 	}, [sessionEmail]);
+
+	useEffect(() => {
+		const openSupport = () => setOpen(true);
+		window.addEventListener(webSupportOpenEvent, openSupport);
+		return () => window.removeEventListener(webSupportOpenEvent, openSupport);
+	}, []);
 
 	const poll = useCallback(async () => {
 		if (!open || !["active", "closing"].includes(status ?? "")) return;

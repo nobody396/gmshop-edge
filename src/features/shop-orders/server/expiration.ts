@@ -54,24 +54,6 @@ export async function expireStoreOrders(
 					 ON CONFLICT(order_id, order_version) DO NOTHING`,
 				)
 				.bind(crypto.randomUUID(), nextVersion, now, order.id, nextVersion),
-			db
-				.prepare(
-					`INSERT INTO outbox_events
-				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
-				  status, attempt_count, created_at, updated_at)
-				 SELECT ?, 'shop_order.expired', 'shop_order', id, ?, ?, 'pending', 0, ?, ?
-					 FROM shop_orders WHERE id = ? AND status = 'expired' AND version = ?
-					 ON CONFLICT(idempotency_key) DO NOTHING`,
-				)
-				.bind(
-					crypto.randomUUID(),
-					`shop-order-expired:${order.id}:${nextVersion}`,
-					JSON.stringify({ orderId: order.id, version: nextVersion }),
-					now,
-					now,
-					order.id,
-					nextVersion,
-				),
 		]);
 		expired += Number(results[0]?.meta.changes ?? 0);
 	}

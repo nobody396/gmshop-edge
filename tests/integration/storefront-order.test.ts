@@ -779,7 +779,9 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 		const state = await database
 			.prepare(
 				`SELECT o.status, o.version, c.used_count, cr.status AS redemption_status,
-				 (SELECT COUNT(*) FROM shop_order_events WHERE order_id = o.id AND event_type = 'order_expired') AS events
+				 (SELECT COUNT(*) FROM shop_order_events WHERE order_id = o.id AND event_type = 'order_expired') AS events,
+				 (SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = o.id
+				  AND event_type = 'shop_order.expired') AS orphaned_outbox_events
 				 FROM shop_orders o JOIN coupons c ON c.id = o.coupon_id
 				 JOIN coupon_redemptions cr ON cr.order_id = o.id WHERE o.id = ?`,
 			)
@@ -791,6 +793,7 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 			used_count: 0,
 			redemption_status: "released",
 			events: 1,
+			orphaned_outbox_events: 0,
 		});
 	});
 });
