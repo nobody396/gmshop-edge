@@ -1,5 +1,12 @@
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+	encryptFeishuAppSecret,
+	feishuAlertSettingKeys,
+	loadFeishuAlertSettings,
+	resolveFeishuAlertCredentials,
+	upsertFeishuAlertSetting,
+} from "#/features/telegram/server/feishu-alerts";
 import { loadRequestAllowedHosts } from "#/server/middleware/authority";
 import {
 	createInitialRuntimeConfig,
@@ -82,6 +89,58 @@ describe("database-backed runtime configuration", () => {
 				.filter((entry) => entry.key !== "runtime.better_auth_url")
 				.every((entry) => entry.isSecret && entry.value.length >= 32),
 		).toBe(true);
+	});
+
+	it("encrypts Feishu application credentials and exposes only configured state", async () => {
+		const runtimeSecret = createInitialRuntimeConfig().dataEncryptionSecret;
+		await db
+			.prepare(
+				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+				 VALUES ('runtime.data_encryption_secret', ?, 1, 3, 3)
+				 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			)
+			.bind(JSON.stringify(runtimeSecret))
+			.run();
+		const encrypted = await encryptFeishuAppSecret(db, "test-only-app-secret");
+		await db.batch([
+			upsertFeishuAlertSetting(db, feishuAlertSettingKeys.enabled, true, 3),
+			upsertFeishuAlertSetting(
+				db,
+				feishuAlertSettingKeys.appId,
+				"cli_1234567890abcdef",
+				3,
+			),
+			upsertFeishuAlertSetting(
+				db,
+				feishuAlertSettingKeys.chatId,
+				"oc_1234567890abcdef",
+				3,
+			),
+			upsertFeishuAlertSetting(
+				db,
+				feishuAlertSettingKeys.appSecret,
+				encrypted,
+				3,
+				true,
+			),
+		]);
+		await expect(loadFeishuAlertSettings(db)).resolves.toMatchObject({
+			enabled: true,
+			appId: "cli_1234567890abcdef",
+			chatId: "oc_1234567890abcdef",
+			hasAppSecret: true,
+		});
+		await expect(resolveFeishuAlertCredentials(db)).resolves.toEqual({
+			appId: "cli_1234567890abcdef",
+			appSecret: "test-only-app-secret",
+			chatId: "oc_1234567890abcdef",
+		});
+		const stored = await db
+			.prepare("SELECT value, is_secret FROM system_settings WHERE key = ?")
+			.bind(feishuAlertSettingKeys.appSecret)
+			.first<{ value: string; is_secret: number }>();
+		expect(stored?.is_secret).toBe(1);
+		expect(stored?.value).not.toContain("test-only-app-secret");
 	});
 
 	it("deduplicates runtime settings only within one Request object", async () => {
