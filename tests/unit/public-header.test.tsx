@@ -116,7 +116,7 @@ describe("public header settings", () => {
 		expect(container.querySelectorAll('a[href="/sign-in"]')).toHaveLength(1);
 	});
 
-	it("routes Telegram support through the storefront bot, not a private account", () => {
+	it("shows online, WeChat, and private Telegram support without a public channel", () => {
 		act(() => root.render(<PublicHeader />));
 		const support = Array.from(container.querySelectorAll("button")).find(
 			(button) => button.textContent?.includes("store_support"),
@@ -129,6 +129,33 @@ describe("public header settings", () => {
 		expect(
 			document.querySelector('a[href="https://t.me/bettercalljerrys"]'),
 		).toBeNull();
+		expect(
+			document.querySelector('a[href="https://t.me/laoshirenai"]'),
+		).toBeNull();
+		expect(
+			document.querySelector(
+				'img[src="/support/wechat-jerrys.png"][alt="store_support_wechat_qr_alt"]',
+			),
+		).not.toBeNull();
+		expect(document.body.textContent).toContain("store_support_online");
+	});
+
+	it("opens the embedded web support conversation from the support menu", () => {
+		const opened = vi.fn();
+		window.addEventListener("gmshop:web-support:open", opened);
+		act(() => root.render(<PublicHeader />));
+		const support = Array.from(container.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support"),
+		);
+		act(() => support?.click());
+		const online = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support_online"),
+		);
+		act(() => online?.click());
+
+		expect(opened).toHaveBeenCalledTimes(1);
+		expect(document.querySelector('[data-slot="popover-content"]')).toBeNull();
+		window.removeEventListener("gmshop:web-support:open", opened);
 	});
 
 	it("replaces settings with the avatar and hides internal identity email", () => {
