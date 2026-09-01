@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Settings2 } from "lucide-react";
+import { BellRing, RefreshCw, Settings2 } from "lucide-react";
 import { useRef } from "react";
 import { toast } from "sonner";
 import { ProButton } from "#/components/pro/base/button";
@@ -15,8 +15,10 @@ import { formatDateTime } from "#/lib/format";
 import { m } from "#/paraglide/messages";
 import {
 	getTelegramSettingsFn,
+	saveFeishuAlertSettingsFn,
 	saveTelegramSettingsFn,
 	syncTelegramBotFn,
+	testFeishuAlertFn,
 } from "../server/admin";
 
 const queryKey = ["admin", "telegram-settings"] as const;
@@ -44,6 +46,7 @@ export function TelegramSettingsPage() {
 						{data ? (
 							<>
 								<SupportSettingsModal data={data} onSaved={refresh} />
+								<FeishuAlertSettingsModal data={data} onSaved={refresh} />
 								<SyncSettingsModal
 									data={data}
 									onSaved={refresh}
@@ -76,6 +79,119 @@ export function TelegramSettingsPage() {
 				/>
 			</div>
 		</div>
+	);
+}
+
+function FeishuAlertSettingsModal({
+	data,
+	onSaved,
+}: {
+	data: Awaited<ReturnType<typeof getTelegramSettingsFn>>;
+	onSaved: () => Promise<unknown>;
+}) {
+	const testAfterSave = useRef(false);
+	return (
+		<ModalForm
+			title={m.telegram_feishu_alerts_title()}
+			description={m.telegram_feishu_alerts_description()}
+			trigger={
+				<ProButton variant="outline">
+					<BellRing />
+					{m.telegram_feishu_alerts_action()}
+				</ProButton>
+			}
+			schema={[
+				{
+					name: "enabled",
+					label: m.telegram_feishu_alerts_enabled(),
+					tooltip: m.telegram_feishu_alerts_description(),
+					valueType: "switch" as const,
+					required: true,
+					render: switchField(m.telegram_feishu_alerts_enabled()),
+					formItemProps: { className: "md:col-span-2" },
+				},
+				{
+					name: "appId",
+					label: m.telegram_feishu_app_id(),
+					required: false,
+					fieldProps: { placeholder: "cli_xxxxxxxxxxxxxxxx" },
+				},
+				{
+					name: "chatId",
+					label: m.telegram_feishu_chat_id(),
+					required: false,
+					fieldProps: { placeholder: "oc_xxxxxxxxxxxxxxxx" },
+				},
+				{
+					name: "appSecret",
+					label: m.telegram_feishu_app_secret(),
+					valueType: "password" as const,
+					required: false,
+					description: m.telegram_feishu_secret_preserve_description(),
+					fieldProps: {
+						placeholder: data.feishuAlerts.hasAppSecret
+							? m.settings_secret_configured()
+							: undefined,
+					},
+					formItemProps: { className: "md:col-span-2" },
+				},
+			]}
+			initialValues={{
+				enabled: data.feishuAlerts.enabled,
+				appId: data.feishuAlerts.appId ?? "",
+				appSecret: "",
+				chatId: data.feishuAlerts.chatId ?? "",
+			}}
+			fieldsClassName="grid grid-cols-1 gap-5 space-y-0 md:grid-cols-2"
+			submitter={({ submitting }) => (
+				<>
+					<ProButton
+						type="submit"
+						variant="outline"
+						disabled={submitting}
+						loading={submitting && testAfterSave.current}
+						onClick={() => {
+							testAfterSave.current = true;
+						}}
+					>
+						<BellRing />
+						{m.telegram_feishu_test()}
+					</ProButton>
+					<ProButton
+						type="submit"
+						disabled={submitting}
+						loading={submitting && !testAfterSave.current}
+						onClick={() => {
+							testAfterSave.current = false;
+						}}
+					>
+						{m.settings_save_changes()}
+					</ProButton>
+				</>
+			)}
+			onFinish={async (values) => {
+				try {
+					const appSecret = String(values.appSecret ?? "").trim();
+					await saveFeishuAlertSettingsFn({
+						data: {
+							enabled: formBooleanValue(values.enabled),
+							appId: String(values.appId ?? "").trim() || null,
+							chatId: String(values.chatId ?? "").trim() || null,
+							...(appSecret ? { appSecret } : {}),
+						},
+					});
+					await onSaved();
+					if (testAfterSave.current) {
+						await testFeishuAlertFn();
+						await onSaved();
+						toast.success(m.telegram_feishu_test_succeeded());
+					} else toast.success(m.settings_saved());
+				} finally {
+					testAfterSave.current = false;
+				}
+			}}
+			onFinishFailed={(error) => toast.error(settingsErrorMessage(error))}
+		/>
 	);
 }
 
@@ -372,6 +488,24 @@ function supportStatusItems(
 					? m.telegram_support_status_enabled()
 					: m.telegram_support_status_disabled()
 				: undefined,
+		},
+		{
+			label: m.telegram_feishu_alerts_enabled(),
+			value: data
+				? data.feishuAlerts.enabled
+					? m.telegram_support_status_enabled()
+					: m.telegram_support_status_disabled()
+				: "—",
+		},
+		{
+			label: m.telegram_feishu_last_delivery(),
+			value: data?.feishuAlerts.lastErrorCode
+				? m.telegram_feishu_delivery_failed({
+						code: data.feishuAlerts.lastErrorCode,
+					})
+				: data?.feishuAlerts.lastSentAt
+					? formatDateTime(data.feishuAlerts.lastSentAt)
+					: m.telegram_feishu_not_sent(),
 		},
 		{
 			label: m.telegram_active_conversations(),

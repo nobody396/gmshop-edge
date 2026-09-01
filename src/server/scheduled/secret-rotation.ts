@@ -1,5 +1,9 @@
 import { authProviderSecretPurpose } from "#/features/auth/provider-settings";
 import { exchangeRateSyncSettingKeys } from "#/features/exchange-rates/server/sync";
+import {
+	feishuAlertSettingKeys,
+	feishuAppSecretPurpose,
+} from "#/features/telegram/server/feishu-alerts";
 import { reencryptSecret, secretKeyIds } from "#/lib/secrets";
 import type { RuntimeConfig } from "#/server/runtime-config";
 
@@ -86,6 +90,12 @@ export async function progressivelyReencryptSecrets(
 		db,
 		runtime.dataEncryptionSecret,
 		limitPerField,
+	);
+	rewritten += await reencryptSettingSecret(
+		db,
+		feishuAlertSettingKeys.appSecret,
+		feishuAppSecretPurpose,
+		runtime.dataEncryptionSecret,
 	);
 	rewritten += await reencryptJsonSecretMap(
 		db,
@@ -283,6 +293,38 @@ async function reencryptExchangeRateCredential(
 			Date.now(),
 			exchangeRateSyncSettingKeys.credential,
 		)
+		.run();
+	return Number(result.meta.changes ?? 0);
+}
+
+async function reencryptSettingSecret(
+	db: D1Database,
+	key: string,
+	purpose: string,
+	keyring: string,
+) {
+	if (!keyring) return 0;
+	const row = await db
+		.prepare(
+			"SELECT value FROM system_settings WHERE key = ? AND is_secret = 1 LIMIT 1",
+		)
+		.bind(key)
+		.first<{ value: string }>();
+	if (!row) return 0;
+	let encrypted: unknown;
+	try {
+		encrypted = JSON.parse(row.value);
+	} catch {
+		return 0;
+	}
+	if (typeof encrypted !== "string") return 0;
+	const rewritten = await reencryptSecret(encrypted, keyring, purpose);
+	if (!rewritten) return 0;
+	const result = await db
+		.prepare(
+			"UPDATE system_settings SET value = ?, updated_at = ? WHERE key = ?",
+		)
+		.bind(JSON.stringify(rewritten), Date.now(), key)
 		.run();
 	return Number(result.meta.changes ?? 0);
 }
