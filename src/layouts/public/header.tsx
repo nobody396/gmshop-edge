@@ -3,9 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+	ChevronRight,
 	ExternalLink,
 	Headphones,
-	Radio,
+	MessageCircle,
+	QrCode,
 	Send,
 	Settings,
 	ShoppingCart,
@@ -23,6 +25,7 @@ import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { getStorefrontAdminEntryFn } from "#/features/auth/server/session";
 import { useCurrency } from "#/features/exchange-rates/currency-context";
 import { useLocalCart } from "#/features/storefront/cart-storage";
+import { webSupportOpenEvent } from "#/features/telegram/web-support-contract";
 import useDialogState from "#/hooks/use-dialog-state";
 import { AppTitle } from "#/layouts/components/app-title";
 import { SignOutDialog } from "#/layouts/components/sign-out-dialog";
@@ -102,11 +105,12 @@ export function PublicHeader() {
 }
 
 const telegramSupportUrl = "https://t.me/laoshirenai_support_bot";
-const telegramChannelUrl = "https://t.me/laoshirenai";
+const wechatQrUrl = "/support/wechat-jerrys.png";
 
 function CustomerSupport() {
+	const [open, setOpen] = useState(false);
 	return (
-		<Popover>
+		<Popover open={open} onOpenChange={setOpen}>
 			<PopoverTrigger asChild>
 				<Button className="gap-2 rounded-full" variant="ghost">
 					<Headphones className="size-4" />
@@ -120,20 +124,83 @@ function CustomerSupport() {
 						{m.store_support_description()}
 					</p>
 				</div>
+				<SupportAction
+					description={m.store_support_online_description()}
+					icon={MessageCircle}
+					label={m.store_support_online()}
+					onClick={() => {
+						setOpen(false);
+						window.dispatchEvent(new Event(webSupportOpenEvent));
+					}}
+				/>
+				<div className="mx-1 my-1 rounded-2xl border bg-muted/30 p-3">
+					<div className="flex items-center gap-3">
+						<span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+							<QrCode className="size-4" />
+						</span>
+						<span className="min-w-0 flex-1">
+							<span className="block font-medium text-sm">
+								{m.store_support_wechat()}
+							</span>
+							<span className="block text-muted-foreground text-xs">
+								{m.store_support_wechat_description()}
+							</span>
+						</span>
+					</div>
+					<a
+						className="mt-3 block rounded-xl bg-white p-2 shadow-sm ring-1 ring-black/5 transition-transform hover:scale-[1.01]"
+						href={wechatQrUrl}
+						rel="noreferrer"
+						target="_blank"
+					>
+						<img
+							alt={m.store_support_wechat_qr_alt()}
+							className="mx-auto h-auto w-44 max-w-full"
+							height={620}
+							src={wechatQrUrl}
+							width={613}
+						/>
+					</a>
+				</div>
 				<SupportLink
 					description="@laoshirenai_support_bot"
 					href={telegramSupportUrl}
 					icon={Send}
 					label={m.store_support_private()}
 				/>
-				<SupportLink
-					description={m.store_support_channel_description()}
-					href={telegramChannelUrl}
-					icon={Radio}
-					label={m.store_support_channel()}
-				/>
 			</PopoverContent>
 		</Popover>
+	);
+}
+
+function SupportAction({
+	description,
+	icon: Icon,
+	label,
+	onClick,
+}: {
+	description: string;
+	icon: typeof MessageCircle;
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-start transition-colors hover:bg-muted"
+			onClick={onClick}
+			type="button"
+		>
+			<span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+				<Icon className="size-4" />
+			</span>
+			<span className="min-w-0 flex-1">
+				<span className="block font-medium text-sm">{label}</span>
+				<span className="block text-muted-foreground text-xs">
+					{description}
+				</span>
+			</span>
+			<ChevronRight className="size-4 text-muted-foreground" />
+		</button>
 	);
 }
 
