@@ -354,6 +354,66 @@ describe("supplier source synchronization", { timeout: 30_000 }, () => {
 			reference_cost_minor: "101",
 		});
 	});
+
+	it("refreshes a staged manual binding without enabling supplier fulfillment", async () => {
+		await db.batch([
+			db.prepare(
+				`INSERT INTO products
+				 (id, name, description, product_type, status, created_at, updated_at)
+				 VALUES ('manual-product', 'Manual title', 'Manual description',
+				  'stock', 'active', 1, 1)`,
+			),
+			db.prepare(
+				`INSERT INTO product_sellable_items
+				 (id, product_id, name, fulfillment_source, supplier_status,
+				  currency, currency_decimals, price_minor, cost_minor,
+				  created_at, updated_at)
+				 VALUES ('manual-item', 'manual-product', 'Manual SKU', 'manual',
+				  NULL, 'CNY', 2, '250', '100', 1, 1)`,
+			),
+			db.prepare(
+				`INSERT INTO supplier_bindings
+				 (id, sellable_item_id, provider, normalized_api_origin,
+				  protocol_version, upstream_product_id, upstream_sku_id,
+				  upstream_product_name, upstream_sku_name, reference_cost_minor,
+				  max_cost_minor, stock_quantity, remote_status, last_synced_at,
+				  enabled, created_at, updated_at)
+				 VALUES ('manual-binding', 'manual-item', 'dujiao_next',
+				  'https://supplier.example', '1.3.1-upstream-v1', '1', '2',
+				  'Old remote title', 'Old remote SKU', '100', '150', 1,
+				  'active', 1, 1, 1, 1)`,
+			),
+		]);
+		await syncSupplierSource({
+			db,
+			runtime,
+			source,
+			trigger: "manual",
+			now: 1_800_002_500_000,
+			fetcher: async (input) =>
+				new URL(String(input)).pathname.endsWith("/categories")
+					? categoriesResponse()
+					: catalogResponse(undefined, "1.20", "New remote title"),
+		});
+		const state = await db
+			.prepare(
+				`SELECT psi.fulfillment_source, psi.supplier_status,
+				        psi.cost_minor, sb.reference_cost_minor, sb.stock_quantity,
+				        sb.upstream_product_name
+				 FROM product_sellable_items psi
+				 JOIN supplier_bindings sb ON sb.sellable_item_id = psi.id
+				 WHERE psi.id = 'manual-item'`,
+			)
+			.first();
+		expect(state).toMatchObject({
+			fulfillment_source: "manual",
+			supplier_status: null,
+			cost_minor: "100",
+			reference_cost_minor: "120",
+			stock_quantity: 10,
+			upstream_product_name: "New remote title",
+		});
+	});
 });
 
 async function seedAccount(
