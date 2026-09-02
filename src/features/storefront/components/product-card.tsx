@@ -113,10 +113,14 @@ export function StorefrontProductCard({
 								</span>
 							) : null}
 						</div>
-						{product.salesCount > 0 || availability ? (
+						{product.syncedStockQuantity != null || availability ? (
 							<div className="text-right text-muted-foreground text-xs">
-								{product.salesCount > 0 ? (
-									<p>{m.store_sales({ count: product.salesCount })}</p>
+								{product.syncedStockQuantity != null ? (
+									<p className="flex items-center justify-end gap-1.5">
+										<span className="font-medium text-foreground/75">
+											{m.store_stock({ count: product.syncedStockQuantity })}
+										</span>
+									</p>
 								) : null}
 								{availability ? <p>{availability}</p> : null}
 							</div>

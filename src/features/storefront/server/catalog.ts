@@ -13,7 +13,10 @@ import {
 	localizeSellableItem,
 } from "../catalog-localizations";
 import { selectStorefrontProductRow } from "./product-query";
-import { storefrontStockExpression } from "./stock-availability";
+import {
+	storefrontStockExpression,
+	storefrontSyncedSupplierStockExpression,
+} from "./stock-availability";
 
 type Row = Record<string, unknown>;
 
@@ -77,6 +80,12 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				 EXISTS (SELECT 1 FROM product_sellable_items automatic_item
 				  WHERE automatic_item.product_id = p.id AND automatic_item.enabled = 1
 				   AND automatic_item.fulfillment_source <> 'manual') AS has_automatic_fulfillment,
+				 (SELECT SUM(${storefrontSyncedSupplierStockExpression("bound_item")})
+				  FROM product_sellable_items bound_item
+				  WHERE bound_item.product_id = p.id AND bound_item.enabled = 1
+				   AND EXISTS (SELECT 1 FROM supplier_bindings bound_binding
+				    WHERE bound_binding.sellable_item_id = bound_item.id
+				     AND bound_binding.enabled = 1)) AS synced_stock_quantity,
 				 ${storefrontStockExpression("p", "s")} AS available_stock,
 			 COALESCE((SELECT SUM(item.quantity) FROM shop_order_items item JOIN shop_orders sold_order ON sold_order.id = item.order_id WHERE item.product_id = p.id AND sold_order.status IN ('paid','completed','fulfilling','refunding','refunded')), 0) AS sales_count
 			 FROM products p
@@ -118,6 +127,10 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 					currency: String(row.currency),
 					currencyDecimals: Number(row.currency_decimals),
 					availableStock: Number(row.available_stock),
+					syncedStockQuantity:
+						row.synced_stock_quantity == null
+							? null
+							: Number(row.synced_stock_quantity),
 					hasManualFulfillment: Boolean(row.has_manual_fulfillment),
 					hasAutomaticFulfillment: Boolean(row.has_automatic_fulfillment),
 					salesCount: Number(row.sales_count),
@@ -138,17 +151,18 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 		const product = await selectStorefrontProductRow(db, data.productId);
 		if (!product)
 			throw new DomainError("product_not_found", 404, "Product not found");
-		const [itemsResult, inputsResult, mediaResult] = await db.batch([
-			db
-				.prepare(`SELECT sellableItem.*, sellableItem.id AS delivery_component_id,
+		const [itemsResult, inputsResult, mediaResult, channelPricesResult] =
+			await db.batch([
+				db
+					.prepare(`SELECT sellableItem.*, sellableItem.id AS delivery_component_id,
 			 product.product_type AS delivery_type,
 			 ${storefrontStockExpression("product", "sellableItem")} AS available_stock
 			 FROM product_sellable_items sellableItem JOIN products product ON product.id = sellableItem.product_id
 			 WHERE sellableItem.product_id = ? AND sellableItem.enabled = 1 ORDER BY sellableItem.sort_order, sellableItem.id`)
-				.bind(product.id),
-			db
-				.prepare(
-					`SELECT item.id AS delivery_component_id, version.id AS version_id,
+					.bind(product.id),
+				db
+					.prepare(
+						`SELECT item.id AS delivery_component_id, version.id AS version_id,
 					 version.version AS definition_version, version.schema_json
 					 FROM product_sellable_items item
 					 JOIN product_definition_versions version
@@ -156,14 +170,39 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 					 WHERE item.product_id = ? AND item.enabled = 1
 					  AND item.automation_provider IS NOT NULL
 					 ORDER BY item.sort_order, item.id`,
-				)
-				.bind(product.id),
-			db
-				.prepare(
-					"SELECT id, object_key, alt_text, created_at FROM product_media WHERE product_id = ? ORDER BY sort_order, id LIMIT 24",
-				)
-				.bind(product.id),
-		]);
+					)
+					.bind(product.id),
+				db
+					.prepare(
+						"SELECT id, object_key, alt_text, created_at FROM product_media WHERE product_id = ? ORDER BY sort_order, id LIMIT 24",
+					)
+					.bind(product.id),
+				db
+					.prepare(
+						`SELECT item.id AS sellable_item_id, channel.id, channel.name,
+					        channel.provider, channel.fee_bps,
+					        COALESCE(channel_price.price_minor, item.price_minor) AS price_minor
+					 FROM product_sellable_items item
+					 CROSS JOIN payment_channels channel
+					 LEFT JOIN sellable_item_channel_prices channel_price
+					  ON channel_price.sellable_item_id = item.id
+					  AND channel_price.channel_id = channel.id
+					  AND channel_price.enabled = 1
+					 WHERE item.product_id = ? AND item.enabled = 1
+					  AND channel.enabled = 1
+					 ORDER BY item.sort_order, item.id, channel.sort_order,
+					          channel.name, channel.id`,
+					)
+					.bind(product.id),
+			]);
+		const channelPrices = rows(channelPricesResult) as Array<{
+			sellable_item_id: string;
+			id: string;
+			name: string;
+			provider: string;
+			fee_bps: number;
+			price_minor: string;
+		}>;
 		const localizedProduct = localizeProduct(String(product.id), data.locale, {
 			name: String(product.name),
 			description:
@@ -182,7 +221,13 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 				? `/api/shop/products/${product.id}/cover?v=${product.updated_at}`
 				: null,
 			sellableItems: rows(itemsResult).map((row) =>
-				presentSellableItem(row, data.locale),
+				presentSellableItem(
+					row,
+					data.locale,
+					channelPrices.filter(
+						(price) => price.sellable_item_id === String(row.id),
+					),
+				),
 			),
 			inputs: presentInputs(rows(inputsResult)),
 			media: rows(mediaResult).map((row) => ({
@@ -194,7 +239,17 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 		};
 	});
 
-function presentSellableItem(row: Row, locale: SupportedLocale) {
+function presentSellableItem(
+	row: Row,
+	locale: SupportedLocale,
+	channelPrices: Array<{
+		id: string;
+		name: string;
+		provider: string;
+		fee_bps: number;
+		price_minor: string;
+	}>,
+) {
 	const fallbackPolicy = parseSellableItemPolicy(row.policy_json);
 	const localized = localizeSellableItem(
 		String(row.id),
@@ -236,6 +291,13 @@ function presentSellableItem(row: Row, locale: SupportedLocale) {
 		showOnOrderPage: Boolean(row.show_on_order_page),
 		allowResend: Boolean(row.allow_resend),
 		availableStock: Number(row.available_stock),
+		channelPrices: channelPrices.map((price) => ({
+			id: String(price.id),
+			name: String(price.name),
+			provider: String(price.provider),
+			feeBps: Number(price.fee_bps),
+			priceMinor: String(price.price_minor),
+		})),
 		policy: localized.policy,
 	};
 }

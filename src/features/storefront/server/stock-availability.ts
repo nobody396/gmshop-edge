@@ -4,10 +4,27 @@ export function storefrontStockExpression(
 	productAlias: string,
 	itemAlias: string,
 ) {
+	const syncedSupplierStock =
+		storefrontSyncedSupplierStockExpression(itemAlias);
 	return `CASE
 		WHEN ${productAlias}.product_type <> 'stock' THEN -1
+		WHEN ${itemAlias}.fulfillment_source = 'manual' AND EXISTS (
+			SELECT 1 FROM supplier_bindings manual_binding
+			WHERE manual_binding.sellable_item_id = ${itemAlias}.id
+			 AND manual_binding.enabled = 1
+		) THEN ${syncedSupplierStock}
 		WHEN ${itemAlias}.fulfillment_source = 'manual' THEN -1
-		WHEN ${itemAlias}.fulfillment_source = 'supplier' THEN COALESCE((
+		WHEN ${itemAlias}.fulfillment_source = 'supplier' THEN ${syncedSupplierStock}
+		ELSE (
+		 SELECT COUNT(*) FROM stock_entries secret
+		 WHERE secret.sellable_item_id = ${itemAlias}.id
+		  AND secret.status = 'available'
+		)
+	END`;
+}
+
+export function storefrontSyncedSupplierStockExpression(itemAlias: string) {
+	return `COALESCE((
 			SELECT binding.stock_quantity
 			FROM supplier_bindings binding
 			WHERE binding.sellable_item_id = ${itemAlias}.id
@@ -32,13 +49,7 @@ export function storefrontStockExpression(
 			   AND account.balance_minor IS NOT NULL
 			 )
 			LIMIT 1
-		), 0)
-		ELSE (
-		 SELECT COUNT(*) FROM stock_entries secret
-		 WHERE secret.sellable_item_id = ${itemAlias}.id
-		  AND secret.status = 'available'
-		)
-	END`;
+		), 0)`;
 }
 
 export { SUPPLIER_SNAPSHOT_MAX_AGE_MS };

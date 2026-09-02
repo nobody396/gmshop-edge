@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
 	ArrowLeft,
+	BadgePercent,
+	BookOpenCheck,
 	Boxes,
 	ChevronLeft,
 	ChevronRight,
@@ -12,6 +14,7 @@ import {
 	LogIn,
 	Minus,
 	PackageCheck,
+	PackageOpen,
 	Plus,
 	ShieldCheck,
 	ShoppingCart,
@@ -134,6 +137,9 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 	const purchaseLimit = selectedItem
 		? purchaseLimitSummary(selectedItem)
 		: null;
+	const showPurchaseOptions =
+		data.sellableItems.length > 1 ||
+		data.id === "a48aeca2-90bf-4adf-8cfa-f18204373435";
 	const recommendations =
 		relatedProducts.data?.products
 			.filter((relatedProduct) => relatedProduct.id !== data.id)
@@ -217,6 +223,12 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 							))}
 						</div>
 					) : null}
+					{selectedItem ? (
+						<UsageGuide
+							isChatGpt={data.id === "2a794b89-3bb9-49d4-8691-0d13a1606869"}
+							sellableItem={selectedItem}
+						/>
+					) : null}
 				</div>
 				<div className="min-w-0 lg:sticky lg:top-26 lg:h-fit">
 					<div className="flex flex-wrap gap-2">
@@ -238,7 +250,17 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 							{data.description}
 						</p>
 					) : null}
-					{data.sellableItems.length > 1 ? (
+					{data.id === "ba540b83-388d-45d1-9dcb-25c3da3f9956" ? (
+						<div className="mt-4 flex max-w-2xl items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 font-semibold text-primary text-sm leading-6">
+							<ShieldCheck className="size-4 shrink-0" />
+							<p>{m.store_claude_channel_notice()}</p>
+						</div>
+					) : null}
+					<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 text-amber-700 text-sm leading-6 dark:text-amber-300">
+						<BadgePercent className="mt-0.5 size-4 shrink-0" />
+						<p>{m.store_alipay_fee_notice()}</p>
+					</div>
+					{showPurchaseOptions ? (
 						<fieldset className="mt-7">
 							<legend className="mb-3 font-medium">
 								{m.store_select_plan()}
@@ -249,7 +271,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 									return (
 										<button
 											aria-pressed={selected}
-											className="grid min-h-24 content-between gap-4 rounded-xl bg-muted/40 p-4 text-left ring-offset-background transition enabled:hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected]:bg-primary/10 data-[selected]:ring-2 data-[selected]:ring-primary data-[selected]:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+											className="relative grid min-h-24 content-between gap-4 overflow-hidden rounded-xl bg-muted/40 p-4 text-left ring-offset-background transition enabled:hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected]:bg-primary/10 data-[selected]:ring-2 data-[selected]:ring-primary data-[selected]:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
 											data-selected={selected || undefined}
 											disabled={!isAvailable(item)}
 											key={item.id}
@@ -263,7 +285,11 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 												<span className="font-medium leading-snug">
 													{item.name}
 												</span>
-												{!isAvailable(item) ? (
+												{item.availableStock > 0 ? (
+													<span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+														{m.store_stock({ count: item.availableStock })}
+													</span>
+												) : !isAvailable(item) ? (
 													<span className="shrink-0 text-muted-foreground text-xs">
 														{m.store_sold_out()}
 													</span>
@@ -275,6 +301,23 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 													currency={item.currency}
 													decimals={item.currencyDecimals}
 												/>
+											</span>
+											<span
+												aria-hidden="true"
+												className={cn(
+													"pointer-events-none absolute -right-9 bottom-3 w-28 -rotate-[32deg] border-y py-0.5 text-center font-semibold text-[9px] leading-none tracking-[0.08em]",
+													item.fulfillmentSource === "supplier"
+														? "border-emerald-400/35 bg-emerald-400/12 text-emerald-300"
+														: item.fulfillmentSource === "manual"
+															? "border-amber-300/35 bg-amber-300/12 text-amber-200"
+															: "border-primary/35 bg-primary/12 text-primary",
+												)}
+											>
+												{item.fulfillmentSource === "supplier"
+													? m.store_auto_delivery()
+													: item.fulfillmentSource === "manual"
+														? m.store_manual_procurement()
+														: m.store_local_delivery()}
 											</span>
 										</button>
 									);
@@ -463,10 +506,121 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 	);
 }
 
+function UsageGuide({
+	isChatGpt,
+	sellableItem,
+}: {
+	isChatGpt: boolean;
+	sellableItem: SellableItem;
+}) {
+	const automatic = sellableItem.fulfillmentSource === "supplier";
+	const received = automatic
+		? [
+				m.store_usage_guide_auto_credential({ sku: sellableItem.name }),
+				m.store_usage_guide_auto_redeem_url(),
+			]
+		: [
+				m.store_usage_guide_manual_order_code(),
+				m.store_usage_guide_manual_status(),
+			];
+	const steps = automatic
+		? [
+				m.store_usage_guide_auto_step_order(),
+				m.store_usage_guide_auto_step_copy(),
+				m.store_usage_guide_auto_step_open(),
+				m.store_usage_guide_auto_step_submit(),
+			]
+		: [
+				m.store_usage_guide_manual_step_order(),
+				m.store_usage_guide_manual_step_copy(),
+				m.store_usage_guide_manual_step_contact(),
+				m.store_usage_guide_manual_step_wait(),
+			];
+	return (
+		<section className="mt-3 rounded-2xl border border-border/70 bg-card/55 p-5 shadow-sm">
+			<div className="flex items-start gap-3">
+				<span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+					<BookOpenCheck className="size-5" />
+				</span>
+				<div className="min-w-0">
+					<p className="font-semibold text-primary text-xs uppercase tracking-[0.16em]">
+						{m.store_usage_guide_title()}
+					</p>
+					<h2 className="mt-1 text-balance font-semibold text-lg">
+						{sellableItem.name}
+					</h2>
+				</div>
+			</div>
+			<p className="mt-4 text-muted-foreground text-sm leading-6">
+				{automatic
+					? m.store_usage_guide_auto_intro()
+					: m.store_usage_guide_manual_intro()}
+			</p>
+			<GuideSection icon={PackageOpen} title={m.store_usage_guide_receive()}>
+				<ul className="grid gap-1.5">
+					{received.map((item) => (
+						<li className="flex gap-2" key={item}>
+							<span className="mt-2 size-1 shrink-0 rounded-full bg-primary" />
+							<span>{item}</span>
+						</li>
+					))}
+				</ul>
+			</GuideSection>
+			{isChatGpt ? (
+				<GuideSection icon={ShieldCheck} title={m.store_usage_guide_account()}>
+					<p>{m.store_usage_guide_account_description()}</p>
+				</GuideSection>
+			) : null}
+			<GuideSection icon={CircleCheck} title={m.store_usage_guide_steps()}>
+				<ol className="grid gap-2">
+					{steps.map((step, index) => (
+						<li className="flex gap-2.5" key={step}>
+							<span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary/10 font-semibold text-[10px] text-primary">
+								{index + 1}
+							</span>
+							<span>{step}</span>
+						</li>
+					))}
+				</ol>
+			</GuideSection>
+		</section>
+	);
+}
+
+function GuideSection({
+	children,
+	icon: Icon,
+	title,
+}: {
+	children: ReactNode;
+	icon: typeof PackageOpen;
+	title: string;
+}) {
+	return (
+		<div className="mt-5 border-border/70 border-t pt-4">
+			<h3 className="flex items-center gap-2 font-medium text-sm">
+				<Icon className="size-4 text-primary" />
+				{title}
+			</h3>
+			<div className="mt-2 text-muted-foreground text-sm leading-6">
+				{children}
+			</div>
+		</div>
+	);
+}
+
 function SkuPolicyPanel({ sellableItem }: { sellableItem: SellableItem }) {
+	const delivery =
+		sellableItem.fulfillmentSource === "supplier"
+			? m.store_auto_delivery()
+			: sellableItem.policy.delivery;
+	const deliveryTime =
+		sellableItem.fulfillmentSource === "supplier"
+			? m.store_supplier_delivery_time()
+			: sellableItem.policy.deliveryTime;
 	const fields = [
-		[m.store_sku_policy_delivery(), sellableItem.policy.delivery],
-		[m.store_sku_policy_delivery_time(), sellableItem.policy.deliveryTime],
+		[m.store_sku_policy_delivery(), delivery],
+		[m.store_sku_policy_delivery_time(), deliveryTime],
 		[m.store_sku_policy_coverage(), sellableItem.policy.coverage],
 		[m.store_sku_policy_warranty(), sellableItem.policy.warranty],
 		[m.store_sku_policy_restrictions(), sellableItem.policy.restrictions],
@@ -592,6 +746,57 @@ function SellableItemSummary({ sellableItem }: { sellableItem: SellableItem }) {
 	const hasDiscount =
 		sellableItem.listPriceMinor != null &&
 		BigInt(sellableItem.listPriceMinor) > BigInt(sellableItem.priceMinor);
+	if (sellableItem.channelPrices.length > 1)
+		return (
+			<div>
+				<p className="font-medium text-muted-foreground text-sm">
+					{m.store_payment_prices_title()}
+				</p>
+				<div className="mt-2 grid gap-2 sm:grid-cols-2">
+					{sellableItem.channelPrices.map((channel) => {
+						const alipay =
+							channel.provider === "epay" || channel.name.includes("支付宝");
+						return (
+							<div
+								className={cn(
+									"rounded-xl border border-primary/20 bg-primary/[0.07] px-4 py-3",
+									alipay && "border-amber-500/25 bg-amber-500/10",
+								)}
+								key={channel.id}
+							>
+								<div className="flex items-center justify-between gap-3">
+									<span
+										className={cn(
+											"font-semibold text-primary text-sm",
+											alipay && "text-amber-700 dark:text-amber-300",
+										)}
+									>
+										{channel.name}
+									</span>
+									{channel.feeBps > 0 ? (
+										<span className="text-muted-foreground text-[11px]">
+											{m.store_payment_price_fee_included()}
+										</span>
+									) : null}
+								</div>
+								<strong
+									className={cn(
+										"mt-1 block text-3xl text-primary tracking-tight",
+										alipay && "text-amber-700 dark:text-amber-300",
+									)}
+								>
+									<StoreMoney
+										amountMinor={channel.priceMinor}
+										currency={sellableItem.currency}
+										decimals={sellableItem.currencyDecimals}
+									/>
+								</strong>
+							</div>
+						);
+					})}
+				</div>
+			</div>
+		);
 	return (
 		<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
 			<strong className="text-4xl text-primary tracking-tight">

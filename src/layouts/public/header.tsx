@@ -11,6 +11,7 @@ import {
 	Send,
 	Settings,
 	ShoppingCart,
+	Zap,
 } from "lucide-react";
 import { type ComponentProps, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
@@ -104,6 +105,27 @@ export function PublicHeader() {
 	);
 }
 
+export function DeliveryTicker() {
+	const message = m.store_delivery_ticker();
+	return (
+		<div className="group overflow-hidden border-border/60 border-y bg-primary/[0.07] text-primary">
+			<p className="sr-only">{message}</p>
+			<div
+				aria-hidden="true"
+				className="store-delivery-ticker-track flex w-max min-w-full items-center whitespace-nowrap py-1.5 font-medium text-[11px] tracking-[0.04em] group-hover:[animation-play-state:paused] sm:text-xs"
+			>
+				{[0, 1].map((copy) => (
+					<span className="flex min-w-max items-center gap-3 px-7" key={copy}>
+						<Zap className="size-3 fill-current" />
+						{message}
+						<span className="text-primary/45">●</span>
+					</span>
+				))}
+			</div>
+		</div>
+	);
+}
+
 const telegramSupportUrl = "https://t.me/laoshirenai_support_bot";
 const wechatQrUrl = "/support/wechat-jerrys.png";
 
@@ -124,14 +146,6 @@ function CustomerSupport() {
 						{m.store_support_description()}
 					</p>
 				</div>
-				<div className="mx-1 mb-2 rounded-2xl border border-primary/25 bg-primary/10 p-3">
-					<p className="font-semibold text-sm">
-						{m.store_support_order_notice_title()}
-					</p>
-					<p className="mt-1 text-muted-foreground text-xs leading-5">
-						{m.store_support_order_notice_description()}
-					</p>
-				</div>
 				<SupportAction
 					description={m.store_support_online_description()}
 					icon={MessageCircle}
@@ -140,6 +154,12 @@ function CustomerSupport() {
 						setOpen(false);
 						window.dispatchEvent(new Event(webSupportOpenEvent));
 					}}
+				/>
+				<SupportLink
+					description="@laoshirenai_support_bot"
+					href={telegramSupportUrl}
+					icon={Send}
+					label={m.store_support_private()}
 				/>
 				<div className="mx-1 my-1 rounded-2xl border bg-muted/30 p-3">
 					<div className="flex items-center gap-3">
@@ -170,12 +190,6 @@ function CustomerSupport() {
 						/>
 					</a>
 				</div>
-				<SupportLink
-					description="@laoshirenai_support_bot"
-					href={telegramSupportUrl}
-					icon={Send}
-					label={m.store_support_private()}
-				/>
 			</PopoverContent>
 		</Popover>
 	);
