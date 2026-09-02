@@ -294,7 +294,8 @@ async function updateBoundProducts(
 				db
 					.prepare(
 						`UPDATE product_sellable_items SET supplier_status =
-						 CASE WHEN ? = 'active' AND (
+						 CASE WHEN product_sellable_items.fulfillment_source <> 'supplier'
+						 THEN NULL WHEN ? = 'active' AND (
 						  LENGTH(?) < LENGTH(sb.max_cost_minor) OR
 						  (LENGTH(?) = LENGTH(sb.max_cost_minor) AND ? <= sb.max_cost_minor)
 						 ) THEN 'available' ELSE 'unavailable' END,
@@ -358,7 +359,7 @@ async function updateBoundProducts(
 				db
 					.prepare(
 						`UPDATE product_sellable_items SET supplier_status = 'unavailable',
-						 updated_at = ? WHERE id = ?`,
+						 updated_at = ? WHERE id = ? AND fulfillment_source = 'supplier'`,
 					)
 					.bind(now, binding.sellable_item_id),
 			);
