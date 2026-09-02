@@ -182,7 +182,7 @@ export class SharedStockAdapter implements SupplierAdapter {
 				...(descriptor.race ? { race: descriptor.race } : {}),
 			}),
 		);
-		const cards = parseCards(data.secret);
+		const cards = parseCards(data.secret, input.quantity);
 		return cards.length
 			? {
 					status: "supplied",
@@ -215,7 +215,7 @@ export class SharedStockAdapter implements SupplierAdapter {
 		const data = querySchema.parse(
 			await this.request("/query", { tradeNo: input.upstreamOrderId }),
 		);
-		const cards = parseCards(data.secret);
+		const cards = parseCards(data.secret, input.quantity);
 		return cards.length
 			? {
 					status: "supplied",
@@ -431,7 +431,18 @@ function normalizeStock(value: string | number | null) {
 	);
 }
 
-function parseCards(value: string) {
+function parseCards(value: string, quantity: number) {
+	const plaintext = value.trim();
+	if (quantity === 1) {
+		if (!plaintext) return [];
+		if (plaintext.length > 64_000)
+			throw new DomainError(
+				"invalid_supplier_response",
+				502,
+				"Supplier returned invalid fulfillment",
+			);
+		return [plaintext];
+	}
 	const cards = value
 		.split(/\r?\n/)
 		.map((item) => item.trim())

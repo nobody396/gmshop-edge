@@ -709,6 +709,38 @@ describe("SharedStock adapter", () => {
 		expect(body.get("request_no")).toBe("ss_abc123");
 	});
 
+	it("preserves a single multiline supplier delivery without interpreting its fields", async () => {
+		const delivery = [
+			"GPLUS-EXAMPLE",
+			"https://supplier.example/redeem",
+			"请按上游交付内容操作",
+		].join("\n");
+		const { adapter } = adapterWith(() => ({
+			code: 200,
+			msg: "success",
+			data: {
+				url: "https://supplier.example/internal-order",
+				amount: "115.00",
+				tradeNo: "20260902180000111",
+				secret: delivery,
+			},
+		}));
+
+		await expect(
+			adapter.submitOrder({
+				skuId: "GPT-PLUS",
+				quantity: 1,
+				requestNo: "ss_single_delivery",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toEqual({
+			status: "supplied",
+			upstreamOrderId: "20260902180000111",
+			cards: [delivery],
+		});
+	});
+
 	it("passes the selected category race when trading a shared variant", async () => {
 		const { adapter, requests } = adapterWith(() => ({
 			code: 200,
@@ -775,6 +807,32 @@ describe("SharedStock adapter", () => {
 		});
 		const body = new URLSearchParams(await requests[0]?.text());
 		expect(body.get("tradeNo")).toBe("20260822120000333");
+	});
+
+	it("preserves a single multiline delivery returned during reconciliation", async () => {
+		const delivery = "GPLUS-EXAMPLE\nhttps://supplier.example/redeem";
+		const { adapter } = adapterWith(() => ({
+			code: 200,
+			data: {
+				secret: delivery,
+				status: 1,
+			},
+		}));
+
+		await expect(
+			adapter.reconcileOrder({
+				upstreamOrderId: "20260902180000222",
+				skuId: "GPT-PLUS",
+				quantity: 1,
+				requestNo: "ss_single_reconcile",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toEqual({
+			status: "supplied",
+			upstreamOrderId: "20260902180000222",
+			cards: [delivery],
+		});
 	});
 
 	it("keeps an order uncertain when the upstream trade number is unknown", async () => {

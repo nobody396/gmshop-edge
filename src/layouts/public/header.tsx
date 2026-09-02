@@ -124,6 +124,14 @@ function CustomerSupport() {
 						{m.store_support_description()}
 					</p>
 				</div>
+				<div className="mx-1 mb-2 rounded-2xl border border-primary/25 bg-primary/10 p-3">
+					<p className="font-semibold text-sm">
+						{m.store_support_order_notice_title()}
+					</p>
+					<p className="mt-1 text-muted-foreground text-xs leading-5">
+						{m.store_support_order_notice_description()}
+					</p>
+				</div>
 				<SupportAction
 					description={m.store_support_online_description()}
 					icon={MessageCircle}

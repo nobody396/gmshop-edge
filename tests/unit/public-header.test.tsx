@@ -138,6 +138,12 @@ describe("public header settings", () => {
 			),
 		).not.toBeNull();
 		expect(document.body.textContent).toContain("store_support_online");
+		expect(document.body.textContent).toContain(
+			"store_support_order_notice_title",
+		);
+		expect(document.body.textContent).toContain(
+			"store_support_order_notice_description",
+		);
 	});
 
 	it("opens the embedded web support conversation from the support menu", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Headphones, LoaderCircle, Send, X } from "lucide-react";
+import { Headphones, LoaderCircle, QrCode, Send, X } from "lucide-react";
 import {
 	type KeyboardEvent,
 	type SyntheticEvent,
@@ -34,6 +34,8 @@ type SupportStatus = {
 	hasConversation: boolean;
 	status: string | null;
 };
+
+const wechatQrUrl = "/support/wechat-jerrys.png";
 
 function formatMessageTime(timestamp: number) {
 	return new Intl.DateTimeFormat(getLocale(), {
@@ -288,6 +290,18 @@ export function WebSupportWidget() {
 							<X />
 						</Button>
 					</header>
+					<div className="border-b border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+						<p className="font-medium">{m.web_support_order_notice()}</p>
+						<a
+							className="mt-1 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
+							href={wechatQrUrl}
+							rel="noreferrer"
+							target="_blank"
+						>
+							<QrCode className="size-4" />
+							{m.web_support_wechat_fallback()}
+						</a>
+					</div>
 					{!["active", "closing", "closed"].includes(status ?? "") ? (
 						session.isPending ? (
 							<div className="flex flex-1 items-center justify-center">
