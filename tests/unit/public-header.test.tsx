@@ -82,7 +82,7 @@ vi.mock("#/paraglide/messages", () => ({
 	),
 }));
 
-import { PublicHeader } from "#/layouts/public/header";
+import { DeliveryTicker, PublicHeader } from "#/layouts/public/header";
 
 describe("public header settings", () => {
 	let container: HTMLDivElement;
@@ -116,7 +116,7 @@ describe("public header settings", () => {
 		expect(container.querySelectorAll('a[href="/sign-in"]')).toHaveLength(1);
 	});
 
-	it("shows online, WeChat, and private Telegram support without a public channel", () => {
+	it("shows online, private Telegram, and WeChat support in that order", () => {
 		act(() => root.render(<PublicHeader />));
 		const support = Array.from(container.querySelectorAll("button")).find(
 			(button) => button.textContent?.includes("store_support"),
@@ -138,12 +138,23 @@ describe("public header settings", () => {
 			),
 		).not.toBeNull();
 		expect(document.body.textContent).toContain("store_support_online");
-		expect(document.body.textContent).toContain(
+		expect(document.body.textContent).not.toContain(
 			"store_support_order_notice_title",
 		);
-		expect(document.body.textContent).toContain(
-			"store_support_order_notice_description",
+		expect(
+			document.body.textContent?.indexOf("store_support_private"),
+		).toBeLessThan(
+			document.body.textContent?.indexOf("store_support_wechat") ?? -1,
 		);
+	});
+
+	it("shows the delivery notice as an accessible ticker", () => {
+		act(() => root.render(<DeliveryTicker />));
+
+		expect(container.textContent).toContain("store_delivery_ticker");
+		expect(
+			container.querySelector(".store-delivery-ticker-track"),
+		).not.toBeNull();
 	});
 
 	it("opens the embedded web support conversation from the support menu", () => {

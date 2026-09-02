@@ -284,6 +284,36 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("queues one owner sale alert when Feishu sale notifications are enabled", async () => {
+		await database
+			.prepare(
+				`INSERT INTO system_settings
+				 (key, value, is_secret, created_at, updated_at)
+				 VALUES ('commerce.sales.feishu_alerts_enabled', 'true', 0, 1, 1)`,
+			)
+			.run();
+		await expect(
+			processShopPaymentEvent(
+				database,
+				channelId,
+				succeededEvent("evt_owner_sale"),
+			),
+		).resolves.toEqual({ duplicate: false, status: "succeeded" });
+		const alert = await database
+			.prepare(
+				`SELECT event_type, aggregate_id, idempotency_key, payload, status
+				 FROM outbox_events WHERE event_type = 'owner.sale_alert'`,
+			)
+			.first<Record<string, unknown>>();
+		expect(alert).toMatchObject({
+			event_type: "owner.sale_alert",
+			aggregate_id: orderId,
+			idempotency_key: `owner-sale-order:${orderId}`,
+			status: "pending",
+		});
+		expect(JSON.parse(String(alert?.payload))).toEqual({ orderId });
+	});
+
 	it("matches a ZPay callback by merchant order id when create omitted its trade number", async () => {
 		const merchantOrderId = "44444444444444448444444444444444";
 		await database

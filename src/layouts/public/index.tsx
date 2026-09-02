@@ -5,7 +5,7 @@ import { SiteCustomHtml } from "#/features/settings/components/site-custom-html"
 import { WebSupportWidget } from "#/features/telegram/components/web-support-widget";
 import { SkipToMain } from "#/layouts/components/skip-to-main";
 import { PublicFooter } from "#/layouts/public/footer";
-import { PublicHeader } from "#/layouts/public/header";
+import { DeliveryTicker, PublicHeader } from "#/layouts/public/header";
 import { MobileBottomNavigation } from "#/layouts/public/mobile-bottom-navigation";
 
 export function PublicLayout() {
@@ -15,6 +15,7 @@ export function PublicLayout() {
 			<div className="flex min-h-svh flex-col bg-background pt-safe text-foreground lg:pt-0">
 				<SkipToMain />
 				<PublicHeader />
+				<DeliveryTicker />
 				<main className="w-full flex-1 outline-none" id="content" tabIndex={-1}>
 					<Outlet />
 				</main>

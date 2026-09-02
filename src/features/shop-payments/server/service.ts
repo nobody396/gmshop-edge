@@ -1465,6 +1465,29 @@ function fulfillmentStatements(
 					orderId,
 				),
 		);
+	statements.push(
+		db
+			.prepare(
+				`INSERT INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key,
+				  payload, status, attempt_count, created_at, updated_at)
+				 SELECT ?, 'owner.sale_alert', 'shop_order', ?, ?, ?, 'pending', 0, ?, ?
+				 FROM shop_orders WHERE id = ? AND status = 'paid'
+				  AND EXISTS (SELECT 1 FROM system_settings
+				   WHERE key = 'commerce.sales.feishu_alerts_enabled'
+				    AND value = 'true')
+				 ON CONFLICT(idempotency_key) DO NOTHING`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				orderId,
+				`owner-sale-order:${orderId}`,
+				JSON.stringify({ orderId }),
+				now,
+				now,
+				orderId,
+			),
+	);
 	return statements;
 }
 
