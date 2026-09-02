@@ -1,6 +1,6 @@
 "use client";
 
-import { Headphones, LoaderCircle, Send, X } from "lucide-react";
+import { Headphones, LoaderCircle, QrCode, Send, X } from "lucide-react";
 import {
 	type KeyboardEvent,
 	type SyntheticEvent,
@@ -17,6 +17,10 @@ import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 import {
+	webSupportOpenEvent,
+	webSupportPollIntervalMs,
+} from "../web-support-contract";
+import {
 	decryptWebSupportReply,
 	getWebSupportIdentity,
 	loadWebSupportMessages,
@@ -30,6 +34,8 @@ type SupportStatus = {
 	hasConversation: boolean;
 	status: string | null;
 };
+
+const wechatQrUrl = "/support/wechat-jerrys.png";
 
 function formatMessageTime(timestamp: number) {
 	return new Intl.DateTimeFormat(getLocale(), {
@@ -76,6 +82,12 @@ export function WebSupportWidget() {
 	useEffect(() => {
 		if (sessionEmail) setEmail(sessionEmail);
 	}, [sessionEmail]);
+
+	useEffect(() => {
+		const openSupport = () => setOpen(true);
+		window.addEventListener(webSupportOpenEvent, openSupport);
+		return () => window.removeEventListener(webSupportOpenEvent, openSupport);
+	}, []);
 
 	const poll = useCallback(async () => {
 		if (!open || !["active", "closing"].includes(status ?? "")) return;
@@ -129,11 +141,23 @@ export function WebSupportWidget() {
 	useEffect(() => {
 		void poll();
 		if (!open) return;
-		const interval = window.setInterval(() => {
+		const pollWhenAvailable = () => {
 			if (document.visibilityState === "visible" && navigator.onLine)
 				void poll();
-		}, 3000);
-		return () => window.clearInterval(interval);
+		};
+		const interval = window.setInterval(
+			pollWhenAvailable,
+			webSupportPollIntervalMs,
+		);
+		window.addEventListener("focus", pollWhenAvailable);
+		window.addEventListener("online", pollWhenAvailable);
+		document.addEventListener("visibilitychange", pollWhenAvailable);
+		return () => {
+			window.clearInterval(interval);
+			window.removeEventListener("focus", pollWhenAvailable);
+			window.removeEventListener("online", pollWhenAvailable);
+			document.removeEventListener("visibilitychange", pollWhenAvailable);
+		};
 	}, [open, poll]);
 
 	useEffect(() => {
@@ -266,6 +290,18 @@ export function WebSupportWidget() {
 							<X />
 						</Button>
 					</header>
+					<div className="border-b border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+						<p className="font-medium">{m.web_support_order_notice()}</p>
+						<a
+							className="mt-1 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
+							href={wechatQrUrl}
+							rel="noreferrer"
+							target="_blank"
+						>
+							<QrCode className="size-4" />
+							{m.web_support_wechat_fallback()}
+						</a>
+					</div>
 					{!["active", "closing", "closed"].includes(status ?? "") ? (
 						session.isPending ? (
 							<div className="flex flex-1 items-center justify-center">

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import type { z } from "zod";
+import { z } from "zod";
 import { requireStorefrontPermission } from "#/features/access/storefront-access";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
@@ -8,6 +8,7 @@ import {
 	completeFreeStoreOrder,
 	completeWalletStoreOrder,
 	createShopPayment,
+	reconcileShopOrderPayment,
 } from "#/features/shop-payments/server/service";
 import {
 	checkoutStoreOrderSchema,
@@ -79,6 +80,10 @@ export const trackCommerceEventFn = createServerFn({ method: "POST" })
 		return { accepted: true };
 	});
 
+const checkoutPaymentChannelsSchema = z.object({
+	sellableItemIds: z.array(z.uuid()).min(1).max(100),
+});
+
 export const listCheckoutPaymentChannelsFn = createServerFn({
 	method: "GET",
 }).handler(async () => {
@@ -88,7 +93,7 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 			`SELECT id, name, provider, fee_bps, fixed_fee_minor,
 			        logo_object_key, logo_updated_at
 			 FROM payment_channels
-				 WHERE enabled = 1 ORDER BY sort_order, name, id`,
+			 WHERE enabled = 1 ORDER BY sort_order, name, id`,
 		)
 		.all<{
 			id: string;
@@ -111,6 +116,68 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 				: null,
 	}));
 });
+
+export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof checkoutPaymentChannelsSchema>) =>
+		checkoutPaymentChannelsSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		requireStorefrontPermission("guest", "catalog.read");
+		const db = getDb().$client;
+		const [channelsResult, pricesResult] = await db.batch([
+			db.prepare(
+				`SELECT id, name, provider, fee_bps, fixed_fee_minor,
+			        logo_object_key, logo_updated_at
+			 FROM payment_channels
+				 WHERE enabled = 1 ORDER BY sort_order, name, id`,
+			),
+			db
+				.prepare(
+					`SELECT channel_id, sellable_item_id, price_minor
+					 FROM sellable_item_channel_prices
+					 WHERE enabled = 1 AND sellable_item_id IN (${data.sellableItemIds
+							.map(() => "?")
+							.join(", ")})`,
+				)
+				.bind(...data.sellableItemIds),
+		]);
+		if (!channelsResult || !pricesResult)
+			throw new DomainError(
+				"payment_channel_unavailable",
+				503,
+				"Payment channel unavailable",
+			);
+		const rows = channelsResult.results as Array<{
+			id: string;
+			name: string;
+			provider: string;
+			fee_bps: number;
+			fixed_fee_minor: string;
+			logo_object_key: string | null;
+			logo_updated_at: number | null;
+		}>;
+		const prices = pricesResult.results as Array<{
+			channel_id: string;
+			sellable_item_id: string;
+			price_minor: string;
+		}>;
+		return rows.map((channel) => ({
+			id: channel.id,
+			name: channel.name,
+			provider: channel.provider,
+			feeBps: channel.fee_bps,
+			fixedFeeMinor: channel.fixed_fee_minor,
+			logoUrl:
+				channel.logo_object_key && channel.logo_updated_at
+					? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
+					: null,
+			itemPrices: Object.fromEntries(
+				prices
+					.filter((price) => price.channel_id === channel.id)
+					.map((price) => [price.sellable_item_id, price.price_minor]),
+			),
+		}));
+	});
 
 export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 	.validator((input: z.input<typeof checkoutStoreOrderSchema>) =>
@@ -135,6 +202,10 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 		const order = await createStoreOrder(db, input, {
 			userId: account?.user.id,
 			identityEmail: account?.user.email,
+			pricingChannelId:
+				data.walletPayment || !data.paymentChannelId
+					? undefined
+					: data.paymentChannelId,
 		});
 		if (account && "items" in data && !order.duplicate) {
 			const sellableItemIds = data.items.map((item) => item.sellableItemId);
@@ -198,13 +269,49 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 			});
 			return { order, payment, accountOrder: Boolean(account) };
 		} catch (error) {
-			const failed = await db
+			let failed = await db
 				.prepare(
 					`SELECT id, status FROM payment_attempts WHERE order_id = ?
 					 ORDER BY created_at DESC, id DESC LIMIT 1`,
 				)
 				.bind(order.id)
 				.first<{ id: string; status: string }>();
+			if (!failed) {
+				const now = Date.now();
+				const fallbackId = crypto.randomUUID();
+				await db
+					.prepare(
+						`INSERT INTO payment_attempts
+						 (id, order_id, channel_id, idempotency_key, status, amount_minor,
+						  currency, currency_decimals, exchange_rate, exchange_rate_direction,
+						  exchange_rate_source, exchange_rate_adjustment_bps,
+						  exchange_rate_observed_at, failure_code, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, 'failed', ?, ?, ?, '1', 'parity', 'parity', 0,
+						  ?, ?, ?, ?)
+						 ON CONFLICT(idempotency_key) DO NOTHING`,
+					)
+					.bind(
+						fallbackId,
+						order.id,
+						data.paymentChannelId,
+						`checkout:${order.id}:${data.paymentChannelId}:${data.paymentCurrency ?? order.currency}`,
+						order.totalMinor,
+						order.currency,
+						order.currencyDecimals,
+						now,
+						error instanceof DomainError ? error.code : "payment_create_failed",
+						now,
+						now,
+					)
+					.run();
+				failed = await db
+					.prepare(
+						`SELECT id, status FROM payment_attempts WHERE order_id = ?
+						 ORDER BY created_at DESC, id DESC LIMIT 1`,
+					)
+					.bind(order.id)
+					.first<{ id: string; status: string }>();
+			}
 			if (failed?.status !== "failed") throw error;
 			return {
 				order,
@@ -232,6 +339,28 @@ export const getStoreOrderFn = createServerFn({ method: "POST" })
 const retryStorePaymentSchema = storeOrderLookupSchema.extend({
 	email: storeOrderLookupSchema.shape.email.optional(),
 });
+
+export const refreshStoreOrderFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof retryStorePaymentSchema>) =>
+		retryStorePaymentSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const request = getRequest();
+		const db = getDb(request).$client;
+		const account = await resolveStoreAccount(db, request);
+		requireStorefrontPermission(account ? "customer" : "guest", "order.lookup");
+		let order = await getStoreOrder(db, data, { userId: account?.user.id });
+		if (order.status !== "pending_payment") return order;
+		const reconciliation = await reconcileShopOrderPayment(db, order.id);
+		if (!reconciliation.checked) return order;
+		const queue = getCloudflareEnv(request).COMMERCE_QUEUE;
+		if (queue) {
+			await publishPendingDeliveries(db, queue);
+			await publishPendingSupplierOrders(db, queue);
+		}
+		order = await getStoreOrder(db, data, { userId: account?.user.id });
+		return order;
+	});
 
 export const retryStorePaymentFn = createServerFn({ method: "POST" })
 	.validator((input: z.input<typeof retryStorePaymentSchema>) =>

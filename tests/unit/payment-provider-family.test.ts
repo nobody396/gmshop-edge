@@ -35,11 +35,11 @@ describe("payment provider families", () => {
 			"stripe",
 			"cryptomus",
 			"gmpay",
-			"epay",
 			"alipay_page",
 			"alipay_wap",
 		])
 			expect(paymentCheckoutPresentation(provider)).toBe("redirect");
+		expect(paymentCheckoutPresentation("epay")).toBe("qr");
 		expect(paymentCheckoutPresentation("wechat_native")).toBe("qr");
 		expect(paymentCheckoutPresentation("wechat_h5")).toBe("qr");
 		expect(

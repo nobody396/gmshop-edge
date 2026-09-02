@@ -17,6 +17,6 @@ describe("post-auth redirect", () => {
 		"https://evil.example/admin",
 		"http://gmshop.invalid/admin",
 	])("falls back for unsafe redirect %s", (value) => {
-		expect(safePostAuthRedirect(value)).toBe("/admin");
+		expect(safePostAuthRedirect(value)).toBe("/");
 	});
 });

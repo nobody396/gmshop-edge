@@ -70,7 +70,11 @@ type CouponRow = {
 export async function createMultiStoreOrder(
 	db: D1Database,
 	rawInput: unknown,
-	access: { userId?: string; identityEmail?: string } = {},
+	access: {
+		userId?: string;
+		identityEmail?: string;
+		pricingChannelId?: string;
+	} = {},
 ) {
 	const input = multiStoreOrderSchema.parse(rawInput);
 	if (!access.userId && !input.email)
@@ -128,10 +132,26 @@ export async function createMultiStoreOrder(
 			"Sign in to place an order",
 		);
 	const runtime = await loadRuntimeConfig(db);
+	if (access.pricingChannelId) {
+		const channel = await db
+			.prepare("SELECT id FROM payment_channels WHERE id = ? AND enabled = 1")
+			.bind(access.pricingChannelId)
+			.first<{ id: string }>();
+		if (!channel)
+			throw new DomainError(
+				"payment_channel_unavailable",
+				404,
+				"Payment channel unavailable",
+			);
+	}
 
 	const lines: Line[] = [];
 	for (const item of input.items) {
-		const sellableItem = await loadSellableItem(db, item.sellableItemId);
+		const sellableItem = await loadSellableItem(
+			db,
+			item.sellableItemId,
+			access.pricingChannelId,
+		);
 		if (!access.userId && sellableItem.delivery_component_type === "automation")
 			throw new DomainError(
 				"account_required_for_delivery",
@@ -433,12 +453,24 @@ export async function createMultiStoreOrder(
 	};
 }
 
-async function loadSellableItem(db: D1Database, sellableItemId: string) {
+async function loadSellableItem(
+	db: D1Database,
+	sellableItemId: string,
+	pricingChannelId?: string,
+) {
 	const sellableItem = await db
 		.prepare(
 			`SELECT s.id AS sellable_item_id,
 			 s.name AS sellable_item_name,
-			 s.price_minor, s.cost_minor, s.currency, s.currency_decimals,
+			 COALESCE((
+			  SELECT channel_price.price_minor
+			  FROM sellable_item_channel_prices channel_price
+			  JOIN payment_channels channel ON channel.id = channel_price.channel_id
+			  WHERE channel_price.sellable_item_id = s.id
+			   AND channel_price.channel_id = ? AND channel_price.enabled = 1
+			   AND channel.enabled = 1 LIMIT 1
+			 ), s.price_minor) AS price_minor,
+			 s.cost_minor, s.currency, s.currency_decimals,
 			 s.fulfillment_source, s.supplier_status,
 			 s.id AS delivery_component_id, p.product_type AS delivery_component_type,
 			 s.version AS delivery_component_version,
@@ -472,7 +504,7 @@ async function loadSellableItem(db: D1Database, sellableItemId: string) {
 			 FROM product_sellable_items s JOIN products p ON p.id = s.product_id
 			 WHERE s.id = ? AND s.enabled = 1 AND p.status = 'active' LIMIT 1`,
 		)
-		.bind(sellableItemId)
+		.bind(pricingChannelId ?? null, sellableItemId)
 		.first<SellableItemContext>();
 	if (!sellableItem)
 		throw new DomainError(

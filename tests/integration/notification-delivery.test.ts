@@ -7,6 +7,7 @@ import {
 	publishPendingNotifications,
 } from "#/features/notifications/server/delivery";
 import { fanOutPendingCommerceNotifications } from "#/features/notifications/server/fanout";
+import { flushPendingCommerceNotifications } from "#/features/notifications/server/flush";
 import type { NotificationQueueMessage } from "#/server/queue/types";
 import { applyMigrations } from "./migrations";
 
@@ -301,6 +302,48 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 		});
 		expect(String(state?.message_encrypted)).not.toContain("buyer@example.com");
 		expect(String(state?.message_encrypted)).not.toContain("ORDER-1001");
+	});
+
+	it("publishes customer notifications immediately without waiting for cron", async () => {
+		await seedPaidOrder(database);
+		const sent: NotificationQueueMessage[] = [];
+		const queue = {
+			sendBatch: vi.fn(
+				async (messages: Array<{ body: NotificationQueueMessage }>) => {
+					sent.push(...messages.map((message) => message.body));
+				},
+			),
+		} as unknown as Queue<NotificationQueueMessage>;
+
+		await expect(
+			flushPendingCommerceNotifications(database, queue),
+		).resolves.toEqual({
+			fanout: { processed: 1, deliveries: 1 },
+			published: { published: 1 },
+		});
+
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toMatchObject({
+			kind: "commerce.notification",
+			version: 1,
+		});
+		const state = await database
+			.prepare(
+				`SELECT nd.status AS delivery_status, oe.status AS source_status,
+				 notification_outbox.status AS notification_outbox_status
+				 FROM notification_deliveries nd
+				 JOIN outbox_events oe ON oe.id = 'order-paid-outbox'
+				 JOIN outbox_events notification_outbox
+				 ON notification_outbox.aggregate_id = nd.id
+				 AND notification_outbox.event_type = 'notification.requested'
+				 WHERE nd.event = 'order_paid' LIMIT 1`,
+			)
+			.first<Record<string, unknown>>();
+		expect(state).toMatchObject({
+			delivery_status: "pending",
+			source_status: "published",
+			notification_outbox_status: "published",
+		});
 	});
 
 	it("uses the registered user's preferred language instead of the order locale", async () => {

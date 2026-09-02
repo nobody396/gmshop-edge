@@ -2,7 +2,13 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { CircleCheck, Eye, MoreHorizontal, RotateCcw } from "lucide-react";
+import {
+	CircleCheck,
+	Eye,
+	MoreHorizontal,
+	Play,
+	RotateCcw,
+} from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ProButton } from "#/components/pro/base/button";
@@ -21,6 +27,7 @@ import {
 	listDeliveriesFn,
 	retryDeliveryFn,
 	revealDeliveryContentFn,
+	startManualDeliveryFn,
 } from "#/features/fulfillment/server/admin";
 import { PageHeader } from "#/layouts/components/page-header";
 import { formatDateTime } from "#/lib/format";
@@ -65,6 +72,14 @@ export function DeliveryCenterPage() {
 		mutationFn: retryDeliveryFn,
 		onSuccess: async () => {
 			toast.success(m.common_retry());
+			await refresh();
+		},
+		onError: showError,
+	});
+	const startManual = useMutation({
+		mutationFn: startManualDeliveryFn,
+		onSuccess: async () => {
+			toast.success(m.delivery_manual_start_success());
 			await refresh();
 		},
 		onError: showError,
@@ -131,6 +146,19 @@ export function DeliveryCenterPage() {
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
 							{row.original.status === "awaiting_supply" ? (
+								<DropdownMenuItem
+									disabled={startManual.isPending}
+									onClick={() =>
+										startManual.mutate({ data: { id: row.original.id } })
+									}
+								>
+									<Play />
+									{m.delivery_manual_start()}
+								</DropdownMenuItem>
+							) : null}
+							{["awaiting_supply", "processing"].includes(
+								row.original.status,
+							) ? (
 								<DropdownMenuItem onClick={() => setCompleting(row.original)}>
 									<CircleCheck />
 									{m.delivery_manual_complete()}
@@ -159,7 +187,7 @@ export function DeliveryCenterPage() {
 				),
 			},
 		],
-		[retry],
+		[retry, startManual],
 	);
 	return (
 		<>

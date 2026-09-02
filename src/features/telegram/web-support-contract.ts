@@ -1,6 +1,9 @@
 import Bowser from "bowser";
 import { z } from "zod";
 
+export const webSupportPollIntervalMs = 1_000;
+export const webSupportOpenEvent = "gmshop:web-support:open";
+
 const publicKeySchema = z.looseObject({
 	kty: z.literal("RSA"),
 	n: z.string().min(300).max(800),

@@ -8,14 +8,16 @@ import {
 } from "#/lib/seo";
 
 describe("locale-preserving UI navigation", () => {
-	it("keeps storefront payment exits inside the router", () => {
+	it("keeps local order exits in the router and validates hosted payment exits", () => {
 		const source = readFileSync(
 			resolve("src/features/storefront/pages/checkout.tsx"),
 			"utf8",
 		);
 		expect(source).toContain("useNavigate");
 		expect(source).toContain('to: "/orders/$orderNumber"');
-		expect(source).not.toContain("window.location.assign");
+		expect(source).toContain("safeStorePaymentUrl");
+		expect(source).toContain("window.location.assign(hostedCheckoutUrl)");
+		expect(source).not.toContain("window.location.href");
 	});
 
 	it("renders configured site names instead of hard-coded surface brands", () => {

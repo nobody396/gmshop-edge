@@ -4,6 +4,7 @@ import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { getStoreSessionUser } from "#/features/storefront/server/account";
 import { encryptSecret } from "#/lib/secrets";
 import { m } from "#/paraglide/messages";
+import { getRuntimeEnv } from "#/server/db.server";
 import { claimFixedWindowRateLimit } from "#/server/rate-limit";
 import { loadTelegramSettings } from "../settings";
 import {
@@ -11,6 +12,13 @@ import {
 	type webSupportConversationSchema,
 	type webSupportMessageSchema,
 } from "../web-support-contract";
+import {
+	feishuAlertErrorCode,
+	formatFeishuWebSupportAlert,
+	recordFeishuAlertResult,
+	resolveFeishuAlertCredentials,
+	sendFeishuText,
+} from "./feishu-alerts";
 import { telegramDataKeyId } from "./secret";
 import { telegramRuntime } from "./sync";
 
@@ -224,6 +232,7 @@ export async function sendWebSupportMessage(
 			message_thread_id: conversation.message_thread_id,
 		});
 		await touchWebConversation(db, conversation.id);
+		scheduleFeishuWebSupportAlert(db, conversation.topic_name, input.text);
 		return { sent: true };
 	} catch (error) {
 		if (isMissingTopicError(error)) {
@@ -242,6 +251,7 @@ export async function sendWebSupportMessage(
 				message_thread_id: topic.message_thread_id,
 			});
 			await touchWebConversation(db, conversation.id);
+			scheduleFeishuWebSupportAlert(db, conversation.topic_name, input.text);
 			return { sent: true };
 		}
 		await db
@@ -252,6 +262,32 @@ export async function sendWebSupportMessage(
 			.run();
 		throw error;
 	}
+}
+
+function scheduleFeishuWebSupportAlert(
+	db: D1Database,
+	topicName: string | null | undefined,
+	message: string,
+) {
+	const task = (async () => {
+		try {
+			const credentials = await resolveFeishuAlertCredentials(db);
+			if (!credentials) return;
+			await sendFeishuText(
+				credentials,
+				formatFeishuWebSupportAlert(topicName, message),
+			);
+			await recordFeishuAlertResult(db, { sent: true });
+		} catch (error) {
+			await recordFeishuAlertResult(db, {
+				sent: false,
+				errorCode: feishuAlertErrorCode(error),
+			}).catch(() => undefined);
+		}
+	})();
+	const waitUntil = getRuntimeEnv().waitUntil;
+	if (waitUntil) waitUntil(task);
+	else void task;
 }
 
 export async function acknowledgeWebSupportReplies(

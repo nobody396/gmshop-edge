@@ -12,6 +12,18 @@ import {
 	telegramSettingsInputSchema,
 	upsertTelegramSetting,
 } from "../settings";
+import {
+	encryptFeishuAppSecret,
+	FeishuAlertError,
+	feishuAlertSettingKeys,
+	feishuAlertSettingsInputSchema,
+	loadFeishuAlertSettings,
+	recordFeishuAlertResult,
+	resolveFeishuAlertCredentials,
+	sendFeishuText,
+	upsertFeishuAlertSetting,
+	verifyFeishuAppBot,
+} from "./feishu-alerts";
 import { synchronizeSupportAdministrators } from "./support-admins";
 import { synchronizeTelegramBot, telegramRuntime } from "./sync";
 
@@ -20,7 +32,7 @@ export const getTelegramSettingsFn = createServerFn({ method: "GET" }).handler(
 		const { db } = await telegramAdminContext("read");
 		const { runtime, settings, provider } = await telegramRuntime(db);
 		const webhookUrl = safeWebhookUrl(runtime.betterAuthUrl);
-		const [counts, webhookHealth] = await Promise.all([
+		const [counts, webhookHealth, feishuAlerts] = await Promise.all([
 			db
 				.prepare(
 					`SELECT
@@ -37,6 +49,7 @@ export const getTelegramSettingsFn = createServerFn({ method: "GET" }).handler(
 					last_update_at: number | null;
 				}>(),
 			inspectWebhook(provider?.telegramBotToken, webhookUrl),
+			loadFeishuAlertSettings(db),
 		]);
 		return {
 			...settings,
@@ -50,9 +63,134 @@ export const getTelegramSettingsFn = createServerFn({ method: "GET" }).handler(
 			lastWebhookUpdateAt: counts?.last_update_at ?? null,
 			activeConversationCount: Number(counts?.active_count ?? 0),
 			administratorCount: Number(counts?.administrator_count ?? 0),
+			feishuAlerts,
 		};
 	},
 );
+
+export const saveFeishuAlertSettingsFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof feishuAlertSettingsInputSchema>) =>
+		feishuAlertSettingsInputSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const context = await telegramAdminContext("update");
+		const { db } = context;
+		const stored = await resolveFeishuAlertCredentials(db, {
+			requireEnabled: false,
+		}).catch((error) => {
+			if (error instanceof FeishuAlertError) return null;
+			throw error;
+		});
+		const candidate =
+			data.appId && data.chatId && (data.appSecret || stored?.appSecret)
+				? {
+						appId: data.appId,
+						chatId: data.chatId,
+						appSecret: data.appSecret ?? stored?.appSecret ?? "",
+					}
+				: null;
+		if (data.enabled && !candidate)
+			throw new DomainError(
+				"feishu_configuration_required",
+				400,
+				"Feishu App ID, App Secret, and Chat ID are required",
+			);
+		if (data.enabled && candidate) {
+			try {
+				await verifyFeishuAppBot(candidate);
+			} catch (error) {
+				throw new DomainError(
+					error instanceof FeishuAlertError
+						? error.code
+						: "feishu_validation_failed",
+					409,
+					"Feishu application bot validation failed",
+				);
+			}
+		}
+		const now = Date.now();
+		await db.batch([
+			upsertFeishuAlertSetting(
+				db,
+				feishuAlertSettingKeys.enabled,
+				data.enabled,
+				now,
+			),
+			upsertFeishuAlertSetting(
+				db,
+				feishuAlertSettingKeys.appId,
+				data.appId,
+				now,
+			),
+			upsertFeishuAlertSetting(
+				db,
+				feishuAlertSettingKeys.chatId,
+				data.chatId,
+				now,
+			),
+			...(data.appSecret
+				? [
+						upsertFeishuAlertSetting(
+							db,
+							feishuAlertSettingKeys.appSecret,
+							await encryptFeishuAppSecret(db, data.appSecret),
+							now,
+							true,
+						),
+					]
+				: []),
+			auditStatement(context, "telegram.feishu_alerts.updated", now, {
+				enabled: data.enabled,
+				appIdConfigured: Boolean(data.appId),
+				appSecretConfigured: Boolean(data.appSecret || stored?.appSecret),
+				chatIdConfigured: Boolean(data.chatId),
+			}),
+		]);
+		return { saved: true };
+	});
+
+export const testFeishuAlertFn = createServerFn({ method: "POST" })
+	.validator(() => undefined)
+	.handler(async () => {
+		const context = await telegramAdminContext("update");
+		const credentials = await resolveFeishuAlertCredentials(context.db, {
+			requireEnabled: false,
+		});
+		if (!credentials)
+			throw new DomainError(
+				"feishu_configuration_required",
+				400,
+				"Feishu application bot configuration is required",
+			);
+		try {
+			await sendFeishuText(
+				credentials,
+				`✅ 网页客服飞书提醒测试\n时间：${new Intl.DateTimeFormat("zh-CN", {
+					timeZone: "Asia/Shanghai",
+					dateStyle: "medium",
+					timeStyle: "short",
+				}).format(Date.now())}（北京时间）\n结果：飞书通道已连通。`,
+			);
+			await recordFeishuAlertResult(context.db, { sent: true });
+			await auditStatement(
+				context,
+				"telegram.feishu_alerts.tested",
+				Date.now(),
+				{ sent: true },
+			).run();
+			return { sent: true };
+		} catch (error) {
+			const code =
+				error instanceof FeishuAlertError
+					? error.code
+					: "feishu_delivery_failed";
+			await recordFeishuAlertResult(context.db, {
+				sent: false,
+				errorCode: code,
+			});
+			throw new DomainError(code, 409, "Feishu test delivery failed");
+		}
+	});
 
 export const saveTelegramSettingsFn = createServerFn({ method: "POST" })
 	.validator((input: z.input<typeof telegramSettingsInputSchema>) =>

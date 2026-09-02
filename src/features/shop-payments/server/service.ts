@@ -51,6 +51,7 @@ type PaymentCreationContext = {
 	default_network: string;
 	fee_bps: number;
 	fixed_fee_minor: string;
+	fixed_channel_pricing: number;
 };
 
 type OrderItem = EntitlementOrderItem & {
@@ -81,7 +82,7 @@ const createPaymentSchema = z.object({
 		.optional(),
 	successUrl: z.url(),
 	cancelUrl: z.url(),
-	payerIp: z.ipv4().nullable().default(null),
+	payerIp: z.union([z.ipv4(), z.ipv6()]).nullable().default(null),
 	payerMobile: z.boolean().default(false),
 });
 
@@ -106,7 +107,15 @@ export async function createShopPayment(
 			 o.total_minor AS amount_minor, o.currency, o.currency_decimals,
 			 o.contact_email,
 			 pc.id AS channel_id, pc.provider, pc.credential_encrypted,
-			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor
+			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor,
+			 NOT EXISTS (
+			  SELECT 1 FROM shop_order_items order_item
+			  WHERE order_item.order_id = o.id AND NOT EXISTS (
+			   SELECT 1 FROM sellable_item_channel_prices channel_price
+			   WHERE channel_price.sellable_item_id = order_item.sellable_item_id
+			    AND channel_price.channel_id = pc.id AND channel_price.enabled = 1
+			  )
+			 ) AS fixed_channel_pricing
 			 FROM shop_orders o JOIN payment_channels pc ON pc.id = ?
 			 WHERE o.id = ? AND pc.enabled = 1 LIMIT 1`,
 		)
@@ -122,8 +131,8 @@ export async function createShopPayment(
 		throw new DomainError("order_not_payable", 409, "Order cannot be paid");
 	const paymentAmountMinor = grossUpPaymentAmount(
 		context.amount_minor,
-		context.fee_bps,
-		context.fixed_fee_minor,
+		context.fixed_channel_pricing ? 0 : context.fee_bps,
+		context.fixed_channel_pricing ? "0" : context.fixed_fee_minor,
 	);
 	const quote = await quotePaymentCurrency(db, {
 		amountMinor: paymentAmountMinor,
@@ -440,6 +449,129 @@ export async function handleShopPaymentWebhook(
 	};
 }
 
+export async function reconcilePendingShopPayments(
+	db: D1Database,
+	fetcher: typeof fetch = fetch,
+	now = Date.now(),
+	limit = 20,
+) {
+	const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+	const attempts = await db
+		.prepare(
+			`SELECT pa.id,pa.channel_id,pa.provider_payment_id,pa.amount_minor,pa.currency,
+			 pc.provider,pc.credential_encrypted
+			 FROM payment_attempts pa JOIN payment_channels pc ON pc.id=pa.channel_id
+			 JOIN shop_orders o ON o.id=pa.order_id
+			 WHERE pa.status IN ('pending','expired')
+			  AND o.status IN ('pending_payment','expired')
+			  AND pa.provider_payment_id IS NOT NULL
+			  AND pc.enabled=1 AND pc.provider IN ('epay','gmpay')
+			  AND pa.created_at>=?
+			 ORDER BY pa.created_at,pa.id LIMIT ?`,
+		)
+		.bind(now - 86_400_000, boundedLimit)
+		.all<{
+			id: string;
+			channel_id: string;
+			provider_payment_id: string;
+			amount_minor: string;
+			currency: string;
+			provider: string;
+			credential_encrypted: string | null;
+		}>();
+	let succeeded = 0;
+	let pending = 0;
+	let failed = 0;
+	for (const attempt of attempts.results) {
+		try {
+			const result = await reconcilePaymentAttempt(db, attempt, fetcher, now);
+			if (result !== "succeeded") {
+				pending += 1;
+				continue;
+			}
+			succeeded += 1;
+		} catch {
+			failed += 1;
+		}
+	}
+	return { scanned: attempts.results.length, succeeded, pending, failed };
+}
+
+export async function reconcileShopOrderPayment(
+	db: D1Database,
+	orderId: string,
+	fetcher: typeof fetch = fetch,
+	now = Date.now(),
+) {
+	const attempt = await db
+		.prepare(
+			`SELECT pa.id,pa.channel_id,pa.provider_payment_id,pa.amount_minor,pa.currency,
+			 pc.provider,pc.credential_encrypted
+			 FROM payment_attempts pa JOIN payment_channels pc ON pc.id=pa.channel_id
+			 JOIN shop_orders o ON o.id=pa.order_id
+			 WHERE pa.order_id=? AND pa.status IN ('pending','expired')
+			  AND o.status IN ('pending_payment','expired')
+			  AND pa.provider_payment_id IS NOT NULL
+			  AND pc.enabled=1 AND pc.provider IN ('epay','gmpay')
+			  AND pa.updated_at<=?
+			 ORDER BY pa.created_at DESC,pa.id DESC LIMIT 1`,
+		)
+		.bind(orderId, now - 3_000)
+		.first<ReconcilePaymentAttempt>();
+	if (!attempt) return { checked: false, status: "pending" as const };
+	try {
+		return {
+			checked: true,
+			status: await reconcilePaymentAttempt(db, attempt, fetcher, now),
+		};
+	} catch {
+		return { checked: true, status: "failed" as const };
+	}
+}
+
+type ReconcilePaymentAttempt = {
+	id: string;
+	channel_id: string;
+	provider_payment_id: string;
+	amount_minor: string;
+	currency: string;
+	provider: string;
+	credential_encrypted: string | null;
+};
+
+async function reconcilePaymentAttempt(
+	db: D1Database,
+	attempt: ReconcilePaymentAttempt,
+	fetcher: typeof fetch,
+	now: number,
+) {
+	const credential = await loadCredential(db, attempt.credential_encrypted);
+	const query = await getPaymentProvider(attempt.provider).queryPayment(
+		attempt.provider_payment_id,
+		credential,
+		fetcher,
+	);
+	if (query.status !== "succeeded") {
+		await db
+			.prepare(
+				"UPDATE payment_attempts SET updated_at=? WHERE id=? AND status IN ('pending','expired')",
+			)
+			.bind(now, attempt.id)
+			.run();
+		return "pending" as const;
+	}
+	await processShopPaymentEvent(db, attempt.channel_id, {
+		providerEventId: `payment-reconcile:${attempt.channel_id}:${attempt.id}`,
+		providerPaymentId: attempt.provider_payment_id,
+		type: "payment_succeeded",
+		amountMinor: query.amountMinor ?? attempt.amount_minor,
+		currency: query.currency ?? attempt.currency,
+		merchantOrderId: null,
+		payloadDigest: `payment-reconcile:${attempt.id}`,
+	});
+	return "succeeded" as const;
+}
+
 export async function processShopPaymentEvent(
 	db: D1Database,
 	channelId: string,
@@ -455,6 +587,7 @@ export async function processShopPaymentEvent(
 		db,
 		channelId,
 		event.providerPaymentId,
+		event.merchantOrderId ?? null,
 	);
 	validateEventMoney(context, event);
 	if (context.attempt_status === "succeeded") {
@@ -570,7 +703,10 @@ export async function processShopPaymentEvent(
 			409,
 			"Payment subject is invalid",
 		);
-	if (context.order_status !== "pending_payment")
+	if (
+		!context.order_status ||
+		!["pending_payment", "expired"].includes(context.order_status)
+	)
 		throw new DomainError(
 			"order_not_payable",
 			409,
@@ -583,6 +719,9 @@ export async function processShopPaymentEvent(
 		.all<OrderItem>();
 	const now = Date.now();
 	const nextVersion = context.order_version + 1;
+	const previousOrderStatus = context.order_status as
+		| "pending_payment"
+		| "expired";
 	const statements: D1PreparedStatement[] = [
 		paymentEventStatement(
 			db,
@@ -595,26 +734,35 @@ export async function processShopPaymentEvent(
 		db
 			.prepare(
 				`UPDATE payment_attempts SET status = 'succeeded', succeeded_at = ?,
-			 updated_at = ?, failure_code = NULL WHERE id = ? AND status IN ('created', 'pending')`,
+				 updated_at = ?, failure_code = NULL WHERE id = ?
+				 AND status IN ('created', 'pending', 'expired')`,
 			)
 			.bind(now, now, context.attempt_id),
 		db
 			.prepare(
 				`UPDATE shop_orders SET status = 'paid', paid_minor = total_minor,
-			 paid_at = ?, version = ?, updated_at = ?
-			 WHERE id = ? AND status = 'pending_payment' AND version = ?`,
+				 paid_at = ?, cancelled_at = NULL, version = ?, updated_at = ?
+				 WHERE id = ? AND status = ? AND version = ?`,
 			)
-			.bind(now, nextVersion, now, context.order_id, context.order_version),
+			.bind(
+				now,
+				nextVersion,
+				now,
+				context.order_id,
+				previousOrderStatus,
+				context.order_version,
+			),
 		db
 			.prepare(
 				`INSERT INTO shop_order_events
 			 (id, order_id, event_type, visibility, from_status, to_status, order_version,
 			  note, actor_type, created_at)
-			 SELECT ?, id, 'payment_succeeded', 'customer', 'pending_payment', 'paid', ?,
-			  NULL, 'provider', ? FROM shop_orders WHERE id = ? AND status = 'paid' AND version = ?`,
+				 SELECT ?, id, 'payment_succeeded', 'customer', ?, 'paid', ?,
+				  NULL, 'provider', ? FROM shop_orders WHERE id = ? AND status = 'paid' AND version = ?`,
 			)
 			.bind(
 				crypto.randomUUID(),
+				previousOrderStatus,
 				nextVersion,
 				now,
 				context.order_id,
@@ -626,8 +774,8 @@ export async function processShopPaymentEvent(
 	statements.push(
 		db
 			.prepare(
-				`UPDATE coupon_redemptions SET status = 'consumed', updated_at = ?
-				 WHERE order_id = ? AND status = 'reserved'`,
+				`UPDATE coupon_redemptions SET status = 'consumed', released_at = NULL,
+				 updated_at = ? WHERE order_id = ? AND status IN ('reserved', 'released')`,
 			)
 			.bind(now, context.order_id),
 		db
@@ -938,6 +1086,7 @@ async function loadPaymentContext(
 	db: D1Database,
 	channelId: string,
 	providerPaymentId: string,
+	merchantOrderId: string | null,
 ) {
 	const context = await db
 		.prepare(
@@ -954,9 +1103,12 @@ async function loadPaymentContext(
 			 LEFT JOIN wallet_topups topup ON topup.id = pa.wallet_topup_id
 			 LEFT JOIN users topup_user ON topup_user.id = topup.user_id
 			 JOIN payment_channels pc ON pc.id = pa.channel_id
-			 WHERE pa.channel_id = ? AND pa.provider_payment_id = ? LIMIT 1`,
+			 WHERE pa.channel_id = ? AND (
+			  pa.provider_payment_id = ? OR
+			  (? IS NOT NULL AND pa.provider_payment_id LIKE '%:' || ?)
+			 ) LIMIT 1`,
 		)
-		.bind(channelId, providerPaymentId)
+		.bind(channelId, providerPaymentId, merchantOrderId, merchantOrderId)
 		.first<PaymentContext>();
 	if (!context)
 		throw new DomainError(

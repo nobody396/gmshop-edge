@@ -3,7 +3,10 @@ import type { SupportedLocale } from "#/lib/locales";
 import { m } from "#/paraglide/messages";
 import { telegramSettingKeys, upsertTelegramSetting } from "../settings";
 import { telegramWebhookSigningKeyId } from "./secret";
-import { synchronizeSupportAdministrators } from "./support-admins";
+import {
+	supportAdministratorPeriodicSyncMs,
+	synchronizeSupportAdministrators,
+} from "./support-admins";
 import {
 	synchronizeTelegramBot,
 	telegramCommandVersion,
@@ -18,7 +21,9 @@ export async function runTelegramMaintenance(db: D1Database, now = Date.now()) {
 		settings.supportChatId &&
 		(settings.supportEnabled ||
 			settings.webSupportEnabled ||
-			(await activeConversationCount(db)) > 0)
+			(await activeConversationCount(db)) > 0) &&
+		(!settings.lastAdminSyncAt ||
+			settings.lastAdminSyncAt <= now - supportAdministratorPeriodicSyncMs)
 	) {
 		try {
 			administratorSync = await synchronizeSupportAdministrators(db, now);

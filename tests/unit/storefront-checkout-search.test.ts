@@ -79,4 +79,11 @@ describe("checkout presentation", () => {
 			"aspect-video w-18 shrink-0 rounded-2xl",
 		);
 	});
+
+	it("redirects GMPay orders straight to the network-selection cashier", () => {
+		expect(checkoutPageSource).toContain('selectedProvider === "gmpay"');
+		expect(checkoutPageSource).toContain(
+			"window.location.assign(hostedCheckoutUrl)",
+		);
+	});
 });

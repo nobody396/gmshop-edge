@@ -4,11 +4,13 @@ import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import {
 	completeManualDelivery,
 	processDelivery,
+	startManualDelivery,
 } from "#/features/fulfillment/server/process";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import {
 	createShopPayment,
 	processShopPaymentEvent,
+	reconcilePendingShopPayments,
 } from "#/features/shop-payments/server/service";
 import { revealStoreDelivery } from "#/features/storefront/server/delivery-reveal";
 import { encryptSecret } from "#/lib/secrets";
@@ -56,7 +58,7 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 			paymentCurrency: "USD",
 			successUrl: "https://shop.example/orders/GM100001",
 			cancelUrl: "https://shop.example/orders/GM100001",
-			payerIp: "192.0.2.10",
+			payerIp: "2001:db8::10",
 		};
 		await expect(createShopPayment(database, input, fetcher)).resolves.toEqual({
 			id: expect.any(String),
@@ -133,6 +135,45 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 				.bind("create-payment-channel-fee")
 				.first(),
 		).resolves.toEqual({ amount_minor: "1031" });
+	});
+
+	it("does not add a channel fee after a fixed channel price was snapshotted", async () => {
+		await database.batch([
+			database
+				.prepare("UPDATE payment_channels SET fee_bps = 300 WHERE id = ?")
+				.bind(channelId),
+			database
+				.prepare(
+					`INSERT INTO sellable_item_channel_prices
+					 (id,sellable_item_id,channel_id,price_minor,enabled,created_at,updated_at)
+					 VALUES ('fixed-channel-payment','sellableItem-card',?,'1000',1,1,1)`,
+				)
+				.bind(channelId),
+		]);
+		const fetcher = vi.fn(
+			async (_input: RequestInfo | URL, init?: RequestInit) => {
+				const body = new URLSearchParams(String(init?.body));
+				expect(body.get("line_items[0][price_data][unit_amount]")).toBe("1000");
+				return Response.json({
+					id: "cs_fixed_channel_price",
+					url: "https://checkout.stripe.example/cs_fixed_channel_price",
+					expires_at: null,
+				});
+			},
+		);
+		await createShopPayment(
+			database,
+			{
+				orderId,
+				channelId,
+				idempotencyKey: "create-payment-fixed-channel-price",
+				paymentCurrency: "CNY",
+				successUrl: "https://shop.example/orders/GM100001",
+				cancelUrl: "https://shop.example/orders/GM100001",
+				payerIp: "192.0.2.10",
+			},
+			fetcher,
+		);
 	});
 
 	it("claims concurrent payment creation once before calling the provider", async () => {
@@ -243,6 +284,103 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("matches a ZPay callback by merchant order id when create omitted its trade number", async () => {
+		const merchantOrderId = "44444444444444448444444444444444";
+		await database
+			.prepare(
+				"UPDATE payment_attempts SET provider_payment_id = ? WHERE id = ?",
+			)
+			.bind(`${merchantOrderId}:${merchantOrderId}`, attemptId)
+			.run();
+		await expect(
+			processShopPaymentEvent(database, channelId, {
+				...succeededEvent("evt-zpay-merchant-fallback"),
+				providerPaymentId: `zpay-trade-number:${merchantOrderId}`,
+				merchantOrderId,
+			}),
+		).resolves.toEqual({ duplicate: false, status: "succeeded" });
+		await expect(paymentState(database)).resolves.toMatchObject({
+			order_status: "paid",
+			payment_status: "succeeded",
+			receipts: 1,
+		});
+	});
+
+	it("accepts a verified late callback after the local order expired", async () => {
+		await database.batch([
+			database
+				.prepare(
+					"UPDATE shop_orders SET status = 'expired', version = 2, cancelled_at = 2 WHERE id = ?",
+				)
+				.bind(orderId),
+			database
+				.prepare(
+					"UPDATE payment_attempts SET status = 'expired', failure_code = 'order_expired' WHERE id = ?",
+				)
+				.bind(attemptId),
+		]);
+		await expect(
+			processShopPaymentEvent(
+				database,
+				channelId,
+				succeededEvent("evt-late-payment"),
+			),
+		).resolves.toEqual({ duplicate: false, status: "succeeded" });
+		const state = await database
+			.prepare(
+				`SELECT o.status AS order_status,o.version,o.cancelled_at,
+				 pa.status AS payment_status,pa.failure_code,
+				 (SELECT COUNT(*) FROM delivery_records WHERE order_item_id = ?) deliveries
+				 FROM shop_orders o JOIN payment_attempts pa ON pa.order_id=o.id
+				 WHERE o.id=?`,
+			)
+			.bind(orderItemId, orderId)
+			.first<Record<string, unknown>>();
+		expect(state).toMatchObject({
+			order_status: "paid",
+			version: 3,
+			cancelled_at: null,
+			payment_status: "succeeded",
+			failure_code: null,
+			deliveries: 1,
+		});
+	});
+
+	it("reconciles a paid ZPay order when its callback was missed", async () => {
+		const credential = await encryptSecret(
+			JSON.stringify({
+				baseUrl: "https://zpay.example",
+				pid: "1000",
+				secretKey: "zpay-secret-key",
+				paymentMethod: "alipay",
+			}),
+			"commerce-test-secret",
+			"payment-credential",
+		);
+		await database.batch([
+			database
+				.prepare(
+					"UPDATE payment_channels SET provider='epay',credential_encrypted=? WHERE id=?",
+				)
+				.bind(credential, channelId),
+			database
+				.prepare(
+					"UPDATE payment_attempts SET provider_payment_id='merchant-order:merchant-order' WHERE id=?",
+				)
+				.bind(attemptId),
+		]);
+		const fetcher = vi.fn(async () => Response.json({ code: 1, status: 1 }));
+		await expect(
+			reconcilePendingShopPayments(database, fetcher, 1_000),
+		).resolves.toEqual({ scanned: 1, succeeded: 1, pending: 0, failed: 0 });
+		expect(fetcher).toHaveBeenCalledTimes(1);
+		await expect(paymentState(database)).resolves.toMatchObject({
+			order_status: "paid",
+			payment_status: "succeeded",
+			receipts: 1,
+		});
+	});
+
 	it("accepts payment for manual procurement and delivers operator-supplied content", async () => {
 		await database.batch([
 			database
@@ -281,6 +419,20 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 			status: "awaiting_supply",
 			supplier_orders: 0,
 			delivery_outbox: 0,
+		});
+		await expect(
+			startManualDelivery(database, waiting?.id ?? ""),
+		).resolves.toMatchObject({
+			status: "processing",
+			orderStatus: "fulfilling",
+			duplicate: false,
+		});
+		await expect(
+			startManualDelivery(database, waiting?.id ?? ""),
+		).resolves.toMatchObject({
+			status: "processing",
+			orderStatus: "fulfilling",
+			duplicate: true,
 		});
 		await expect(
 			completeManualDelivery(

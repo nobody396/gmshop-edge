@@ -19,14 +19,18 @@ globalThis.ResizeObserver ??= class {
 
 const mocks = vi.hoisted(() => ({
 	getTelegramSettingsFn: vi.fn(),
+	saveFeishuAlertSettingsFn: vi.fn(async () => ({ saved: true })),
 	saveTelegramSettingsFn: vi.fn(async () => ({ saved: true })),
 	syncTelegramBotFn: vi.fn(),
+	testFeishuAlertFn: vi.fn(async () => ({ sent: true })),
 }));
 
 vi.mock("#/features/telegram/server/admin", () => ({
 	getTelegramSettingsFn: mocks.getTelegramSettingsFn,
+	saveFeishuAlertSettingsFn: mocks.saveFeishuAlertSettingsFn,
 	saveTelegramSettingsFn: mocks.saveTelegramSettingsFn,
 	syncTelegramBotFn: mocks.syncTelegramBotFn,
+	testFeishuAlertFn: mocks.testFeishuAlertFn,
 }));
 
 const settings = {
@@ -62,6 +66,14 @@ const settings = {
 	lastWebhookUpdateAt: null,
 	activeConversationCount: 0,
 	administratorCount: 0,
+	feishuAlerts: {
+		enabled: false,
+		appId: null,
+		chatId: null,
+		hasAppSecret: false,
+		lastSentAt: null,
+		lastErrorCode: null,
+	},
 };
 
 describe("telegram settings page", () => {

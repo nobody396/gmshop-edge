@@ -41,6 +41,7 @@ import {
 	trackCommerceEvent,
 } from "#/features/storefront/commerce-events";
 import { writeGuestOrderEmail } from "#/features/storefront/order-access-storage";
+import { safeStorePaymentUrl } from "#/features/storefront/payment-url";
 import {
 	getStoreCartFn,
 	previewStoreCartFn,
@@ -48,7 +49,7 @@ import {
 import { getStorefrontProductFn } from "#/features/storefront/server/catalog";
 import {
 	checkoutStoreOrderFn,
-	listCheckoutPaymentChannelsFn,
+	quoteCheckoutPaymentChannelsFn,
 } from "#/features/storefront/server/functions";
 import { getWalletFn } from "#/features/wallet/server/functions";
 import { m } from "#/paraglide/messages";
@@ -112,11 +113,12 @@ export function StorefrontCheckoutPage() {
 		Record<string, Record<string, InputValue>>
 	>({});
 	const idempotencyKeys = useRef(new Map<string, string>());
+	const checkoutIdempotencyScope = `${checkoutItemsKey}:${paymentChannelId || "unselected"}`;
 	const idempotencyKey =
-		idempotencyKeys.current.get(checkoutItemsKey) ??
+		idempotencyKeys.current.get(checkoutIdempotencyScope) ??
 		(() => {
 			const key = crypto.randomUUID();
-			idempotencyKeys.current.set(checkoutItemsKey, key);
+			idempotencyKeys.current.set(checkoutIdempotencyScope, key);
 			return key;
 		})();
 	const cloud = useQuery({
@@ -172,7 +174,7 @@ export function StorefrontCheckoutPage() {
 		})),
 	});
 	const currencyItem = items.find((item) => "currency" in item);
-	const total = items.reduce(
+	const baseTotal = items.reduce(
 		(sum, item) =>
 			"priceMinor" in item
 				? sum + BigInt(item.priceMinor ?? "0") * BigInt(item.quantity)
@@ -180,23 +182,77 @@ export function StorefrontCheckoutPage() {
 		0n,
 	);
 	const channels = useQuery({
-		queryKey: ["storefront", "payment-channels"],
-		queryFn: () => listCheckoutPaymentChannelsFn(),
-		enabled: Boolean(currencyItem && total > 0n && !signInRequired),
+		queryKey: [
+			"storefront",
+			"payment-channels",
+			items.map((item) => item.sellableItemId),
+		],
+		queryFn: () =>
+			quoteCheckoutPaymentChannelsFn({
+				data: {
+					sellableItemIds: items.map((item) => item.sellableItemId),
+				},
+			}),
+		enabled: Boolean(currencyItem && baseTotal > 0n && !signInRequired),
 	});
 	const selectedChannel = channels.data?.find(
 		(channel) => channel.id === paymentChannelId,
 	);
+	const selectedChannelHasFixedPrices = Boolean(
+		selectedChannel &&
+			items.every((item) => selectedChannel.itemPrices[item.sellableItemId]),
+	);
+	const selectedPrice = (sellableItemId: string, fallback: string) =>
+		selectedChannel?.itemPrices[sellableItemId] ?? fallback;
+	const total = items.reduce(
+		(sum, item) =>
+			"priceMinor" in item
+				? sum +
+					BigInt(selectedPrice(item.sellableItemId, item.priceMinor ?? "0")) *
+						BigInt(item.quantity)
+				: sum,
+		0n,
+	);
 	const surcharge = selectedChannel
-		? BigInt(
-				paymentSurchargeAmount(
-					total.toString(),
-					selectedChannel.feeBps,
-					selectedChannel.fixedFeeMinor,
-				),
-			)
+		? selectedChannelHasFixedPrices
+			? 0n
+			: BigInt(
+					paymentSurchargeAmount(
+						total.toString(),
+						selectedChannel.feeBps,
+						selectedChannel.fixedFeeMinor,
+					),
+				)
 		: 0n;
 	const payableTotal = total + surcharge;
+	const channelAmountDue = (
+		channel: NonNullable<typeof channels.data>[number],
+	) => {
+		const channelSubtotal = items.reduce(
+			(sum, item) =>
+				"priceMinor" in item
+					? sum +
+						BigInt(
+							channel.itemPrices[item.sellableItemId] ?? item.priceMinor ?? "0",
+						) *
+							BigInt(item.quantity)
+					: sum,
+			0n,
+		);
+		const fixedPrices = items.every(
+			(item) => channel.itemPrices[item.sellableItemId],
+		);
+		return fixedPrices
+			? channelSubtotal
+			: channelSubtotal +
+					BigInt(
+						paymentSurchargeAmount(
+							channelSubtotal.toString(),
+							channel.feeBps,
+							channel.fixedFeeMinor,
+						),
+					);
+	};
 	const wallet = useQuery({
 		queryKey: ["wallet"],
 		queryFn: () => getWalletFn(),
@@ -221,7 +277,7 @@ export function StorefrontCheckoutPage() {
 			: preview.isError;
 	const paymentUnavailable =
 		!signInRequired &&
-		total > 0n &&
+		baseTotal > 0n &&
 		!channels.isPending &&
 		(channels.isError || (!channels.data?.length && !walletAvailable));
 	useEffect(() => {
@@ -244,8 +300,19 @@ export function StorefrontCheckoutPage() {
 
 	const checkout = useMutation({
 		mutationFn: checkoutStoreOrderFn,
-		onSuccess: ({ accountOrder, order }) => {
+		onSuccess: ({ accountOrder, order, payment }) => {
 			if (!buyNow && !session.data?.user) writeLocalCart([]);
+			const selectedProvider = channels.data?.find(
+				(channel) => channel.id === paymentChannelId,
+			)?.provider;
+			const hostedCheckoutUrl =
+				selectedProvider === "gmpay"
+					? safeStorePaymentUrl(payment?.checkoutUrl ?? null)
+					: null;
+			if (hostedCheckoutUrl) {
+				window.location.assign(hostedCheckoutUrl);
+				return;
+			}
 			if (accountOrder) {
 				void navigate({
 					to: "/account/orders/$orderNumber",
@@ -413,8 +480,12 @@ export function StorefrontCheckoutPage() {
 												<strong>
 													<StoreMoney
 														amountMinor={(
-															BigInt(item.priceMinor ?? "0") *
-															BigInt(item.quantity)
+															BigInt(
+																selectedPrice(
+																	item.sellableItemId,
+																	item.priceMinor ?? "0",
+																),
+															) * BigInt(item.quantity)
 														).toString()}
 														currency={item.currency ?? "USD"}
 														decimals={item.currencyDecimals ?? 2}
@@ -503,7 +574,7 @@ export function StorefrontCheckoutPage() {
 							{currencyItem && "currency" in currencyItem ? (
 								<strong className="mt-2 block text-4xl text-primary tracking-tight">
 									<StoreMoney
-										amountMinor={total.toString()}
+										amountMinor={payableTotal.toString()}
 										currency={currencyItem.currency ?? "USD"}
 										decimals={currencyItem.currencyDecimals ?? 2}
 									/>
@@ -588,7 +659,19 @@ export function StorefrontCheckoutPage() {
 											<span className="font-medium leading-snug">
 												{channel.name}
 											</span>
-											{channel.feeBps > 0 ? (
+											{currencyItem && "currency" in currencyItem ? (
+												<span className="font-medium text-primary text-xs">
+													<StoreMoney
+														amountMinor={channelAmountDue(channel).toString()}
+														currency={currencyItem.currency ?? "USD"}
+														decimals={currencyItem.currencyDecimals ?? 2}
+													/>
+												</span>
+											) : null}
+											{channel.feeBps > 0 &&
+											!items.every(
+												(item) => channel.itemPrices[item.sellableItemId],
+											) ? (
 												<span className="text-muted-foreground text-xs">
 													{m.store_payment_fee_rate({
 														rate: (channel.feeBps / 100).toFixed(2),

@@ -6,6 +6,51 @@ import {
 } from "../settings";
 import { telegramRuntime } from "./sync";
 
+export const supportAdministratorMirrorFreshMs = 180_000;
+export const supportAdministratorPeriodicSyncMs = 15 * 60_000;
+
+type SupportAdministratorApi = Pick<Api, "getChatMember">;
+
+export async function authorizeSupportAdministrator(
+	db: D1Database,
+	api: SupportAdministratorApi,
+	input: {
+		supportChatId: string;
+		telegramUserId: string;
+		lastAdminSyncAt: number | null;
+		now?: number;
+	},
+) {
+	const now = input.now ?? Date.now();
+	const mirrored = await db
+		.prepare(
+			`SELECT 1 AS allowed FROM telegram_support_administrators
+			 WHERE support_chat_id = ? AND telegram_user_id = ? LIMIT 1`,
+		)
+		.bind(input.supportChatId, input.telegramUserId)
+		.first<{ allowed: number }>();
+	if (
+		input.lastAdminSyncAt &&
+		input.lastAdminSyncAt >= now - supportAdministratorMirrorFreshMs
+	)
+		return Boolean(mirrored);
+	try {
+		const member = await api.getChatMember(
+			input.supportChatId,
+			Number(input.telegramUserId),
+		);
+		await updateSupportAdministratorMirror(
+			db,
+			input.supportChatId,
+			input.telegramUserId,
+			member.status,
+		);
+		return member.status === "administrator" || member.status === "creator";
+	} catch {
+		return false;
+	}
+}
+
 export async function synchronizeSupportAdministrators(
 	db: D1Database,
 	now = Date.now(),

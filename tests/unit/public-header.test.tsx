@@ -116,6 +116,54 @@ describe("public header settings", () => {
 		expect(container.querySelectorAll('a[href="/sign-in"]')).toHaveLength(1);
 	});
 
+	it("shows online, WeChat, and private Telegram support without a public channel", () => {
+		act(() => root.render(<PublicHeader />));
+		const support = Array.from(container.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support"),
+		);
+		act(() => support?.click());
+
+		expect(
+			document.querySelector('a[href="https://t.me/laoshirenai_support_bot"]'),
+		).not.toBeNull();
+		expect(
+			document.querySelector('a[href="https://t.me/bettercalljerrys"]'),
+		).toBeNull();
+		expect(
+			document.querySelector('a[href="https://t.me/laoshirenai"]'),
+		).toBeNull();
+		expect(
+			document.querySelector(
+				'img[src="/support/wechat-jerrys.png"][alt="store_support_wechat_qr_alt"]',
+			),
+		).not.toBeNull();
+		expect(document.body.textContent).toContain("store_support_online");
+		expect(document.body.textContent).toContain(
+			"store_support_order_notice_title",
+		);
+		expect(document.body.textContent).toContain(
+			"store_support_order_notice_description",
+		);
+	});
+
+	it("opens the embedded web support conversation from the support menu", () => {
+		const opened = vi.fn();
+		window.addEventListener("gmshop:web-support:open", opened);
+		act(() => root.render(<PublicHeader />));
+		const support = Array.from(container.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support"),
+		);
+		act(() => support?.click());
+		const online = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support_online"),
+		);
+		act(() => online?.click());
+
+		expect(opened).toHaveBeenCalledTimes(1);
+		expect(document.querySelector('[data-slot="popover-content"]')).toBeNull();
+		window.removeEventListener("gmshop:web-support:open", opened);
+	});
+
 	it("replaces settings with the avatar and hides internal identity email", () => {
 		mocks.root = true;
 		mocks.session.data = {
