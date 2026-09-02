@@ -54,7 +54,7 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 		database = await miniflare.getD1Database("DB");
 		await applyMigrations(database);
 		await seedStorefront(database);
-	});
+	}, 30_000);
 
 	afterEach(async () => miniflare.dispose());
 

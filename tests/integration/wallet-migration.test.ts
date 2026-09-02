@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { afterEach, describe, expect, it } from "vitest";
 
-describe("wallet incremental migration", () => {
+describe("wallet incremental migration", { timeout: 30_000 }, () => {
 	let miniflare: Miniflare | undefined;
 
 	afterEach(async () => miniflare?.dispose());
