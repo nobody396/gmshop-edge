@@ -114,6 +114,60 @@ describe("shop payment providers", () => {
 		});
 	});
 
+	it("accepts the numeric paid status emitted by GMPay Edge callbacks", async () => {
+		const params = {
+			pid: "1000",
+			trade_id: "trade-gmpay-numeric-paid",
+			order_id: "11111111111141118111111111111111",
+			amount: "630",
+			actual_amount: "92.9171",
+			block_transaction_id: "0xabc",
+			status: "2",
+		};
+		const body = JSON.stringify({
+			...params,
+			status: 2,
+			signature: await signGmpay(params, "epusdt_secret_key"),
+		});
+		await expect(
+			gmpayPaymentProvider.parseWebhook(
+				new Request("https://shop.example/webhook", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body,
+				}),
+				epusdtCredential(),
+			),
+		).resolves.toMatchObject({
+			providerPaymentId: "trade-gmpay-numeric-paid",
+			type: "payment_succeeded",
+		});
+	});
+
+	it("accepts the numeric paid status returned by GMPay Edge queries", async () => {
+		const fetcher = vi.fn(async () =>
+			Response.json({
+				status_code: 200,
+				message: "success",
+				data: {
+					trade_id: "trade-gmpay-numeric-paid",
+					order_id: "11111111111141118111111111111111",
+					amount: "630",
+					currency: "CNY",
+					status: 2,
+					status_detail: "paid",
+				},
+			}),
+		);
+		await expect(
+			gmpayPaymentProvider.queryPayment(
+				"trade-gmpay-numeric-paid",
+				epusdtCredential(),
+				fetcher,
+			),
+		).resolves.toMatchObject({ status: "succeeded", currency: "CNY" });
+	});
+
 	it.each([
 		"pending",
 		"confirming",

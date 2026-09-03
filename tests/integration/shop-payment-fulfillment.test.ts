@@ -411,6 +411,57 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("reconciles a paid GMPay Edge order with its numeric compatibility status", async () => {
+		const credential = await encryptSecret(
+			JSON.stringify({
+				baseUrl: "https://pay.example",
+				pid: "1000",
+				secretKey: "gmpay-secret-key",
+			}),
+			"commerce-test-secret",
+			"payment-credential",
+		);
+		await database.batch([
+			database
+				.prepare(
+					"UPDATE payment_channels SET provider='gmpay',credential_encrypted=? WHERE id=?",
+				)
+				.bind(credential, channelId),
+			database
+				.prepare(
+					"UPDATE payment_attempts SET provider_payment_id='trade-gmpay-paid' WHERE id=?",
+				)
+				.bind(attemptId),
+		]);
+		const fetcher = vi.fn(
+			async (_input: RequestInfo | URL, init?: RequestInit) => {
+				expect(new Headers(init?.headers).get("user-agent")).toBe(
+					"GMShop-Edge/1.0",
+				);
+				return Response.json({
+					status_code: 200,
+					message: "success",
+					data: {
+						trade_id: "trade-gmpay-paid",
+						order_id: "44444444444444448444444444444444",
+						amount: "10",
+						currency: "CNY",
+						status: 2,
+						status_detail: "paid",
+					},
+				});
+			},
+		);
+		await expect(
+			reconcilePendingShopPayments(database, fetcher, 1_000),
+		).resolves.toEqual({ scanned: 1, succeeded: 1, pending: 0, failed: 0 });
+		await expect(paymentState(database)).resolves.toMatchObject({
+			order_status: "paid",
+			payment_status: "succeeded",
+			receipts: 1,
+		});
+	});
+
 	it("accepts payment for manual procurement and delivers operator-supplied content", async () => {
 		await database.batch([
 			database
