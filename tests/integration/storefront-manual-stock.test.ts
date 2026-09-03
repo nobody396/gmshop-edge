@@ -33,7 +33,7 @@ describe("storefront manual procurement stock", { timeout: 30_000 }, () => {
 
 	afterEach(async () => miniflare.dispose());
 
-	it("uses a fresh bound inventory snapshot but preserves unbound manual services", async () => {
+	it("keeps multi-source manual procurement available independently of one binding", async () => {
 		await expect(stock()).resolves.toBe(-1);
 		const now = Date.now();
 		await db.batch([
@@ -62,13 +62,13 @@ describe("storefront manual procurement stock", { timeout: 30_000 }, () => {
 				)
 				.bind(now, now, now),
 		]);
-		await expect(stock()).resolves.toBe(7);
+		await expect(stock()).resolves.toBe(-1);
 		await db
 			.prepare(
 				"UPDATE supplier_bindings SET stock_quantity = 0 WHERE id = 'manual-binding'",
 			)
 			.run();
-		await expect(stock()).resolves.toBe(0);
+		await expect(stock()).resolves.toBe(-1);
 	});
 
 	async function stock() {

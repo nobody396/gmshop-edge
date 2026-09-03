@@ -490,8 +490,9 @@ export async function reconcilePendingShopPayments(
 				continue;
 			}
 			succeeded += 1;
-		} catch {
+		} catch (error) {
 			failed += 1;
+			logPaymentReconciliationFailure(attempt, error);
 		}
 	}
 	return { scanned: attempts.results.length, succeeded, pending, failed };
@@ -524,9 +525,30 @@ export async function reconcileShopOrderPayment(
 			checked: true,
 			status: await reconcilePaymentAttempt(db, attempt, fetcher, now),
 		};
-	} catch {
+	} catch (error) {
+		logPaymentReconciliationFailure(attempt, error);
 		return { checked: true, status: "failed" as const };
 	}
+}
+
+function logPaymentReconciliationFailure(
+	attempt: Pick<ReconcilePaymentAttempt, "id" | "channel_id" | "provider">,
+	error: unknown,
+) {
+	console.error(
+		JSON.stringify({
+			event: "payment_reconciliation_failed",
+			attemptId: attempt.id,
+			channelId: attempt.channel_id,
+			provider: attempt.provider,
+			errorCode:
+				error instanceof z.ZodError
+					? "invalid_provider_response"
+					: error instanceof DomainError
+						? error.code
+						: "provider_query_failed",
+		}),
+	);
 }
 
 type ReconcilePaymentAttempt = {

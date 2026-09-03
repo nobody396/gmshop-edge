@@ -8,11 +8,6 @@ export function storefrontStockExpression(
 		storefrontSyncedSupplierStockExpression(itemAlias);
 	return `CASE
 		WHEN ${productAlias}.product_type <> 'stock' THEN -1
-		WHEN ${itemAlias}.fulfillment_source = 'manual' AND EXISTS (
-			SELECT 1 FROM supplier_bindings manual_binding
-			WHERE manual_binding.sellable_item_id = ${itemAlias}.id
-			 AND manual_binding.enabled = 1
-		) THEN ${syncedSupplierStock}
 		WHEN ${itemAlias}.fulfillment_source = 'manual' THEN -1
 		WHEN ${itemAlias}.fulfillment_source = 'supplier' THEN ${syncedSupplierStock}
 		ELSE (

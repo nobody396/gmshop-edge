@@ -25,6 +25,30 @@ const createResponseSchema = z.object({
 	}),
 });
 
+const namedStatusSchema = z.enum([
+	"pending",
+	"confirming",
+	"paid",
+	"partially_paid",
+	"overpaid",
+	"expired",
+	"cancelled",
+	"failed",
+	"refunded",
+]);
+
+const compatibleStatusSchema = z.union([
+	namedStatusSchema,
+	z.literal("1"),
+	z.literal("2"),
+	z.literal("3"),
+	z.literal("4"),
+	z.literal(1),
+	z.literal(2),
+	z.literal(3),
+	z.literal(4),
+]);
+
 const callbackSchema = z.object({
 	pid: z.string().min(1),
 	trade_id: z.string().min(1),
@@ -35,17 +59,7 @@ const callbackSchema = z.object({
 		.string()
 		.regex(/^\d+(?:\.\d+)?$/)
 		.default("0"),
-	status: z.enum([
-		"pending",
-		"confirming",
-		"paid",
-		"partially_paid",
-		"overpaid",
-		"expired",
-		"cancelled",
-		"failed",
-		"refunded",
-	]),
+	status: compatibleStatusSchema,
 	signature: z.string().min(1),
 });
 
@@ -56,9 +70,26 @@ const queryResponseSchema = z.object({
 		order_id: z.string().min(1),
 		amount: z.string().regex(/^\d+(?:\.\d+)?$/),
 		currency: z.string().length(3),
-		status: callbackSchema.shape.status,
+		status: compatibleStatusSchema,
+		status_detail: namedStatusSchema.optional(),
 	}),
 });
+
+type CompatibleStatus = z.infer<typeof compatibleStatusSchema>;
+
+function paymentStatus(
+	status: CompatibleStatus,
+	statusDetail?: z.infer<typeof namedStatusSchema>,
+) {
+	const effective = statusDetail ?? String(status);
+	if (effective === "paid" || effective === "overpaid" || effective === "2")
+		return "succeeded" as const;
+	if (effective === "expired" || effective === "cancelled" || effective === "3")
+		return "expired" as const;
+	if (effective === "failed" || effective === "refunded")
+		return "failed" as const;
+	return "pending" as const;
+}
 
 export const gmpayPaymentProvider: PaymentProviderAdapter = {
 	checkoutPresentation: "redirect",
@@ -86,7 +117,10 @@ export const gmpayPaymentProvider: PaymentProviderAdapter = {
 			),
 			{
 				method: "POST",
-				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded",
+					"User-Agent": "GMShop-Edge/1.0",
+				},
 				body: new URLSearchParams(params),
 				signal: AbortSignal.timeout(10_000),
 			},
@@ -112,19 +146,17 @@ export const gmpayPaymentProvider: PaymentProviderAdapter = {
 		url.search = new URLSearchParams(params).toString();
 		const result = queryResponseSchema.parse(
 			await parseEpusdtJson(
-				await fetcher(url, { signal: AbortSignal.timeout(10_000) }),
+				await fetcher(url, {
+					headers: {
+						Accept: "application/json",
+						"User-Agent": "GMShop-Edge/1.0",
+					},
+					signal: AbortSignal.timeout(10_000),
+				}),
 			),
 		);
 		return {
-			status:
-				result.data.status === "paid" || result.data.status === "overpaid"
-					? ("succeeded" as const)
-					: result.data.status === "expired" ||
-							result.data.status === "cancelled"
-						? ("expired" as const)
-						: result.data.status === "failed"
-							? ("failed" as const)
-							: ("pending" as const),
+			status: paymentStatus(result.data.status, result.data.status_detail),
 			amountMinor: null,
 			currency: result.data.currency.toUpperCase(),
 		};
@@ -161,13 +193,11 @@ export const gmpayPaymentProvider: PaymentProviderAdapter = {
 			providerEventId: `gmpay:${event.trade_id}:${event.block_transaction_id || event.status}`,
 			providerPaymentId: event.trade_id,
 			type:
-				event.status === "paid" || event.status === "overpaid"
+				paymentStatus(event.status) === "succeeded"
 					? "payment_succeeded"
-					: event.status === "pending" ||
-							event.status === "confirming" ||
-							event.status === "partially_paid"
+					: paymentStatus(event.status) === "pending"
 						? "payment_pending"
-						: event.status === "expired" || event.status === "cancelled"
+						: paymentStatus(event.status) === "expired"
 							? "payment_expired"
 							: "payment_failed",
 			amountMinor: null,
