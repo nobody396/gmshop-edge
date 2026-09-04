@@ -32,6 +32,10 @@ import { StoreMoney } from "#/features/exchange-rates/currency-context";
 import { addLocalCartItem } from "#/features/storefront/cart-storage";
 import { trackCommerceEvent } from "#/features/storefront/commerce-events";
 import {
+	ClaudePurchaseGuide,
+	claudeRechargeProductId,
+} from "#/features/storefront/components/claude-purchase-guide";
+import {
 	StorefrontProductCard,
 	StorefrontProductCardSkeleton,
 } from "#/features/storefront/components/product-card";
@@ -250,7 +254,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 							{data.description}
 						</p>
 					) : null}
-					{data.id === "ba540b83-388d-45d1-9dcb-25c3da3f9956" ? (
+					{data.id === claudeRechargeProductId ? (
 						<div className="mt-4 flex max-w-2xl items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 font-semibold text-primary text-sm leading-6">
 							<ShieldCheck className="size-4 shrink-0" />
 							<p>{m.store_claude_channel_notice()}</p>
@@ -324,6 +328,14 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 								})}
 							</div>
 						</fieldset>
+					) : null}
+					{data.id === claudeRechargeProductId ? (
+						<a
+							href="#claude-purchase-guide"
+							className="mt-5 block rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 font-semibold text-sm underline underline-offset-4"
+						>
+							{m.store_claude_preflight_link()}
+						</a>
 					) : null}
 					<div className="mt-7">
 						{selectedItem ? (
@@ -468,6 +480,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 					</div>
 				</div>
 			</div>
+			{data.id === claudeRechargeProductId ? <ClaudePurchaseGuide /> : null}
 			{relatedProducts.isLoading ? (
 				<RelatedProductsLoadingSkeleton />
 			) : recommendations.length ? (
