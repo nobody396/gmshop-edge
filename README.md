@@ -448,3 +448,24 @@ customer instructions. If the returned text has no usage URL, an operator-verifi
 Web support does not tell every customer to send an order CDK. The WeChat fallback
 opens the existing support QR in an accessible in-page dialog, not a new image tab.
 Closing it restores focus to the trigger and preserves the conversation and draft.
+
+### Claude pre-purchase checks
+
+The shared Claude recharge product displays three account/subscription blockers,
+ two self-check methods and three source screenshots for all its plans. The same
+ guide appears once on checkout whenever the cart contains Claude, including direct
+ checkout. Images are hosted locally and enlarge in an in-page dialog. The guide
+ does not create orders, submit messages or run third-party IP tests automatically.
+
+The optional IP-check link is https://ip-check.leeguoo.com/. Its purity score is
+ higher-is-better, unlike the risk score. A purity score of at least 90 is the
+ owner's recommendation, not an Anthropic requirement or a ban-safety guarantee.
+ The recommendation applies to phone, computer and web use; avoid frequent node switching. The checker and actual client may use different egress IPs. No prices, fulfillment routes, existing
+ purchase records or backend acceptance rules are changed by this guide.
+
+Source checked 2026-09-04: https://aisou.pro/item/45. The three locally hosted
+ screenshot files preserve the original bytes from that page's `qn.ldxp.cn` images:
+ `03/b84e1162839766064a820c4d12651d.png`,
+ `9e/df15bb7b7048cd015ee997b97bcc5a.png`, and
+ `22/9b3ef6f3df1a0cd5d651dc89681399.png`. Instructions are rewritten concisely;
+ generic checkout/network errors alone must not be presented as proof of a ban.

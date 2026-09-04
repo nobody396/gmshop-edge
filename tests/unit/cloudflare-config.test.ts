@@ -107,7 +107,15 @@ if (tool === "vite" && process.env.WORKERS_CI === "1") {
 		}
 	});
 
-	afterEach(async () => rm(fixtureDirectory, { recursive: true, force: true }));
+	afterEach(async () =>
+		rm(fixtureDirectory, {
+			recursive: true,
+			force: true,
+			// Failed resource probes can briefly leave sibling fixture writes in flight.
+			maxRetries: 5,
+			retryDelay: 100,
+		}),
+	);
 
 	it("declares every runtime binding used by GMShop Edge", async () => {
 		const config = JSON.parse(

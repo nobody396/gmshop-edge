@@ -40,6 +40,10 @@ import {
 	commerceSessionId,
 	trackCommerceEvent,
 } from "#/features/storefront/commerce-events";
+import {
+	ClaudePurchaseGuide,
+	claudeRechargeProductId,
+} from "#/features/storefront/components/claude-purchase-guide";
 import { writeGuestOrderEmail } from "#/features/storefront/order-access-storage";
 import { safeStorePaymentUrl } from "#/features/storefront/payment-url";
 import {
@@ -434,6 +438,9 @@ export function StorefrontCheckoutPage() {
 					{m.store_checkout_description()}
 				</p>
 			</div>
+			{items.some((item) => item.productId === claudeRechargeProductId) ? (
+				<ClaudePurchaseGuide />
+			) : null}
 			<form
 				className="grid overflow-hidden rounded-3xl border bg-card shadow-sm lg:grid-cols-2"
 				onSubmit={submit}

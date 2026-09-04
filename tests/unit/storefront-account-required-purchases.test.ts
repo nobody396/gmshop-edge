@@ -17,9 +17,7 @@ describe("storefront account-required purchase guidance", () => {
 	it("highlights the Claude iOS channel and warranty boundary", () => {
 		const product = source("src/features/storefront/pages/product.tsx");
 
-		expect(product).toContain(
-			'data.id === "ba540b83-388d-45d1-9dcb-25c3da3f9956"',
-		);
+		expect(product).toContain("data.id === claudeRechargeProductId");
 		expect(product).toContain("m.store_claude_channel_notice()");
 	});
 
