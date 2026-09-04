@@ -1707,7 +1707,7 @@
 	"store_claude_preflight_subscription_body": "先查看 Billing：原 iOS、安卓或信用卡订阅未到期时，请勿充值。确认旧订阅已结束后再下单。",
 	"store_claude_preflight_subscription_image": "示例：Billing 中仍显示安卓订阅",
 	"store_claude_preflight_billing_title": "情况二：Billing 存在欠费或退款记录",
-	"store_claude_preflight_billing_body": "这类账单可能影响新订阅，充值款也可能被抵扣。请先处理异常并联系客服确认，不要直接下单。",
+	"store_claude_preflight_billing_body": "欠费或有退款记录的账户，会导致本次充值的钱被拿去抵扣，订阅无法到账，造成充值失败，且无法退款。",
 	"store_claude_preflight_disabled_title": "情况三：组织已被禁用，但仍可登录",
 	"store_claude_preflight_disabled_body": "能登录不代表组织状态正常。若出现组织被禁用或封禁的明确提示，请停止充值。",
 	"store_claude_preflight_checks_title": "付款前完成这 2 个自查",
