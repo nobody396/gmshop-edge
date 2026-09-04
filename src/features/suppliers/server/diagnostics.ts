@@ -1,6 +1,5 @@
 import { DomainError } from "#/lib/domain-error";
 import { encryptSecret } from "#/lib/secrets";
-import { version as applicationVersion } from "../../../../package.json";
 import type { SupplierHttpAudit } from "../providers/http";
 
 export type SupplierDiagnosticStorage = {
@@ -65,7 +64,7 @@ export function createSupplierHttpAudit(
 	};
 	const cleanText = (value: string) => {
 		try {
-			return JSON.stringify(cleanObject(JSON.parse(value)));
+			return JSON.stringify(cleanObject(JSON.parse(scrub(value))));
 		} catch {
 			return scrub(value);
 		}
@@ -125,7 +124,6 @@ export function createSupplierHttpAudit(
 			// Durable request evidence must exist before any network side effect.
 			await save({
 				version: 1,
-				applicationVersion,
 				id,
 				startedAt,
 				request,
@@ -168,7 +166,6 @@ export function createSupplierHttpAudit(
 			try {
 				await save({
 					version: 1,
-					applicationVersion,
 					id,
 					startedAt,
 					completedAt,
