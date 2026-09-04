@@ -33,7 +33,13 @@ describe("account entitlement operations", () => {
 			resolve("src/features/storefront/components/delivery-reveal-content.tsx"),
 			"utf8",
 		);
-		expect(deliveryContent).toContain("<CopyButton");
+		expect(deliveryContent).toContain("<DeliveryMessage");
+		const message = await readFile(
+			resolve("src/features/storefront/components/delivery-message.tsx"),
+			"utf8",
+		);
+		expect(message).toContain("<CopyButton");
+		expect(message).toContain("copy={content}");
 	});
 
 	it("keeps entitlement identity actions above an equal-height bottom operation area", async () => {
