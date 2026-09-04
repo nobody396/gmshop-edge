@@ -1,10 +1,13 @@
 import { Miniflare } from "miniflare";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { completeFreeStoreOrder } from "#/features/shop-payments/server/service";
+import { supplierFetchJson } from "#/features/suppliers/providers/http";
 import { signDujiaoNextRequest } from "#/features/suppliers/providers/signatures";
 import { createSupplierCredentialVault } from "#/features/suppliers/secrets";
+import { createSupplierHttpAudit } from "#/features/suppliers/server/diagnostics";
 import { handleDujiaoSupplierCallback } from "#/features/suppliers/server/dujiao-callback";
 import { processSupplierOrder } from "#/features/suppliers/server/process";
+import { decryptSecret } from "#/lib/secrets";
 import {
 	createInitialRuntimeConfig,
 	runtimeConfigEntries,
@@ -21,6 +24,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			modules: true,
 			script: "export default { fetch() { return new Response('ok') } }",
 			d1Databases: { DB: crypto.randomUUID() },
+			r2Buckets: { FILES: "files" },
 		});
 		db = await miniflare.getD1Database("DB");
 		await applyMigrations(db);
@@ -41,6 +45,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			{ name: "supplier_api_keys" },
 			{ name: "supplier_api_orders" },
 			{ name: "supplier_bindings" },
+			{ name: "supplier_exchange_records" },
 			{ name: "supplier_export_listings" },
 			{ name: "supplier_orders" },
 		]);
@@ -177,6 +182,345 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		await expect(
 			db.prepare("DELETE FROM supplier_accounts WHERE id = 'account'").run(),
 		).rejects.toThrow(/FOREIGN KEY constraint failed/);
+	});
+
+	it.each([
+		"non-json",
+		"invalid-card",
+		"quantity-mismatch",
+	])("retains a SharedStock submission after %s without buying again", async (failure) => {
+		const files = await miniflare.getR2Bucket("FILES");
+		const vault = await createSupplierCredentialVault(
+			"shared_stock",
+			{ appId: "merchant", appKey: "test-secret" },
+			runtime.commerceSecret,
+		);
+		await db.batch([
+			db
+				.prepare(`UPDATE supplier_accounts SET provider = 'shared_stock',
+			 protocol_version = 'acg-sharedstock-v1', credentials_encrypted = ? WHERE id = 'account'`)
+				.bind(vault),
+			db.prepare(`UPDATE supplier_bindings SET provider = 'shared_stock',
+			 protocol_version = 'acg-sharedstock-v1', upstream_product_id = 'PLUS',
+			 upstream_sku_id = 'PLUS'`),
+		]);
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id FROM supplier_orders WHERE order_id = 'order'")
+			.first<{ id: string }>();
+		const requests: string[] = [];
+		const submittedRequestNumbers: Array<string | null> = [];
+		const fetcher: typeof fetch = async (input, init) => {
+			const request = new Request(input, init);
+			const path = new URL(request.url).pathname;
+			requests.push(path);
+			if (path.endsWith("/connect"))
+				return Response.json({
+					code: 200,
+					data: { shopName: "Supplier", balance: "100.00" },
+				});
+			if (path.endsWith("/inventory"))
+				return Response.json({
+					code: 200,
+					data: { count: 10, delivery_way: 0, price: "1.00" },
+				});
+			if (path.endsWith("/trade")) {
+				submittedRequestNumbers.push(
+					new URLSearchParams(await request.text()).get("request_no"),
+				);
+				if (failure === "non-json")
+					return new Response("<html>upstream error</html>", { status: 502 });
+				return Response.json({
+					code: 200,
+					data: {
+						tradeNo: "trade-123",
+						secret:
+							failure === "invalid-card" ? "X".repeat(65_000) : "ONE-CARD",
+					},
+				});
+			}
+			if (path.endsWith("/query"))
+				return Response.json({
+					code: 200,
+					data: { secret: "CARD-1\nCARD-2", status: 1 },
+				});
+			throw new Error("Unexpected request");
+		};
+		await expect(
+			processSupplierOrder(db, order?.id ?? "", { fetcher, files }),
+		).rejects.toMatchObject({
+			code:
+				failure === "quantity-mismatch"
+					? "supplier_delivery_quantity_mismatch"
+					: "supplier_order_pending",
+		});
+		const first = await db
+			.prepare(`SELECT state, selected_account_id, provider_request_no,
+		 attempt_count, next_retry_at, account_locked_at, upstream_order_id, last_error_code FROM supplier_orders WHERE id = ?`)
+			.bind(order?.id)
+			.first();
+		expect(first).toMatchObject({
+			state: "uncertain",
+			selected_account_id: "account",
+			attempt_count: 1,
+			provider_request_no: expect.stringMatching(/^[a-f0-9]{19}$/),
+			account_locked_at: expect.any(Number),
+			next_retry_at: expect.any(Number),
+			upstream_order_id: failure === "non-json" ? null : "trade-123",
+			last_error_code:
+				failure === "quantity-mismatch"
+					? "supplier_delivery_quantity_mismatch"
+					: "invalid_supplier_response",
+		});
+		if (failure === "non-json") {
+			await expect(
+				processSupplierOrder(db, order?.id ?? "", { fetcher, files }),
+			).rejects.toMatchObject({ code: "supplier_request_uncertain" });
+		} else {
+			await expect(
+				processSupplierOrder(db, order?.id ?? "", { fetcher, files }),
+			).resolves.toMatchObject({ state: "supplied" });
+			expect(requests.filter((path) => path.endsWith("/query"))).toHaveLength(
+				1,
+			);
+		}
+		expect(requests.filter((path) => path.endsWith("/trade"))).toHaveLength(1);
+		expect(submittedRequestNumbers).toEqual([first?.provider_request_no]);
+		expect(submittedRequestNumbers[0]).toHaveLength(19);
+		expect(
+			await db
+				.prepare(
+					"SELECT state, provider_request_no, attempt_count FROM supplier_orders WHERE id = ?",
+				)
+				.bind(order?.id)
+				.first(),
+		).toMatchObject({
+			state: failure === "non-json" ? "uncertain" : "supplied",
+			provider_request_no: first?.provider_request_no,
+			attempt_count: 1,
+		});
+		const exchanges = await db
+			.prepare(
+				"SELECT * FROM supplier_exchange_records WHERE supplier_order_id = ? ORDER BY started_at, id",
+			)
+			.bind(order?.id)
+			.all<{ object_key: string; status: string; error_code: string | null }>();
+		expect(exchanges.results).toHaveLength(failure === "non-json" ? 3 : 4);
+		expect(
+			JSON.stringify(
+				await db
+					.prepare(
+						"EXPLAIN QUERY PLAN SELECT * FROM supplier_exchange_records WHERE supplier_order_id = ? ORDER BY started_at, id",
+					)
+					.bind(order?.id)
+					.all(),
+			),
+		).toContain("supplier_exchange_order_idx");
+		for (const exchange of exchanges.results) {
+			expect(exchange.status).toBe("recorded");
+			const encrypted = await (await files.get(exchange.object_key))?.text();
+			expect(encrypted).toBeTruthy();
+			expect(encrypted).not.toContain("CARD-");
+			const evidence = JSON.parse(
+				await decryptSecret(
+					encrypted ?? "",
+					runtime.commerceSecret,
+					"supplier-diagnostic",
+				),
+			);
+			expect(JSON.stringify(evidence)).not.toContain("test-secret");
+			expect(evidence.request.body).not.toContain('"merchant"');
+			if (evidence.request.url.endsWith("/trade")) {
+				expect(evidence.response.httpStatus).toBe(
+					failure === "non-json" ? 502 : 200,
+				);
+				expect(evidence.response.truncated).toBe(false);
+				expect(evidence.response.body).toContain(
+					failure === "non-json" ? "upstream error" : "trade-123",
+				);
+			}
+		}
+	});
+
+	it("fails closed before HTTP if durable request logging is unavailable", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id FROM supplier_orders WHERE order_id = 'order'")
+			.first<{ id: string }>();
+		const fetcher = vi.fn<typeof fetch>();
+		const audit = createSupplierHttpAudit({
+			db,
+			files: {
+				put: async () => {
+					throw new Error("storage unavailable");
+				},
+			},
+			supplierOrderId: order?.id ?? "",
+			accountId: "account",
+			commerceSecret: runtime.commerceSecret,
+			credentialValues: [],
+		});
+		await expect(
+			supplierFetchJson(
+				fetcher,
+				"https://supplier.example/trade",
+				{ method: "POST", body: "{}" },
+				{ validateDestination: false, audit },
+			),
+		).rejects.toMatchObject({ code: "supplier_diagnostics_unavailable" });
+		expect(fetcher).not.toHaveBeenCalled();
+	});
+
+	it("retains a durable marker and quarantines a post-request recording failure", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id FROM supplier_orders WHERE order_id = 'order'")
+			.first<{ id: string }>();
+		const files = await miniflare.getR2Bucket("FILES");
+		const put = vi
+			.fn(files.put.bind(files))
+			.mockImplementationOnce(files.put.bind(files))
+			.mockRejectedValue(new Error("storage unavailable"));
+		const fetcher = vi.fn<typeof fetch>(async () =>
+			Response.json({ code: 200, data: { secret: "PRIVATE-CDK" } }),
+		);
+		const audit = createSupplierHttpAudit({
+			db,
+			files: { put },
+			supplierOrderId: order?.id ?? "",
+			accountId: "account",
+			commerceSecret: runtime.commerceSecret,
+			credentialValues: [],
+		});
+		await expect(
+			supplierFetchJson(
+				fetcher,
+				"https://supplier.example/trade",
+				{ method: "POST", body: "{}" },
+				{ validateDestination: false, audit },
+			),
+		).rejects.toMatchObject({ code: "supplier_request_uncertain" });
+		expect(fetcher).toHaveBeenCalledTimes(1);
+		expect(
+			await db
+				.prepare(
+					"SELECT status, error_code FROM supplier_exchange_records WHERE supplier_order_id = ?",
+				)
+				.bind(order?.id)
+				.first(),
+		).toEqual({
+			status: "recording_failed",
+			error_code: "diagnostics_persist_failed",
+		});
+	});
+
+	it("also retains another provider's account after a malformed purchase response", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id FROM supplier_orders WHERE order_id = 'order'")
+			.first<{ id: string }>();
+		let submitted = 0;
+		const fetcher: typeof fetch = async (input, init) => {
+			if (
+				new URL(new Request(input, init).url).pathname ===
+				"/api/v1/upstream/orders"
+			) {
+				submitted++;
+				return new Response("<html>failure</html>");
+			}
+			return pendingSupplierFetcher(input, init);
+		};
+		await expect(
+			processSupplierOrder(db, order?.id ?? "", { fetcher }),
+		).rejects.toMatchObject({ code: "invalid_supplier_response" });
+		expect(
+			await db
+				.prepare(
+					"SELECT state, selected_account_id, last_error_code FROM supplier_orders WHERE id = ?",
+				)
+				.bind(order?.id)
+				.first(),
+		).toEqual({
+			state: "uncertain",
+			selected_account_id: "account",
+			last_error_code: "invalid_supplier_response",
+		});
+		await expect(
+			processSupplierOrder(db, order?.id ?? "", { fetcher }),
+		).rejects.toMatchObject({ code: "supplier_order_pending" });
+		expect(submitted).toBe(1);
+	});
+
+	it("removes credentials while retaining encrypted fulfillment evidence", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id FROM supplier_orders WHERE order_id = 'order'")
+			.first<{ id: string }>();
+		const files = await miniflare.getR2Bucket("FILES");
+		const record = await createSupplierHttpAudit({
+			db,
+			files,
+			supplierOrderId: order?.id ?? "",
+			accountId: "account",
+			commerceSecret: runtime.commerceSecret,
+			credentialValues: ["DO-NOT-LOG-API-KEY"],
+		})({
+			url: "https://supplier.example/query?token=QUERY-TOKEN",
+			init: {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer DO-NOT-LOG-API-KEY",
+					Cookie: "COOKIE-VALUE",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({
+					api_key: "DO-NOT-LOG-API-KEY",
+					password: "EXAMPLE-PASSWORD",
+					quantity: 1,
+				}),
+			},
+		});
+		const body = new TextEncoder().encode(
+			JSON.stringify({
+				secret: "FULFILLMENT-CARD",
+				reflected: "DO-NOT-LOG-API-KEY",
+				token: "REFLECTED-TOKEN",
+			}),
+		);
+		await record({
+			status: 200,
+			headers: new Headers({
+				"content-type": "application/json",
+				"set-cookie": "NEW-COOKIE",
+			}),
+			body,
+			bodyBytes: body.length,
+			truncated: false,
+			errorCode: null,
+		});
+		const row = await db
+			.prepare(
+				"SELECT object_key FROM supplier_exchange_records WHERE supplier_order_id = ?",
+			)
+			.bind(order?.id)
+			.first<{ object_key: string }>();
+		const encrypted = await (await files.get(row?.object_key ?? ""))?.text();
+		const clear = await decryptSecret(
+			encrypted ?? "",
+			runtime.commerceSecret,
+			"supplier-diagnostic",
+		);
+		for (const secret of [
+			"DO-NOT-LOG-API-KEY",
+			"QUERY-TOKEN",
+			"COOKIE-VALUE",
+			"NEW-COOKIE",
+			"EXAMPLE-PASSWORD",
+			"REFLECTED-TOKEN",
+		])
+			expect(clear).not.toContain(secret);
+		expect(clear).toContain("FULFILLMENT-CARD");
+		expect(encrypted).not.toContain("FULFILLMENT-CARD");
 	});
 
 	it("switches only after a definitive rejection and keeps the source fixed", async () => {
@@ -419,6 +763,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 	});
 
 	it("verifies and deduplicates a signed Dujiao Next fulfillment callback", async () => {
+		const files = await miniflare.getR2Bucket("FILES");
 		await completeFreeStoreOrder(db, "order");
 		const supplierOrder = await db
 			.prepare("SELECT id FROM supplier_orders WHERE order_id = 'order'")
@@ -473,12 +818,14 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			"account",
 			db,
 			timestamp * 1000,
+			files,
 		);
 		const duplicate = await handleDujiaoSupplierCallback(
 			request(),
 			"account",
 			db,
 			timestamp * 1000,
+			files,
 		);
 		await expect(first.json()).resolves.toMatchObject({ ok: true });
 		await expect(duplicate.json()).resolves.toMatchObject({ ok: true });
@@ -498,6 +845,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			"account",
 			db,
 			timestamp * 1000,
+			files,
 		);
 		await expect(invalidSignature.json()).resolves.toEqual({
 			ok: false,
@@ -528,6 +876,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			"account",
 			db,
 			timestamp * 1000,
+			files,
 		);
 		await expect(late.json()).resolves.toMatchObject({ ok: true });
 		const state = await db
@@ -546,6 +895,29 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			cards: 2,
 			callbacks: 2,
 		});
+		const evidenceRows = await db
+			.prepare(
+				"SELECT object_key FROM supplier_exchange_records WHERE supplier_order_id = ? AND direction = 'callback'",
+			)
+			.bind(supplierOrder?.id)
+			.all<{ object_key: string }>();
+		expect(evidenceRows.results).toHaveLength(3);
+		const encrypted = await (
+			await files.get(evidenceRows.results[0]?.object_key ?? "")
+		)?.text();
+		const artifact = JSON.parse(
+			await decryptSecret(
+				encrypted ?? "",
+				runtime.commerceSecret,
+				"supplier-diagnostic",
+			),
+		);
+		expect(JSON.stringify(artifact)).not.toContain("api-secret");
+		expect(JSON.stringify(artifact.request.headers)).not.toContain(
+			"Dujiao-Next",
+		);
+		expect(artifact.request.body).toContain("CALLBACK-1");
+		expect(encrypted).not.toContain("CALLBACK-1");
 	});
 
 	it("rejects an oversized chunked supplier callback with 413", async () => {

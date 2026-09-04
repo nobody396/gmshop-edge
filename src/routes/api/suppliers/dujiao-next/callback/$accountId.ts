@@ -8,13 +8,19 @@ export const Route = createFileRoute(
 	server: {
 		handlers: {
 			POST: async ({ request, params }) => {
-				const { DB } = getCloudflareEnv(request);
+				const { DB, FILES } = getCloudflareEnv(request);
 				if (!DB)
 					return Response.json(
 						{ ok: false, message: "service_unavailable" },
 						{ status: 503 },
 					);
-				return handleDujiaoSupplierCallback(request, params.accountId, DB);
+				return handleDujiaoSupplierCallback(
+					request,
+					params.accountId,
+					DB,
+					Date.now(),
+					FILES,
+				);
 			},
 		},
 	},

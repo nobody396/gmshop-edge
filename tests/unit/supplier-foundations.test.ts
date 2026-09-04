@@ -166,7 +166,21 @@ describe("supplier provider signatures", () => {
 		).toMatch(/^gm_[a-f0-9]{40}$/);
 		expect(
 			providerRequestNumber("shared_stock", "order-1", "account-a"),
-		).toMatch(/^ss_[a-f0-9]{32}$/);
+		).toMatch(/^[a-f0-9]{19}$/);
+	});
+
+	it("fits SharedStock request_no into the upstream CHAR(19) contract", () => {
+		const value = providerRequestNumber("shared_stock", "order-1", "account-a");
+		expect(value).toMatch(/^[a-f0-9]{19}$/);
+		expect(providerRequestNumber("shared_stock", "order-1", "account-a")).toBe(
+			value,
+		);
+		expect(
+			providerRequestNumber("shared_stock", "order-1", "account-b"),
+		).not.toBe(value);
+		expect(
+			providerRequestNumber("shared_stock", "order-2", "account-a"),
+		).not.toBe(value);
 	});
 
 	it("signs SharedStock forms the way acg-faka SharedValidation does", () => {
@@ -766,6 +780,107 @@ describe("SharedStock adapter", () => {
 		expect(body.get("race")).toBe("500点数额度");
 	});
 
+	it("never falls back to another purchase endpoint after a non-JSON trade response", async () => {
+		const requests: string[] = [];
+		const adapter = new SharedStockAdapter({
+			baseUrl: "https://supplier.example",
+			appId: "merchant",
+			appKey: "test-secret",
+			currency: "CNY",
+			currencyDecimals: 2,
+			fetcher: async (input) => {
+				requests.push(String(input));
+				return new Response("<html>upstream error</html>", { status: 502 });
+			},
+		});
+		await expect(
+			adapter.submitOrder({
+				skuId: "PLUS",
+				quantity: 1,
+				requestNo: "ss_test",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toMatchObject({
+			status: "uncertain",
+			errorCode: "invalid_supplier_response",
+		});
+		expect(requests).toHaveLength(1);
+	});
+
+	it.each([
+		{
+			name: "invalid trade data",
+			body: { code: 200, data: { tradeNo: "trade-123", secret: null } },
+			status: 200,
+			id: "trade-123",
+			error: "invalid_supplier_response",
+		},
+		{
+			name: "missing trade data",
+			body: { code: 200, data: {} },
+			status: 200,
+			id: null,
+			error: "invalid_supplier_response",
+		},
+		{
+			name: "server failure",
+			body: { code: 0, msg: "failure" },
+			status: 503,
+			id: null,
+			error: "supplier_request_uncertain",
+		},
+	])("preserves uncertainty after $name", async ({
+		body,
+		status,
+		id,
+		error,
+	}) => {
+		let requests = 0;
+		const adapter = new SharedStockAdapter({
+			baseUrl: "https://supplier.example",
+			appId: "merchant",
+			appKey: "test-secret",
+			currency: "CNY",
+			currencyDecimals: 2,
+			fetcher: async () => {
+				requests++;
+				return Response.json(body, { status });
+			},
+		});
+		await expect(
+			adapter.submitOrder({
+				skuId: "PLUS",
+				quantity: 1,
+				requestNo: "ss_test",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toEqual({
+			status: "uncertain",
+			upstreamOrderId: id,
+			errorCode: error,
+		});
+		expect(requests).toBe(1);
+	});
+
+	it("still treats a valid application rejection as definitive", async () => {
+		const { adapter, requests } = adapterWith(() => ({
+			code: 0,
+			msg: "Insufficient balance",
+		}));
+		await expect(
+			adapter.submitOrder({
+				skuId: "PLUS",
+				quantity: 1,
+				requestNo: "ss_test",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).rejects.toMatchObject({ code: "supplier_request_failed" });
+		expect(requests).toHaveLength(1);
+	});
+
 	it("maps a duplicate request_no rejection to the uncertain path", async () => {
 		const { adapter } = adapterWith(() => ({
 			code: 0,
@@ -779,7 +894,10 @@ describe("SharedStock adapter", () => {
 				callbackUrl: "",
 				traceId: "",
 			}),
-		).rejects.toMatchObject({ code: "supplier_request_uncertain" });
+		).resolves.toMatchObject({
+			status: "uncertain",
+			errorCode: "supplier_request_uncertain",
+		});
 	});
 
 	it("reconciles a known upstream order through query", async () => {

@@ -88,7 +88,9 @@ async function processQueueMessage(body: CommerceQueueMessage, env: Env) {
 		case "commerce.refund":
 			return processShopRefund(db, body.refundId);
 		case "commerce.supplier":
-			return processSupplierOrder(db, body.supplierOrderId);
+			return processSupplierOrder(db, body.supplierOrderId, {
+				files: env.FILES,
+			});
 	}
 }
 

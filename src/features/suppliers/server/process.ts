@@ -16,6 +16,7 @@ import {
 	adapterForSupplierAccount,
 	type SupplierAccountRuntimeRow,
 } from "./account-runtime";
+import type { SupplierDiagnosticStorage } from "./diagnostics";
 import { claimSupplierApiBudget } from "./rate-limit";
 
 type SupplierOrderContext = {
@@ -64,6 +65,7 @@ export async function processSupplierOrder(
 		fetcher?: typeof fetch;
 		now?: number;
 		callbackOrigin?: string;
+		files?: SupplierDiagnosticStorage;
 	} = {},
 ) {
 	return runTrackedTask(
@@ -110,7 +112,12 @@ export async function completeSupplierOrderFromCallback(
 async function processSupplierOrderUnlocked(
 	db: D1Database,
 	supplierOrderId: string,
-	options: { fetcher?: typeof fetch; now?: number; callbackOrigin?: string },
+	options: {
+		fetcher?: typeof fetch;
+		now?: number;
+		callbackOrigin?: string;
+		files?: SupplierDiagnosticStorage;
+	},
 ) {
 	const order = await loadOrder(db, supplierOrderId);
 	if (!order)
@@ -146,6 +153,9 @@ async function processSupplierOrderUnlocked(
 		const adapter = await adapterForSupplierAccount(account, runtime, {
 			revision: order.selected_credentials_revision,
 			fetcher: options.fetcher,
+			diagnostics: options.files
+				? { db, files: options.files, supplierOrderId: order.id }
+				: undefined,
 		});
 		await claimSupplierApiBudget(db, {
 			provider: snapshot.provider,
@@ -192,6 +202,9 @@ async function processSupplierOrderUnlocked(
 					});
 					const adapter = await adapterForSupplierAccount(candidate, runtime, {
 						fetcher: options.fetcher,
+						diagnostics: options.files
+							? { db, files: options.files, supplierOrderId: order.id }
+							: undefined,
 					});
 					const [connection, sku] = await Promise.all([
 						adapter.testConnection(),
@@ -278,7 +291,7 @@ async function processSupplierOrderUnlocked(
 			if (current?.selected_account_id === candidate.id) {
 				if (current.state === "uncertain") throw error;
 				if (isUncertainError(error)) {
-					await markUncertain(db, current, "supplier_request_uncertain");
+					await markUncertain(db, current, errorCode(error));
 					throw error;
 				}
 				await releaseDefinitiveFailure(
@@ -314,8 +327,22 @@ async function applyPurchaseResult(
 	result: SupplierPurchaseResult,
 	commerceSecret: string,
 ) {
-	if (result.status === "supplied")
-		return fulfillSupplierOrder(db, order, result, commerceSecret);
+	if (result.status === "supplied") {
+		// The supplier already created an order. Keep its identity and lock even
+		// if card validation or local persistence fails after this point.
+		await markUncertain(
+			db,
+			order,
+			"supplier_delivery_validation_pending",
+			result.upstreamOrderId,
+		);
+		try {
+			return await fulfillSupplierOrder(db, order, result, commerceSecret);
+		} catch (error) {
+			await markUncertain(db, order, errorCode(error), result.upstreamOrderId);
+			throw error;
+		}
+	}
 	if (result.status === "processing" || result.status === "uncertain") {
 		await db
 			.prepare(
@@ -559,16 +586,19 @@ async function markUncertain(
 	db: D1Database,
 	order: SupplierOrderContext,
 	code: string,
+	upstreamOrderId: string | null = null,
 ) {
 	const now = Date.now();
 	await db
 		.prepare(
 			`UPDATE supplier_orders SET state = 'uncertain',
+			 upstream_order_id = COALESCE(?, upstream_order_id),
 			 account_locked_at = COALESCE(account_locked_at, ?),
 			 next_retry_at = ?, last_error_code = ?, updated_at = ?
-			 WHERE id = ? AND selected_account_id IS NOT NULL`,
+			 WHERE id = ? AND selected_account_id IS NOT NULL
+			 AND state IN ('submitting', 'uncertain')`,
 		)
-		.bind(now, now + 15_000, code, now, order.id)
+		.bind(upstreamOrderId, now, now + 15_000, code, now, order.id)
 		.run();
 }
 
@@ -617,10 +647,12 @@ function callbackUrl(origin: string | undefined, accountId: string) {
 
 function isUncertainError(error: unknown) {
 	return (
-		error instanceof DomainError && error.code === "supplier_request_uncertain"
+		!(error instanceof DomainError) || error.code !== "supplier_request_failed"
 	);
 }
 
 function errorCode(error: unknown) {
-	return error instanceof DomainError ? error.code : "supplier_request_failed";
+	return error instanceof DomainError
+		? error.code
+		: "supplier_response_processing_failed";
 }

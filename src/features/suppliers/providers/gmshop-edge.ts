@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DomainError } from "#/lib/domain-error";
 import type { SupplierPurchaseResult } from "../schema";
-import { supplierFetchJson } from "./http";
+import { type SupplierHttpAudit, supplierFetchJson } from "./http";
 import { signGmshopEdgeRequest } from "./signatures";
 import type { SupplierAdapter, SupplierProduct, SupplierSku } from "./types";
 
@@ -33,6 +33,7 @@ export class GmshopEdgeAdapter implements SupplierAdapter {
 			currency: string;
 			currencyDecimals: number;
 			fetcher?: typeof fetch;
+			audit?: SupplierHttpAudit;
 			now?: () => number;
 			nonce?: () => string;
 		},
@@ -194,7 +195,7 @@ export class GmshopEdgeAdapter implements SupplierAdapter {
 				},
 				body: value === undefined ? undefined : rawBody,
 			},
-			{ validateDestination: !this.input.fetcher },
+			{ validateDestination: !this.input.fetcher, audit: this.input.audit },
 		);
 		if (status !== 200)
 			throw new DomainError(

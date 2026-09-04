@@ -77,7 +77,10 @@ export function providerRequestNumber(
 		.update(`${provider}\n${supplierOrderId}\n${accountId}`)
 		.digest("hex");
 	if (provider === "acg") return digest.slice(0, 24);
-	if (provider === "shared_stock") return `ss_${digest.slice(0, 32)}`;
+	// acg-faka stores request_no in CHAR(19), not an arbitrary external-ID
+	// field. Preserve 76 hash bits without a prefix. Existing locked orders
+	// continue using their stored request number; never regenerate it on retry.
+	if (provider === "shared_stock") return digest.slice(0, 19);
 	return `gm_${digest.slice(0, 40)}`;
 }
 

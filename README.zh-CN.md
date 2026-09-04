@@ -359,3 +359,17 @@ bun run build:bun
 ## 许可证
 
 GMShop Edge 使用 [GPL-3.0-or-later](LICENSE) 许可证。
+
+### 供应商故障取证
+
+已付款订单的上游预检、采购、查单，以及通过鉴权并匹配订单的回调，均先持久化请求
+记录，再处理请求；响应正文加密保存到私有 `FILES`。`supplier_exchange_records`
+按订单和账户关联每次交互的 HTTP 状态、响应类型、字节数、截断标记和传输/JSON 错误。
+密钥、鉴权信息和签名被移除；交付卡密仅保存在加密内容中，不进入普通日志。响应上限
+为 1 MiB，超限保存有明确截断标记的前缀。本版本不自动删除取证记录。记录服务故障时，
+发请求前停止；已经发出的采购则保留待确认，不能盲目重新采购。
+
+SharedStock 新采购请求号符合上游 `CHAR(19)` 限制，已锁定订单继续使用原请求号。
+主人可通过 `scripts/inspect-supplier-diagnostics.ts`，传入 `--account`、`--database`
+和 `--order` 查询；`--exchange` 验证解密并仅输出响应结构，不打印卡密。Cloudflare
+凭据仅从 Agent Switch 非 TTY 文件描述符读取。历史上没有保存的响应无法事后补回。

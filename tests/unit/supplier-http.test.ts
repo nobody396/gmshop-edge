@@ -35,4 +35,68 @@ describe("supplier HTTP response limits", () => {
 		).rejects.toMatchObject({ code: "invalid_supplier_response", status: 502 });
 		expect(cancel).toHaveBeenCalledWith("body_too_large");
 	});
+	it("records non-JSON errors with HTTP metadata before throwing", async () => {
+		const finish = vi.fn();
+		const audit = vi.fn(async () => finish);
+		await expect(
+			supplierFetchJson(
+				async () =>
+					new Response("error code: 1010", {
+						status: 403,
+						headers: { "content-type": "text/plain", "cf-ray": "test-ray" },
+					}),
+				"https://supplier.example/trade",
+				{ method: "POST" },
+				{ validateDestination: false, audit },
+			),
+		).rejects.toMatchObject({ code: "invalid_supplier_response" });
+		expect(finish).toHaveBeenCalledWith(
+			expect.objectContaining({
+				status: 403,
+				errorCode: "invalid_json",
+				bodyBytes: 16,
+				truncated: false,
+			}),
+		);
+		expect(new TextDecoder().decode(finish.mock.calls[0]?.[0].body)).toBe(
+			"error code: 1010",
+		);
+	});
+
+	it("records a bounded prefix and explicit truncation on oversized responses", async () => {
+		const finish = vi.fn();
+		await expect(
+			supplierFetchJson(
+				async () => new Response("X".repeat(1_100_000)),
+				"https://supplier.example/trade",
+				{},
+				{ validateDestination: false, audit: async () => finish },
+			),
+		).rejects.toMatchObject({ code: "invalid_supplier_response" });
+		const event = finish.mock.calls[0]?.[0];
+		expect(event.truncated).toBe(true);
+		expect(event.errorCode).toBe("response_size_limit");
+		expect(event.body.byteLength).toBe(1024 * 1024);
+	});
+
+	it("records a network failure without inventing a response", async () => {
+		const finish = vi.fn();
+		await expect(
+			supplierFetchJson(
+				async () => {
+					throw new Error("network");
+				},
+				"https://supplier.example/trade",
+				{},
+				{ validateDestination: false, audit: async () => finish },
+			),
+		).rejects.toMatchObject({ code: "supplier_request_uncertain" });
+		expect(finish).toHaveBeenCalledWith(
+			expect.objectContaining({
+				status: null,
+				bodyBytes: 0,
+				errorCode: "network_error_or_timeout",
+			}),
+		);
+	});
 });

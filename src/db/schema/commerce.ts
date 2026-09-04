@@ -48,6 +48,7 @@ export const products = sqliteTable(
 			.notNull()
 			.default(sql`(lower(hex(randomblob(16))))`),
 		sortOrder: integer("sort_order").notNull().default(100),
+		salesCountBase: integer("sales_count_base").notNull().default(0),
 		...timestamps,
 	},
 	(table) => [
@@ -1630,6 +1631,48 @@ export const supplierOrders = sqliteTable(
 			"supplier_orders_cost_shape_check",
 			sql`(${table.quotedUnitCostMinor} IS NULL AND ${table.totalCostMinor} IS NULL) OR
 				(${table.quotedUnitCostMinor} IS NOT NULL AND ${table.totalCostMinor} IS NOT NULL)`,
+		),
+	],
+);
+
+export const supplierExchangeRecords = sqliteTable(
+	"supplier_exchange_records",
+	{
+		id: text("id").primaryKey(),
+		supplierOrderId: text("supplier_order_id")
+			.notNull()
+			.references(() => supplierOrders.id),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => supplierAccounts.id),
+		direction: text("direction", { enum: ["outbound", "callback"] }).notNull(),
+		method: text("method").notNull(),
+		path: text("path").notNull(),
+		status: text("status", {
+			enum: ["started", "recorded", "recording_failed"],
+		}).notNull(),
+		objectKey: text("object_key").notNull(),
+		httpStatus: integer("http_status"),
+		contentType: text("content_type"),
+		responseBytes: integer("response_bytes"),
+		retainedBytes: integer("retained_bytes"),
+		truncated: integer("truncated", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		errorCode: text("error_code"),
+		startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+		completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+	},
+	(table) => [
+		index("supplier_exchange_order_idx").on(
+			table.supplierOrderId,
+			table.startedAt,
+			table.id,
+		),
+		index("supplier_exchange_account_idx").on(
+			table.accountId,
+			table.startedAt,
+			table.id,
 		),
 	],
 );
