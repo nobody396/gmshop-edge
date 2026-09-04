@@ -483,6 +483,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		const body = new TextEncoder().encode(
 			JSON.stringify({
 				secret: "FULFILLMENT-CARD",
+				"DO-NOT-LOG-API-KEY": "reflected-as-a-key",
 				reflected: "DO-NOT-LOG-API-KEY",
 				token: "REFLECTED-TOKEN",
 			}),

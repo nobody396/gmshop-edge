@@ -64,7 +64,7 @@ export function createSupplierHttpAudit(
 	};
 	const cleanText = (value: string) => {
 		try {
-			return JSON.stringify(cleanObject(JSON.parse(value)));
+			return JSON.stringify(cleanObject(JSON.parse(scrub(value))));
 		} catch {
 			return scrub(value);
 		}
