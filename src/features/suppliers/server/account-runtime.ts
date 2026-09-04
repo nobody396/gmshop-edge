@@ -2,6 +2,10 @@ import type { RuntimeConfig } from "#/server/runtime-config";
 import { createSupplierAdapter } from "../providers/factory";
 import type { SupplierProvider } from "../schema";
 import { readSupplierCredentials } from "../secrets";
+import {
+	createSupplierHttpAudit,
+	type SupplierDiagnosticsContext,
+} from "./diagnostics";
 
 export type SupplierAccountRuntimeRow = {
 	id: string;
@@ -16,7 +20,11 @@ export type SupplierAccountRuntimeRow = {
 export async function adapterForSupplierAccount(
 	account: SupplierAccountRuntimeRow,
 	runtime: Pick<RuntimeConfig, "commerceSecret">,
-	options: { revision?: number; fetcher?: typeof fetch } = {},
+	options: {
+		revision?: number;
+		fetcher?: typeof fetch;
+		diagnostics?: SupplierDiagnosticsContext;
+	} = {},
 ) {
 	if (!runtime.commerceSecret)
 		throw new Error("supplier_configuration_unavailable");
@@ -34,5 +42,15 @@ export async function adapterForSupplierAccount(
 		currency: account.currency,
 		currencyDecimals: account.currency_decimals,
 		fetcher: options.fetcher,
+		audit: options.diagnostics
+			? createSupplierHttpAudit({
+					...options.diagnostics,
+					accountId: account.id,
+					commerceSecret: runtime.commerceSecret,
+					credentialValues: Object.values(credentials).filter(
+						(value): value is string => typeof value === "string",
+					),
+				})
+			: undefined,
 	});
 }

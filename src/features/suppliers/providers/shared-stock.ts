@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DomainError } from "#/lib/domain-error";
 import { decimalToMinor } from "../money";
 import type { SupplierPurchaseResult } from "../schema";
-import { supplierFetchJson } from "./http";
+import { type SupplierHttpAudit, supplierFetchJson } from "./http";
 import { signSharedStockForm } from "./signatures";
 import type { SupplierAdapter, SupplierProduct, SupplierSku } from "./types";
 
@@ -15,9 +15,9 @@ import type { SupplierAdapter, SupplierProduct, SupplierSku } from "./types";
 // The same controllers are exposed through two route families: the core
 // "new" /shared/{controller}/{action} routes (always available) and the
 // legacy paid SharedStock plugin at /plugin/SharedStock/api/{action}. New
-// routes are tried first; the legacy path is a fallback only when the first
-// response is definitively not JSON (the plugin-disabled notice page), never
-// after a request reached the server or its outcome is uncertain.
+// routes are tried first; non-JSON reads may discover the legacy route. Trades
+// use the discovered route exactly once: an invalid response cannot prove that
+// the purchase was not processed.
 const CORE_ACTIONS: Record<string, string> = {
 	connect: "/shared/authentication/connect",
 	items: "/shared/commodity/items",
@@ -64,10 +64,15 @@ const valuationSchema = z.object({
 	price: z.union([z.string(), z.number()]),
 });
 
+const tradeNumberSchema = z.union([
+	z.string().min(1).max(256),
+	z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+]);
+
 const tradeSchema = z.object({
 	url: z.string().max(2048).default(""),
 	amount: z.union([z.string(), z.number()]).default(""),
-	tradeNo: z.union([z.string(), z.number()]),
+	tradeNo: tradeNumberSchema,
 	secret: z.string().max(640_000).default(""),
 });
 
@@ -85,6 +90,7 @@ export class SharedStockAdapter implements SupplierAdapter {
 			currency: string;
 			currencyDecimals: number;
 			fetcher?: typeof fetch;
+			audit?: SupplierHttpAudit;
 		},
 	) {}
 
@@ -172,27 +178,43 @@ export class SharedStockAdapter implements SupplierAdapter {
 		traceId: string;
 	}): Promise<SupplierPurchaseResult> {
 		const descriptor = decodeSharedSkuId(input.skuId);
-		const data = tradeSchema.parse(
-			await this.request("/trade", {
+		let upstreamOrderId: string | null = null;
+		try {
+			const response = await this.request("/trade", {
 				shared_code: descriptor.code,
 				num: String(input.quantity),
 				contact: input.requestNo,
 				device: "0",
 				request_no: input.requestNo,
 				...(descriptor.race ? { race: descriptor.race } : {}),
-			}),
-		);
-		const cards = parseCards(data.secret, input.quantity);
-		return cards.length
-			? {
-					status: "supplied",
-					upstreamOrderId: String(data.tradeNo),
-					cards,
-				}
-			: {
-					status: "processing",
-					upstreamOrderId: String(data.tradeNo),
-				};
+			});
+			// Preserve a usable trade number even when the delivery body is invalid.
+			const identity = z
+				.object({ tradeNo: tradeNumberSchema })
+				.safeParse(response);
+			if (identity.success) upstreamOrderId = String(identity.data.tradeNo);
+			const data = tradeSchema.parse(response);
+			const cards = parseCards(data.secret, input.quantity);
+			return cards.length
+				? { status: "supplied", upstreamOrderId: String(data.tradeNo), cards }
+				: { status: "processing", upstreamOrderId: String(data.tradeNo) };
+		} catch (error) {
+			// Only a valid application-level rejection proves the purchase failed.
+			// Never resubmit after a transport, parsing, or delivery validation error.
+			if (
+				error instanceof DomainError &&
+				error.code === "supplier_request_failed"
+			)
+				throw error;
+			return {
+				status: "uncertain",
+				upstreamOrderId,
+				errorCode:
+					error instanceof DomainError
+						? error.code
+						: "invalid_supplier_response",
+			};
+		}
 	}
 
 	async reconcileOrder(input: {
@@ -259,15 +281,15 @@ export class SharedStockAdapter implements SupplierAdapter {
 						headers: { "Content-Type": "application/x-www-form-urlencoded" },
 						body: form.toString(),
 					},
-					{ validateDestination: !this.input.fetcher },
+					{ validateDestination: !this.input.fetcher, audit: this.input.audit },
 				));
 			} catch (error) {
-				// Only a definitively non-processed response (the legacy plugin
-				// notice page fails JSON parsing) justifies trying the other
-				// route family; anything uncertain must not be replayed.
+				// Route discovery is safe only for reads. A non-JSON trade
+				// response does not prove that the supplier did not charge us.
 				if (
 					error instanceof DomainError &&
 					error.code === "invalid_supplier_response" &&
+					action !== "/trade" &&
 					index < candidates.length - 1
 				) {
 					lastError = error;
@@ -275,6 +297,12 @@ export class SharedStockAdapter implements SupplierAdapter {
 				}
 				throw error;
 			}
+			if (action === "/trade" && status >= 500)
+				throw new DomainError(
+					"supplier_request_uncertain",
+					502,
+					"Supplier request outcome is uncertain",
+				);
 			const envelope = z
 				.object({
 					code: z.union([z.string(), z.number()]),

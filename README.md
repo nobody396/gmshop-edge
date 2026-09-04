@@ -412,3 +412,22 @@ instance. Its machine-readable source is [OpenAPI YAML](public/openapi.yaml).
 ## License
 
 GMShop Edge is licensed under [GPL-3.0-or-later](LICENSE).
+
+### Supplier incident evidence
+
+Paid-order supplier calls (preflight, purchase and reconciliation), plus authenticated
+order-matched callbacks, retain a durable request record before processing and an
+encrypted response artifact in private `FILES` storage. `supplier_exchange_records`
+links every exchange to its order/account, HTTP status, content type, byte count,
+truncation flag and transport/JSON error. Credentials and signatures are removed;
+fulfillment contents remain encrypted and are never placed in console logs. Responses
+are bounded at 1 MiB with an explicitly marked retained prefix when oversized. There
+is no automatic evidence deletion in this release. A recording outage prevents new
+network requests or quarantines an already-submitted purchase instead of replaying it.
+
+SharedStock request numbers fit its upstream `CHAR(19)` schema. Existing locked orders
+retain their stored request numbers; invalid responses do not cause a new purchase.
+Use the owner-local `scripts/inspect-supplier-diagnostics.ts` CLI with `--account`,
+`--database`, and `--order`; `--exchange` verifies decryption and prints only response
+structure, not card values. Its Cloudflare credential is read through Agent Switch's
+non-TTY FD interface. Historical missing response bodies cannot be reconstructed.

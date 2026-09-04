@@ -7,6 +7,10 @@ import { DomainError } from "#/lib/domain-error";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import { signDujiaoNextRequest } from "../providers/signatures";
 import { findDujiaoCredentialRevision } from "../secrets";
+import {
+	createSupplierHttpAudit,
+	type SupplierDiagnosticStorage,
+} from "./diagnostics";
 import { completeSupplierOrderFromCallback } from "./process";
 import { claimSupplierCallbackBudget } from "./rate-limit";
 
@@ -43,6 +47,7 @@ export async function handleDujiaoSupplierCallback(
 	accountId: string,
 	db: D1Database,
 	now = Date.now(),
+	files?: SupplierDiagnosticStorage,
 ) {
 	let raw: Uint8Array;
 	try {
@@ -118,6 +123,33 @@ export async function handleDujiaoSupplierCallback(
 			order.upstream_order_id !== String(payload.order_id))
 	)
 		return rejected("supplier_order_not_found");
+	const record = files
+		? await createSupplierHttpAudit({
+				db,
+				files,
+				supplierOrderId: order.id,
+				accountId,
+				commerceSecret: runtime.commerceSecret,
+				credentialValues: Object.values(credential.credentials),
+				direction: "callback",
+			})({
+				url: request.url,
+				init: { method: "POST", headers: request.headers, body: rawBody },
+			})
+		: undefined;
+	const respond = async (ok: boolean, message: string) => {
+		const body = JSON.stringify({ ok, message });
+		const bytes = new TextEncoder().encode(body);
+		await record?.({
+			status: 200,
+			headers: new Headers({ "content-type": "application/json" }),
+			body: bytes,
+			bodyBytes: bytes.byteLength,
+			truncated: false,
+			errorCode: ok ? null : message,
+		});
+		return Response.json({ ok, message });
+	};
 	const digest = await sha256Hex(raw);
 	const replayId = crypto.randomUUID();
 	try {
@@ -139,7 +171,7 @@ export async function handleDujiaoSupplierCallback(
 			)
 			.run();
 	} catch {
-		return Response.json({ ok: true, message: "received" });
+		return respond(true, "received");
 	}
 	try {
 		if (
@@ -165,7 +197,7 @@ export async function handleDujiaoSupplierCallback(
 			)
 			.bind(now, now, replayId)
 			.run();
-		return Response.json({ ok: true, message: "received" });
+		return respond(true, "received");
 	} catch (error) {
 		await db
 			.prepare(
@@ -178,7 +210,7 @@ export async function handleDujiaoSupplierCallback(
 				replayId,
 			)
 			.run();
-		return rejected("callback_failed");
+		return respond(false, "callback_failed");
 	}
 }
 

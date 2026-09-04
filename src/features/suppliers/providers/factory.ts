@@ -9,6 +9,7 @@ import type { SupplierCredentials } from "../secrets";
 import { AcgAdapter } from "./acg";
 import { DujiaoNextAdapter } from "./dujiao-next";
 import { GmshopEdgeAdapter } from "./gmshop-edge";
+import type { SupplierHttpAudit } from "./http";
 import { SharedStockAdapter } from "./shared-stock";
 import type { SupplierAdapter } from "./types";
 
@@ -19,6 +20,7 @@ export function createSupplierAdapter(input: {
 	currency: string;
 	currencyDecimals: number;
 	fetcher?: typeof fetch;
+	audit?: SupplierHttpAudit;
 }): SupplierAdapter {
 	if (input.provider === "acg") {
 		const credentials = acgCredentialsSchema.parse(input.credentials);
@@ -29,6 +31,7 @@ export function createSupplierAdapter(input: {
 			currency: input.currency,
 			currencyDecimals: input.currencyDecimals,
 			fetcher: input.fetcher,
+			audit: input.audit,
 		});
 	}
 	if (input.provider === "dujiao_next") {
@@ -40,6 +43,7 @@ export function createSupplierAdapter(input: {
 			currency: input.currency,
 			currencyDecimals: input.currencyDecimals,
 			fetcher: input.fetcher,
+			audit: input.audit,
 		});
 	}
 	if (input.provider === "shared_stock") {
@@ -51,6 +55,7 @@ export function createSupplierAdapter(input: {
 			currency: input.currency,
 			currencyDecimals: input.currencyDecimals,
 			fetcher: input.fetcher,
+			audit: input.audit,
 		});
 	}
 	const credentials = gmshopEdgeCredentialsSchema.parse(input.credentials);
@@ -61,5 +66,6 @@ export function createSupplierAdapter(input: {
 		currency: input.currency,
 		currencyDecimals: input.currencyDecimals,
 		fetcher: input.fetcher,
+		audit: input.audit,
 	});
 }

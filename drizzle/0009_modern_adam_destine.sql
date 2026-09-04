@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `sales_count_base` integer DEFAULT 0 NOT NULL;
