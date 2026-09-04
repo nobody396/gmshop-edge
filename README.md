@@ -469,3 +469,12 @@ Source checked 2026-09-04: https://aisou.pro/item/45. The three locally hosted
  `9e/df15bb7b7048cd015ee997b97bcc5a.png`, and
  `22/9b3ef6f3df1a0cd5d651dc89681399.png`. Instructions are rewritten concisely;
  generic checkout/network errors alone must not be presented as proof of a ban.
+
+The owner also supplied two normal upgrade screenshots (plan selection and Max order
+details); method 2 contrasts these with the existing blocked example. The Claude
+website and upgrade-page names are clickable links. No payment on Claude is required
+for these checks, and example prices are not the store price or a recharge guarantee.
+
+The IP quality check precedes both official-site methods. Method 1 also includes the owner-supplied, already-redacted normal conversation screenshot alongside the disabled-organization example. No attempt is made to recover redacted content.
+
+IP quality is a standalone first section. The separate Claude pre-purchase section follows it; IP advice is not nested under purchase/refund warnings.
