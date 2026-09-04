@@ -32,6 +32,8 @@ it("includes all three blockers, both checks, all three source images and the IP
 	for (const text of [
 		"情况一",
 		"情况二",
+		"会导致本次充值的钱被拿去抵扣",
+		"造成充值失败，且无法退款",
 		"情况三",
 		"方法一",
 		"方法二",

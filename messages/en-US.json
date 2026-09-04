@@ -1707,7 +1707,7 @@
 	"store_claude_preflight_subscription_body": "Check Billing first. Wait until any existing iOS, Android or card-funded subscription has ended.",
 	"store_claude_preflight_subscription_image": "Example: Billing still shows an Android subscription",
 	"store_claude_preflight_billing_title": "2. Billing shows unpaid charges or refunds",
-	"store_claude_preflight_billing_body": "Resolve unpaid charges or refund issues first. They may interfere with the subscription or offset the recharge.",
+	"store_claude_preflight_billing_body": "For accounts with unpaid charges or refund records, this recharge payment will be used to offset those amounts. The subscription will not be credited, causing the recharge to fail, and no refund is available.",
 	"store_claude_preflight_disabled_title": "3. The organization is disabled despite allowing sign-in",
 	"store_claude_preflight_disabled_body": "Signing in is not proof of eligibility. Stop if Claude explicitly says the organization is disabled or banned.",
 	"store_claude_preflight_checks_title": "Complete these two checks before paying",
