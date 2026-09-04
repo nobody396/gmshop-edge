@@ -56,15 +56,20 @@ export function createSupplierHttpAudit(
 		if (value && typeof value === "object")
 			return Object.fromEntries(
 				Object.entries(value).map(([key, item]) => [
-					key,
+					scrub(key),
 					sensitiveKey.test(key) ? "[REDACTED]" : cleanObject(item),
 				]),
 			);
+		if (
+			typeof value === "number" &&
+			input.credentialValues.includes(String(value))
+		)
+			return "[REDACTED]";
 		return typeof value === "string" ? scrub(value) : value;
 	};
 	const cleanText = (value: string) => {
 		try {
-			return JSON.stringify(cleanObject(JSON.parse(scrub(value))));
+			return JSON.stringify(cleanObject(JSON.parse(value)));
 		} catch {
 			return scrub(value);
 		}

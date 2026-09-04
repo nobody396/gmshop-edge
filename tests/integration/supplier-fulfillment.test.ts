@@ -463,7 +463,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			supplierOrderId: order?.id ?? "",
 			accountId: "account",
 			commerceSecret: runtime.commerceSecret,
-			credentialValues: ["DO-NOT-LOG-API-KEY"],
+			credentialValues: ["DO-NOT-LOG-API-KEY", "123456789012"],
 		})({
 			url: "https://supplier.example/query?token=QUERY-TOKEN",
 			init: {
@@ -483,6 +483,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		const body = new TextEncoder().encode(
 			JSON.stringify({
 				secret: "FULFILLMENT-CARD",
+				merchant_id: 123456789012,
 				"DO-NOT-LOG-API-KEY": "reflected-as-a-key",
 				reflected: "DO-NOT-LOG-API-KEY",
 				token: "REFLECTED-TOKEN",
@@ -521,6 +522,9 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		])
 			expect(clear).not.toContain(secret);
 		expect(clear).toContain("FULFILLMENT-CARD");
+		expect(JSON.parse(JSON.parse(clear).response.body).merchant_id).toBe(
+			"[REDACTED]",
+		);
 		expect(encrypted).not.toContain("FULFILLMENT-CARD");
 	});
 
