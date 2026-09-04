@@ -442,3 +442,9 @@ and turns explicit HTTP(S) usage/tutorial URLs into safe clickable links. Copyin
 uses the exact delivered text, never the GM order number. Supplier payment metadata
 (including a nullable `url`) is not a redemption URL and is never substituted for
 customer instructions. If the returned text has no usage URL, an operator-verified guide from the supplier product description can be configured in `policy_json.supplierUsageGuide` (`provider`, `origin`, `skuId`, `url`). It must match the purchased supplier identity and SKU; new paid orders snapshot it. Legacy orders only use an identity-matching fallback. It appears separately and never changes copied fulfillment text. Without a returned or verified URL, none is fabricated.
+
+### Web support WeChat fallback
+
+Web support does not tell every customer to send an order CDK. The WeChat fallback
+opens the existing support QR in an accessible in-page dialog, not a new image tab.
+Closing it restores focus to the trigger and preserves the conversation and draft.

@@ -11,6 +11,14 @@ import {
 } from "react";
 import { Textarea } from "#/components/pro/base/fields/input";
 import { Button } from "#/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { authClient } from "#/features/auth/auth-client";
 import { cn } from "#/lib/utils";
@@ -291,16 +299,34 @@ export function WebSupportWidget() {
 						</Button>
 					</header>
 					<div className="border-b border-primary/20 bg-primary/5 px-4 py-3 text-sm">
-						<p className="font-medium">{m.web_support_order_notice()}</p>
-						<a
-							className="mt-1 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
-							href={wechatQrUrl}
-							rel="noreferrer"
-							target="_blank"
-						>
-							<QrCode className="size-4" />
-							{m.web_support_wechat_fallback()}
-						</a>
+						<Dialog>
+							<DialogTrigger asChild>
+								<button
+									type="button"
+									className="inline-flex items-center gap-1 rounded-sm text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+								>
+									<QrCode className="size-4 shrink-0" aria-hidden="true" />
+									{m.web_support_wechat_fallback()}
+								</button>
+							</DialogTrigger>
+							<DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-sm">
+								<DialogHeader>
+									<DialogTitle>{m.store_support_wechat()}</DialogTitle>
+									<DialogDescription>
+										{m.store_support_wechat_description()}
+									</DialogDescription>
+								</DialogHeader>
+								<div className="rounded-xl bg-white p-3">
+									<img
+										src={wechatQrUrl}
+										alt={m.store_support_wechat_qr_alt()}
+										width={613}
+										height={620}
+										className="mx-auto h-auto w-full max-w-72"
+									/>
+								</div>
+							</DialogContent>
+						</Dialog>
 					</div>
 					{!["active", "closing", "closed"].includes(status ?? "") ? (
 						session.isPending ? (
