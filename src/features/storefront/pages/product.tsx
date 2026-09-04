@@ -223,7 +223,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 							))}
 						</div>
 					) : null}
-					{selectedItem ? (
+					{selectedItem && data.productType === "stock" ? (
 						<UsageGuide
 							isChatGpt={data.id === "2a794b89-3bb9-49d4-8691-0d13a1606869"}
 							sellableItem={selectedItem}
@@ -513,7 +513,7 @@ function UsageGuide({
 	isChatGpt: boolean;
 	sellableItem: SellableItem;
 }) {
-	const automatic = sellableItem.fulfillmentSource === "supplier";
+	const automatic = sellableItem.fulfillmentSource !== "manual";
 	const received = automatic
 		? [
 				m.store_usage_guide_auto_credential({ sku: sellableItem.name }),

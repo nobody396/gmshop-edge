@@ -1,6 +1,10 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { processDelivery } from "#/features/fulfillment/server/process";
 import { completeFreeStoreOrder } from "#/features/shop-payments/server/service";
+import { revealStoreDelivery } from "#/features/storefront/server/delivery-reveal";
+import { getStoreOrder } from "#/features/storefront/server/order-query";
+import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { supplierFetchJson } from "#/features/suppliers/providers/http";
 import { signDujiaoNextRequest } from "#/features/suppliers/providers/signatures";
 import { createSupplierCredentialVault } from "#/features/suppliers/secrets";
@@ -99,7 +103,109 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it.each([
+		"supplier",
+		"manual",
+	] as const)("exposes the real %s fulfillment source to the order page", async (source) => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source = ?, supplier_status = CASE WHEN ? = 'supplier' THEN 'available' ELSE NULL END WHERE id = 'item'",
+			)
+			.bind(source, source)
+			.run();
+		await db
+			.prepare(
+				"UPDATE shop_orders SET order_number = 'ORDER-TEST-1', contact_email = 'buyer@example.com', normalized_contact_email = 'buyer@example.com' WHERE id = 'order'",
+			)
+			.run();
+		await completeFreeStoreOrder(db, "order");
+		if (source === "supplier")
+			await db
+				.prepare(
+					"UPDATE product_sellable_items SET fulfillment_source = 'manual', supplier_status = NULL WHERE id = 'item'",
+				)
+				.run();
+		const result = await getStoreOrder(db, {
+			orderNumber: "ORDER-TEST-1",
+			email: "buyer@example.com",
+		});
+		expect(result.deliveries).toHaveLength(1);
+		expect(result.deliveries[0]).toMatchObject({
+			status: "awaiting_supply",
+			fulfillmentSource: source,
+		});
+	});
+
+	it("snapshots the matching usage guide at payment and supports identity-bound legacy fallback", async () => {
+		const guide = {
+			provider: "dujiao_next",
+			origin: "https://supplier.example",
+			skuId: "2",
+			url: "https://original.example/use",
+		};
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET policy_json = ? WHERE id = 'item'",
+			)
+			.bind(JSON.stringify({ supplierUsageGuide: guide }))
+			.run();
+		await db
+			.prepare(
+				"UPDATE shop_orders SET order_number = 'ORDER-TEST-1', contact_email = 'buyer@example.com', normalized_contact_email = 'buyer@example.com' WHERE id = 'order'",
+			)
+			.run();
+		await completeFreeStoreOrder(db, "order");
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET policy_json = ? WHERE id = 'item'",
+			)
+			.bind(
+				JSON.stringify({
+					supplierUsageGuide: { ...guide, url: "https://new.example/use" },
+				}),
+			)
+			.run();
+		const lookup = async () => {
+			const row = await db
+				.prepare(
+					"SELECT s.binding_snapshot_json, i.policy_json FROM supplier_orders s JOIN shop_order_items oi ON oi.id=s.order_item_id JOIN product_sellable_items i ON i.id=oi.sellable_item_id WHERE s.order_id='order'",
+				)
+				.first<{ binding_snapshot_json: string; policy_json: string }>();
+			return resolveSupplierUsageUrl(
+				row?.policy_json,
+				row?.binding_snapshot_json,
+			);
+		};
+		expect(await lookup()).toBe(guide.url);
+		await db
+			.prepare(
+				"UPDATE supplier_orders SET binding_snapshot_json = json_remove(binding_snapshot_json, '$.customerUsageUrl') WHERE order_id = 'order'",
+			)
+			.run();
+		expect(await lookup()).toBe("https://new.example/use");
+	});
+
 	it("locks a processing account, then imports encrypted cards idempotently", async () => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET policy_json = ? WHERE id = 'item'",
+			)
+			.bind(
+				JSON.stringify({
+					supplierUsageGuide: {
+						provider: "dujiao_next",
+						origin: "https://supplier.example",
+						skuId: "2",
+						url: "https://verified.example/redeem",
+					},
+				}),
+			)
+			.run();
+		await db
+			.prepare(
+				"UPDATE shop_orders SET order_number = 'ORDER-TEST-1', contact_email = 'buyer@example.com', normalized_contact_email = 'buyer@example.com' WHERE id = 'order'",
+			)
+			.run();
 		await completeFreeStoreOrder(db, "order");
 		const supplierOrder = await db
 			.prepare("SELECT id FROM supplier_orders WHERE order_id = 'order'")
@@ -182,6 +288,20 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		await expect(
 			db.prepare("DELETE FROM supplier_accounts WHERE id = 'account'").run(),
 		).rejects.toThrow(/FOREIGN KEY constraint failed/);
+		const target = await db
+			.prepare("SELECT delivery_record_id FROM supplier_orders WHERE id=?")
+			.bind(supplierOrder?.id)
+			.first<{ delivery_record_id: string }>();
+		await processDelivery(db, target?.delivery_record_id ?? "");
+		const revealed = await revealStoreDelivery(db, {
+			orderNumber: "ORDER-TEST-1",
+			deliveryId: target?.delivery_record_id ?? "",
+			email: "buyer@example.com",
+		});
+		expect(revealed).toMatchObject({
+			usageUrl: "https://verified.example/redeem",
+		});
+		expect(revealed.content?.split("\n").sort()).toEqual(["CARD-1", "CARD-2"]);
 	});
 
 	it.each([

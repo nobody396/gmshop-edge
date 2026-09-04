@@ -881,6 +881,49 @@ describe("SharedStock adapter", () => {
 		expect(requests).toHaveLength(1);
 	});
 
+	it("accepts a null payment URL and delivers the full customer-facing secret immediately", async () => {
+		const content =
+			"TEST-CARD\n充值地址：https://redeem.example/claude\n保留上游说明";
+		const { adapter, requests } = adapterWith(() => ({
+			code: 200,
+			data: { url: null, amount: 128, tradeNo: "UPSTREAM-1", secret: content },
+		}));
+		await expect(
+			adapter.submitOrder({
+				skuId: "CLAUDE",
+				quantity: 1,
+				requestNo: "1234567890123456789",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toEqual({
+			status: "supplied",
+			upstreamOrderId: "UPSTREAM-1",
+			cards: [content],
+		});
+		expect(requests).toHaveLength(1);
+	});
+
+	it("never substitutes a supplier payment URL for the customer delivery content", async () => {
+		const { adapter } = adapterWith(() => ({
+			code: 200,
+			data: {
+				url: "https://payment.example/checkout",
+				tradeNo: "UPSTREAM-2",
+				secret: "TEST-CARD",
+			},
+		}));
+		await expect(
+			adapter.submitOrder({
+				skuId: "CLAUDE",
+				quantity: 1,
+				requestNo: "1234567890123456789",
+				callbackUrl: "",
+				traceId: "",
+			}),
+		).resolves.toMatchObject({ cards: ["TEST-CARD"] });
+	});
+
 	it("maps a duplicate request_no rejection to the uncertain path", async () => {
 		const { adapter } = adapterWith(() => ({
 			code: 0,

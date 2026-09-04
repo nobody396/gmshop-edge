@@ -70,7 +70,8 @@ const tradeNumberSchema = z.union([
 ]);
 
 const tradeSchema = z.object({
-	url: z.string().max(2048).default(""),
+	// This is the supplier payment URL, not a customer redemption link.
+	url: z.string().max(2048).nullable().optional(),
 	amount: z.union([z.string(), z.number()]).default(""),
 	tradeNo: tradeNumberSchema,
 	secret: z.string().max(640_000).default(""),

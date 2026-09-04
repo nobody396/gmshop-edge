@@ -9,6 +9,7 @@ import { grossUpPaymentAmount } from "#/features/shop-payments/fees";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import { epusdtMerchantOrderId } from "#/features/shop-payments/providers/epusdt";
+import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { mutateWallet } from "#/features/wallet/server/ledger";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret } from "#/lib/secrets";
@@ -55,6 +56,7 @@ type PaymentCreationContext = {
 };
 
 type OrderItem = EntitlementOrderItem & {
+	policy_json: string | null;
 	fulfillment_source: "local" | "manual" | "supplier";
 	supplier_status: string | null;
 	supplier_binding_id: string | null;
@@ -1376,6 +1378,11 @@ function fulfillmentStatements(
 						totalCostMinor,
 						item.supplier_currency,
 						JSON.stringify({
+							customerUsageUrl: resolveSupplierUsageUrl(item.policy_json, {
+								provider: item.supplier_provider,
+								normalizedApiOrigin: item.supplier_origin,
+								upstreamSkuId: item.upstream_sku_id,
+							}),
 							provider: item.supplier_provider,
 							normalizedApiOrigin: item.supplier_origin,
 							protocolVersion: item.supplier_protocol,
@@ -1517,7 +1524,7 @@ const orderItemsForFulfillmentSql = `SELECT
  oi.id, oi.sellable_item_id, oi.product_id, oi.delivery_component_id,
  oi.delivery_component_type, oi.quantity, oi.duration_ms, oi.usage_limit,
  oi.access_limit, oi.renewed_from_entitlement_id, oi.renewal_mode,
- oi.definition_version_id, psi.fulfillment_source, psi.supplier_status,
+ oi.definition_version_id, psi.fulfillment_source, psi.supplier_status, psi.policy_json,
  sb.id AS supplier_binding_id, sb.provider AS supplier_provider,
  sb.normalized_api_origin AS supplier_origin,
  sb.protocol_version AS supplier_protocol,
