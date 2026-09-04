@@ -1696,7 +1696,7 @@
 	"store_admin_dashboard": "管理后台",
 	"store_not_signed_in": "未登录",
 	"store_automatic_delivery_pending_title": "正在自动获取交付内容",
-	"store_automatic_delivery_pending_description": "系统正在处理，无需把订单号发送给客服。上游提供的卡密和使用说明会自动显示在本页，请勿重复下单。",
+	"store_automatic_delivery_pending_description": "系统正在处理，无需把订单号发送给客服。完成后，卡密和使用说明会自动显示在本页，请勿重复下单。",
 	"store_delivery_usage_entry": "充值 / 使用入口",
 	"store_delivery_usage_entry_hint": "使用上方卡密，按入口页面的提示操作。",
 	"store_automatic_delivery_review_title": "自动交付暂未完成",
