@@ -330,12 +330,20 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 						</fieldset>
 					) : null}
 					{data.id === claudeRechargeProductId ? (
-						<a
-							href="#claude-purchase-guide"
-							className="mt-5 block rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 font-semibold text-sm underline underline-offset-4"
-						>
-							{m.store_claude_preflight_link()}
-						</a>
+						<div className="mt-5 grid gap-2">
+							<a
+								href="#claude-ip-check"
+								className="block rounded-xl border border-primary/30 bg-primary/5 p-4 font-semibold text-sm underline underline-offset-4"
+							>
+								{m.store_claude_preflight_ip_title()}
+							</a>
+							<a
+								href="#claude-purchase-guide"
+								className="block rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 font-semibold text-sm underline underline-offset-4"
+							>
+								{m.store_claude_preflight_link()}
+							</a>
+						</div>
 					) : null}
 					<div className="mt-7">
 						{selectedItem ? (
