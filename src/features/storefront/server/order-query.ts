@@ -77,9 +77,13 @@ export async function getStoreOrder(
 				`SELECT dr.id, grant_row.entitlement_id, dr.delivery_type, dr.status,
 				 dr.error_code, dr.delivered_at,
 				 dr.content_encrypted IS NOT NULL AS has_content,
-				 oi.show_on_order_page, oi.product_name, oi.sellable_item_name
+				 oi.show_on_order_page, oi.product_name, oi.sellable_item_name,
+				 CASE WHEN supplier_order.id IS NOT NULL THEN 'supplier'
+				 ELSE COALESCE(sellable.fulfillment_source, 'local') END AS fulfillment_source, supplier_order.state AS supplier_state
 				 FROM delivery_records dr
 				 JOIN shop_order_items oi ON oi.id = dr.order_item_id
+				 LEFT JOIN product_sellable_items sellable ON sellable.id = oi.sellable_item_id
+				 LEFT JOIN supplier_orders supplier_order ON supplier_order.order_item_id = oi.id
 				 LEFT JOIN entitlement_grants grant_row
 				  ON grant_row.source_order_item_id = oi.id
 				 WHERE oi.order_id = ? ORDER BY dr.created_at, dr.id`,
@@ -282,7 +286,14 @@ function presentPayment(row: Record<string, unknown>) {
 	};
 }
 function presentDelivery(row: Record<string, unknown>) {
+	const fulfillmentSource: "local" | "supplier" | "manual" =
+		row.fulfillment_source === "supplier" || row.fulfillment_source === "manual"
+			? row.fulfillment_source
+			: "local";
 	return {
+		fulfillmentSource,
+		supplierState:
+			row.supplier_state == null ? null : String(row.supplier_state),
 		id: String(row.id),
 		entitlementId:
 			row.entitlement_id == null ? null : String(row.entitlement_id),

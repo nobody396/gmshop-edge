@@ -738,7 +738,7 @@
 	"store_sort_price_desc": "Price: high to low",
 	"store_sort_popular": "Most popular",
 	"store_all_tags": "All categories",
-	"store_auto_delivery": "Automatic top-up",
+	"store_auto_delivery": "Automatic delivery",
 	"store_stock": "Stock {count}",
 	"store_manual_delivery": "Fast online delivery",
 	"store_manual_procurement": "Manual sourcing",
@@ -1694,5 +1694,11 @@
 	"supplier_api_documentation": "API documentation",
 	"shop_orders_source_api": "API",
 	"store_admin_dashboard": "Admin",
-	"store_not_signed_in": "Not signed in"
+	"store_not_signed_in": "Not signed in",
+	"store_automatic_delivery_pending_title": "Preparing your automatic delivery",
+	"store_automatic_delivery_pending_description": "No need to send your order number to support. The supplier-provided code and instructions will appear on this page automatically. Please do not place a duplicate order.",
+	"store_delivery_usage_entry": "Open redemption / usage page",
+	"store_delivery_usage_entry_hint": "Use the code above and follow the instructions on that page.",
+	"store_automatic_delivery_review_title": "Automatic delivery needs review",
+	"store_automatic_delivery_review_description": "Delivery needs further review. Please contact support through the order after-sales options, and do not place another order."
 }

@@ -6,10 +6,8 @@ import {
 	ArrowLeft,
 	Boxes,
 	Clock3,
-	Copy,
 	CreditCard,
 	Download,
-	Headphones,
 	LifeBuoy,
 	QrCode,
 } from "lucide-react";
@@ -31,6 +29,7 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { DeliveryRevealContent } from "#/features/storefront/components/delivery-reveal-content";
+import { OrderDeliveryNotice } from "#/features/storefront/components/order-delivery-notice";
 import {
 	readGuestOrderEmail,
 	writeGuestOrderEmail,
@@ -47,7 +46,6 @@ import {
 	refreshStoreOrderFn,
 	retryStorePaymentFn,
 } from "#/features/storefront/server/functions";
-import { webSupportOpenEvent } from "#/features/telegram/web-support-contract";
 import { formatDateTime, formatMinorAmountWithSymbol } from "#/lib/format";
 import { m } from "#/paraglide/messages";
 
@@ -160,9 +158,6 @@ export function StorefrontOrderPage({
 			delivery.status === "delivered" &&
 			delivery.hasContent &&
 			delivery.showOnOrderPage,
-	);
-	const manualDelivery = data.deliveries.find((delivery) =>
-		["awaiting_supply", "processing"].includes(delivery.status),
 	);
 	const downloadableAssets = data.downloads.filter(
 		(asset) =>
@@ -438,51 +433,11 @@ export function StorefrontOrderPage({
 										) : null}
 									</div>
 								) : null}
-								{data.status !== "pending_payment" && manualDelivery ? (
-									<section className="grid gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-5">
-										<div className="flex items-start gap-3">
-											<Clock3 className="mt-0.5 size-5 shrink-0 text-primary" />
-											<div className="grid gap-1.5">
-												<strong>{m.store_activation_code_title()}</strong>
-												<p className="text-muted-foreground text-sm">
-													{manualDelivery.status === "processing"
-														? m.store_activation_code_processing()
-														: m.store_activation_code_description()}
-												</p>
-											</div>
-										</div>
-										<div className="rounded-xl border bg-background p-4">
-											<p className="text-muted-foreground text-xs">
-												{m.store_activation_code_label()}
-											</p>
-											<code className="mt-1 block break-all font-semibold text-base">
-												{orderNumber}
-											</code>
-										</div>
-										<div className="grid gap-3 sm:grid-cols-2">
-											<Button
-												onClick={() => {
-													void navigator.clipboard.writeText(orderNumber);
-													toast.success(m.store_activation_code_copied());
-												}}
-												variant="outline"
-											>
-												<Copy />
-												{m.store_activation_code_copy()}
-											</Button>
-											<Button
-												onClick={() =>
-													window.dispatchEvent(new Event(webSupportOpenEvent))
-												}
-											>
-												<Headphones />
-												{m.store_activation_code_support()}
-											</Button>
-										</div>
-										<p className="text-muted-foreground text-xs leading-5">
-											{m.store_activation_code_sla()}
-										</p>
-									</section>
+								{data.status !== "pending_payment" ? (
+									<OrderDeliveryNotice
+										deliveries={data.deliveries}
+										orderNumber={orderNumber}
+									/>
 								) : null}
 								{data.status !== "pending_payment" &&
 								(claimableDeliveries.length || downloadableAssets.length) ? (

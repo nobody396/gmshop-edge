@@ -431,3 +431,14 @@ Use the owner-local `scripts/inspect-supplier-diagnostics.ts` CLI with `--accoun
 `--database`, and `--order`; `--exchange` verifies decryption and prints only response
 structure, not card values. Its Cloudflare credential is read through Agent Switch's
 non-TTY FD interface. Historical missing response bodies cannot be reconstructed.
+
+### Automatic and manual delivery presentation
+
+Only manual stock fulfillment displays the order-CDK support handoff. Automatic
+orders show a waiting notice instead; a persisted supplier order remains classified
+as automatic even if the SKU is later changed to manual. After delivery, the
+customer-facing fulfillment text opens automatically, preserves multiline content,
+and turns explicit HTTP(S) usage/tutorial URLs into safe clickable links. Copying
+uses the exact delivered text, never the GM order number. Supplier payment metadata
+(including a nullable `url`) is not a redemption URL and is never substituted for
+customer instructions. If the returned text has no usage URL, an operator-verified guide from the supplier product description can be configured in `policy_json.supplierUsageGuide` (`provider`, `origin`, `skuId`, `url`). It must match the purchased supplier identity and SKU; new paid orders snapshot it. Legacy orders only use an identity-matching fallback. It appears separately and never changes copied fulfillment text. Without a returned or verified URL, none is fabricated.

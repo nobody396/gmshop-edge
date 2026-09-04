@@ -738,7 +738,7 @@
 	"store_sort_price_desc": "价格从高到低",
 	"store_sort_popular": "销量优先",
 	"store_all_tags": "全部分类",
-	"store_auto_delivery": "自动充值",
+	"store_auto_delivery": "自动发货",
 	"store_stock": "库存 {count}",
 	"store_manual_delivery": "在线快速交付",
 	"store_manual_procurement": "人工采购",
@@ -1694,5 +1694,11 @@
 	"supplier_api_documentation": "API 文档",
 	"shop_orders_source_api": "API",
 	"store_admin_dashboard": "管理后台",
-	"store_not_signed_in": "未登录"
+	"store_not_signed_in": "未登录",
+	"store_automatic_delivery_pending_title": "正在自动获取交付内容",
+	"store_automatic_delivery_pending_description": "系统正在处理，无需把订单号发送给客服。上游提供的卡密和使用说明会自动显示在本页，请勿重复下单。",
+	"store_delivery_usage_entry": "充值 / 使用入口",
+	"store_delivery_usage_entry_hint": "使用上方卡密，按入口页面的提示操作。",
+	"store_automatic_delivery_review_title": "自动交付暂未完成",
+	"store_automatic_delivery_review_description": "交付需要进一步核对，请通过订单售后入口联系支持。请勿重复下单或再次购买。"
 }

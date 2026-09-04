@@ -2,6 +2,7 @@ import { z } from "zod";
 import { consumeEntitlementAccess } from "#/features/entitlements/server/ledger";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { getStoreOrder } from "#/features/storefront/server/order-query";
+import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { DomainError } from "#/lib/domain-error";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 
@@ -29,9 +30,12 @@ export async function revealStoreDelivery(
 	);
 	const delivery = await db
 		.prepare(
-			`SELECT dr.content_encrypted, dr.delivery_type, ce.id AS entitlement_id
+			`SELECT dr.content_encrypted, dr.delivery_type, ce.id AS entitlement_id,
+			 sellable.policy_json, supplier_order.binding_snapshot_json
 			 FROM delivery_records dr
 			 JOIN shop_order_items oi ON oi.id = dr.order_item_id
+			 LEFT JOIN product_sellable_items sellable ON sellable.id = oi.sellable_item_id
+			 LEFT JOIN supplier_orders supplier_order ON supplier_order.order_item_id = oi.id
 			 JOIN customer_entitlements ce ON ce.id = (
 			  SELECT grants.entitlement_id FROM entitlement_grants grants
 			 WHERE grants.source_order_item_id = oi.id LIMIT 1)
@@ -46,6 +50,8 @@ export async function revealStoreDelivery(
 			content_encrypted: string;
 			delivery_type: "stock";
 			entitlement_id: string;
+			policy_json: string | null;
+			binding_snapshot_json: string | null;
 		}>();
 	if (!delivery)
 		throw new DomainError("delivery_not_found", 404, "Delivery not found");
@@ -80,6 +86,10 @@ export async function revealStoreDelivery(
 		delivery.content_encrypted,
 		runtime.commerceSecret,
 	);
+	const usageUrl = resolveSupplierUsageUrl(
+		delivery.policy_json,
+		delivery.binding_snapshot_json,
+	);
 	await consumeEntitlementAccess(db, {
 		entitlementId: delivery.entitlement_id,
 		assetType: "stock_secret",
@@ -102,9 +112,9 @@ export async function revealStoreDelivery(
 			input.deliveryId,
 			input.request?.headers.get("x-request-id") ?? null,
 			input.request?.headers.get("cf-connecting-ip") ?? null,
-			JSON.stringify({ orderId: order.id }),
+			JSON.stringify({ orderId: order.id, ...(usageUrl ? { usageUrl } : {}) }),
 			Date.now(),
 		)
 		.run();
-	return { content };
+	return usageUrl ? { content, usageUrl } : { content };
 }
