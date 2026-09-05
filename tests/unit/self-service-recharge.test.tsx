@@ -22,7 +22,7 @@ describe("homepage self-service recharge", () => {
 		container = undefined;
 	});
 
-	it("sets the honest expectation before linking to ChatGPT recharge", async () => {
+	it("sets the honest expectation without adding a second jump action", async () => {
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
@@ -32,29 +32,25 @@ describe("homepage self-service recharge", () => {
 		expect(text).toContain("Automatic delivery, 24/7");
 		expect(text).toContain("in as little as about 3 minutes");
 		expect(text).toContain("recharge code and the matching recharge website");
+		expect(text).toContain("30-day subscription warranty");
+		expect(text).toContain("Contact support directly");
 		expect(text).toContain("provide only what that page requests");
-		expect(text).toContain("extra verification");
 		expect(text).not.toContain("no information required");
 		expect(container.querySelectorAll("li")).toHaveLength(3);
 		expect(container.querySelector("[data-self-service-recharge]")?.id).toBe(
 			"self-service-recharge",
 		);
-		expect(container.querySelector("a")?.getAttribute("href")).toBe(
-			"/products/2a794b89-3bb9-49d4-8691-0d13a1606869",
-		);
+		expect(container.querySelector("a")).toBeNull();
 	});
 
-	it("is promoted above the fold with a reduced-motion-safe breathing action", () => {
+	it("keeps the full guide inline without a separate hero jump button", () => {
 		const home = readFileSync(
 			join(process.cwd(), "src/features/home/index.tsx"),
 			"utf8",
 		);
-		expect(home).toContain('href="#self-service-recharge"');
-		expect(home).toContain("m.store_self_service_hero_action()");
-		expect(home).toContain(
-			"motion-safe:animate-[ping_2.4s_ease-in-out_infinite]",
-		);
-		expect(home).toContain("ring-2 ring-primary/50");
+		expect(home).not.toContain('href="#self-service-recharge"');
+		expect(home).not.toContain("store_self_service_hero_action");
+		expect(home).not.toContain("store-recharge-breathe");
 		expect(home).toContain("{hasFilters ? null : <SelfServiceRecharge />}");
 	});
 });
