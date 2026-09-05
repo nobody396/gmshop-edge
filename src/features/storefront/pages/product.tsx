@@ -11,6 +11,7 @@ import {
 	ChevronRight,
 	CircleCheck,
 	Clock3,
+	Globe2,
 	LogIn,
 	Minus,
 	PackageCheck,
@@ -31,6 +32,10 @@ import { authClient } from "#/features/auth/auth-client";
 import { StoreMoney } from "#/features/exchange-rates/currency-context";
 import { addLocalCartItem } from "#/features/storefront/cart-storage";
 import { trackCommerceEvent } from "#/features/storefront/commerce-events";
+import {
+	ChatGptRegionGuide,
+	chatGptRechargeProductId,
+} from "#/features/storefront/components/chatgpt-region-guide";
 import {
 	ClaudePurchaseGuide,
 	claudeRechargeProductId,
@@ -229,7 +234,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 					) : null}
 					{selectedItem && data.productType === "stock" ? (
 						<UsageGuide
-							isChatGpt={data.id === "2a794b89-3bb9-49d4-8691-0d13a1606869"}
+							isChatGpt={data.id === chatGptRechargeProductId}
 							sellableItem={selectedItem}
 						/>
 					) : null}
@@ -253,6 +258,15 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 						<p className="mt-4 max-w-2xl whitespace-pre-wrap text-muted-foreground leading-7">
 							{data.description}
 						</p>
+					) : null}
+					{data.id === chatGptRechargeProductId ? (
+						<a
+							className="mt-4 flex max-w-2xl items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 font-semibold text-primary text-sm leading-6 transition-colors hover:bg-primary/15 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+							href="#chatgpt-region-guide"
+						>
+							<Globe2 aria-hidden="true" className="size-4 shrink-0" />
+							<p>{m.store_chatgpt_region_notice()}</p>
+						</a>
 					) : null}
 					{data.id === claudeRechargeProductId ? (
 						<div className="mt-4 flex max-w-2xl items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 font-semibold text-primary text-sm leading-6">
@@ -488,6 +502,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 					</div>
 				</div>
 			</div>
+			{data.id === chatGptRechargeProductId ? <ChatGptRegionGuide /> : null}
 			{data.id === claudeRechargeProductId ? <ClaudePurchaseGuide /> : null}
 			{relatedProducts.isLoading ? (
 				<RelatedProductsLoadingSkeleton />

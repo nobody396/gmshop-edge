@@ -41,6 +41,10 @@ import {
 	trackCommerceEvent,
 } from "#/features/storefront/commerce-events";
 import {
+	ChatGptRegionGuide,
+	chatGptRechargeProductId,
+} from "#/features/storefront/components/chatgpt-region-guide";
+import {
 	ClaudePurchaseGuide,
 	claudeRechargeProductId,
 } from "#/features/storefront/components/claude-purchase-guide";
@@ -438,6 +442,9 @@ export function StorefrontCheckoutPage() {
 					{m.store_checkout_description()}
 				</p>
 			</div>
+			{items.some((item) => item.productId === chatGptRechargeProductId) ? (
+				<ChatGptRegionGuide />
+			) : null}
 			{items.some((item) => item.productId === claudeRechargeProductId) ? (
 				<ClaudePurchaseGuide />
 			) : null}
