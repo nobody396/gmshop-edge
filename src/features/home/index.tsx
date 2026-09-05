@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Boxes, Search, Sparkles } from "lucide-react";
+import { Boxes, Search } from "lucide-react";
 import { type SyntheticEvent, useEffect, useState } from "react";
 import type { z } from "zod";
 import { Button } from "#/components/ui/button";
@@ -73,17 +73,6 @@ export function HomePage({
 						<h1 className="max-w-4xl text-balance font-semibold text-4xl leading-[1.05] tracking-[-0.04em] sm:text-5xl lg:text-6xl">
 							{m.store_hero_title()}
 						</h1>
-						<a
-							className="group relative mt-6 inline-flex items-center gap-2 rounded-full border border-primary/35 bg-primary px-4 py-2.5 font-semibold text-primary-foreground text-sm shadow-lg shadow-primary/20 transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring motion-reduce:transition-none"
-							href="#self-service-recharge"
-						>
-							<span
-								aria-hidden="true"
-								className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-primary/50 motion-safe:animate-[ping_2.4s_ease-in-out_infinite]"
-							/>
-							<Sparkles aria-hidden="true" className="size-4" />
-							{m.store_self_service_hero_action()}
-						</a>
 					</div>
 					<div className="lg:pb-1">
 						<form className="relative" onSubmit={submit}>

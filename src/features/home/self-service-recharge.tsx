@@ -1,5 +1,4 @@
-import { ArrowRight, KeyRound, Link2, Timer } from "lucide-react";
-import { chatGptRechargeProductId } from "#/features/storefront/components/chatgpt-region-guide";
+import { KeyRound, Link2, ShieldCheck, Timer } from "lucide-react";
 import { m } from "#/paraglide/messages";
 
 const steps = [
@@ -43,13 +42,13 @@ export function SelfServiceRecharge() {
 						<p className="mt-3 max-w-xl text-muted-foreground text-sm leading-6">
 							{m.store_self_service_description()}
 						</p>
-						<a
-							className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground text-sm transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-							href={`/products/${chatGptRechargeProductId}`}
-						>
-							{m.store_self_service_action()}
-							<ArrowRight aria-hidden="true" className="size-4" />
-						</a>
+						<p className="mt-4 flex max-w-xl items-start gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3.5 py-3 font-medium text-sm leading-6">
+							<ShieldCheck
+								aria-hidden="true"
+								className="mt-1 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+							/>
+							<span>{m.store_self_service_warranty()}</span>
+						</p>
 					</div>
 					<ol className="grid gap-3 sm:grid-cols-3">
 						{steps.map(({ body, icon: Icon, title }, index) => (
@@ -73,9 +72,6 @@ export function SelfServiceRecharge() {
 						))}
 					</ol>
 				</div>
-				<p className="mt-5 border-border/70 border-t pt-4 text-muted-foreground text-xs leading-5">
-					{m.store_self_service_timing_note()}
-				</p>
 			</div>
 		</section>
 	);
