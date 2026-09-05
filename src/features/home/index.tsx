@@ -22,9 +22,9 @@ import {
 	StorefrontProductCardSkeleton,
 } from "#/features/storefront/components/product-card";
 import type { storefrontListSchema } from "#/features/storefront/schema";
-import { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
+import { storefrontCatalogQueryOptions } from "./catalog-query";
 import { SelfServiceRecharge } from "./self-service-recharge";
 
 export function HomePage({
@@ -36,12 +36,9 @@ export function HomePage({
 	const navigate = useNavigate({ from: "/" });
 	const [draftSearch, setDraftSearch] = useState(searchParams.search);
 	const locale = getLocale();
-	const catalog = useQuery({
-		queryKey: ["storefront", "catalog", locale, searchParams],
-		queryFn: () =>
-			listStorefrontCatalogFn({ data: { ...searchParams, locale } }),
-		staleTime: 30_000,
-	});
+	const catalog = useQuery(
+		storefrontCatalogQueryOptions({ ...searchParams, locale }),
+	);
 	useEffect(() => {
 		trackCommerceEvent({ eventType: "catalog_viewed" });
 	}, []);

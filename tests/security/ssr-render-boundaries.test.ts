@@ -29,6 +29,20 @@ describe("SSR render data boundaries", () => {
 		);
 	});
 
+	it("renders the public catalog from loader-prefetched query data", () => {
+		const storefrontRoute = read("src/routes/(public)/index.tsx");
+		const homePage = read("src/features/home/index.tsx");
+
+		expect(ownersOf("queryClient.ensureQueryData(")).toEqual([
+			"src/routes/(public)/index.tsx",
+		]);
+		expect(storefrontRoute).toContain("loader: async ({ context, deps }) =>");
+		expect(storefrontRoute).toContain(
+			"await context.queryClient.ensureQueryData(",
+		);
+		expect(homePage).toContain("storefrontCatalogQueryOptions({");
+	});
+
 	it("resolves identity, authorization, and brand before render", () => {
 		const rootRoute = read("src/routes/__root.tsx");
 		const adminRoute = read("src/routes/admin/route.tsx");
