@@ -43,7 +43,7 @@ describe("ChatGPT region guide", () => {
 		expect(container.querySelectorAll("article")).toHaveLength(2);
 	});
 
-	it("appears for the shared ChatGPT product on product and checkout pages", () => {
+	it("appears on the product page without repeating on checkout", () => {
 		expect(chatGptRechargeProductId).toBe(
 			"2a794b89-3bb9-49d4-8691-0d13a1606869",
 		);
@@ -59,9 +59,7 @@ describe("ChatGPT region guide", () => {
 			"data.id === chatGptRechargeProductId ? <ChatGptRegionGuide /> : null",
 		);
 		expect(product).toContain('href="#chatgpt-region-guide"');
-		expect(checkout).toContain(
-			"items.some((item) => item.productId === chatGptRechargeProductId)",
-		);
-		expect(checkout).toContain("<ChatGptRegionGuide />");
+		expect(checkout).not.toContain("chatGptRechargeProductId");
+		expect(checkout).not.toContain("<ChatGptRegionGuide />");
 	});
 });
