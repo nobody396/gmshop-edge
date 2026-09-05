@@ -1,3 +1,4 @@
+import { resolveRequestAuthBaseUrl } from "#/features/auth/server/auth-base-url";
 import { createAuth } from "#/features/auth/server/auth-factory";
 import {
 	authProviderRevisionSignature,
@@ -28,12 +29,17 @@ export async function getAuth(request: Request) {
 		runtime.authProviderSecret,
 		runtime.integrationConfigSecret,
 	);
-	const signature = `${runtime.betterAuthSecret}:${runtime.betterAuthUrl}:${trustedOrigins.join(",")}:${authProviderRevisionSignature(authProviders)}:${JSON.stringify(emailPolicy)}`;
+	const authBaseUrl = resolveRequestAuthBaseUrl(
+		request,
+		runtime.betterAuthUrl,
+		trustedOrigins,
+	);
+	const signature = `${runtime.betterAuthSecret}:${authBaseUrl}:${trustedOrigins.join(",")}:${authProviderRevisionSignature(authProviders)}:${JSON.stringify(emailPolicy)}`;
 	const cached = authCache.get(d1);
 	if (cached?.signature === signature) return cached.auth;
 	const auth = createAuth(getDb(request), {
 		BETTER_AUTH_SECRET: runtime.betterAuthSecret,
-		BETTER_AUTH_URL: runtime.betterAuthUrl,
+		BETTER_AUTH_URL: authBaseUrl,
 		TRUSTED_ORIGINS: trustedOrigins,
 		AUTH_PROVIDERS: authProviders,
 		AUTH_PROVIDER_SECRET: runtime.authProviderSecret,
