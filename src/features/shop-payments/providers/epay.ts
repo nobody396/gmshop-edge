@@ -255,8 +255,8 @@ async function refundZpayPayment(
 	credential: z.output<typeof epayCredentialSchema>,
 	fetcher: typeof fetch,
 ) {
-	const [tradeNo, merchantOrderId] = input.providerPaymentId.split(":", 2);
-	if (!tradeNo || !merchantOrderId)
+	const merchantOrderId = input.providerPaymentId.split(":").at(-1);
+	if (!merchantOrderId)
 		return {
 			providerRefundId: `zpay:invalid:${input.refundId}`,
 			status: "failed" as const,
@@ -275,22 +275,23 @@ async function refundZpayPayment(
 		undefined,
 		fetcher,
 	);
+	const providerTradeNo = String(order.trade_no).trim();
 	if (
 		Number(order.status) !== 1 ||
-		String(order.trade_no) !== tradeNo ||
+		!providerTradeNo ||
 		String(order.out_trade_no) !== merchantOrderId ||
 		order.type !== credential.paymentMethod ||
 		decimalToMinor(String(order.money), 2).toString() !== input.amountMinor
 	)
 		return {
-			providerRefundId: `zpay:${tradeNo}`,
+			providerRefundId: `zpay:${providerTradeNo || `invalid:${input.refundId}`}`,
 			status: "failed" as const,
 			failureCode: "zpay_full_refund_preflight_failed",
 		};
 	const body = new URLSearchParams({
 		pid: credential.pid,
 		key: credential.secretKey,
-		trade_no: tradeNo,
+		trade_no: providerTradeNo,
 		money: minorToDecimal(input.amountMinor, 2),
 	});
 	const result = await zpayJson(
@@ -304,7 +305,7 @@ async function refundZpayPayment(
 		fetcher,
 	);
 	return {
-		providerRefundId: `zpay:${tradeNo}`,
+		providerRefundId: `zpay:${providerTradeNo}`,
 		status:
 			Number(result.code) === 1 ? ("succeeded" as const) : ("failed" as const),
 		failureCode: Number(result.code) === 1 ? null : "zpay_refund_rejected",
