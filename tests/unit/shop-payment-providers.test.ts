@@ -306,7 +306,7 @@ describe("shop payment providers", () => {
 			epayPaymentProvider.refundPayment(
 				{
 					refundId: "refund-zpay-1",
-					providerPaymentId: "trade-zpay-1:merchant-order-1",
+					providerPaymentId: "create-response-id:merchant-order-1",
 					amountMinor: "12345",
 					reason: "Customer refund",
 				},
@@ -343,7 +343,7 @@ describe("shop payment providers", () => {
 			epayPaymentProvider.refundPayment(
 				{
 					refundId: "refund-zpay-1",
-					providerPaymentId: "trade-zpay-1:merchant-order-1",
+					providerPaymentId: "create-response-id:merchant-order-1",
 					amountMinor: "12345",
 					reason: "Customer refund",
 				},

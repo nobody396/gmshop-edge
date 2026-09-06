@@ -479,7 +479,7 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 				Response.json({
 					code: 1,
 					status: 1,
-					trade_no: "pi_test_1",
+					trade_no: "zpay-trade-actual",
 					out_trade_no: "merchant-order-1",
 					type: "alipay",
 					money: "10.00",
@@ -511,7 +511,7 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 				Response.json({
 					code: 1,
 					status: 1,
-					trade_no: "pi_test_1",
+					trade_no: "zpay-trade-actual",
 					out_trade_no: "merchant-order-1",
 					type: "alipay",
 					money: "10.00",
