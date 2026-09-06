@@ -611,8 +611,15 @@ export async function completeManualShopRefund(
 	db: D1Database,
 	refundId: string,
 	reference: string,
+	fundsReturned: boolean,
 	context: { actorUserId: string; request: Request },
 ) {
+	if (fundsReturned !== true)
+		throw new DomainError(
+			"refund_funds_not_returned",
+			409,
+			"Confirm that the customer received the refund before completion",
+		);
 	const refund = await loadRefund(db, refundId);
 	if (!refund)
 		throw new DomainError("refund_not_found", 404, "Refund not found");
@@ -847,7 +854,9 @@ async function finalizeRefund(
 				.prepare(
 					`UPDATE supplier_orders SET state = 'refunded',
 					 next_retry_at = NULL, updated_at = ?
-					 WHERE order_id = ? AND state <> 'refunded' AND EXISTS (
+					 WHERE order_id = ?
+					  AND state IN ('pending', 'selecting', 'submitting', 'uncertain', 'failed')
+					  AND EXISTS (
 					  SELECT 1 FROM refunds completed_refund WHERE completed_refund.id = ?
 					   AND completed_refund.attempt_count = ?
 					   AND completed_refund.status = 'succeeded'

@@ -227,12 +227,25 @@ export function OrderWorkspacePage({ orderId }: { orderId: string }) {
 							label: m.shop_orders_manual_refund_reference(),
 							required: true,
 						},
+						{
+							name: "fundsReturned",
+							label: m.shop_orders_manual_refund_funds_returned(),
+							valueType: "switch" as const,
+							description:
+								m.shop_orders_manual_refund_funds_returned_description(),
+							initialValue: false,
+						},
 					]}
 					onFinish={async (values) => {
+						if (values.fundsReturned !== true) {
+							toast.error(m.shop_orders_manual_refund_funds_not_returned());
+							return;
+						}
 						await completeManualRefund.mutateAsync({
 							data: {
 								id: manualRefundId,
 								reference: String(values.reference ?? ""),
+								fundsReturned: true,
 							},
 						});
 					}}

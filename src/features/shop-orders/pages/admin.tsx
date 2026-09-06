@@ -45,6 +45,7 @@ import {
 import { canTransitionShopOrder } from "#/features/shop-orders/status";
 import { PageHeader } from "#/layouts/components/page-header";
 import { formatDateTime, formatMinorAmount, formatNumber } from "#/lib/format";
+import { formatMinorInput, parseMajorInput } from "#/lib/money-input";
 import { useCurrentProTableUrlState } from "#/lib/pro-table-url-state";
 import { m } from "#/paraglide/messages";
 
@@ -114,11 +115,15 @@ export function ShopOrdersPage() {
 	});
 	const refund = useMutation({
 		mutationFn: requestShopRefundFn,
-		onSuccess: async () => {
+		onSuccess: async (result) => {
 			setRefundingOrder(null);
 			setDetail(null);
 			await refresh();
-			toast.success(m.shop_orders_refund_queued());
+			toast.success(
+				result.manualActionRequired
+					? m.shop_orders_refund_manual_pending()
+					: m.shop_orders_refund_queued(),
+			);
 		},
 		onError: showError,
 	});
@@ -388,8 +393,11 @@ export function ShopOrdersPage() {
 					description={refundingOrder.orderNumber}
 					schema={[
 						{
-							name: "amountMinor",
-							label: m.shop_orders_refund_amount_minor(),
+							name: "amount",
+							label: m.shop_orders_refund_amount({
+								currency: refundingOrder.currency,
+							}),
+							description: m.shop_orders_refund_amount_description(),
 							required: true,
 						},
 						{
@@ -400,14 +408,25 @@ export function ShopOrdersPage() {
 						},
 					]}
 					initialValues={{
-						amountMinor: refundingOrder.paidMinor,
+						amount: formatMinorInput(
+							refundingOrder.paidMinor,
+							refundingOrder.currencyDecimals,
+						),
 						reason: "",
 					}}
 					onFinish={async (values) => {
+						const amountMinor = parseMajorInput(
+							String(values.amount ?? ""),
+							refundingOrder.currencyDecimals,
+						);
+						if (!amountMinor || amountMinor === "0") {
+							toast.error(m.shop_orders_refund_amount_invalid());
+							return;
+						}
 						await refund.mutateAsync({
 							data: {
 								orderId: refundingOrder.id,
-								amountMinor: String(values.amountMinor ?? ""),
+								amountMinor,
 								reason: String(values.reason ?? ""),
 								idempotencyKey: crypto.randomUUID(),
 							},

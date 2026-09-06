@@ -393,6 +393,7 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 			.prepare("UPDATE payment_channels SET provider = 'gmpay' WHERE id = ?")
 			.bind(ids.channel)
 			.run();
+		await seedSuppliedSupplierOrder(db);
 		const refund = await requestShopRefund(
 			db,
 			{
@@ -421,13 +422,19 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 			queued: 0,
 		});
 		await expect(
-			completeManualShopRefund(db, refund.id, "EPUSDT-REFUND-42", {
+			completeManualShopRefund(db, refund.id, "EPUSDT-REFUND-42", false, {
+				actorUserId: ids.admin,
+				request: testRequest(),
+			}),
+		).rejects.toMatchObject({ code: "refund_funds_not_returned" });
+		await expect(
+			completeManualShopRefund(db, refund.id, "EPUSDT-REFUND-42", true, {
 				actorUserId: ids.admin,
 				request: testRequest(),
 			}),
 		).resolves.toMatchObject({ status: "succeeded", duplicate: false });
 		await expect(
-			completeManualShopRefund(db, refund.id, "EPUSDT-REFUND-42", {
+			completeManualShopRefund(db, refund.id, "EPUSDT-REFUND-42", true, {
 				actorUserId: ids.admin,
 				request: testRequest(),
 			}),
@@ -435,6 +442,7 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 		const completed = await db
 			.prepare(
 				`SELECT r.status, r.provider_refund_id, o.status AS order_status,
+				 (SELECT state FROM supplier_orders WHERE order_id = o.id) AS supplier_state,
 				 (SELECT COUNT(*) FROM audit_logs WHERE action = 'refund.manual_completed') AS audits
 				 FROM refunds r JOIN shop_orders o ON o.id = r.order_id WHERE r.id = ?`,
 			)
@@ -444,6 +452,7 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 			status: "succeeded",
 			provider_refund_id: "manual:EPUSDT-REFUND-42",
 			order_status: "refunded",
+			supplier_state: "supplied",
 			audits: 1,
 		});
 	});
@@ -605,6 +614,48 @@ async function seed(db: D1Database) {
 				  1, 1, 1, 1)`,
 			)
 			.bind("encrypted-stock-content", ids.item),
+	]);
+}
+
+async function seedSuppliedSupplierOrder(db: D1Database) {
+	await db.batch([
+		db
+			.prepare(
+				`INSERT INTO delivery_records
+			 (id, order_item_id, delivery_type, status, delivered_at, created_at, updated_at)
+			 VALUES ('delivery-supplied-refund', ?, 'stock', 'delivered', 1, 1, 1)`,
+			)
+			.bind(ids.item),
+		db.prepare(
+			`INSERT INTO supplier_accounts
+			 (id, provider, base_url, normalized_api_origin, protocol_version,
+			  currency, currency_decimals, name, credentials_encrypted,
+			  credential_fingerprint, health_status, enabled, created_at, updated_at)
+			 VALUES ('supplier-account-refund', 'acg', 'https://supplier.example',
+			  'https://supplier.example', 'v1', 'USD', 2, 'Supplier',
+			  'encrypted', 'supplier-refund-fingerprint', 'healthy', 1, 1, 1)`,
+		),
+		db.prepare(
+			`INSERT INTO supplier_bindings
+			 (id, sellable_item_id, provider, normalized_api_origin, protocol_version,
+			  upstream_product_id, upstream_sku_id, upstream_product_name,
+			  upstream_sku_name, reference_cost_minor, max_cost_minor, stock_quantity,
+			  remote_status, enabled, created_at, updated_at)
+			 VALUES ('supplier-binding-refund', 'sellable-refund', 'acg',
+			  'https://supplier.example', 'v1', 'product-upstream', 'sku-upstream',
+			  'Credential', 'Default', '900', '900', 1, 'active', 1, 1, 1)`,
+		),
+		db
+			.prepare(
+				`INSERT INTO supplier_orders
+			 (id, order_id, order_item_id, delivery_record_id, supplier_binding_id,
+			  upstream_order_id, quantity, quoted_unit_cost_minor, total_cost_minor,
+			  currency, binding_snapshot_json, state, supplied_at, created_at, updated_at)
+			 VALUES ('supplier-order-refund', ?, ?, 'delivery-supplied-refund',
+			  'supplier-binding-refund', 'upstream-refund-1', 1, '900', '900', 'USD',
+			  '{}', 'supplied', 1, 1, 1)`,
+			)
+			.bind(ids.order, ids.item),
 	]);
 }
 

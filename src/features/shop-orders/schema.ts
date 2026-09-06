@@ -50,6 +50,7 @@ export const refundRequestSchema = z.object({
 export const manualRefundCompletionSchema = z.object({
 	id: z.uuid(),
 	reference: z.string().trim().min(1).max(200),
+	fundsReturned: z.literal(true),
 });
 
 export const afterSaleTypeValues = [
