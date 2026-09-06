@@ -1,9 +1,12 @@
 import { z } from "zod";
-import type { PaymentProviderAdapter } from "#/features/shop-payments/provider";
+import type {
+	PaymentProviderAdapter,
+	RefundPaymentInput,
+} from "#/features/shop-payments/provider";
 import { epayCredentialSchema } from "#/features/shop-payments/provider";
 import { sha256Hex } from "#/features/shop-payments/signature";
 import { DomainError } from "#/lib/domain-error";
-import { minorToDecimal } from "#/lib/units";
+import { decimalToMinor, minorToDecimal } from "#/lib/units";
 import {
 	epusdtMerchantOrderId,
 	epusdtUrl,
@@ -28,6 +31,18 @@ const queryResponseSchema = z.object({
 	status: z.union([z.string(), z.number()]),
 });
 const healthResponseSchema = z.object({ code: successCodeSchema });
+const zpayOrderResponseSchema = z.object({
+	code: successCodeSchema,
+	status: z.union([z.string(), z.number()]),
+	trade_no: z.union([z.string(), z.number()]),
+	out_trade_no: z.union([z.string(), z.number()]),
+	type: z.string(),
+	money: z.union([z.string(), z.number()]),
+});
+const zpayRefundResponseSchema = z.object({
+	code: z.union([z.string(), z.number()]),
+	msg: z.string().default(""),
+});
 const callbackSchema = z.object({
 	pid: z.string().min(1),
 	trade_no: z.string().min(1),
@@ -43,6 +58,12 @@ const paymentSubject = "老实人AI 额度";
 export const epayPaymentProvider: PaymentProviderAdapter = {
 	checkoutPresentation: "qr",
 	refundMode: "manual",
+	refundModeForCredential(rawCredential) {
+		const credential = epayCredentialSchema.safeParse(rawCredential);
+		return credential.success && isZpayOrigin(credential.data.baseUrl)
+			? "automatic"
+			: "manual";
+	},
 	async createPayment(input, rawCredential, fetcher = fetch) {
 		const credential = epayCredentialSchema.parse(rawCredential);
 		if (!input.payerIp)
@@ -180,7 +201,26 @@ export const epayPaymentProvider: PaymentProviderAdapter = {
 			payloadDigest: await sha256Hex(new URLSearchParams(params).toString()),
 		};
 	},
-	...manualRefundMethods,
+	async refundPayment(input, rawCredential, fetcher = fetch) {
+		const credential = epayCredentialSchema.parse(rawCredential);
+		if (!isZpayOrigin(credential.baseUrl))
+			return manualRefundMethods.refundPayment(input, credential, fetcher);
+		return refundZpayPayment(input, credential, fetcher);
+	},
+	async queryRefund(providerRefundId, rawCredential, fetcher = fetch) {
+		const credential = epayCredentialSchema.parse(rawCredential);
+		if (!isZpayOrigin(credential.baseUrl))
+			return manualRefundMethods.queryRefund(
+				providerRefundId,
+				credential,
+				fetcher,
+			);
+		throw new DomainError(
+			"payment_refund_reconciliation_required",
+			409,
+			"ZPAY does not expose a refund query endpoint",
+		);
+	},
 	async checkHealth(rawCredential, fetcher = fetch) {
 		const credential = epayCredentialSchema.parse(rawCredential);
 		const url = new URL(epusdtUrl(credential.baseUrl, "/api.php"));
@@ -201,3 +241,94 @@ export const epayPaymentProvider: PaymentProviderAdapter = {
 		healthResponseSchema.parse(await response.json());
 	},
 };
+
+function isZpayOrigin(baseUrl: string) {
+	try {
+		return new URL(baseUrl).origin === "https://zpayz.cn";
+	} catch {
+		return false;
+	}
+}
+
+async function refundZpayPayment(
+	input: RefundPaymentInput,
+	credential: z.output<typeof epayCredentialSchema>,
+	fetcher: typeof fetch,
+) {
+	const [tradeNo, merchantOrderId] = input.providerPaymentId.split(":", 2);
+	if (!tradeNo || !merchantOrderId)
+		return {
+			providerRefundId: `zpay:invalid:${input.refundId}`,
+			status: "failed" as const,
+			failureCode: "zpay_payment_reference_invalid",
+		};
+	const orderUrl = new URL(epusdtUrl(credential.baseUrl, "/api.php"));
+	orderUrl.search = new URLSearchParams({
+		act: "order",
+		pid: credential.pid,
+		key: credential.secretKey,
+		out_trade_no: merchantOrderId,
+	}).toString();
+	const order = await zpayJson(
+		zpayOrderResponseSchema,
+		orderUrl,
+		undefined,
+		fetcher,
+	);
+	if (
+		Number(order.status) !== 1 ||
+		String(order.trade_no) !== tradeNo ||
+		String(order.out_trade_no) !== merchantOrderId ||
+		order.type !== credential.paymentMethod ||
+		decimalToMinor(String(order.money), 2).toString() !== input.amountMinor
+	)
+		return {
+			providerRefundId: `zpay:${tradeNo}`,
+			status: "failed" as const,
+			failureCode: "zpay_full_refund_preflight_failed",
+		};
+	const body = new URLSearchParams({
+		pid: credential.pid,
+		key: credential.secretKey,
+		trade_no: tradeNo,
+		money: minorToDecimal(input.amountMinor, 2),
+	});
+	const result = await zpayJson(
+		zpayRefundResponseSchema,
+		epusdtUrl(credential.baseUrl, "/api.php?act=refund"),
+		{
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+			body,
+		},
+		fetcher,
+	);
+	return {
+		providerRefundId: `zpay:${tradeNo}`,
+		status:
+			Number(result.code) === 1 ? ("succeeded" as const) : ("failed" as const),
+		failureCode: Number(result.code) === 1 ? null : "zpay_refund_rejected",
+	};
+}
+
+async function zpayJson<T>(
+	schema: z.ZodType<T>,
+	input: RequestInfo | URL,
+	init: RequestInit | undefined,
+	fetcher: typeof fetch,
+): Promise<T> {
+	try {
+		const response = await fetcher(input, {
+			...init,
+			signal: AbortSignal.timeout(15_000),
+		});
+		if (!response.ok) throw new Error("ZPAY HTTP failure");
+		return schema.parse(await response.json());
+	} catch {
+		throw new DomainError(
+			"payment_refund_reconciliation_required",
+			409,
+			"ZPAY refund result is ambiguous and requires manual reconciliation",
+		);
+	}
+}

@@ -284,10 +284,16 @@ export const completeManualShopRefundFn = createServerFn({ method: "POST" })
 		const { currentUser, db, request } = await getAdminServerContext(
 			systemPermission("orders", "update"),
 		);
-		return completeManualShopRefund(db.$client, data.id, data.reference, {
-			actorUserId: currentUser.id,
-			request,
-		});
+		return completeManualShopRefund(
+			db.$client,
+			data.id,
+			data.reference,
+			data.fundsReturned,
+			{
+				actorUserId: currentUser.id,
+				request,
+			},
+		);
 	});
 
 export const openAfterSaleCaseFn = createServerFn({ method: "POST" })
