@@ -26,6 +26,7 @@ import {
 	DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
 import { afterSaleNextStatuses } from "#/features/shop-orders/after-sale-status";
+import { ManualRefundConfirmationModal } from "#/features/shop-orders/components/manual-refund-confirmation-modal";
 import { shopOrderOperationErrorMessage } from "#/features/shop-orders/error-message";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
 import {
@@ -66,6 +67,7 @@ export function ShopOrdersPage() {
 		toStatus: ShopOrderStatus;
 	} | null>(null);
 	const [refundingOrder, setRefundingOrder] = useState<Order | null>(null);
+	const [manualRefundId, setManualRefundId] = useState<string | null>(null);
 	const [afterSaleCase, setAfterSaleCase] = useState<
 		OrderDetail["afterSales"][number] | null
 	>(null);
@@ -383,6 +385,18 @@ export function ShopOrdersPage() {
 				onOpenChange={(open) => !open && setDetail(null)}
 				onManageAfterSale={setAfterSaleCase}
 				onRetryRefund={(id) => retryRefund.mutate({ data: { id } })}
+				onConfirmManualRefund={(id) => {
+					setDetail(null);
+					setManualRefundId(id);
+				}}
+			/>
+			<ManualRefundConfirmationModal
+				refundId={manualRefundId}
+				onOpenChange={(open) => !open && setManualRefundId(null)}
+				onCompleted={async () => {
+					setDetail(null);
+					await refresh();
+				}}
 			/>
 			{refundingOrder ? (
 				<ModalForm
@@ -498,11 +512,13 @@ function OrderDetailModal({
 	onOpenChange,
 	onManageAfterSale,
 	onRetryRefund,
+	onConfirmManualRefund,
 }: {
 	detail: OrderDetail | null;
 	onOpenChange: (open: boolean) => void;
 	onManageAfterSale: (afterSale: OrderDetail["afterSales"][number]) => void;
 	onRetryRefund: (id: string) => void;
+	onConfirmManualRefund: (id: string) => void;
 }) {
 	return (
 		<ProModal
@@ -629,6 +645,14 @@ function OrderDetailModal({
 												size="sm"
 											>
 												{m.common_retry()}
+											</ProButton>
+										) : null}
+										{refund.failureCode === "manual_action_required" ? (
+											<ProButton
+												onClick={() => onConfirmManualRefund(refund.id)}
+												size="sm"
+											>
+												{m.shop_orders_manual_refund_confirm()}
 											</ProButton>
 										) : null}
 									</div>
