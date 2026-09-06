@@ -20,12 +20,15 @@ type SalesRow = {
 
 type DailyOrder = { day: string; order_count: number; paid_count: number };
 
+const DAY_MS = 86_400_000;
+const BEIJING_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 export async function queryAdminDashboard(
 	db: D1Database,
 	now = Date.now(),
 	days = 14,
 ) {
-	const rangeStart = startOfUtcDay(now) - (days - 1) * 86_400_000;
+	const rangeStart = startOfBeijingDay(now) - (days - 1) * DAY_MS;
 	const [summaryResult, salesResult, dailyResult, performanceResult] =
 		await db.batch([
 			db.prepare(
@@ -88,7 +91,7 @@ export async function queryAdminDashboard(
 				.bind(rangeStart, rangeStart, rangeStart),
 			db
 				.prepare(
-					`SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') AS day,
+					`SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', '+8 hours') AS day,
 				 COUNT(*) AS order_count,
 					 SUM(CASE WHEN CAST(paid_minor AS INTEGER) > 0
 					 THEN 1 ELSE 0 END) AS paid_count FROM shop_orders
@@ -225,15 +228,20 @@ function presentPerformance(row: Record<string, unknown> | undefined) {
 	};
 }
 
-function startOfUtcDay(value: number) {
-	const date = new Date(value);
-	return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+function startOfBeijingDay(value: number) {
+	const date = new Date(value + BEIJING_UTC_OFFSET_MS);
+	return (
+		Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) -
+		BEIJING_UTC_OFFSET_MS
+	);
 }
 
 function completeDailySeries(rows: DailyOrder[], start: number, days = 14) {
 	const values = new Map(rows.map((row) => [row.day, row]));
 	return Array.from({ length: days }, (_, index) => {
-		const day = new Date(start + index * 86_400_000).toISOString().slice(0, 10);
+		const day = new Date(start + BEIJING_UTC_OFFSET_MS + index * DAY_MS)
+			.toISOString()
+			.slice(0, 10);
 		const row = values.get(day);
 		return {
 			day,
