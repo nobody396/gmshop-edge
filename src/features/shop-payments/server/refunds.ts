@@ -43,7 +43,8 @@ export async function requestShopRefund(
 			 pa.amount_minor AS payment_amount_minor,
 			 pa.currency AS payment_currency,
 			 pa.currency_decimals AS payment_currency_decimals,
-			 pa.exchange_rate, pa.exchange_rate_direction, pc.provider
+			 pa.exchange_rate, pa.exchange_rate_direction, pc.provider,
+			 pc.credential_encrypted
 			 FROM shop_orders o JOIN payment_attempts pa ON pa.id = (
 			  SELECT id FROM payment_attempts WHERE order_id = o.id AND status = 'succeeded'
 			  ORDER BY updated_at DESC, id DESC LIMIT 1
@@ -112,7 +113,7 @@ export async function requestShopRefund(
 	const id = crypto.randomUUID();
 	const now = Date.now();
 	const nextVersion = order.version + 1;
-	const manual = getPaymentProvider(order.provider).refundMode === "manual";
+	const manual = (await resolveRefundMode(db, order)) === "manual";
 	const statements: D1PreparedStatement[] = [
 		db
 			.prepare(
@@ -565,8 +566,33 @@ export async function processShopRefund(
 			result.providerRefundId,
 			attempt,
 		);
-	} catch {
+	} catch (error) {
+		if (
+			error instanceof DomainError &&
+			error.code === "payment_refund_reconciliation_required"
+		)
+			return requireManualRefundReconciliation(db, refund, attempt);
 		return recordRefundProviderFailure(db, refund, attempt);
+	}
+}
+
+async function resolveRefundMode(db: D1Database, order: RefundableOrder) {
+	const adapter = getPaymentProvider(order.provider);
+	if (!adapter.refundModeForCredential) return adapter.refundMode;
+	if (!order.credential_encrypted) return "manual" as const;
+	try {
+		const runtime = await loadRuntimeConfig(db);
+		if (!runtime.commerceSecret) return "manual" as const;
+		const credential: unknown = JSON.parse(
+			await decryptSecret(
+				order.credential_encrypted,
+				runtime.commerceSecret,
+				"payment-credential",
+			),
+		);
+		return adapter.refundModeForCredential(credential);
+	} catch {
+		return "manual" as const;
 	}
 }
 
@@ -737,6 +763,28 @@ async function recordRefundProviderFailure(
 		refund.provider_refund_id,
 		attempt,
 	);
+}
+
+async function requireManualRefundReconciliation(
+	db: D1Database,
+	refund: RefundContext,
+	attempt: number,
+) {
+	const now = Date.now();
+	const result = await db
+		.prepare(
+			`UPDATE refunds SET status = 'processing', failure_code = 'manual_action_required',
+			 next_attempt_at = NULL, updated_at = ? WHERE id = ?
+			 AND status = 'processing' AND attempt_count = ?`,
+		)
+		.bind(now, refund.id, attempt)
+		.run();
+	return {
+		id: refund.id,
+		status: "processing" as const,
+		manualActionRequired: true,
+		duplicate: Number(result.meta.changes ?? 0) !== 1,
+	};
 }
 
 async function finalizeRefund(
@@ -1025,6 +1073,7 @@ type RefundableOrder = {
 	exchange_rate: string;
 	exchange_rate_direction: "parity" | "multiply" | "divide";
 	provider: string;
+	credential_encrypted: string | null;
 };
 
 type RefundContext = {

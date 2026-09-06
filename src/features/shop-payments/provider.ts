@@ -97,6 +97,7 @@ export type PaymentWebhookEvent = {
 export type PaymentProviderAdapter = {
 	checkoutPresentation: "qr" | "redirect";
 	refundMode: "automatic" | "manual";
+	refundModeForCredential?: (credential: unknown) => "automatic" | "manual";
 	createPayment(
 		input: CreatePaymentInput,
 		credential: unknown,

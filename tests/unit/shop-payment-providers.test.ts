@@ -258,6 +258,107 @@ describe("shop payment providers", () => {
 		});
 	});
 
+	it("keeps generic EPay refunds manual and enables only the exact ZPAY origin", () => {
+		expect(
+			epayPaymentProvider.refundModeForCredential?.({
+				...epusdtCredential(),
+				paymentMethod: "alipay",
+			}),
+		).toBe("manual");
+		expect(
+			epayPaymentProvider.refundModeForCredential?.({
+				...epusdtCredential(),
+				baseUrl: "https://zpayz.cn",
+				paymentMethod: "alipay",
+			}),
+		).toBe("automatic");
+	});
+
+	it("preflights and submits a full ZPAY original-route refund", async () => {
+		const fetcher = vi
+			.fn()
+			.mockImplementationOnce(async (input: RequestInfo | URL) => {
+				const url = new URL(String(input));
+				expect(url.pathname).toBe("/api.php");
+				expect(url.searchParams.get("act")).toBe("order");
+				expect(url.searchParams.get("out_trade_no")).toBe("merchant-order-1");
+				return Response.json({
+					code: 1,
+					status: 1,
+					trade_no: "trade-zpay-1",
+					out_trade_no: "merchant-order-1",
+					type: "alipay",
+					money: "123.45",
+				});
+			})
+			.mockImplementationOnce(
+				async (input: RequestInfo | URL, init?: RequestInit) => {
+					const url = new URL(String(input));
+					expect(url.pathname).toBe("/api.php");
+					expect(url.searchParams.get("act")).toBe("refund");
+					const body = new URLSearchParams(String(init?.body));
+					expect(body.get("trade_no")).toBe("trade-zpay-1");
+					expect(body.get("money")).toBe("123.45");
+					return Response.json({ code: 1, msg: "退款成功" });
+				},
+			);
+		await expect(
+			epayPaymentProvider.refundPayment(
+				{
+					refundId: "refund-zpay-1",
+					providerPaymentId: "trade-zpay-1:merchant-order-1",
+					amountMinor: "12345",
+					reason: "Customer refund",
+				},
+				{
+					...epusdtCredential(),
+					baseUrl: "https://zpayz.cn",
+					paymentMethod: "alipay",
+				},
+				fetcher,
+			),
+		).resolves.toEqual({
+			providerRefundId: "zpay:trade-zpay-1",
+			status: "succeeded",
+			failureCode: null,
+		});
+		expect(fetcher).toHaveBeenCalledTimes(2);
+	});
+
+	it("stops ZPAY refund retries when the provider result is ambiguous", async () => {
+		const fetcher = vi
+			.fn()
+			.mockResolvedValueOnce(
+				Response.json({
+					code: 1,
+					status: 1,
+					trade_no: "trade-zpay-1",
+					out_trade_no: "merchant-order-1",
+					type: "alipay",
+					money: "123.45",
+				}),
+			)
+			.mockRejectedValueOnce(new TypeError("network closed"));
+		await expect(
+			epayPaymentProvider.refundPayment(
+				{
+					refundId: "refund-zpay-1",
+					providerPaymentId: "trade-zpay-1:merchant-order-1",
+					amountMinor: "12345",
+					reason: "Customer refund",
+				},
+				{
+					...epusdtCredential(),
+					baseUrl: "https://zpayz.cn",
+					paymentMethod: "alipay",
+				},
+				fetcher,
+			),
+		).rejects.toMatchObject({
+			code: "payment_refund_reconciliation_required",
+		});
+	});
+
 	it("rejects a modified Stripe callback payload", async () => {
 		const timestamp = 1_700_000_000;
 		const webhookSecret = "whsec_test-secret";

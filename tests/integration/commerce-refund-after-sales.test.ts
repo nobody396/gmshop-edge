@@ -457,6 +457,90 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("routes exact ZPAY EPay credentials through the original-payment refund endpoint", async () => {
+		await configureZpayChannel(db);
+		const refund = await requestShopRefund(
+			db,
+			{
+				orderId: ids.order,
+				amountMinor: "1000",
+				reason: "Original route refund",
+				idempotencyKey: "zpay-original-route-refund",
+			},
+			{ actorUserId: ids.admin, request: testRequest() },
+		);
+		expect(refund).toMatchObject({
+			status: "pending",
+			manualActionRequired: false,
+		});
+		const fetcher = vi
+			.fn()
+			.mockResolvedValueOnce(
+				Response.json({
+					code: 1,
+					status: 1,
+					trade_no: "pi_test_1",
+					out_trade_no: "merchant-order-1",
+					type: "alipay",
+					money: "10.00",
+				}),
+			)
+			.mockResolvedValueOnce(Response.json({ code: 1, msg: "退款成功" }));
+		await expect(
+			processShopRefund(db, refund.id, fetcher),
+		).resolves.toMatchObject({ status: "succeeded", duplicate: false });
+		await expect(orderState(db)).resolves.toMatchObject({ status: "refunded" });
+		expect(fetcher).toHaveBeenCalledTimes(2);
+	});
+
+	it("holds an ambiguous ZPAY response for manual reconciliation without retrying", async () => {
+		await configureZpayChannel(db);
+		const refund = await requestShopRefund(
+			db,
+			{
+				orderId: ids.order,
+				amountMinor: "1000",
+				reason: "Ambiguous original route refund",
+				idempotencyKey: "zpay-ambiguous-refund",
+			},
+			{ actorUserId: ids.admin, request: testRequest() },
+		);
+		const fetcher = vi
+			.fn()
+			.mockResolvedValueOnce(
+				Response.json({
+					code: 1,
+					status: 1,
+					trade_no: "pi_test_1",
+					out_trade_no: "merchant-order-1",
+					type: "alipay",
+					money: "10.00",
+				}),
+			)
+			.mockRejectedValueOnce(new TypeError("network closed"));
+		await expect(
+			processShopRefund(db, refund.id, fetcher),
+		).resolves.toMatchObject({
+			status: "processing",
+			manualActionRequired: true,
+		});
+		const state = await db
+			.prepare(
+				`SELECT r.status, r.failure_code, r.next_attempt_at,
+				 o.status AS order_status FROM refunds r
+				 JOIN shop_orders o ON o.id = r.order_id WHERE r.id = ?`,
+			)
+			.bind(refund.id)
+			.first<Record<string, unknown>>();
+		expect(state).toMatchObject({
+			status: "processing",
+			failure_code: "manual_action_required",
+			next_attempt_at: null,
+			order_status: "refunding",
+		});
+		expect(fetcher).toHaveBeenCalledTimes(2);
+	});
+
 	it("enforces ownership, duplicate protection, and after-sale transitions", async () => {
 		const opened = await openAfterSaleCase(
 			db,
@@ -656,6 +740,36 @@ async function seedSuppliedSupplierOrder(db: D1Database) {
 			  '{}', 'supplied', 1, 1, 1)`,
 			)
 			.bind(ids.order, ids.item),
+	]);
+}
+
+async function configureZpayChannel(db: D1Database) {
+	const credential = await encryptSecret(
+		JSON.stringify({
+			baseUrl: "https://zpayz.cn",
+			pid: "1000",
+			secretKey: "epusdt_secret_key",
+			paymentMethod: "alipay",
+		}),
+		"commerce-test-secret",
+		"payment-credential",
+	);
+	await db.batch([
+		db
+			.prepare(
+				`UPDATE payment_channels SET provider = 'epay', currency = 'CNY',
+				 credential_encrypted = ? WHERE id = ?`,
+			)
+			.bind(credential, ids.channel),
+		db
+			.prepare("UPDATE shop_orders SET currency = 'CNY' WHERE id = ?")
+			.bind(ids.order),
+		db
+			.prepare(
+				`UPDATE payment_attempts SET currency = 'CNY',
+				 provider_payment_id = 'pi_test_1:merchant-order-1' WHERE id = ?`,
+			)
+			.bind(ids.attempt),
 	]);
 }
 
