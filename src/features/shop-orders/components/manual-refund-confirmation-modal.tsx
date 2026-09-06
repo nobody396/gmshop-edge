@@ -2,7 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ModalForm } from "#/components/pro/form";
+import { formBooleanValue, ModalForm } from "#/components/pro/form";
 import { completeManualShopRefundFn } from "#/features/shop-orders/server/admin";
 import { m } from "#/paraglide/messages";
 
@@ -47,7 +47,7 @@ export function ManualRefundConfirmationModal({
 				},
 			]}
 			onFinish={async (values) => {
-				if (values.fundsReturned !== true) {
+				if (!formBooleanValue(values.fundsReturned)) {
 					toast.error(m.shop_orders_manual_refund_funds_not_returned());
 					return;
 				}
