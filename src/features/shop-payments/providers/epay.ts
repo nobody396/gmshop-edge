@@ -43,6 +43,8 @@ const zpayRefundResponseSchema = z.object({
 	code: z.union([z.string(), z.number()]),
 	msg: z.string().default(""),
 });
+const zpayRequestTimeoutMs = 15_000;
+const zpayRefundTimeoutMs = 60_000;
 const callbackSchema = z.object({
 	pid: z.string().min(1),
 	trade_no: z.string().min(1),
@@ -303,6 +305,7 @@ async function refundZpayPayment(
 			body,
 		},
 		fetcher,
+		zpayRefundTimeoutMs,
 	);
 	return {
 		providerRefundId: `zpay:${providerTradeNo}`,
@@ -317,11 +320,12 @@ async function zpayJson<T>(
 	input: RequestInfo | URL,
 	init: RequestInit | undefined,
 	fetcher: typeof fetch,
+	timeoutMs = zpayRequestTimeoutMs,
 ): Promise<T> {
 	try {
 		const response = await fetcher(input, {
 			...init,
-			signal: AbortSignal.timeout(15_000),
+			signal: AbortSignal.timeout(timeoutMs),
 		});
 		if (!response.ok) throw new Error("ZPAY HTTP failure");
 		return schema.parse(await response.json());
