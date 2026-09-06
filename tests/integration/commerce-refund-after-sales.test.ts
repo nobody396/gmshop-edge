@@ -459,6 +459,16 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 
 	it("routes exact ZPAY EPay credentials through the original-payment refund endpoint", async () => {
 		await configureZpayChannel(db);
+		const afterSale = await openAfterSaleCase(
+			db,
+			{
+				orderId: ids.order,
+				orderItemId: ids.item,
+				type: "refund",
+				reason: "Customer requests an original-route refund",
+			},
+			{ userId: ids.user, actorUserId: ids.user, request: testRequest() },
+		);
 		const refund = await requestShopRefund(
 			db,
 			{
@@ -490,6 +500,22 @@ describe("commerce refunds and after-sale cases", { timeout: 30_000 }, () => {
 			processShopRefund(db, refund.id, fetcher),
 		).resolves.toMatchObject({ status: "succeeded", duplicate: false });
 		await expect(orderState(db)).resolves.toMatchObject({ status: "refunded" });
+		const afterSaleState = await db
+			.prepare(
+				`SELECT status,
+				 (SELECT COUNT(*) FROM outbox_events WHERE aggregate_id = ?
+				  AND event_type = 'after_sale.updated') AS update_events,
+				 (SELECT COUNT(*) FROM audit_logs WHERE target_id = ?
+				  AND action = 'after_sale.refund_closed') AS audits
+				 FROM after_sale_cases WHERE id = ?`,
+			)
+			.bind(afterSale.id, afterSale.id, afterSale.id)
+			.first<Record<string, unknown>>();
+		expect(afterSaleState).toEqual({
+			status: "closed",
+			update_events: 1,
+			audits: 1,
+		});
 		expect(fetcher).toHaveBeenCalledTimes(2);
 	});
 
