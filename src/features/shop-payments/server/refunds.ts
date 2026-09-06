@@ -898,6 +898,13 @@ async function finalizeRefund(
 				refundId: refund.id,
 				attempt,
 			})),
+			...(await closeRefundAfterSaleStatements(
+				db,
+				refund.order_id,
+				refund.id,
+				attempt,
+				now,
+			)),
 			db
 				.prepare(
 					`UPDATE supplier_orders SET state = 'refunded',
@@ -932,6 +939,96 @@ async function finalizeRefund(
 	if (Number(results[0]?.meta.changes ?? 0) !== 1)
 		return { id: refund.id, status, duplicate: true };
 	return { id: refund.id, status, duplicate: false };
+}
+
+async function closeRefundAfterSaleStatements(
+	db: D1Database,
+	orderId: string,
+	refundId: string,
+	attempt: number,
+	now: number,
+) {
+	const cases = await db
+		.prepare(
+			`SELECT id, status FROM after_sale_cases WHERE order_id = ?
+			 AND type = 'refund' AND status IN ('open', 'processing')`,
+		)
+		.bind(orderId)
+		.all<{ id: string; status: string }>();
+	return cases.results.flatMap((afterSale) => [
+		db
+			.prepare(
+				`UPDATE after_sale_cases SET status = 'closed',
+				 resolved_at = COALESCE(resolved_at, ?), updated_at = ?
+				 WHERE id = ? AND status = ? AND EXISTS (
+				  SELECT 1 FROM refunds completed_refund WHERE completed_refund.id = ?
+				   AND completed_refund.attempt_count = ?
+				   AND completed_refund.status = 'succeeded'
+				   AND completed_refund.completed_at = ?
+				 )`,
+			)
+			.bind(now, now, afterSale.id, afterSale.status, refundId, attempt, now),
+		db
+			.prepare(
+				`INSERT INTO shop_order_events
+				 (id, order_id, event_type, visibility, after_sale_case_id,
+				  case_action, note, actor_type, created_at)
+				 SELECT ?, order_id, 'after_sale_updated', 'customer', id,
+				  'status:closed', 'refund_succeeded', 'system', ?
+				 FROM after_sale_cases WHERE id = ? AND status = 'closed'
+				  AND updated_at = ? AND EXISTS (
+				   SELECT 1 FROM refunds completed_refund WHERE completed_refund.id = ?
+				    AND completed_refund.attempt_count = ?
+				    AND completed_refund.status = 'succeeded'
+				    AND completed_refund.completed_at = ?
+				  )`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				now,
+				afterSale.id,
+				now,
+				refundId,
+				attempt,
+				now,
+			),
+		db
+			.prepare(
+				`INSERT INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key,
+				  payload, status, attempt_count, next_attempt_at, created_at, updated_at)
+				 SELECT ?, 'after_sale.updated', 'after_sale_case', id, ?, ?,
+				  'pending', 0, ?, ?, ? FROM after_sale_cases
+				 WHERE id = ? AND status = 'closed' AND updated_at = ?
+				 ON CONFLICT(idempotency_key) DO NOTHING`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				`after_sale.updated:${afterSale.id}:refund:${refundId}:${attempt}`,
+				JSON.stringify({ afterSaleCaseId: afterSale.id }),
+				now,
+				now,
+				now,
+				afterSale.id,
+				now,
+			),
+		db
+			.prepare(
+				`INSERT INTO audit_logs
+				 (id, action, target_type, target_id, before, after, created_at)
+				 SELECT ?, 'after_sale.refund_closed', 'after_sale_case', id, ?, ?, ?
+				 FROM after_sale_cases WHERE id = ? AND status = 'closed'
+				  AND updated_at = ?`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				JSON.stringify({ status: afterSale.status }),
+				JSON.stringify({ status: "closed", refundId }),
+				now,
+				afterSale.id,
+				now,
+			),
+	]);
 }
 
 function refundOutboxStatement(
