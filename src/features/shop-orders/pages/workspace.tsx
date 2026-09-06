@@ -1,19 +1,15 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { toast } from "sonner";
 import { ProButton } from "#/components/pro/base/button";
-import { ModalForm } from "#/components/pro/form";
 import { StatusBadge } from "#/components/status-badge";
 import { Badge } from "#/components/ui/badge";
 import { entitlementStatusLabel } from "#/features/entitlements/labels";
+import { ManualRefundConfirmationModal } from "#/features/shop-orders/components/manual-refund-confirmation-modal";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
-import {
-	completeManualShopRefundFn,
-	getShopOrderFn,
-} from "#/features/shop-orders/server/admin";
+import { getShopOrderFn } from "#/features/shop-orders/server/admin";
 import { PageHeader } from "#/layouts/components/page-header";
 import { formatDateTime, formatMinorAmount } from "#/lib/format";
 import { m } from "#/paraglide/messages";
@@ -23,15 +19,6 @@ export function OrderWorkspacePage({ orderId }: { orderId: string }) {
 	const order = useQuery({
 		queryKey: ["admin", "shop-orders", orderId],
 		queryFn: () => getShopOrderFn({ data: { id: orderId } }),
-	});
-	const completeManualRefund = useMutation({
-		mutationFn: completeManualShopRefundFn,
-		onSuccess: async () => {
-			setManualRefundId(null);
-			await order.refetch();
-			toast.success(m.shop_orders_manual_refund_completed());
-		},
-		onError: () => toast.error(m.shop_orders_operation_failed()),
 	});
 	if (!order.data)
 		return <div className="h-96 animate-pulse rounded-2xl bg-muted" />;
@@ -214,44 +201,13 @@ export function OrderWorkspacePage({ orderId }: { orderId: string }) {
 					</WorkspaceSection>
 				</div>
 			</div>
-			{manualRefundId ? (
-				<ModalForm
-					key={manualRefundId}
-					open
-					onOpenChange={(open) => !open && setManualRefundId(null)}
-					title={m.shop_orders_manual_refund_confirm()}
-					description={m.shop_orders_manual_refund_description()}
-					schema={[
-						{
-							name: "reference",
-							label: m.shop_orders_manual_refund_reference(),
-							required: true,
-						},
-						{
-							name: "fundsReturned",
-							label: m.shop_orders_manual_refund_funds_returned(),
-							valueType: "switch" as const,
-							description:
-								m.shop_orders_manual_refund_funds_returned_description(),
-							initialValue: false,
-						},
-					]}
-					onFinish={async (values) => {
-						if (values.fundsReturned !== true) {
-							toast.error(m.shop_orders_manual_refund_funds_not_returned());
-							return;
-						}
-						await completeManualRefund.mutateAsync({
-							data: {
-								id: manualRefundId,
-								reference: String(values.reference ?? ""),
-								fundsReturned: true,
-							},
-						});
-					}}
-					onFinishFailed={() => toast.error(m.shop_orders_operation_failed())}
-				/>
-			) : null}
+			<ManualRefundConfirmationModal
+				refundId={manualRefundId}
+				onOpenChange={(open) => !open && setManualRefundId(null)}
+				onCompleted={async () => {
+					await order.refetch();
+				}}
+			/>
 		</>
 	);
 }
