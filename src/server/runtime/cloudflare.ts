@@ -6,6 +6,7 @@ export type CloudflareBindings = {
 	CACHE?: KVNamespace;
 	COMMERCE_QUEUE?: Queue;
 	EMAIL?: SendEmail;
+	RESTOCK_API_TOKEN?: string;
 };
 
 export function adaptCloudflareEnv(
@@ -20,6 +21,7 @@ export function adaptCloudflareEnv(
 		CACHE: bindings.CACHE as RuntimeEnv["CACHE"],
 		COMMERCE_QUEUE: bindings.COMMERCE_QUEUE as RuntimeEnv["COMMERCE_QUEUE"],
 		EMAIL: bindings.EMAIL,
+		RESTOCK_API_TOKEN: bindings.RESTOCK_API_TOKEN,
 		waitUntil,
 	};
 }

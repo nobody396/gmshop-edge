@@ -135,5 +135,6 @@ export type RuntimeEnv = {
 	CACHE?: RuntimeCache;
 	COMMERCE_QUEUE?: RuntimeQueue;
 	EMAIL?: SendEmail;
+	RESTOCK_API_TOKEN?: string;
 	waitUntil?: (promise: Promise<unknown>) => void;
 };
