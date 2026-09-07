@@ -116,13 +116,16 @@ describe("public header settings", () => {
 		expect(container.querySelectorAll('a[href="/sign-in"]')).toHaveLength(1);
 	});
 
-	it("shows online, private Telegram, and WeChat support in that order", () => {
+	it("shows group and private Telegram links with WeChat collapsed by default", () => {
 		act(() => root.render(<PublicHeader />));
 		const support = Array.from(container.querySelectorAll("button")).find(
 			(button) => button.textContent?.includes("store_support"),
 		);
 		act(() => support?.click());
 
+		expect(
+			document.querySelector('a[href="https://t.me/laoshirengroup"]'),
+		).not.toBeNull();
 		expect(
 			document.querySelector('a[href="https://t.me/laoshirenai_support_bot"]'),
 		).not.toBeNull();
@@ -133,19 +136,27 @@ describe("public header settings", () => {
 			document.querySelector('a[href="https://t.me/laoshirenai"]'),
 		).toBeNull();
 		expect(
-			document.querySelector(
-				'img[src="/support/wechat-jerrys.png"][alt="store_support_wechat_qr_alt"]',
-			),
-		).not.toBeNull();
+			document.querySelector('img[src="/support/wechat-jerrys.png"]'),
+		).toBeNull();
 		expect(document.body.textContent).toContain("store_support_online");
 		expect(document.body.textContent).not.toContain(
 			"store_support_order_notice_title",
 		);
 		expect(
-			document.body.textContent?.indexOf("store_support_private"),
+			document.body.textContent?.indexOf("store_support_group"),
 		).toBeLessThan(
-			document.body.textContent?.indexOf("store_support_wechat") ?? -1,
+			document.body.textContent?.indexOf("store_support_private") ?? -1,
 		);
+
+		const wechat = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support_wechat"),
+		);
+		act(() => wechat?.click());
+		expect(
+			document.querySelector(
+				'img[src="/support/wechat-jerrys.png"][alt="store_support_wechat_qr_alt"]',
+			),
+		).not.toBeNull();
 	});
 
 	it("shows the delivery notice as an accessible ticker", () => {
