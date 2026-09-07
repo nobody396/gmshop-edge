@@ -35,7 +35,7 @@ vi.mock("#/paraglide/messages", () => ({
 
 const orderNumber = `GM${"1".repeat(32)}`;
 function delivery(
-	fulfillmentSource: "supplier" | "manual" | "local",
+	fulfillmentSource: "manual" | "local",
 	status = "awaiting_supply",
 ) {
 	return {
@@ -54,7 +54,7 @@ describe("order delivery presentation", () => {
 		"awaiting_supply",
 		"processing",
 	])("never presents a GM activation CDK for automatic %s deliveries", (status) => {
-		for (const source of ["supplier", "local"] as const) {
+		for (const source of ["local"] as const) {
 			const html = renderToString(
 				<OrderDeliveryNotice
 					deliveries={[delivery(source, status)]}
@@ -67,10 +67,10 @@ describe("order delivery presentation", () => {
 			expect(html).not.toContain("激活凭证已发放");
 		}
 	});
-	it("does not pretend a terminal supplier failure is still automatically processing", () => {
+	it("uses a public review flag without exposing supplier state", () => {
 		const html = renderToString(
 			<OrderDeliveryNotice
-				deliveries={[{ ...delivery("supplier"), supplierState: "failed" }]}
+				deliveries={[{ ...delivery("local"), needsReview: true }]}
 				orderNumber={orderNumber}
 			/>,
 		);
@@ -95,7 +95,7 @@ describe("order delivery presentation", () => {
 		const container = document.createElement("div");
 		container.innerHTML = renderToString(
 			<OrderDeliveryNotice
-				deliveries={[delivery("supplier"), delivery("manual")]}
+				deliveries={[delivery("local"), delivery("manual")]}
 				orderNumber={orderNumber}
 			/>,
 		);
@@ -112,7 +112,7 @@ describe("order delivery presentation", () => {
 			renderToString(
 				<OrderDeliveryNotice
 					deliveries={[
-						delivery("supplier", "delivered"),
+						delivery("local", "delivered"),
 						delivery("manual", "delivered"),
 					]}
 					orderNumber={orderNumber}

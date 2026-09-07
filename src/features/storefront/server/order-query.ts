@@ -286,20 +286,16 @@ function presentPayment(row: Record<string, unknown>) {
 	};
 }
 function presentDelivery(row: Record<string, unknown>) {
-	const fulfillmentSource: "local" | "supplier" | "manual" =
-		row.fulfillment_source === "supplier" || row.fulfillment_source === "manual"
-			? row.fulfillment_source
-			: "local";
+	const fulfillmentSource: "local" | "manual" =
+		row.fulfillment_source === "manual" ? "manual" : "local";
 	return {
 		fulfillmentSource,
-		supplierState:
-			row.supplier_state == null ? null : String(row.supplier_state),
+		needsReview: row.status === "failed" || row.supplier_state === "failed",
 		id: String(row.id),
 		entitlementId:
 			row.entitlement_id == null ? null : String(row.entitlement_id),
 		type: String(row.delivery_type),
 		status: String(row.status),
-		errorCode: row.error_code == null ? null : String(row.error_code),
 		deliveredAt: nullableNumber(row.delivered_at),
 		hasContent: Boolean(row.has_content),
 		showOnOrderPage: Boolean(row.show_on_order_page),
