@@ -8,6 +8,14 @@ const id = "11111111-1111-4111-8111-111111111111";
 const orderNumber = "GMABC1234567";
 
 describe("signed and customer API boundaries", () => {
+	it("lets the exact bearer-authenticated restock route reach its own guard", () => {
+		expect(publicRequest("/api/ops/restock", "GET")).toBe(true);
+		expect(publicRequest("/api/ops/restock", "POST")).toBe(true);
+		expect(publicRequest("/api/ops/restock", "PATCH")).toBe(false);
+		expect(publicRequest("/api/ops/restock/extra", "GET")).toBe(false);
+		expect(publicRequest("/api/ops/restock/extra", "POST")).toBe(false);
+	});
+
 	it("exposes only the current signed webhook and build callback routes", () => {
 		expect(publicRequest("/api/telegram/webhook", "POST")).toBe(true);
 		expect(publicRequest("/api/telegram/webhook", "GET")).toBe(false);
