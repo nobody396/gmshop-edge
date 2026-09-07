@@ -9,6 +9,13 @@ export function normalizeInventorySecrets(content: string) {
 	];
 }
 
+export function formatInventoryDelivery(
+	secret: string,
+	usageUrl?: string | null,
+) {
+	return usageUrl ? `CDK：${secret}\n兑换地址：${usageUrl}` : secret;
+}
+
 export function fingerprintInventorySecret(
 	value: string,
 	fingerprintPepper: string,

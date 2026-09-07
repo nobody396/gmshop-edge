@@ -568,6 +568,21 @@ async function assertStockAvailability(
 		)
 		.bind(sellableItem.sellable_item_id)
 		.first<{ total: number }>();
+	if (Number(row?.total ?? 0) >= quantity) return;
+	const binding = await db
+		.prepare(
+			"SELECT 1 FROM supplier_bindings WHERE sellable_item_id = ? AND enabled = 1 LIMIT 1",
+		)
+		.bind(sellableItem.sellable_item_id)
+		.first();
+	if (binding) {
+		await assertSupplierAvailability(
+			db,
+			sellableItem.sellable_item_id,
+			quantity,
+		);
+		return;
+	}
 	if (Number(row?.total ?? 0) < quantity)
 		throw new DomainError(
 			"inventory_unavailable",

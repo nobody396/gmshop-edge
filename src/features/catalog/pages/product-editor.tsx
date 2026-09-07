@@ -48,6 +48,7 @@ import {
 	listProductTagOptionsFn,
 	setProductCoverFn,
 	sortProductMediaFn,
+	switchStockFulfillmentModeFn,
 	uploadProductMediaFn,
 } from "#/features/catalog/server/admin";
 import {
@@ -1265,11 +1266,15 @@ function ComponentEditor({
 					/>
 				</div>
 			) : null}
-			{sellableItem.fulfillmentSource === "supplier" ? (
-				<SupplierFulfillmentPanel sellableItem={sellableItem} />
-			) : persistedIds.has(component.id) ? (
+			{sellableItem.supplierBinding ? (
+				<SupplierFulfillmentPanel
+					productId={productId}
+					sellableItem={sellableItem}
+				/>
+			) : null}
+			{persistedIds.has(component.id) && component.type === "stock" ? (
 				<ComponentOperations component={component} productId={productId} />
-			) : (
+			) : !persistedIds.has(component.id) ? (
 				<PendingComponentOperations
 					component={component}
 					onPendingCardImportChange={onPendingCardImportChange}
@@ -1277,17 +1282,38 @@ function ComponentEditor({
 					pendingCardImport={pendingCardImports[component.id]}
 					pendingDownloads={pendingDownloads[component.id] ?? []}
 				/>
-			)}
+			) : component.type !== "stock" ? (
+				<ComponentOperations component={component} productId={productId} />
+			) : null}
 		</div>
 	);
 }
 
 function SupplierFulfillmentPanel({
+	productId,
 	sellableItem,
 }: {
+	productId: string;
 	sellableItem: SellableItem;
 }) {
+	const client = useQueryClient();
 	const binding = sellableItem.supplierBinding;
+	const switchMode = useMutation({
+		mutationFn: switchStockFulfillmentModeFn,
+		onSuccess: async () => {
+			toast.success(m.catalog_supply_mode_switch_success());
+			await Promise.all([
+				client.invalidateQueries({
+					queryKey: ["admin", "catalog", "product-editor", productId],
+				}),
+				client.invalidateQueries({
+					queryKey: ["admin", "catalog", "inventory"],
+				}),
+			]);
+		},
+		onError: (error) => toast.error(catalogOperationErrorMessage(error)),
+	});
+	const localMode = sellableItem.fulfillmentSource === "local";
 	return (
 		<div className="grid gap-3 border-t pt-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
@@ -1299,23 +1325,47 @@ function SupplierFulfillmentPanel({
 						{m.catalog_supplier_fulfillment_description()}
 					</p>
 				</div>
-				<ProButton asChild size="sm" variant="outline">
-					<Link
-						search={
-							binding
-								? {
-										q: binding.upstreamSkuId,
-										source: `${binding.provider}:${binding.normalizedApiOrigin}`,
-									}
-								: {}
+				<div className="flex flex-wrap gap-2">
+					<ProButton
+						disabled={switchMode.isPending || !binding}
+						onClick={() =>
+							switchMode.mutate({
+								data: {
+									sellableItemId: sellableItem.id,
+									mode: localMode ? "supplier" : "local",
+								},
+							})
 						}
-						to="/admin/suppliers/products"
+						size="sm"
+						variant={localMode ? "default" : "outline"}
 					>
-						{m.catalog_supplier_manage_binding()}
-						<ChevronRight />
-					</Link>
-				</ProButton>
+						{localMode
+							? m.catalog_supply_mode_restore_supplier()
+							: m.catalog_supply_mode_use_local()}
+					</ProButton>
+					<ProButton asChild size="sm" variant="outline">
+						<Link
+							search={
+								binding
+									? {
+											q: binding.upstreamSkuId,
+											source: `${binding.provider}:${binding.normalizedApiOrigin}`,
+										}
+									: {}
+							}
+							to="/admin/suppliers/products"
+						>
+							{m.catalog_supplier_manage_binding()}
+							<ChevronRight />
+						</Link>
+					</ProButton>
+				</div>
 			</div>
+			<p className="text-muted-foreground text-sm">
+				{localMode
+					? m.catalog_supply_mode_local_description()
+					: m.catalog_supply_mode_supplier_description()}
+			</p>
 			{binding ? (
 				<div className="grid gap-3 rounded-md bg-muted/40 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
 					<ReadOnlyDetail
