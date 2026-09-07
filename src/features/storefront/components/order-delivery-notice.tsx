@@ -10,8 +10,8 @@ type Delivery = {
 	id: string;
 	type: string;
 	status: string;
-	supplierState?: string | null;
-	fulfillmentSource: "local" | "supplier" | "manual";
+	needsReview?: boolean;
+	fulfillmentSource: "local" | "manual";
 	productName: string;
 	sellableItemName: string;
 };
@@ -40,8 +40,7 @@ export function OrderDeliveryNotice({
 			),
 	);
 	const needsReview = automatic.some(
-		(delivery) =>
-			delivery.status === "failed" || delivery.supplierState === "failed",
+		(delivery) => delivery.status === "failed" || delivery.needsReview,
 	);
 	return (
 		<>

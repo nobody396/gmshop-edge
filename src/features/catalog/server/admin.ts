@@ -784,7 +784,10 @@ export const importInventoryFn = createServerFn({ method: "POST" })
 		const context = await adminContext(systemPermission("inventory", "create"));
 		const component = await context.db
 			.prepare(
-				`SELECT item.id FROM product_sellable_items item
+				`SELECT item.id, EXISTS (
+				   SELECT 1 FROM supplier_bindings binding
+				   WHERE binding.sellable_item_id = item.id AND binding.enabled = 1
+				  ) AS supplier_bound FROM product_sellable_items item
 				 JOIN products product ON product.id = item.product_id
 				 WHERE item.id = ? AND product.product_type = 'stock'
 				  AND (item.fulfillment_source = 'local' OR EXISTS (
@@ -794,7 +797,7 @@ export const importInventoryFn = createServerFn({ method: "POST" })
 				  AND item.enabled = 1 LIMIT 1`,
 			)
 			.bind(data.componentId)
-			.first<{ id: string }>();
+			.first<{ id: string; supplier_bound: number }>();
 		if (!component)
 			throw new DomainError(
 				"stock_component_not_found",
@@ -823,7 +826,11 @@ export const importInventoryFn = createServerFn({ method: "POST" })
 				),
 				mask: maskInventorySecret(secret),
 				encrypted: await encryptSecret(
-					formatInventoryDelivery(secret, data.usageUrl),
+					formatInventoryDelivery(
+						secret,
+						data.usageUrl,
+						Boolean(component.supplier_bound),
+					),
 					context.runtime.commerceSecret,
 					"stock-entry",
 				),

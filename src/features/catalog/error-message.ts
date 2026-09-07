@@ -13,6 +13,8 @@ export function catalogOperationErrorMessage(error: unknown) {
 			return m.inventory_error_locked();
 		case "inventory_batch_too_large":
 			return m.inventory_error_batch_too_large();
+		case "inventory_usage_url_required":
+			return m.inventory_error_usage_url_required();
 		case "local_inventory_empty":
 			return m.catalog_supply_mode_error_local_empty();
 		case "supplier_not_ready":

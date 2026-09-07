@@ -260,6 +260,10 @@ function presentSellableItem(
 		},
 		String(row.fulfillment_source) as "local" | "manual" | "supplier",
 	);
+	// Customers only need to know whether fulfillment is automatic or manual.
+	// Never expose the internal supplier/local routing decision in the catalog.
+	const publicFulfillmentSource =
+		row.fulfillment_source === "manual" ? "manual" : "local";
 	return {
 		id: String(row.id),
 		name: localized.name,
@@ -279,7 +283,7 @@ function presentSellableItem(
 			| "stock"
 			| "download"
 			| "automation",
-		fulfillmentSource: String(row.fulfillment_source) as
+		fulfillmentSource: publicFulfillmentSource as
 			| "local"
 			| "manual"
 			| "supplier",

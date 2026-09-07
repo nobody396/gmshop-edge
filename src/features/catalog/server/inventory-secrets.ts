@@ -12,8 +12,15 @@ export function normalizeInventorySecrets(content: string) {
 export function formatInventoryDelivery(
 	secret: string,
 	usageUrl?: string | null,
+	requireUsageUrl = false,
 ) {
-	return usageUrl ? `CDK：${secret}\n兑换地址：${usageUrl}` : secret;
+	if (requireUsageUrl && !usageUrl)
+		throw new DomainError(
+			"inventory_usage_url_required",
+			400,
+			"A recharge URL is required for supplier-backed CDK inventory",
+		);
+	return usageUrl ? `CDK：${secret}\n充值地址：${usageUrl}` : secret;
 }
 
 export function fingerprintInventorySecret(
@@ -29,3 +36,4 @@ export function maskInventorySecret(value: string) {
 }
 
 import { hmacSha256Hex } from "#/lib/crypto";
+import { DomainError } from "#/lib/domain-error";

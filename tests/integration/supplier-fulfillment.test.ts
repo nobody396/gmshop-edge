@@ -162,7 +162,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 	it.each([
 		"supplier",
 		"manual",
-	] as const)("exposes the real %s fulfillment source to the order page", async (source) => {
+	] as const)("masks the internal %s fulfillment source on the order page", async (source) => {
 		await db
 			.prepare(
 				"UPDATE product_sellable_items SET fulfillment_source = ?, supplier_status = CASE WHEN ? = 'supplier' THEN 'available' ELSE NULL END WHERE id = 'item'",
@@ -188,8 +188,12 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		expect(result.deliveries).toHaveLength(1);
 		expect(result.deliveries[0]).toMatchObject({
 			status: "awaiting_supply",
-			fulfillmentSource: source,
+			fulfillmentSource: source === "manual" ? "manual" : "local",
 		});
+		if (source === "supplier")
+			expect(JSON.stringify(result.deliveries[0])).not.toMatch(
+				/supplier|upstream|binding|cost/i,
+			);
 	});
 
 	it("snapshots the matching usage guide at payment and supports identity-bound legacy fallback", async () => {
