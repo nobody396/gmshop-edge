@@ -47,6 +47,40 @@ export const inventoryImportSchema = z.object({
 	componentId: idSchema,
 	content: z.string().trim().min(1).max(100_000),
 	note: optionalText(500),
+	usageUrl: z
+		.string()
+		.trim()
+		.max(2_048)
+		.refine(
+			(value) => {
+				if (!value) return true;
+				try {
+					const url = new URL(value);
+					return (
+						url.protocol === "https:" &&
+						!url.username &&
+						!url.password &&
+						![...url.searchParams.keys()].some((key) =>
+							/^(?:token|api_key|key|sign|authorization|password|secret)$/i.test(
+								key,
+							),
+						)
+					);
+				} catch {
+					return false;
+				}
+			},
+			{
+				message: "Redemption URL must use HTTPS",
+			},
+		)
+		.transform((value) => value || null)
+		.optional(),
+});
+
+export const stockFulfillmentModeSchema = z.object({
+	sellableItemId: idSchema,
+	mode: z.enum(["local", "supplier"]),
 });
 
 export const inventoryListSchema = adminListSchema.extend({

@@ -313,6 +313,16 @@ export function ProductInventory({
 										label: m.inventory_note(),
 										valueType: "textarea" as const,
 									},
+									{
+										name: "usageUrl",
+										label: m.inventory_usage_url(),
+										valueType: "text" as const,
+										tooltip: m.inventory_usage_url_description(),
+										fieldProps: {
+											placeholder: "https://example.com/redeem",
+											type: "url",
+										},
+									},
 								]}
 								onFinish={async (values) => {
 									await importSecrets.mutateAsync({
@@ -321,6 +331,7 @@ export function ProductInventory({
 												componentId ?? String(values.componentId ?? ""),
 											content: String(values.content ?? ""),
 											note: String(values.note ?? ""),
+											usageUrl: String(values.usageUrl ?? ""),
 										},
 									});
 								}}

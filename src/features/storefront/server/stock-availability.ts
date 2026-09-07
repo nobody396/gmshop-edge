@@ -6,15 +6,20 @@ export function storefrontStockExpression(
 ) {
 	const syncedSupplierStock =
 		storefrontSyncedSupplierStockExpression(itemAlias);
+	const localStock = `(
+		 SELECT COUNT(*) FROM stock_entries secret
+		 WHERE secret.sellable_item_id = ${itemAlias}.id
+		  AND secret.status = 'available'
+		)`;
 	return `CASE
 		WHEN ${productAlias}.product_type <> 'stock' THEN -1
 		WHEN ${itemAlias}.fulfillment_source = 'manual' THEN -1
 		WHEN ${itemAlias}.fulfillment_source = 'supplier' THEN ${syncedSupplierStock}
-		ELSE (
-		 SELECT COUNT(*) FROM stock_entries secret
-		 WHERE secret.sellable_item_id = ${itemAlias}.id
-		  AND secret.status = 'available'
-		)
+		WHEN EXISTS (SELECT 1 FROM supplier_bindings binding
+		 WHERE binding.sellable_item_id = ${itemAlias}.id AND binding.enabled = 1)
+		 THEN CASE WHEN ${localStock} >= ${syncedSupplierStock}
+		  THEN ${localStock} ELSE ${syncedSupplierStock} END
+		ELSE ${localStock}
 	END`;
 }
 

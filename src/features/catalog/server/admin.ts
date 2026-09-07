@@ -16,15 +16,18 @@ import {
 	productMediaUploadSchema,
 	productOrderInputSchema,
 	recordIdSchema,
+	stockFulfillmentModeSchema,
 } from "#/features/catalog/schema";
 import { removeSellableItemsFromAllCarts } from "#/features/storefront/server/cart";
 import { csvCell } from "#/lib/csv";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import { getAdminRuntimeServerContext } from "#/server/context";
+import { switchStockFulfillmentMode } from "./fulfillment-source";
 import { readImageDimensions } from "./image-dimensions";
 import {
 	fingerprintInventorySecret,
+	formatInventoryDelivery,
 	maskInventorySecret,
 	normalizeInventorySecrets,
 } from "./inventory-secrets";
@@ -784,7 +787,10 @@ export const importInventoryFn = createServerFn({ method: "POST" })
 				`SELECT item.id FROM product_sellable_items item
 				 JOIN products product ON product.id = item.product_id
 				 WHERE item.id = ? AND product.product_type = 'stock'
-				  AND item.fulfillment_source = 'local'
+				  AND (item.fulfillment_source = 'local' OR EXISTS (
+				   SELECT 1 FROM supplier_bindings binding
+				   WHERE binding.sellable_item_id = item.id AND binding.enabled = 1
+				  ))
 				  AND item.enabled = 1 LIMIT 1`,
 			)
 			.bind(data.componentId)
@@ -817,7 +823,7 @@ export const importInventoryFn = createServerFn({ method: "POST" })
 				),
 				mask: maskInventorySecret(secret),
 				encrypted: await encryptSecret(
-					secret,
+					formatInventoryDelivery(secret, data.usageUrl),
 					context.runtime.commerceSecret,
 					"stock-entry",
 				),
@@ -868,6 +874,39 @@ export const importInventoryFn = createServerFn({ method: "POST" })
 			imported,
 			duplicates: prepared.length - imported,
 		};
+	});
+
+export const switchStockFulfillmentModeFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof stockFulfillmentModeSchema>) =>
+		stockFulfillmentModeSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const context = await adminContext(systemPermission("inventory", "update"));
+		const before = await context.db
+			.prepare(
+				"SELECT fulfillment_source FROM product_sellable_items WHERE id = ? LIMIT 1",
+			)
+			.bind(data.sellableItemId)
+			.first<{ fulfillment_source: string }>();
+		const now = Date.now();
+		const result = await switchStockFulfillmentMode(
+			context.db,
+			data.sellableItemId,
+			data.mode,
+			now,
+		);
+		if (!result.duplicate)
+			await context.db.batch([
+				auditStatement(context, {
+					action: "inventory.fulfillment_source_switched",
+					targetType: "delivery_component",
+					targetId: data.sellableItemId,
+					before: { mode: before?.fulfillment_source ?? null },
+					after: { mode: data.mode },
+					now,
+				}),
+			]);
+		return result;
 	});
 
 export const setInventoryStatusFn = createServerFn({ method: "POST" })

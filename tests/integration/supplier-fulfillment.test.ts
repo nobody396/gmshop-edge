@@ -103,6 +103,62 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("uses staged local CDKs first and falls back upstream only after they are gone", async () => {
+		await db.batch([
+			db.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source = 'local', supplier_status = NULL WHERE id = 'item'",
+			),
+			db.prepare(
+				`INSERT INTO stock_entries
+				 (id, sellable_item_id, content_encrypted, key_version,
+				  content_fingerprint, content_mask, status, created_at, updated_at)
+				 VALUES
+				 ('owned-1', 'item', 'ciphertext-1', 1, 'owned-fingerprint-1', '••••0001', 'available', 1, 1),
+				 ('owned-2', 'item', 'ciphertext-2', 1, 'owned-fingerprint-2', '••••0002', 'available', 2, 2)`,
+			),
+		]);
+		await completeFreeStoreOrder(db, "order");
+		const local = await db
+			.prepare(
+				`SELECT delivery.status,
+				 (SELECT COUNT(*) FROM stock_entries WHERE order_item_id = 'order-item' AND status = 'reserved') AS reserved,
+				 (SELECT COUNT(*) FROM supplier_orders WHERE order_id = 'order') AS supplier_orders,
+				 (SELECT COUNT(*) FROM outbox_events WHERE event_type = 'delivery.requested') AS delivery_events
+				 FROM delivery_records delivery WHERE delivery.order_item_id = 'order-item'`,
+			)
+			.first<Record<string, unknown>>();
+		expect(local).toMatchObject({
+			status: "pending",
+			reserved: 2,
+			supplier_orders: 0,
+			delivery_events: 1,
+		});
+	});
+
+	it("creates a supplier order when a local-first SKU has no owned CDKs", async () => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source = 'local', supplier_status = NULL WHERE id = 'item'",
+			)
+			.run();
+		await completeFreeStoreOrder(db, "order");
+		const fallback = await db
+			.prepare(
+				`SELECT delivery.status,
+				 (SELECT COUNT(*) FROM supplier_orders WHERE order_id = 'order') AS supplier_orders,
+				 (SELECT COUNT(*) FROM outbox_events WHERE event_type = 'supplier.requested') AS supplier_events,
+				 (SELECT COUNT(*) FROM outbox_events WHERE event_type = 'delivery.requested') AS delivery_events
+				 FROM delivery_records delivery WHERE delivery.order_item_id = 'order-item'`,
+			)
+			.first<Record<string, unknown>>();
+		expect(fallback).toMatchObject({
+			status: "awaiting_supply",
+			supplier_orders: 1,
+			supplier_events: 1,
+			delivery_events: 0,
+		});
+	});
+
 	it.each([
 		"supplier",
 		"manual",

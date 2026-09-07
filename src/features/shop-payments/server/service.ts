@@ -1285,11 +1285,15 @@ function fulfillmentStatements(
 	const supplierStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "supplier";
+	const localFirst =
+		item.delivery_component_type === "stock" &&
+		item.fulfillment_source === "local" &&
+		supplierBindingReady(item);
 	const manualStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "manual";
 	const awaitingSupply = supplierStock || manualStock;
-	if (supplierStock && !supplierBindingReady(item))
+	if ((supplierStock || localFirst) && !supplierBindingReady(item))
 		throw new DomainError(
 			"supplier_binding_unavailable",
 			409,
@@ -1328,10 +1332,12 @@ function fulfillmentStatements(
 					 SELECT ?, ?, 'stock', ?,
 				  CASE WHEN ? = 1 THEN 'awaiting_supply'
 				   WHEN (SELECT COUNT(*) FROM stock_entries WHERE order_item_id = ? AND status = 'reserved') = ? THEN 'pending'
+				   WHEN ? = 1 THEN 'awaiting_supply'
 				   ELSE 'failed' END,
 				  0, ?,
 				  CASE WHEN ? = 1 THEN NULL
 				   WHEN (SELECT COUNT(*) FROM stock_entries WHERE order_item_id = ? AND status = 'reserved') = ? THEN NULL
+				   WHEN ? = 1 THEN NULL
 				   ELSE 'inventory_unavailable' END,
 				  ?, ? FROM shop_orders WHERE id = ? AND status = 'paid'`,
 				)
@@ -1342,16 +1348,18 @@ function fulfillmentStatements(
 					awaitingSupply,
 					item.id,
 					item.quantity,
+					localFirst,
 					now,
 					awaitingSupply,
 					item.id,
 					item.quantity,
+					localFirst,
 					now,
 					now,
 					orderId,
 				),
 		);
-		if (supplierStock) {
+		if (supplierStock || localFirst) {
 			const totalCostMinor = (
 				BigInt(item.reference_cost_minor ?? "0") * BigInt(item.quantity)
 			).toString();
@@ -1365,7 +1373,9 @@ function fulfillmentStatements(
 						  state, attempt_count, selection_count, next_retry_at,
 						  created_at, updated_at)
 						 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 0, ?, ?, ?
-						 FROM shop_orders WHERE id = ? AND status = 'paid'`,
+						 FROM shop_orders WHERE id = ? AND status = 'paid'
+						  AND (? = 1 OR (SELECT COUNT(*) FROM stock_entries
+						   WHERE order_item_id = ? AND status = 'reserved') < ?)`,
 					)
 					.bind(
 						supplierOrderId,
@@ -1397,6 +1407,9 @@ function fulfillmentStatements(
 						now,
 						now,
 						orderId,
+						supplierStock,
+						item.id,
+						item.quantity,
 					),
 			);
 		}
@@ -1468,7 +1481,46 @@ function fulfillmentStatements(
 				requireDownloadAsset: item.delivery_component_type === "download",
 			}),
 		);
-	if (!manualStock)
+	if (!manualStock && localFirst)
+		statements.push(
+			db
+				.prepare(
+					`INSERT INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+				  status, attempt_count, created_at, updated_at)
+				 SELECT ?, 'delivery.requested', 'delivery', ?, ?, ?, 'pending', 0, ?, ?
+				 FROM delivery_records delivery WHERE delivery.id = ?
+				  AND NOT EXISTS (SELECT 1 FROM supplier_orders supplier
+				   WHERE supplier.delivery_record_id = delivery.id)`,
+				)
+				.bind(
+					crypto.randomUUID(),
+					deliveryId,
+					`delivery-requested:${deliveryId}`,
+					JSON.stringify({ deliveryId, orderItemId: item.id }),
+					now,
+					now,
+					deliveryId,
+				),
+			db
+				.prepare(
+					`INSERT INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+				  status, attempt_count, created_at, updated_at)
+				 SELECT ?, 'supplier.requested', 'supplier_order', ?, ?, ?, 'pending', 0, ?, ?
+				 FROM supplier_orders supplier WHERE supplier.id = ?`,
+				)
+				.bind(
+					crypto.randomUUID(),
+					supplierOrderId,
+					`supplier-requested:${supplierOrderId}`,
+					JSON.stringify({ supplierOrderId }),
+					now,
+					now,
+					supplierOrderId,
+				),
+		);
+	else if (!manualStock)
 		statements.push(
 			db
 				.prepare(
