@@ -640,7 +640,12 @@ export function StorefrontCheckoutPage() {
 											/>
 											<span className="font-medium">{m.wallet_payment()}</span>
 											<span className="text-muted-foreground text-xs">
-												{m.wallet_balance()}: {wallet.data.balanceMinor}
+												{m.wallet_balance()}:{" "}
+												<StoreMoney
+													amountMinor={wallet.data.balanceMinor}
+													currency={wallet.data.currency}
+													decimals={wallet.data.currencyDecimals}
+												/>
 											</span>
 										</label>
 									) : null}

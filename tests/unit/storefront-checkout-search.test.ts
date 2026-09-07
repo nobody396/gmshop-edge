@@ -86,4 +86,17 @@ describe("checkout presentation", () => {
 			"window.location.assign(hostedCheckoutUrl)",
 		);
 	});
+
+	it("formats the wallet balance as money instead of exposing minor units", () => {
+		expect(checkoutPageSource).toContain(
+			"amountMinor={wallet.data.balanceMinor}",
+		);
+		expect(checkoutPageSource).toContain("currency={wallet.data.currency}");
+		expect(checkoutPageSource).toContain(
+			"decimals={wallet.data.currencyDecimals}",
+		);
+		expect(checkoutPageSource).not.toContain(
+			"{m.wallet_balance()}: {wallet.data.balanceMinor}",
+		);
+	});
 });
