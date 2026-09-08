@@ -32,10 +32,19 @@ export async function createSupplierApiOrder(
 		.digest("hex");
 	const existing = await db
 		.prepare(
-			"SELECT id, request_digest FROM supplier_api_orders WHERE user_id = ? AND downstream_order_no = ? LIMIT 1",
+			`SELECT api.id, api.request_digest, order.total_minor, order.currency,
+			 order.currency_decimals FROM supplier_api_orders api
+			 JOIN shop_orders order ON order.id = api.shop_order_id
+			 WHERE api.user_id = ? AND api.downstream_order_no = ? LIMIT 1`,
 		)
 		.bind(identity.userId, input.downstreamOrderNo)
-		.first<{ id: string; request_digest: string }>();
+		.first<{
+			id: string;
+			request_digest: string;
+			total_minor: string;
+			currency: string;
+			currency_decimals: number;
+		}>();
 	if (existing) {
 		if (existing.request_digest !== digest)
 			throw new DomainError(
@@ -43,7 +52,14 @@ export async function createSupplierApiOrder(
 				409,
 				"Order number was reused",
 			);
-		return { ok: true, order_id: existing.id, status: "processing" };
+		return {
+			ok: true,
+			order_id: existing.id,
+			status: "processing",
+			amount_minor: existing.total_minor,
+			currency: existing.currency,
+			currency_decimals: existing.currency_decimals,
+		};
 	}
 	const item = await db
 		.prepare(
@@ -149,17 +165,40 @@ export async function createSupplierApiOrder(
 				.bind(crypto.randomUUID(), orderId, now),
 		]);
 		await completeWalletStoreOrder(db, { orderId, userId: identity.userId });
-		return { ok: true, order_id: apiOrderId, status: "processing" };
+		return {
+			ok: true,
+			order_id: apiOrderId,
+			status: "processing",
+			amount_minor: total,
+			currency: item.currency,
+			currency_decimals: item.currency_decimals,
+		};
 	} catch (error) {
 		if (error instanceof DomainError) throw error;
 		const replay = await db
 			.prepare(
-				"SELECT id, request_digest FROM supplier_api_orders WHERE user_id = ? AND downstream_order_no = ? LIMIT 1",
+				`SELECT api.id, api.request_digest, order.total_minor, order.currency,
+				 order.currency_decimals FROM supplier_api_orders api
+				 JOIN shop_orders order ON order.id = api.shop_order_id
+				 WHERE api.user_id = ? AND api.downstream_order_no = ? LIMIT 1`,
 			)
 			.bind(identity.userId, input.downstreamOrderNo)
-			.first<{ id: string; request_digest: string }>();
+			.first<{
+				id: string;
+				request_digest: string;
+				total_minor: string;
+				currency: string;
+				currency_decimals: number;
+			}>();
 		if (replay?.request_digest === digest)
-			return { ok: true, order_id: replay.id, status: "processing" };
+			return {
+				ok: true,
+				order_id: replay.id,
+				status: "processing",
+				amount_minor: replay.total_minor,
+				currency: replay.currency,
+				currency_decimals: replay.currency_decimals,
+			};
 		throw error;
 	}
 }
@@ -171,7 +210,13 @@ export async function getSupplierApiOrder(
 ) {
 	const row = await db
 		.prepare(
-			`SELECT api.id, api.state, order.status AS order_status, delivery.status AS delivery_status, delivery.content_encrypted FROM supplier_api_orders api JOIN shop_orders order ON order.id = api.shop_order_id LEFT JOIN shop_order_items item ON item.order_id = order.id LEFT JOIN delivery_records delivery ON delivery.order_item_id = item.id WHERE api.id = ? AND api.user_id = ? LIMIT 1`,
+			`SELECT api.id, api.state, order.status AS order_status, order.total_minor,
+			 order.currency, order.currency_decimals, delivery.status AS delivery_status,
+			 delivery.content_encrypted FROM supplier_api_orders api
+			 JOIN shop_orders order ON order.id = api.shop_order_id
+			 LEFT JOIN shop_order_items item ON item.order_id = order.id
+			 LEFT JOIN delivery_records delivery ON delivery.order_item_id = item.id
+			 WHERE api.id = ? AND api.user_id = ? LIMIT 1`,
 		)
 		.bind(id, userId)
 		.first<{
@@ -180,6 +225,9 @@ export async function getSupplierApiOrder(
 			order_status: string;
 			delivery_status: string | null;
 			content_encrypted: string | null;
+			total_minor: string;
+			currency: string;
+			currency_decimals: number;
 		}>();
 	if (!row)
 		throw new DomainError("supplier_order_not_found", 404, "Order not found");
@@ -204,12 +252,27 @@ export async function getSupplierApiOrder(
 		return {
 			order_id: row.id,
 			status: "supplied",
+			amount_minor: row.total_minor,
+			currency: row.currency,
+			currency_decimals: row.currency_decimals,
 			cards: content.split(/\r?\n/).filter(Boolean),
 		};
 	}
 	if (row.delivery_status === "failed" || row.order_status === "failed")
-		return { order_id: row.id, status: "failed" };
-	return { order_id: row.id, status: row.state };
+		return {
+			order_id: row.id,
+			status: "failed",
+			amount_minor: row.total_minor,
+			currency: row.currency,
+			currency_decimals: row.currency_decimals,
+		};
+	return {
+		order_id: row.id,
+		status: row.state,
+		amount_minor: row.total_minor,
+		currency: row.currency,
+		currency_decimals: row.currency_decimals,
+	};
 }
 
 export async function cancelSupplierApiOrder(
