@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useContext } from "react";
+import { ProFieldPortalContainerContext } from "#/components/pro/portal-context";
 import { cn } from "#/lib/utils.ts";
 import { m } from "#/paraglide/messages";
 import { ProButton } from "../../button";
@@ -87,9 +88,9 @@ export function FieldPopoverContent({
 	sideOffset = 4,
 	...props
 }: ComponentProps<typeof PopoverPrimitive.Content>) {
-	const modalContainer = activeModalContainer();
+	const modalContainer = useContext(ProFieldPortalContainerContext);
 	return (
-		<PopoverPrimitive.Portal container={modalContainer}>
+		<PopoverPrimitive.Portal container={modalContainer ?? undefined}>
 			<PopoverPrimitive.Content
 				data-slot="field-popover-content"
 				align={align}
@@ -102,12 +103,4 @@ export function FieldPopoverContent({
 			/>
 		</PopoverPrimitive.Portal>
 	);
-}
-
-function activeModalContainer() {
-	if (typeof document === "undefined") return undefined;
-	const modals = document.querySelectorAll<HTMLElement>(
-		'[data-slot="pro-modal-content"][data-state="open"]',
-	);
-	return modals.item(modals.length - 1) || undefined;
 }

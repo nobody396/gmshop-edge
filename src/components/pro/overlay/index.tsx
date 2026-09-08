@@ -7,6 +7,7 @@ import { Drawer as DrawerPrimitive } from "vaul";
 import { cn } from "#/lib/utils.ts";
 import { m } from "#/paraglide/messages";
 import { ProButton } from "../base/button";
+import { ProFieldPortalContainerContext } from "../portal-context";
 
 export function ProModal({
 	trigger,
@@ -29,6 +30,9 @@ export function ProModal({
 	>["onOpenAutoFocus"];
 	className?: string;
 }) {
+	const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
+		null,
+	);
 	return (
 		<DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
 			{trigger != null && (
@@ -43,6 +47,7 @@ export function ProModal({
 					}
 				/>
 				<DialogPrimitive.Content
+					ref={setPortalContainer}
 					data-slot="pro-modal-content"
 					onOpenAutoFocus={onOpenAutoFocus}
 					className={cn(
@@ -70,7 +75,9 @@ export function ProModal({
 							</DialogPrimitive.Description>
 						)}
 					</div>
-					{children}
+					<ProFieldPortalContainerContext.Provider value={portalContainer}>
+						{children}
+					</ProFieldPortalContainerContext.Provider>
 					<DialogPrimitive.Close asChild>
 						<ProButton
 							variant="ghost"
