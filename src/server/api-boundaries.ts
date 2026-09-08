@@ -6,7 +6,9 @@ const paymentWebhookPattern = new RegExp(
 	`^/api/shop/payments/${uuidSegment}/webhook$`,
 	"i",
 );
+const supplierApiPattern = /^\/api\/v1\/supplier(?:\/[^/]+)+$/;
 const publicGetPatterns = [
+	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
 	/^\/api\/support\/web\/(?:status|current)$/,
 	paymentWebhookPattern,
@@ -16,6 +18,7 @@ const publicGetPatterns = [
 	new RegExp(`^/api/shop/products/${uuidSegment}/media/${uuidSegment}$`, "i"),
 ];
 const publicPostPatterns = [
+	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
 	/^\/api\/ops\/restock\/reconcile$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
