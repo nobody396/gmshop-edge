@@ -1795,7 +1795,7 @@
 	"redeem_warehouse_keys": "86 keys",
 	"redeem_warehouse_keys_description": "One key per line. Each key is validated against 86 and never echoed in the result.",
 	"redeem_warehouse_not_configured": "Redemption inventory is not connected",
-	"redeem_warehouse_not_configured_description": "Enter the service URL and internal access token in Connection settings.",
+	"redeem_warehouse_not_configured_description": "Enter the internal access token in Connection settings.",
 	"redeem_warehouse_unavailable": "Redemption inventory is unavailable",
 	"redeem_warehouse_unavailable_description": "Check the connection settings or refresh later.",
 	"redeem_warehouse_available": "Available",
