@@ -53,9 +53,9 @@ export async function createSupplierApiOrder(
 			 (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id = item.id
 			  AND stock.status = 'available') AS stock_quantity
 			 FROM product_sellable_items item
-			 LEFT JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
+			 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 			 JOIN products product ON product.id = item.product_id
-			 WHERE item.id = ? AND COALESCE(listing.enabled, 1) = 1 AND item.enabled = 1
+			 WHERE item.id = ? AND listing.enabled = 1 AND item.enabled = 1
 			  AND item.fulfillment_source = 'local' AND product.status = 'active'
 			  AND product.product_type = 'stock'
 			  AND item.currency = COALESCE((SELECT json_extract(value, '$') FROM system_settings

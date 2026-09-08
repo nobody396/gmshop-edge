@@ -19,6 +19,7 @@ import {
 	TicketPercent,
 	Trash2,
 	Users,
+	Warehouse,
 } from "lucide-react";
 import {
 	hasSystemPermission,
@@ -33,6 +34,7 @@ export type NavigationModuleId =
 	| "dashboard"
 	| "products"
 	| "product-recycle-bin"
+	| "redeem-inventory"
 	| "suppliers"
 	| "orders"
 	| "customers"
@@ -127,6 +129,20 @@ export const navigationGroups: readonly NavigationGroup[] = [
 						"/admin/products",
 						Package,
 						systemPermission("products", "read"),
+					),
+				],
+			},
+			{
+				id: "redeem-inventory",
+				title: () => m.redeem_warehouse_title(),
+				icon: Warehouse,
+				entries: [
+					entry(
+						"redeem-inventory",
+						() => m.redeem_warehouse_title(),
+						"/admin/redeem-inventory",
+						Warehouse,
+						systemPermission("inventory", "read"),
 					),
 				],
 			},

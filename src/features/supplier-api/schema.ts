@@ -6,3 +6,12 @@ export const supplierApiKeyCreateSchema = sensitiveProofSchema.extend({
 });
 
 export const supplierApiKeyIdSchema = z.object({ id: z.uuid() });
+
+export const supplierExportListingSchema = z.object({
+	sellableItemId: z.uuid(),
+	enabled: z.boolean(),
+	price: z
+		.string()
+		.trim()
+		.regex(/^(0|[1-9]\d*)(\.\d{1,8})?$/),
+});
