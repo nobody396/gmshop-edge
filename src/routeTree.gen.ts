@@ -17,6 +17,7 @@ import { Route as authRouteRouteImport } from './routes/(auth)/route'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as publicIndexRouteImport } from './routes/(public)/index'
 import { Route as ApiSiteLogoRouteImport } from './routes/api/site-logo'
+import { Route as AdminRedeemInventoryRouteImport } from './routes/admin/redeem-inventory'
 import { Route as AdminPaymentConfigurationsRouteImport } from './routes/admin/payment-configurations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminDeliveryRouteImport } from './routes/admin/delivery'
@@ -153,6 +154,11 @@ const ApiSiteLogoRoute = ApiSiteLogoRouteImport.update({
   id: '/api/site-logo',
   path: '/api/site-logo',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRedeemInventoryRoute = AdminRedeemInventoryRouteImport.update({
+  id: '/redeem-inventory',
+  path: '/redeem-inventory',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminPaymentConfigurationsRoute =
   AdminPaymentConfigurationsRouteImport.update({
@@ -702,6 +708,7 @@ export interface FileRoutesByFullPath {
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
   '/admin/payment-configurations': typeof AdminPaymentConfigurationsRoute
+  '/admin/redeem-inventory': typeof AdminRedeemInventoryRoute
   '/api/site-logo': typeof ApiSiteLogoRoute
   '/': typeof publicIndexRoute
   '/admin/': typeof AdminIndexRoute
@@ -800,6 +807,7 @@ export interface FileRoutesByTo {
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
   '/admin/payment-configurations': typeof AdminPaymentConfigurationsRoute
+  '/admin/redeem-inventory': typeof AdminRedeemInventoryRoute
   '/api/site-logo': typeof ApiSiteLogoRoute
   '/': typeof publicIndexRoute
   '/admin': typeof AdminIndexRoute
@@ -908,6 +916,7 @@ export interface FileRoutesById {
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
   '/admin/payment-configurations': typeof AdminPaymentConfigurationsRoute
+  '/admin/redeem-inventory': typeof AdminRedeemInventoryRoute
   '/api/site-logo': typeof ApiSiteLogoRoute
   '/(public)/': typeof publicIndexRoute
   '/admin/': typeof AdminIndexRoute
@@ -1016,6 +1025,7 @@ export interface FileRouteTypes {
     | '/admin/delivery'
     | '/admin/orders'
     | '/admin/payment-configurations'
+    | '/admin/redeem-inventory'
     | '/api/site-logo'
     | '/'
     | '/admin/'
@@ -1114,6 +1124,7 @@ export interface FileRouteTypes {
     | '/admin/delivery'
     | '/admin/orders'
     | '/admin/payment-configurations'
+    | '/admin/redeem-inventory'
     | '/api/site-logo'
     | '/'
     | '/admin'
@@ -1221,6 +1232,7 @@ export interface FileRouteTypes {
     | '/admin/delivery'
     | '/admin/orders'
     | '/admin/payment-configurations'
+    | '/admin/redeem-inventory'
     | '/api/site-logo'
     | '/(public)/'
     | '/admin/'
@@ -1391,6 +1403,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/site-logo'
       preLoaderRoute: typeof ApiSiteLogoRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/redeem-inventory': {
+      id: '/admin/redeem-inventory'
+      path: '/redeem-inventory'
+      fullPath: '/admin/redeem-inventory'
+      preLoaderRoute: typeof AdminRedeemInventoryRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
     '/admin/payment-configurations': {
       id: '/admin/payment-configurations'
@@ -2315,6 +2334,7 @@ interface AdminRouteRouteChildren {
   AdminDeliveryRoute: typeof AdminDeliveryRoute
   AdminOrdersRoute: typeof AdminOrdersRouteWithChildren
   AdminPaymentConfigurationsRoute: typeof AdminPaymentConfigurationsRoute
+  AdminRedeemInventoryRoute: typeof AdminRedeemInventoryRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -2331,6 +2351,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminDeliveryRoute: AdminDeliveryRoute,
   AdminOrdersRoute: AdminOrdersRouteWithChildren,
   AdminPaymentConfigurationsRoute: AdminPaymentConfigurationsRoute,
+  AdminRedeemInventoryRoute: AdminRedeemInventoryRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

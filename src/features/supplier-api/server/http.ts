@@ -123,9 +123,11 @@ async function supplierCategories(db: D1Database) {
 			`SELECT DISTINCT value AS name
 			 FROM product_sellable_items item
 			 JOIN products product ON product.id = item.product_id,
+			 supplier_export_listings listing,
 			 json_each(product.tag_names)
 			 WHERE product.status = 'active' AND product.product_type = 'stock'
 			  AND item.enabled = 1 AND item.fulfillment_source = 'local'
+			  AND listing.sellable_item_id = item.id AND listing.enabled = 1
 			 ORDER BY name`,
 		)
 		.all<{ name: string }>();

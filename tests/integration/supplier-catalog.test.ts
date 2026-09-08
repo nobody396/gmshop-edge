@@ -34,10 +34,28 @@ describe("supplier catalog", () => {
 			"sku-1-a",
 			"sku-1-b",
 		]);
+		expect(first.items[0]?.skus[0]?.cost_minor).toBe("90");
+		expect(first.items[0]?.image_urls).toEqual([
+			"/api/shop/products/product-1/cover",
+		]);
 
 		const second = await listSupplierCatalog(db, { page: 2, pageSize: 2 });
 		expect(second.total).toBe(3);
 		expect(second.items.map((product) => product.id)).toEqual(["product-3"]);
+	});
+
+	it("exports only explicitly enabled listings", async () => {
+		await db
+			.prepare(
+				"UPDATE supplier_export_listings SET enabled = 0 WHERE sellable_item_id = 'sku-2-a'",
+			)
+			.run();
+		const result = await listSupplierCatalog(db, { page: 1, pageSize: 10 });
+		expect(result.total).toBe(2);
+		expect(result.items.map((product) => product.id)).toEqual([
+			"product-1",
+			"product-3",
+		]);
 	});
 
 	it("loads a product directly by ID independently of catalog page limits", async () => {
@@ -55,11 +73,11 @@ async function seed(db: D1Database) {
 	await db.batch([
 		db.prepare(
 			`INSERT INTO products
-			 (id, name, product_type, status, sort_order, tag_names, created_at, updated_at)
+			 (id, name, product_type, status, sort_order, cover_object_key, tag_names, created_at, updated_at)
 			 VALUES
-			 ('product-1', 'One', 'stock', 'active', 1, '["first"]', 1, 1),
-			 ('product-2', 'Two', 'stock', 'active', 2, '[]', 2, 2),
-			 ('product-3', 'Three', 'stock', 'active', 3, '[]', 3, 3)`,
+			 ('product-1', 'One', 'stock', 'active', 1, 'cover-1', '["first"]', 1, 1),
+			 ('product-2', 'Two', 'stock', 'active', 2, NULL, '[]', 2, 2),
+			 ('product-3', 'Three', 'stock', 'active', 3, NULL, '[]', 3, 3)`,
 		),
 		db.prepare(
 			`INSERT INTO product_sellable_items
@@ -69,7 +87,16 @@ async function seed(db: D1Database) {
 			 ('sku-1-a', 'product-1', 'A', 1, 'local', 'USD', 2, '100', 1, 1),
 			 ('sku-1-b', 'product-1', 'B', 2, 'local', 'USD', 2, '200', 1, 1),
 			 ('sku-2-a', 'product-2', 'A', 1, 'local', 'USD', 2, '300', 2, 2),
-			 ('sku-3-a', 'product-3', 'A', 1, 'local', 'USD', 2, '400', 3, 3)`,
+				 ('sku-3-a', 'product-3', 'A', 1, 'local', 'USD', 2, '400', 3, 3)`,
+		),
+		db.prepare(
+			`INSERT INTO supplier_export_listings
+			 (id, sellable_item_id, price_minor, currency, currency_decimals, enabled, created_at, updated_at)
+			 VALUES
+			 ('listing-1-a', 'sku-1-a', '90', 'USD', 2, 1, 1, 1),
+			 ('listing-1-b', 'sku-1-b', '180', 'USD', 2, 1, 1, 1),
+			 ('listing-2-a', 'sku-2-a', '270', 'USD', 2, 1, 2, 2),
+			 ('listing-3-a', 'sku-3-a', '360', 'USD', 2, 1, 3, 3)`,
 		),
 		db.prepare(
 			`INSERT INTO stock_entries

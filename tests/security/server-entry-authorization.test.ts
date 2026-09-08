@@ -20,6 +20,7 @@ const adminServerModules = [
 	"src/features/fulfillment/server/admin.ts",
 	"src/features/notifications/server/admin.ts",
 	"src/features/operations/server/admin.ts",
+	"src/features/redeem-warehouse/server/admin.ts",
 	"src/features/settings/server/admin.ts",
 	"src/features/shop-orders/server/admin.ts",
 	"src/features/shop-payments/server/admin.ts",
