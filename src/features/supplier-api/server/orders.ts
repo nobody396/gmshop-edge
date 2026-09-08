@@ -32,9 +32,9 @@ export async function createSupplierApiOrder(
 		.digest("hex");
 	const existing = await db
 		.prepare(
-			`SELECT api.id, api.request_digest, order.total_minor, order.currency,
-			 order.currency_decimals FROM supplier_api_orders api
-			 JOIN shop_orders order ON order.id = api.shop_order_id
+			`SELECT api.id, api.request_digest, shop_order.total_minor, shop_order.currency,
+			 shop_order.currency_decimals FROM supplier_api_orders api
+			 JOIN shop_orders shop_order ON shop_order.id = api.shop_order_id
 			 WHERE api.user_id = ? AND api.downstream_order_no = ? LIMIT 1`,
 		)
 		.bind(identity.userId, input.downstreamOrderNo)
@@ -177,9 +177,9 @@ export async function createSupplierApiOrder(
 		if (error instanceof DomainError) throw error;
 		const replay = await db
 			.prepare(
-				`SELECT api.id, api.request_digest, order.total_minor, order.currency,
-				 order.currency_decimals FROM supplier_api_orders api
-				 JOIN shop_orders order ON order.id = api.shop_order_id
+				`SELECT api.id, api.request_digest, shop_order.total_minor, shop_order.currency,
+				 shop_order.currency_decimals FROM supplier_api_orders api
+				 JOIN shop_orders shop_order ON shop_order.id = api.shop_order_id
 				 WHERE api.user_id = ? AND api.downstream_order_no = ? LIMIT 1`,
 			)
 			.bind(identity.userId, input.downstreamOrderNo)
@@ -210,11 +210,11 @@ export async function getSupplierApiOrder(
 ) {
 	const row = await db
 		.prepare(
-			`SELECT api.id, api.state, order.status AS order_status, order.total_minor,
-			 order.currency, order.currency_decimals, delivery.status AS delivery_status,
+			`SELECT api.id, api.state, shop_order.status AS order_status, shop_order.total_minor,
+			 shop_order.currency, shop_order.currency_decimals, delivery.status AS delivery_status,
 			 delivery.content_encrypted FROM supplier_api_orders api
-			 JOIN shop_orders order ON order.id = api.shop_order_id
-			 LEFT JOIN shop_order_items item ON item.order_id = order.id
+			 JOIN shop_orders shop_order ON shop_order.id = api.shop_order_id
+			 LEFT JOIN shop_order_items item ON item.order_id = shop_order.id
 			 LEFT JOIN delivery_records delivery ON delivery.order_item_id = item.id
 			 WHERE api.id = ? AND api.user_id = ? LIMIT 1`,
 		)
@@ -282,7 +282,14 @@ export async function cancelSupplierApiOrder(
 ) {
 	const row = await db
 		.prepare(
-			`SELECT api.id, api.state, api.shop_order_id, order.status, order.total_minor, order.currency, item.id AS order_item_id, delivery.id AS delivery_id, delivery.status AS delivery_status FROM supplier_api_orders api JOIN shop_orders order ON order.id = api.shop_order_id JOIN shop_order_items item ON item.order_id = order.id LEFT JOIN delivery_records delivery ON delivery.order_item_id = item.id WHERE api.id = ? AND api.user_id = ? LIMIT 1`,
+			`SELECT api.id, api.state, api.shop_order_id, shop_order.status,
+			 shop_order.total_minor, shop_order.currency, item.id AS order_item_id,
+			 delivery.id AS delivery_id, delivery.status AS delivery_status
+			 FROM supplier_api_orders api
+			 JOIN shop_orders shop_order ON shop_order.id = api.shop_order_id
+			 JOIN shop_order_items item ON item.order_id = shop_order.id
+			 LEFT JOIN delivery_records delivery ON delivery.order_item_id = item.id
+			 WHERE api.id = ? AND api.user_id = ? LIMIT 1`,
 		)
 		.bind(id, userId)
 		.first<{
