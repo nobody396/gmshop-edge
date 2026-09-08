@@ -1,7 +1,19 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { requestWarehouse } from "#/features/redeem-warehouse/server/admin";
 
 describe("redeem warehouse client", () => {
+	it("keeps the fixed-layout inventory page vertically scrollable", () => {
+		const source = readFileSync(
+			resolve("src/features/redeem-warehouse/pages/admin.tsx"),
+			"utf8",
+		);
+		expect(source).toContain(
+			"flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain pb-6",
+		);
+	});
+
 	it("sends the token only in the authorization header", async () => {
 		const fetcher = vi.fn(
 			async (url: string | URL | Request, init?: RequestInit) => {
