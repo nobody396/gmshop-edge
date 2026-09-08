@@ -17,6 +17,7 @@ const publicGetPatterns = [
 ];
 const publicPostPatterns = [
 	/^\/api\/ops\/restock$/,
+	/^\/api\/ops\/restock\/reconcile$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
 	/^\/api\/telegram\/webhook$/,
 	paymentWebhookPattern,

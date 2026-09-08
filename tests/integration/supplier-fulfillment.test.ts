@@ -103,11 +103,8 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
-	it("uses staged local CDKs first and falls back upstream only after they are gone", async () => {
+	it("uses staged local CDKs before the configured supplier", async () => {
 		await db.batch([
-			db.prepare(
-				"UPDATE product_sellable_items SET fulfillment_source = 'local', supplier_status = NULL WHERE id = 'item'",
-			),
 			db.prepare(
 				`INSERT INTO stock_entries
 				 (id, sellable_item_id, content_encrypted, key_version,
@@ -361,7 +358,10 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		expect(revealed).toMatchObject({
 			usageUrl: "https://verified.example/redeem",
 		});
-		expect(revealed.content?.split("\n").sort()).toEqual(["CARD-1", "CARD-2"]);
+		expect(revealed.content).toBe(
+			"CDK：CARD-1\n充值地址：https://verified.example/redeem\n" +
+				"CDK：CARD-2\n充值地址：https://verified.example/redeem",
+		);
 	});
 
 	it.each([

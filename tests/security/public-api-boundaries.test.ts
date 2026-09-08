@@ -11,6 +11,8 @@ describe("signed and customer API boundaries", () => {
 	it("lets the exact bearer-authenticated restock route reach its own guard", () => {
 		expect(publicRequest("/api/ops/restock", "GET")).toBe(true);
 		expect(publicRequest("/api/ops/restock", "POST")).toBe(true);
+		expect(publicRequest("/api/ops/restock/reconcile", "POST")).toBe(true);
+		expect(publicRequest("/api/ops/restock/reconcile", "GET")).toBe(false);
 		expect(publicRequest("/api/ops/restock", "PATCH")).toBe(false);
 		expect(publicRequest("/api/ops/restock/extra", "GET")).toBe(false);
 		expect(publicRequest("/api/ops/restock/extra", "POST")).toBe(false);

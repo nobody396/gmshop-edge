@@ -99,6 +99,7 @@ import { Route as ApiSupportWebCurrentRouteImport } from './routes/api/support/w
 import { Route as ApiSupportWebConversationsRouteImport } from './routes/api/support/web/conversations'
 import { Route as ApiSupportWebCloseRouteImport } from './routes/api/support/web/close'
 import { Route as ApiShopAutomationCallbackRouteImport } from './routes/api/shop/automation/callback'
+import { Route as ApiOpsRestockReconcileRouteImport } from './routes/api/ops/restock/reconcile'
 import { Route as ApiConfigurationLogoScopeIdRouteImport } from './routes/api/configuration-logo/$scope/$id'
 import { Route as AdminProductsProductIdEditRouteImport } from './routes/admin/products/$productId/edit'
 import { Route as publicAccountOrdersOrderNumberRouteImport } from './routes/(public)/account/orders/$orderNumber'
@@ -577,6 +578,11 @@ const ApiShopAutomationCallbackRoute =
     path: '/api/shop/automation/callback',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOpsRestockReconcileRoute = ApiOpsRestockReconcileRouteImport.update({
+  id: '/reconcile',
+  path: '/reconcile',
+  getParentRoute: () => ApiOpsRestockRoute,
+} as any)
 const ApiConfigurationLogoScopeIdRoute =
   ApiConfigurationLogoScopeIdRouteImport.update({
     id: '/api/configuration-logo/$scope/$id',
@@ -735,7 +741,7 @@ export interface FileRoutesByFullPath {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/ops/restock': typeof ApiOpsRestockRoute
+  '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/account/': typeof publicAccountIndexRoute
   '/checkout/': typeof publicCheckoutIndexRoute
@@ -749,6 +755,7 @@ export interface FileRoutesByFullPath {
   '/account/orders/$orderNumber': typeof publicAccountOrdersOrderNumberRoute
   '/admin/products/$productId/edit': typeof AdminProductsProductIdEditRoute
   '/api/configuration-logo/$scope/$id': typeof ApiConfigurationLogoScopeIdRoute
+  '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
   '/api/support/web/close': typeof ApiSupportWebCloseRoute
   '/api/support/web/conversations': typeof ApiSupportWebConversationsRoute
@@ -831,7 +838,7 @@ export interface FileRoutesByTo {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/ops/restock': typeof ApiOpsRestockRoute
+  '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/account': typeof publicAccountIndexRoute
   '/checkout': typeof publicCheckoutIndexRoute
@@ -845,6 +852,7 @@ export interface FileRoutesByTo {
   '/account/orders/$orderNumber': typeof publicAccountOrdersOrderNumberRoute
   '/admin/products/$productId/edit': typeof AdminProductsProductIdEditRoute
   '/api/configuration-logo/$scope/$id': typeof ApiConfigurationLogoScopeIdRoute
+  '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
   '/api/support/web/close': typeof ApiSupportWebCloseRoute
   '/api/support/web/conversations': typeof ApiSupportWebConversationsRoute
@@ -939,7 +947,7 @@ export interface FileRoutesById {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/ops/restock': typeof ApiOpsRestockRoute
+  '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/(public)/account/': typeof publicAccountIndexRoute
   '/(public)/checkout/': typeof publicCheckoutIndexRoute
@@ -953,6 +961,7 @@ export interface FileRoutesById {
   '/(public)/account/orders/$orderNumber': typeof publicAccountOrdersOrderNumberRoute
   '/admin/products/$productId/edit': typeof AdminProductsProductIdEditRoute
   '/api/configuration-logo/$scope/$id': typeof ApiConfigurationLogoScopeIdRoute
+  '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
   '/api/support/web/close': typeof ApiSupportWebCloseRoute
   '/api/support/web/conversations': typeof ApiSupportWebConversationsRoute
@@ -1060,6 +1069,7 @@ export interface FileRouteTypes {
     | '/account/orders/$orderNumber'
     | '/admin/products/$productId/edit'
     | '/api/configuration-logo/$scope/$id'
+    | '/api/ops/restock/reconcile'
     | '/api/shop/automation/callback'
     | '/api/support/web/close'
     | '/api/support/web/conversations'
@@ -1156,6 +1166,7 @@ export interface FileRouteTypes {
     | '/account/orders/$orderNumber'
     | '/admin/products/$productId/edit'
     | '/api/configuration-logo/$scope/$id'
+    | '/api/ops/restock/reconcile'
     | '/api/shop/automation/callback'
     | '/api/support/web/close'
     | '/api/support/web/conversations'
@@ -1263,6 +1274,7 @@ export interface FileRouteTypes {
     | '/(public)/account/orders/$orderNumber'
     | '/admin/products/$productId/edit'
     | '/api/configuration-logo/$scope/$id'
+    | '/api/ops/restock/reconcile'
     | '/api/shop/automation/callback'
     | '/api/support/web/close'
     | '/api/support/web/conversations'
@@ -1301,7 +1313,7 @@ export interface RootRouteChildren {
   ApiSiteLogoRoute: typeof ApiSiteLogoRoute
   ApiAdminDownloadAssetsRoute: typeof ApiAdminDownloadAssetsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiOpsRestockRoute: typeof ApiOpsRestockRoute
+  ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
   ApiTelegramWebhookRoute: typeof ApiTelegramWebhookRoute
   ApiConfigurationLogoScopeIdRoute: typeof ApiConfigurationLogoScopeIdRoute
   ApiShopAutomationCallbackRoute: typeof ApiShopAutomationCallbackRoute
@@ -1954,6 +1966,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiShopAutomationCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ops/restock/reconcile': {
+      id: '/api/ops/restock/reconcile'
+      path: '/reconcile'
+      fullPath: '/api/ops/restock/reconcile'
+      preLoaderRoute: typeof ApiOpsRestockReconcileRouteImport
+      parentRoute: typeof ApiOpsRestockRoute
+    }
     '/api/configuration-logo/$scope/$id': {
       id: '/api/configuration-logo/$scope/$id'
       path: '/api/configuration-logo/$scope/$id'
@@ -2319,6 +2338,18 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
   AdminRouteRouteChildren,
 )
 
+interface ApiOpsRestockRouteChildren {
+  ApiOpsRestockReconcileRoute: typeof ApiOpsRestockReconcileRoute
+}
+
+const ApiOpsRestockRouteChildren: ApiOpsRestockRouteChildren = {
+  ApiOpsRestockReconcileRoute: ApiOpsRestockReconcileRoute,
+}
+
+const ApiOpsRestockRouteWithChildren = ApiOpsRestockRoute._addFileChildren(
+  ApiOpsRestockRouteChildren,
+)
+
 interface ApiShopOrdersOrderNumberAutomationRouteChildren {
   ApiShopOrdersOrderNumberAutomationJobIdCancelRoute: typeof ApiShopOrdersOrderNumberAutomationJobIdCancelRoute
   ApiShopOrdersOrderNumberAutomationJobIdRetryRoute: typeof ApiShopOrdersOrderNumberAutomationJobIdRetryRoute
@@ -2354,7 +2385,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSiteLogoRoute: ApiSiteLogoRoute,
   ApiAdminDownloadAssetsRoute: ApiAdminDownloadAssetsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiOpsRestockRoute: ApiOpsRestockRoute,
+  ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,
   ApiTelegramWebhookRoute: ApiTelegramWebhookRoute,
   ApiConfigurationLogoScopeIdRoute: ApiConfigurationLogoScopeIdRoute,
   ApiShopAutomationCallbackRoute: ApiShopAutomationCallbackRoute,

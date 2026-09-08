@@ -1,6 +1,11 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { handleRestockApiRequest } from "#/features/catalog/server/restock-api";
+import { fingerprintInventorySecret } from "#/features/catalog/server/inventory-secrets";
+import {
+	handleDeliveryReconcileRequest,
+	handleRestockApiRequest,
+} from "#/features/catalog/server/restock-api";
+import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { decryptSecret } from "#/lib/secrets";
 import { applyMigrations } from "./migrations";
 
@@ -66,7 +71,7 @@ describe("restock API", () => {
 		expect(row?.content_mask).toBe("••••••••-001");
 		expect(row?.note).toContain("source=86");
 		expect(
-			await decryptSecret(row?.content_encrypted ?? "", keyring, "stock-entry"),
+			await decryptDeliveryContent(row?.content_encrypted ?? "", keyring),
 		).toBe("CDK：TEST-RESTOCK-001\n充值地址：https://redeem.example/");
 
 		const second = await request("POST", payload());
@@ -135,6 +140,88 @@ describe("restock API", () => {
 		expect(JSON.stringify(body)).not.toContain("TEST-RESTOCK-001");
 	});
 
+	it("synchronizes an already delivered order to owned inventory without exposing the CDK", async () => {
+		const fingerprint = await fingerprintInventorySecret(
+			"OWNED-CARD-001",
+			keyring,
+		);
+		await db.batch([
+			db.prepare(
+				`INSERT INTO shop_orders
+				 (id,order_number,status,currency,currency_decimals,subtotal_minor,
+				  discount_minor,total_minor,paid_minor,expires_at,paid_at,completed_at,
+				  created_at,updated_at)
+				 VALUES ('order','GM11111111111111111111111111111111','completed','CNY',2,
+				  '100','0','100','100',999999,2,3,1,3)`,
+			),
+			db
+				.prepare(
+					`INSERT INTO shop_order_items
+				 (id,order_id,product_id,sellable_item_id,product_name,
+				  delivery_component_id,delivery_component_type,
+				  delivery_component_version,sellable_item_name,quantity,
+				  unit_price_minor,discount_minor,subtotal_minor,created_at,updated_at)
+				 VALUES ('order-item','order','00000000-0000-4000-8000-000000000001',?,
+				  'Product',?,'stock',1,'Pro 20X iOS',1,'100','0','100',1,1)`,
+				)
+				.bind(componentId, componentId),
+			db.prepare(
+				`INSERT INTO delivery_records
+				 (id,order_item_id,delivery_type,status,content_encrypted,
+				  content_key_version,attempt_count,delivered_at,created_at,updated_at)
+				 VALUES ('delivery','order-item','stock','delivered','old-content',1,0,3,1,3)`,
+			),
+			db
+				.prepare(
+					`INSERT INTO stock_entries
+					 (id,sellable_item_id,content_encrypted,key_version,content_fingerprint,
+					  content_mask,status,created_at,updated_at)
+					 VALUES ('owned',?,'owned-content',1,?,'••••••••-001','available',1,1)`,
+				)
+				.bind(componentId, fingerprint),
+		]);
+		const payload = {
+			requestRef: "DELIVERY-SYNC-TEST-0001",
+			orderNumber: "GM11111111111111111111111111111111",
+			secret: "OWNED-CARD-001",
+			usageUrl: "https://redeem.example/",
+			source: "manual-owner-delivery",
+		};
+		const response = await reconcileRequest(payload);
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body).toMatchObject({
+			ok: true,
+			idempotent: false,
+			orderNumber: payload.orderNumber,
+			contentMask: "••••••••-001",
+		});
+		expect(JSON.stringify(body)).not.toContain(payload.secret);
+		const row = await db
+			.prepare(
+				`SELECT stock.status,stock.order_item_id,delivery.content_encrypted
+				 FROM stock_entries stock JOIN delivery_records delivery ON delivery.id='delivery'
+				 WHERE stock.id='owned'`,
+			)
+			.first<{
+				status: string;
+				order_item_id: string;
+				content_encrypted: string;
+			}>();
+		expect(row).toMatchObject({
+			status: "delivered",
+			order_item_id: "order-item",
+		});
+		expect(
+			await decryptSecret(row?.content_encrypted ?? "", keyring, "stock-entry"),
+		).toBe("CDK：OWNED-CARD-001\n充值地址：https://redeem.example/");
+		const duplicate = await reconcileRequest(payload);
+		expect(await duplicate.json()).toMatchObject({
+			ok: true,
+			idempotent: true,
+		});
+	});
+
 	function request(method: "GET" | "POST", body?: unknown) {
 		const url = new URL("https://shop.example/api/ops/restock");
 		if (method === "GET") url.searchParams.set("componentId", componentId);
@@ -145,6 +232,20 @@ describe("restock API", () => {
 				headers: {
 					Authorization: `Bearer ${token}`,
 					...(body === undefined ? {} : { "content-type": "application/json" }),
+				},
+			}),
+			{ DB: db, RESTOCK_API_TOKEN: token },
+		);
+	}
+
+	function reconcileRequest(body: unknown) {
+		return handleDeliveryReconcileRequest(
+			new Request("https://shop.example/api/ops/restock/reconcile", {
+				method: "POST",
+				body: JSON.stringify(body),
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"content-type": "application/json",
 				},
 			}),
 			{ DB: db, RESTOCK_API_TOKEN: token },

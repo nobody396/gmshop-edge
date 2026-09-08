@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { inventoryImportSchema } from "#/features/catalog/schema";
+import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { constantTimeEqual, sha256Hex } from "#/lib/crypto";
 import { DomainError } from "#/lib/domain-error";
 import { encryptSecret } from "#/lib/secrets";
@@ -27,6 +28,20 @@ const restockRequestSchema = z.object({
 		.max(MAX_BATCH_SIZE),
 	usageUrl: z.string().optional(),
 	note: z.string().trim().max(500).optional(),
+	source: z.string().trim().min(1).max(100),
+});
+
+const deliveryReconcileSchema = z.object({
+	requestRef: z
+		.string()
+		.trim()
+		.regex(/^[A-Za-z0-9_-]{16,100}$/),
+	orderNumber: z
+		.string()
+		.trim()
+		.regex(/^GM[A-F0-9]{32}$/),
+	secret: z.string().trim().min(1).max(2_000),
+	usageUrl: z.string().trim().min(1).max(2_048),
 	source: z.string().trim().min(1).max(100),
 });
 
@@ -87,6 +102,216 @@ export async function handleRestockApiRequest(
 			return json({ ok: false, error: "restock_invalid" }, 400);
 		return json({ ok: false, error: "restock_failed" }, 500);
 	}
+}
+
+export async function handleDeliveryReconcileRequest(
+	request: Request,
+	env: CloudflareBindings,
+): Promise<Response> {
+	try {
+		const db = env.DB;
+		if (!db || !env.RESTOCK_API_TOKEN)
+			throw new DomainError(
+				"restock_api_unavailable",
+				503,
+				"Restock API unavailable",
+			);
+		requireAuthorization(request, env.RESTOCK_API_TOKEN);
+		const budget = await claimFixedWindowRateLimit(db, {
+			bucketKey: `restock-reconcile:${request.headers.get("cf-connecting-ip") ?? "unknown"}`,
+			limit: 10,
+			windowMs: 60_000,
+			now: Date.now(),
+		});
+		if (!budget.allowed)
+			throw new DomainError("restock_rate_limited", 429, "Rate limit exceeded");
+		if (request.method !== "POST")
+			return new Response(null, { status: 405, headers: { Allow: "POST" } });
+		const data = deliveryReconcileSchema.parse(await request.json());
+		return json(await reconcileDeliveredOrder(db, request, data), 200);
+	} catch (error) {
+		if (error instanceof DomainError)
+			return json({ ok: false, error: error.code }, error.status);
+		if (error instanceof z.ZodError || error instanceof SyntaxError)
+			return json({ ok: false, error: "restock_invalid" }, 400);
+		return json({ ok: false, error: "restock_reconcile_failed" }, 500);
+	}
+}
+
+async function reconcileDeliveredOrder(
+	db: D1Database,
+	request: Request,
+	data: z.infer<typeof deliveryReconcileSchema>,
+) {
+	const rows = await db
+		.prepare(
+			`SELECT orders.id AS order_id, orders.status AS order_status,
+			 orders.paid_minor, orders.total_minor, item.id AS order_item_id,
+			 item.sellable_item_id, delivery.id AS delivery_id,
+			 delivery.status AS delivery_status
+			 FROM shop_orders orders JOIN shop_order_items item ON item.order_id = orders.id
+			 JOIN delivery_records delivery ON delivery.order_item_id = item.id
+			 WHERE orders.order_number = ?`,
+		)
+		.bind(data.orderNumber)
+		.all<{
+			order_id: string;
+			order_status: string;
+			paid_minor: string;
+			total_minor: string;
+			order_item_id: string;
+			sellable_item_id: string;
+			delivery_id: string;
+			delivery_status: string;
+		}>();
+	if (rows.results.length !== 1)
+		throw new DomainError(
+			"restock_order_not_unique",
+			409,
+			"Order must contain exactly one delivery",
+		);
+	const order = rows.results[0];
+	if (
+		!order ||
+		order.order_status !== "completed" ||
+		order.delivery_status !== "delivered" ||
+		BigInt(order.paid_minor) < BigInt(order.total_minor)
+	)
+		throw new DomainError(
+			"restock_order_not_delivered",
+			409,
+			"Order is not a completed paid delivery",
+		);
+	const validated = inventoryImportSchema.parse({
+		componentId: order.sellable_item_id,
+		content: data.secret,
+		usageUrl: data.usageUrl,
+	});
+	const runtime = await loadRuntimeConfig(db);
+	if (!runtime.commerceSecret)
+		throw new DomainError(
+			"inventory_secret_unavailable",
+			503,
+			"Inventory encryption secret is unavailable",
+		);
+	const fingerprint = await fingerprintInventorySecret(
+		data.secret,
+		runtime.commerceSecret,
+	);
+	const payloadDigest = await sha256Hex(
+		JSON.stringify({
+			orderNumber: data.orderNumber,
+			fingerprint,
+			usageUrl: validated.usageUrl,
+			source: data.source,
+		}),
+	);
+	const existing = await db
+		.prepare(
+			`SELECT payload_digest FROM replay_receipts
+			 WHERE namespace='restock_delivery_sync' AND scope_id=? AND external_id=? LIMIT 1`,
+		)
+		.bind(order.order_id, data.requestRef)
+		.first<{ payload_digest: string }>();
+	if (existing) {
+		if (existing.payload_digest !== payloadDigest)
+			throw new DomainError(
+				"restock_request_conflict",
+				409,
+				"Request reference already belongs to another payload",
+			);
+		return {
+			ok: true,
+			idempotent: true,
+			requestRef: data.requestRef,
+			orderNumber: data.orderNumber,
+		};
+	}
+	const stock = await db
+		.prepare(
+			`SELECT id, content_mask FROM stock_entries
+			 WHERE sellable_item_id=? AND content_fingerprint=? AND status='available' LIMIT 1`,
+		)
+		.bind(order.sellable_item_id, fingerprint)
+		.first<{ id: string; content_mask: string }>();
+	if (!stock)
+		throw new DomainError(
+			"restock_inventory_not_available",
+			409,
+			"Matching owned inventory is not available",
+		);
+	const encrypted = await encryptDeliveryContent(
+		formatInventoryDelivery(data.secret, validated.usageUrl, true),
+		runtime.commerceSecret,
+	);
+	const now = Date.now();
+	const results = await db.batch([
+		db
+			.prepare(
+				`INSERT INTO replay_receipts
+				 (id,namespace,scope_id,external_id,event_type,payload_digest,status,
+				  processed_at,created_at,updated_at)
+				 VALUES (?,'restock_delivery_sync',? ,?,'delivery_sync',?,'processed',?,?,?)`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				order.order_id,
+				data.requestRef,
+				payloadDigest,
+				now,
+				now,
+				now,
+			),
+		db
+			.prepare(
+				`UPDATE stock_entries SET status='delivered',order_item_id=?,reserved_at=?,
+				 delivered_at=?,updated_at=? WHERE id=? AND status='available'`,
+			)
+			.bind(order.order_item_id, now, now, now, stock.id),
+		db
+			.prepare(
+				`UPDATE delivery_records SET content_encrypted=?,content_key_version=1,
+				 status='delivered',error_code=NULL,updated_at=?
+				 WHERE id=? AND status='delivered'`,
+			)
+			.bind(encrypted, now, order.delivery_id),
+		db
+			.prepare(
+				`INSERT INTO audit_logs
+				 (id,actor_user_id,action,target_type,target_id,request_id,ip_address,
+				  before,after,created_at)
+				 VALUES (?,NULL,'delivery.manual_result_synchronized','delivery',?,?,?,NULL,?,?)`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				order.delivery_id,
+				request.headers.get("x-request-id") ?? data.requestRef,
+				request.headers.get("cf-connecting-ip"),
+				JSON.stringify({
+					requestRef: data.requestRef,
+					source: data.source,
+					stockEntryId: stock.id,
+					contentMask: stock.content_mask,
+				}),
+				now,
+			),
+	]);
+	if (
+		Number(results[1]?.meta.changes ?? 0) !== 1 ||
+		Number(results[2]?.meta.changes ?? 0) !== 1
+	)
+		throw new DomainError(
+			"restock_reconcile_conflict",
+			409,
+			"Delivery synchronization conflicted with another update",
+		);
+	return {
+		ok: true,
+		idempotent: false,
+		requestRef: data.requestRef,
+		orderNumber: data.orderNumber,
+		contentMask: stock.content_mask,
+	};
 }
 
 async function importRestockBatch(
