@@ -83,7 +83,7 @@ export function RedeemWarehouseAdminPage() {
 	);
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col gap-6">
+		<div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain pb-6">
 			<PageHeader
 				title={m.redeem_warehouse_title()}
 				description={m.redeem_warehouse_description()}
