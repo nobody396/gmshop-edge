@@ -1795,7 +1795,7 @@
 	"redeem_warehouse_keys": "86 Key",
 	"redeem_warehouse_keys_description": "每行一张。系统逐张向 86 校验，结果不会回显原始 Key。",
 	"redeem_warehouse_not_configured": "尚未连接兑换库存",
-	"redeem_warehouse_not_configured_description": "先在连接设置中填写兑换服务地址和内部访问令牌。",
+	"redeem_warehouse_not_configured_description": "先在连接设置中填写内部访问令牌。",
 	"redeem_warehouse_unavailable": "兑换库存暂时不可用",
 	"redeem_warehouse_unavailable_description": "请检查连接设置或稍后刷新。",
 	"redeem_warehouse_available": "可用",
