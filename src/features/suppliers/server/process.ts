@@ -1,5 +1,6 @@
 import {
 	fingerprintInventorySecret,
+	formatInventoryDelivery,
 	maskInventorySecret,
 } from "#/features/catalog/server/inventory-secrets";
 import {
@@ -9,6 +10,7 @@ import {
 import { DomainError } from "#/lib/domain-error";
 import { encryptSecret } from "#/lib/secrets";
 import { loadRuntimeConfig } from "#/server/runtime-config";
+import { resolveSupplierUsageUrl } from "../customer-usage";
 import { multiplyMinor } from "../money";
 import { providerRequestNumber } from "../providers/signatures";
 import type { SupplierPurchaseResult } from "../schema";
@@ -46,6 +48,7 @@ type BindingSnapshot = {
 	upstreamProductId: string;
 	upstreamSkuId: string;
 	maxCostMinor: string;
+	customerUsageUrl?: unknown;
 };
 
 type CandidateAccount = SupplierAccountRuntimeRow & {
@@ -399,10 +402,15 @@ async function fulfillSupplierOrder(
 			502,
 			"Supplier delivery quantity mismatch",
 		);
+	const usageUrl = resolveSupplierUsageUrl(null, order.binding_snapshot_json);
 	const prepared = await Promise.all(
 		cards.map(async (card, index) => ({
 			id: await deterministicSupplierStockId(order.id, index),
-			encrypted: await encryptSecret(card, commerceSecret, "stock-entry"),
+			encrypted: await encryptSecret(
+				supplierDeliveryContent(card, usageUrl),
+				commerceSecret,
+				"stock-entry",
+			),
 			fingerprint: await fingerprintInventorySecret(card, commerceSecret),
 			mask: maskInventorySecret(card),
 		})),
@@ -473,6 +481,11 @@ async function fulfillSupplierOrder(
 	const results = await db.batch(statements);
 	const duplicate = Number(results[0]?.meta.changes ?? 0) !== 1;
 	return { id: order.id, state: "supplied", duplicate };
+}
+
+export function supplierDeliveryContent(card: string, usageUrl: string | null) {
+	if (!usageUrl || /https:\/\/\S+/i.test(card)) return card;
+	return formatInventoryDelivery(card, usageUrl);
 }
 
 async function deterministicSupplierStockId(orderId: string, index: number) {

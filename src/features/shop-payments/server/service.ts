@@ -1292,7 +1292,7 @@ function fulfillmentStatements(
 	const manualStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "manual";
-	const awaitingSupply = supplierStock || manualStock;
+	const supplierFallback = supplierStock || localFirst;
 	if ((supplierStock || localFirst) && !supplierBindingReady(item))
 		throw new DomainError(
 			"supplier_binding_unavailable",
@@ -1301,7 +1301,7 @@ function fulfillmentStatements(
 		);
 	if (
 		item.delivery_component_type === "stock" &&
-		item.fulfillment_source === "local"
+		(item.fulfillment_source === "local" || supplierStock)
 	) {
 		statements.push(
 			db
@@ -1345,21 +1345,21 @@ function fulfillmentStatements(
 					deliveryId,
 					item.id,
 					`initial:${item.id}`,
-					awaitingSupply,
+					manualStock,
 					item.id,
 					item.quantity,
-					localFirst,
+					supplierFallback,
 					now,
-					awaitingSupply,
+					manualStock,
 					item.id,
 					item.quantity,
-					localFirst,
+					supplierFallback,
 					now,
 					now,
 					orderId,
 				),
 		);
-		if (supplierStock || localFirst) {
+		if (supplierFallback) {
 			const totalCostMinor = (
 				BigInt(item.reference_cost_minor ?? "0") * BigInt(item.quantity)
 			).toString();
@@ -1374,7 +1374,7 @@ function fulfillmentStatements(
 						  created_at, updated_at)
 						 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 0, ?, ?, ?
 						 FROM shop_orders WHERE id = ? AND status = 'paid'
-						  AND (? = 1 OR (SELECT COUNT(*) FROM stock_entries
+						  AND ((SELECT COUNT(*) FROM stock_entries
 						   WHERE order_item_id = ? AND status = 'reserved') < ?)`,
 					)
 					.bind(
@@ -1407,7 +1407,6 @@ function fulfillmentStatements(
 						now,
 						now,
 						orderId,
-						supplierStock,
 						item.id,
 						item.quantity,
 					),
@@ -1481,7 +1480,7 @@ function fulfillmentStatements(
 				requireDownloadAsset: item.delivery_component_type === "download",
 			}),
 		);
-	if (!manualStock && localFirst)
+	if (!manualStock && supplierFallback)
 		statements.push(
 			db
 				.prepare(
@@ -1532,15 +1531,11 @@ function fulfillmentStatements(
 				)
 				.bind(
 					crypto.randomUUID(),
-					supplierStock ? "supplier.requested" : "delivery.requested",
-					supplierStock ? "supplier_order" : "delivery",
-					supplierStock ? supplierOrderId : deliveryId,
-					supplierStock
-						? `supplier-requested:${supplierOrderId}`
-						: `delivery-requested:${deliveryId}`,
-					supplierStock
-						? JSON.stringify({ supplierOrderId })
-						: JSON.stringify({ deliveryId, orderItemId: item.id }),
+					"delivery.requested",
+					"delivery",
+					deliveryId,
+					`delivery-requested:${deliveryId}`,
+					JSON.stringify({ deliveryId, orderItemId: item.id }),
 					now,
 					now,
 					orderId,
