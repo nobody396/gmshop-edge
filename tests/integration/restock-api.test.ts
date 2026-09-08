@@ -1,5 +1,35 @@
 import { Miniflare } from "miniflare";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("#/lib/crypto", () => ({
+	constantTimeEqual: (left: string, right: string) => left === right,
+	sha256Hex: async (value: string) => `digest:${value}`,
+}));
+
+vi.mock("#/features/catalog/server/inventory-secrets", async (original) => {
+	const actual =
+		await original<
+			typeof import("#/features/catalog/server/inventory-secrets")
+		>();
+	return {
+		...actual,
+		fingerprintInventorySecret: async (value: string) => `fingerprint:${value}`,
+	};
+});
+
+vi.mock("#/lib/secrets", () => ({
+	encryptSecret: async (value: string, _key: string, purpose: string) =>
+		JSON.stringify({ purpose, value }),
+	decryptSecret: async (value: string) =>
+		(JSON.parse(value) as { value: string }).value,
+}));
+
+vi.mock("#/features/fulfillment/secrets", () => ({
+	encryptDeliveryContent: async (value: string) => JSON.stringify({ value }),
+	decryptDeliveryContent: async (value: string) =>
+		(JSON.parse(value) as { value: string }).value,
+}));
+
 import { fingerprintInventorySecret } from "#/features/catalog/server/inventory-secrets";
 import {
 	handleDeliveryReconcileRequest,

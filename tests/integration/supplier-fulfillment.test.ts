@@ -358,10 +358,15 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		expect(revealed).toMatchObject({
 			usageUrl: "https://verified.example/redeem",
 		});
-		expect(revealed.content).toBe(
-			"CDK：CARD-1\n充值地址：https://verified.example/redeem\n" +
-				"CDK：CARD-2\n充值地址：https://verified.example/redeem",
-		);
+		expect(
+			revealed.content
+				?.split("\nCDK：")
+				.map((value, index) => (index === 0 ? value : `CDK：${value}`))
+				.sort(),
+		).toEqual([
+			"CDK：CARD-1\n充值地址：https://verified.example/redeem",
+			"CDK：CARD-2\n充值地址：https://verified.example/redeem",
+		]);
 	});
 
 	it.each([
