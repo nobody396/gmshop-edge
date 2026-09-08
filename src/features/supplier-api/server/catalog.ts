@@ -20,7 +20,9 @@ type SkuRow = {
 const ELIGIBLE_PRODUCTS = `
 	 SELECT product.id AS product_id, product.name AS product_name,
 	 product.description, product.cover_object_key, product.tag_names, product.sort_order,
-	 MAX(MAX(product.updated_at, item.updated_at, COALESCE(listing.updated_at, 0)))
+	 MAX(MAX(product.updated_at, item.updated_at, COALESCE(listing.updated_at, 0),
+	  COALESCE((SELECT MAX(stock.updated_at) FROM stock_entries stock
+	   WHERE stock.sellable_item_id = item.id), 0)))
 	  AS export_updated_at
 	 FROM products product
 	 JOIN product_sellable_items item ON item.product_id = product.id

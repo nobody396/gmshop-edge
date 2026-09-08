@@ -58,6 +58,20 @@ describe("supplier catalog", () => {
 		]);
 	});
 
+	it("includes products whose central stock changed after the incremental cursor", async () => {
+		await db
+			.prepare(
+				"UPDATE stock_entries SET updated_at = 10000 WHERE id = 'stock-1'",
+			)
+			.run();
+		const result = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+			updatedAfter: new Date(9000).toISOString(),
+		});
+		expect(result.items.map((product) => product.id)).toEqual(["product-1"]);
+	});
+
 	it("loads a product directly by ID independently of catalog page limits", async () => {
 		await expect(getSupplierProduct(db, "product-3")).resolves.toMatchObject({
 			product: { id: "product-3", skus: [{ id: "sku-3-a" }] },
