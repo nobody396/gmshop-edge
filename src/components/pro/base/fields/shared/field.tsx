@@ -87,8 +87,9 @@ export function FieldPopoverContent({
 	sideOffset = 4,
 	...props
 }: ComponentProps<typeof PopoverPrimitive.Content>) {
+	const modalContainer = activeModalContainer();
 	return (
-		<PopoverPrimitive.Portal>
+		<PopoverPrimitive.Portal container={modalContainer}>
 			<PopoverPrimitive.Content
 				data-slot="field-popover-content"
 				align={align}
@@ -101,4 +102,12 @@ export function FieldPopoverContent({
 			/>
 		</PopoverPrimitive.Portal>
 	);
+}
+
+function activeModalContainer() {
+	if (typeof document === "undefined") return undefined;
+	const modals = document.querySelectorAll<HTMLElement>(
+		'[data-slot="pro-modal-content"][data-state="open"]',
+	);
+	return modals.item(modals.length - 1) || undefined;
 }
