@@ -805,7 +805,6 @@
 	"store_delivery_promise_card": "付款成功后即可立即领取",
 	"store_delivery_promise_download": "付款成功后即可下载",
 	"store_delivery_promise_build": "购买后即可启动自动化任务",
-	"store_low_stock": "仅剩 {count} 件",
 	"store_empty_title": "没有找到想要的商品",
 	"store_empty_description": "换个关键词或分类再看看吧",
 	"store_no_products_title": "暂时还没有可购买的商品",

@@ -13,10 +13,7 @@ import {
 	localizeSellableItem,
 } from "../catalog-localizations";
 import { selectStorefrontProductRow } from "./product-query";
-import {
-	storefrontStockExpression,
-	storefrontSyncedSupplierStockExpression,
-} from "./stock-availability";
+import { storefrontStockExpression } from "./stock-availability";
 
 type Row = Record<string, unknown>;
 
@@ -80,12 +77,16 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				 EXISTS (SELECT 1 FROM product_sellable_items automatic_item
 				  WHERE automatic_item.product_id = p.id AND automatic_item.enabled = 1
 				   AND automatic_item.fulfillment_source <> 'manual') AS has_automatic_fulfillment,
-				 (SELECT SUM(${storefrontSyncedSupplierStockExpression("bound_item")})
-				  FROM product_sellable_items bound_item
-				  WHERE bound_item.product_id = p.id AND bound_item.enabled = 1
-				   AND EXISTS (SELECT 1 FROM supplier_bindings bound_binding
-				    WHERE bound_binding.sellable_item_id = bound_item.id
-				     AND bound_binding.enabled = 1)) AS synced_stock_quantity,
+				 CASE WHEN EXISTS (
+				  SELECT 1 FROM product_sellable_items stock_item
+				  WHERE stock_item.product_id = p.id AND stock_item.enabled = 1
+				   AND stock_item.fulfillment_source <> 'manual'
+				 ) THEN (
+				  SELECT SUM(${storefrontStockExpression("p", "stock_item")})
+				  FROM product_sellable_items stock_item
+				  WHERE stock_item.product_id = p.id AND stock_item.enabled = 1
+				   AND stock_item.fulfillment_source <> 'manual'
+				 ) ELSE NULL END AS display_stock_quantity,
 				 ${storefrontStockExpression("p", "s")} AS available_stock,
 			 COALESCE((SELECT SUM(item.quantity) FROM shop_order_items item JOIN shop_orders sold_order ON sold_order.id = item.order_id WHERE item.product_id = p.id AND sold_order.status IN ('paid','completed','fulfilling','refunding','refunded')), 0) AS sales_count
 			 FROM products p
@@ -127,10 +128,10 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 					currency: String(row.currency),
 					currencyDecimals: Number(row.currency_decimals),
 					availableStock: Number(row.available_stock),
-					syncedStockQuantity:
-						row.synced_stock_quantity == null
+					displayStockQuantity:
+						row.display_stock_quantity == null
 							? null
-							: Number(row.synced_stock_quantity),
+							: Number(row.display_stock_quantity),
 					hasManualFulfillment: Boolean(row.has_manual_fulfillment),
 					hasAutomaticFulfillment: Boolean(row.has_automatic_fulfillment),
 					salesCount: Number(row.sales_count),
