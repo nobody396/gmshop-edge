@@ -136,5 +136,6 @@ export type RuntimeEnv = {
 	COMMERCE_QUEUE?: RuntimeQueue;
 	EMAIL?: SendEmail;
 	RESTOCK_API_TOKEN?: string;
+	INVOICE_LOOKUP_TOKEN?: string;
 	waitUntil?: (promise: Promise<unknown>) => void;
 };

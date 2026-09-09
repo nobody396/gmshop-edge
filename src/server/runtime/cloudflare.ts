@@ -7,6 +7,7 @@ export type CloudflareBindings = {
 	COMMERCE_QUEUE?: Queue;
 	EMAIL?: SendEmail;
 	RESTOCK_API_TOKEN?: string;
+	INVOICE_LOOKUP_TOKEN?: string;
 };
 
 export function adaptCloudflareEnv(
@@ -22,6 +23,7 @@ export function adaptCloudflareEnv(
 		COMMERCE_QUEUE: bindings.COMMERCE_QUEUE as RuntimeEnv["COMMERCE_QUEUE"],
 		EMAIL: bindings.EMAIL,
 		RESTOCK_API_TOKEN: bindings.RESTOCK_API_TOKEN,
+		INVOICE_LOOKUP_TOKEN: bindings.INVOICE_LOOKUP_TOKEN,
 		waitUntil,
 	};
 }
