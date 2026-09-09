@@ -891,6 +891,7 @@
 	"store_refresh_payment_qr": "Get payment QR code",
 	"store_resume_payment": "Resume payment",
 	"store_nav_shop": "Shop",
+	"store_nav_invoice": "Invoice",
 	"store_nav_orders": "Order lookup",
 	"store_lookup_title": "Look up a guest order",
 	"store_lookup_description": "Enter the order number and email used at checkout to view payment and delivery progress.",
