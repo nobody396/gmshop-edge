@@ -33,6 +33,12 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/ops/restock/extra", "POST")).toBe(false);
 	});
 
+	it("lets only the exact bearer-authenticated invoice lookup route through", () => {
+		expect(publicRequest("/api/shop/invoice-order", "POST")).toBe(true);
+		expect(publicRequest("/api/shop/invoice-order", "GET")).toBe(false);
+		expect(publicRequest("/api/shop/invoice-order/extra", "POST")).toBe(false);
+	});
+
 	it("exposes only the current signed webhook and build callback routes", () => {
 		expect(publicRequest("/api/telegram/webhook", "POST")).toBe(true);
 		expect(publicRequest("/api/telegram/webhook", "GET")).toBe(false);

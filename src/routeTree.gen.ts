@@ -53,6 +53,7 @@ import { Route as publicOrdersIndexRouteImport } from './routes/(public)/orders/
 import { Route as publicCheckoutIndexRouteImport } from './routes/(public)/checkout/index'
 import { Route as publicAccountIndexRouteImport } from './routes/(public)/account/index'
 import { Route as ApiTelegramWebhookRouteImport } from './routes/api/telegram/webhook'
+import { Route as ApiShopInvoiceOrderRouteImport } from './routes/api/shop/invoice-order'
 import { Route as ApiOpsRestockRouteImport } from './routes/api/ops/restock'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminDownloadAssetsRouteImport } from './routes/api/admin/download-assets'
@@ -334,6 +335,11 @@ const publicAccountIndexRoute = publicAccountIndexRouteImport.update({
 const ApiTelegramWebhookRoute = ApiTelegramWebhookRouteImport.update({
   id: '/api/telegram/webhook',
   path: '/api/telegram/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiShopInvoiceOrderRoute = ApiShopInvoiceOrderRouteImport.update({
+  id: '/api/shop/invoice-order',
+  path: '/api/shop/invoice-order',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOpsRestockRoute = ApiOpsRestockRouteImport.update({
@@ -749,6 +755,7 @@ export interface FileRoutesByFullPath {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/account/': typeof publicAccountIndexRoute
   '/checkout/': typeof publicCheckoutIndexRoute
@@ -847,6 +854,7 @@ export interface FileRoutesByTo {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/account': typeof publicAccountIndexRoute
   '/checkout': typeof publicCheckoutIndexRoute
@@ -957,6 +965,7 @@ export interface FileRoutesById {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/(public)/account/': typeof publicAccountIndexRoute
   '/(public)/checkout/': typeof publicCheckoutIndexRoute
@@ -1066,6 +1075,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/restock'
+    | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
     | '/account/'
     | '/checkout/'
@@ -1164,6 +1174,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/restock'
+    | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
     | '/account'
     | '/checkout'
@@ -1273,6 +1284,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/restock'
+    | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
     | '/(public)/account/'
     | '/(public)/checkout/'
@@ -1326,6 +1338,7 @@ export interface RootRouteChildren {
   ApiAdminDownloadAssetsRoute: typeof ApiAdminDownloadAssetsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
+  ApiShopInvoiceOrderRoute: typeof ApiShopInvoiceOrderRoute
   ApiTelegramWebhookRoute: typeof ApiTelegramWebhookRoute
   ApiConfigurationLogoScopeIdRoute: typeof ApiConfigurationLogoScopeIdRoute
   ApiShopAutomationCallbackRoute: typeof ApiShopAutomationCallbackRoute
@@ -1654,6 +1667,13 @@ declare module '@tanstack/react-router' {
       path: '/api/telegram/webhook'
       fullPath: '/api/telegram/webhook'
       preLoaderRoute: typeof ApiTelegramWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shop/invoice-order': {
+      id: '/api/shop/invoice-order'
+      path: '/api/shop/invoice-order'
+      fullPath: '/api/shop/invoice-order'
+      preLoaderRoute: typeof ApiShopInvoiceOrderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ops/restock': {
@@ -2407,6 +2427,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminDownloadAssetsRoute: ApiAdminDownloadAssetsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,
+  ApiShopInvoiceOrderRoute: ApiShopInvoiceOrderRoute,
   ApiTelegramWebhookRoute: ApiTelegramWebhookRoute,
   ApiConfigurationLogoScopeIdRoute: ApiConfigurationLogoScopeIdRoute,
   ApiShopAutomationCallbackRoute: ApiShopAutomationCallbackRoute,
