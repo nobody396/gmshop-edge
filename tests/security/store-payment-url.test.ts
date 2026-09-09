@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { safeStorePaymentUrl } from "#/features/storefront/payment-url";
+import {
+	safeStorePaymentUrl,
+	storePaymentReturnUrl,
+} from "#/features/storefront/payment-url";
 
 describe("store payment URL boundary", () => {
 	it("allows same-origin paths and credential-free HTTPS URLs", () => {
@@ -22,5 +25,13 @@ describe("store payment URL boundary", () => {
 		"https://user:secret@pay.example/session",
 	])("rejects unsafe payment URL %s", (value) => {
 		expect(safeStorePaymentUrl(value)).toBeNull();
+	});
+});
+
+describe("store payment return URL", () => {
+	it("marks a successful provider return without changing the order path", () => {
+		expect(
+			storePaymentReturnUrl("https://shop.example", "/account/orders/ORDER-1"),
+		).toBe("https://shop.example/account/orders/ORDER-1?payment=return");
 	});
 });

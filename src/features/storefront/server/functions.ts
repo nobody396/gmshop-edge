@@ -10,6 +10,7 @@ import {
 	createShopPayment,
 	reconcileShopOrderPayment,
 } from "#/features/shop-payments/server/service";
+import { storePaymentReturnUrl } from "#/features/storefront/payment-url";
 import {
 	checkoutStoreOrderSchema,
 	commerceEventSchema,
@@ -262,7 +263,7 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 				channelId: data.paymentChannelId,
 				paymentCurrency: data.paymentCurrency ?? order.currency,
 				idempotencyKey: `checkout:${order.id}:${data.paymentChannelId}:${data.paymentCurrency ?? order.currency}`,
-				successUrl: `${origin}${orderPath}`,
+				successUrl: storePaymentReturnUrl(origin, orderPath),
 				cancelUrl: `${origin}${orderPath}`,
 				payerIp: request.headers.get("cf-connecting-ip"),
 				payerMobile: isMobilePaymentRequest(request),
@@ -407,7 +408,7 @@ export const retryStorePaymentFn = createServerFn({ method: "POST" })
 			channelId: attempt.channel_id,
 			paymentCurrency: attempt.currency,
 			idempotencyKey: `checkout-retry:${order.id}:${crypto.randomUUID()}`,
-			successUrl: `${origin}${orderPath}`,
+			successUrl: storePaymentReturnUrl(origin, orderPath),
 			cancelUrl: `${origin}${orderPath}`,
 			payerIp: request.headers.get("cf-connecting-ip"),
 			payerMobile: isMobilePaymentRequest(request),
