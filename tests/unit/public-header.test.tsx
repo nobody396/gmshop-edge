@@ -72,6 +72,7 @@ vi.mock("#/paraglide/messages", () => ({
 			store_cart_title: () => "Cart",
 			store_header_settings: () => "Store settings",
 			store_my_preferences_description: () => "Preferences",
+			store_nav_invoice: () => "Invoice",
 			store_nav_orders: () => "Orders",
 			store_nav_shop: () => "Shop",
 		},
@@ -114,6 +115,15 @@ describe("public header settings", () => {
 			container.querySelectorAll('[aria-label="Store settings"]'),
 		).toHaveLength(1);
 		expect(container.querySelectorAll('a[href="/sign-in"]')).toHaveLength(1);
+	});
+
+	it("keeps invoice issuance visible in the desktop navigation", () => {
+		act(() => root.render(<PublicHeader />));
+
+		const invoice = container.querySelector(
+			'a[href="https://lsrai.shop/invoice?source=gmshop"]',
+		);
+		expect(invoice?.textContent).toContain("Invoice");
 	});
 
 	it("shows group and private Telegram links with WeChat collapsed by default", () => {

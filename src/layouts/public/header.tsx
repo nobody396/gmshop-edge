@@ -394,6 +394,7 @@ function CartAction() {
 function publicNavigation({ signedIn }: { signedIn: boolean }) {
 	const navigation: Array<readonly [string, string]> = [
 		[m.store_nav_shop(), "/"],
+		[m.store_nav_invoice(), "https://lsrai.shop/invoice?source=gmshop"],
 	];
 	navigation.push(
 		signedIn
