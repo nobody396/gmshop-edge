@@ -64,7 +64,7 @@ export async function createSupplierApiOrder(
 	const item = await db
 		.prepare(
 			`SELECT item.id, item.product_id, item.name, item.version, item.currency,
-			 item.currency_decimals, product.name AS product_name,
+			 item.currency_decimals, item.cost_minor, product.name AS product_name,
 			 COALESCE(listing.price_minor, item.price_minor) AS price_minor,
 			 (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id = item.id
 			  AND stock.status = 'available') AS stock_quantity
@@ -87,6 +87,7 @@ export async function createSupplierApiOrder(
 			version: number;
 			currency: string;
 			currency_decimals: number;
+			cost_minor: string | null;
 			product_name: string;
 			price_minor: string;
 			stock_quantity: number;
@@ -126,7 +127,7 @@ export async function createSupplierApiOrder(
 				),
 			db
 				.prepare(
-					`INSERT INTO shop_order_items (id, order_id, product_id, sellable_item_id, product_name, delivery_component_id, delivery_component_type, delivery_component_version, sellable_item_name, input_values_json, sensitive_input_values_json, quantity, unit_price_minor, discount_minor, subtotal_minor, activation_trigger, exhaustion_rule, renewal_mode, show_on_order_page, account_library_enabled, email_mode, allow_resend, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'stock', ?, ?, '{}', '{}', ?, ?, '0', ?, 'delivery_completed', 'first_limit_reached', 'stack', 1, 1, 'none', 0, ?, ?)`,
+					`INSERT INTO shop_order_items (id, order_id, product_id, sellable_item_id, product_name, delivery_component_id, delivery_component_type, delivery_component_version, sellable_item_name, input_values_json, sensitive_input_values_json, quantity, unit_price_minor, unit_cost_minor, discount_minor, subtotal_minor, activation_trigger, exhaustion_rule, renewal_mode, show_on_order_page, account_library_enabled, email_mode, allow_resend, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'stock', ?, ?, '{}', '{}', ?, ?, ?, '0', ?, 'delivery_completed', 'first_limit_reached', 'stack', 1, 1, 'none', 0, ?, ?)`,
 				)
 				.bind(
 					orderItemId,
@@ -139,6 +140,7 @@ export async function createSupplierApiOrder(
 					item.name,
 					input.quantity,
 					item.price_minor,
+					item.cost_minor,
 					total,
 					now,
 					now,
