@@ -1184,6 +1184,8 @@
 	"store_payment_retry_failed": "Unable to retry payment",
 	"store_order_payment_remaining": "Complete payment within {time}",
 	"store_order_payment_expired": "The payment window for this order has ended",
+	"store_payment_return_processing": "Confirming your payment",
+	"store_payment_return_processing_description": "Your payment is being confirmed and fulfillment is starting. Please wait and do not pay again.",
 	"store_activation_code_title": "Activation credential issued",
 	"store_activation_code_description": "Copy the CDK below, open online support, and send it to support. After verification, we will complete the activation for you.",
 	"store_activation_code_processing": "Your order is now in the activation process. We will complete the activation for you.",

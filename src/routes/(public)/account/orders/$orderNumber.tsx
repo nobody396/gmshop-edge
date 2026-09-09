@@ -5,8 +5,12 @@ import { getAccountOrderFn } from "#/features/storefront/server/account-function
 export const Route = createFileRoute("/(public)/account/orders/$orderNumber")({
 	validateSearch: (
 		search: Record<string, unknown>,
-	): { from?: "entitlements" } =>
-		search.from === "entitlements" ? { from: "entitlements" } : {},
+	): { from?: "entitlements"; payment?: "return" } => ({
+		...(search.from === "entitlements"
+			? { from: "entitlements" as const }
+			: {}),
+		...(search.payment === "return" ? { payment: "return" as const } : {}),
+	}),
 	loader: async ({ params }) => {
 		try {
 			return await getAccountOrderFn({
@@ -21,12 +25,13 @@ export const Route = createFileRoute("/(public)/account/orders/$orderNumber")({
 
 function AccountOrderRoute() {
 	const { orderNumber } = Route.useParams();
-	const { from } = Route.useSearch();
+	const { from, payment } = Route.useSearch();
 	return (
 		<StorefrontOrderPage
 			accountOrder={Route.useLoaderData()}
 			backToEntitlements={from === "entitlements"}
 			orderNumber={orderNumber}
+			paymentReturning={payment === "return"}
 		/>
 	);
 }

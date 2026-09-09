@@ -9,6 +9,7 @@ import {
 	CreditCard,
 	Download,
 	LifeBuoy,
+	LoaderCircle,
 	QrCode,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -55,10 +56,12 @@ export function StorefrontOrderPage({
 	orderNumber,
 	accountOrder,
 	backToEntitlements = false,
+	paymentReturning = false,
 }: {
 	orderNumber: string;
 	accountOrder?: Awaited<ReturnType<typeof getStoreOrderFn>>;
 	backToEntitlements?: boolean;
+	paymentReturning?: boolean;
 }) {
 	const [afterSaleOpen, setAfterSaleOpen] = useState(false);
 	const [guestEmail, setGuestEmail] = useState("");
@@ -91,9 +94,12 @@ export function StorefrontOrderPage({
 					email: guestEmail,
 				}).success),
 		initialData: accountOrder,
-		refetchInterval: () =>
+		refetchOnMount: paymentReturning ? "always" : true,
+		refetchInterval: (query) =>
 			typeof document !== "undefined" && document.visibilityState === "visible"
-				? 5_000
+				? paymentReturning && query.state.data?.status === "pending_payment"
+					? 1_000
+					: 5_000
 				: false,
 	});
 	const openAfterSale = useMutation({
@@ -135,6 +141,8 @@ export function StorefrontOrderPage({
 		return <OrderLoadingSkeleton />;
 	}
 	const data = order.data;
+	const paymentReturnPending =
+		paymentReturning && data.status === "pending_payment";
 	const latestPayment = data.payments[0];
 	const paymentUrl = safeStorePaymentUrl(latestPayment?.checkoutUrl ?? null);
 	const paymentExpiresAt = Math.min(
@@ -236,16 +244,24 @@ export function StorefrontOrderPage({
 							</h2>
 							<header className="text-center">
 								<h3 className="font-semibold text-3xl tracking-[-0.035em]">
-									{shopOrderStatusLabel(data.status as ShopOrderStatus)}
+									{paymentReturnPending
+										? m.store_payment_return_processing()
+										: shopOrderStatusLabel(data.status as ShopOrderStatus)}
 								</h3>
-								<OrderProgress
-									completedAt={data.completedAt}
-									compact
-									createdAt={data.createdAt}
-									events={data.events}
-									paidAt={data.paidAt}
-									status={data.status as ShopOrderStatus}
-								/>
+								{paymentReturnPending ? (
+									<p className="mt-2 text-muted-foreground text-sm">
+										{m.store_payment_return_processing_description()}
+									</p>
+								) : (
+									<OrderProgress
+										completedAt={data.completedAt}
+										compact
+										createdAt={data.createdAt}
+										events={data.events}
+										paidAt={data.paidAt}
+										status={data.status as ShopOrderStatus}
+									/>
+								)}
 							</header>
 							<div>
 								<OrderSection title={m.store_checkout_items()}>
@@ -353,7 +369,15 @@ export function StorefrontOrderPage({
 										</div>
 									</div>
 								) : null}
-								{data.status === "pending_payment" ? (
+								{paymentReturnPending ? (
+									<div className="grid flex-1 place-content-center justify-items-center gap-4 py-10 text-center">
+										<LoaderCircle className="size-10 animate-spin text-primary" />
+										<strong>{m.store_payment_return_processing()}</strong>
+										<p className="max-w-sm text-muted-foreground text-sm">
+											{m.store_payment_return_processing_description()}
+										</p>
+									</div>
+								) : data.status === "pending_payment" ? (
 									<div className="flex flex-1 flex-col gap-5 pt-2">
 										<p className="font-medium text-muted-foreground text-sm">
 											{m.store_payment_information()}

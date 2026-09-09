@@ -22,3 +22,9 @@ export function safeStorePaymentUrl(value: string | null) {
 		return null;
 	}
 }
+
+export function storePaymentReturnUrl(origin: string, orderPath: string) {
+	const url = new URL(orderPath, origin);
+	url.searchParams.set("payment", "return");
+	return url.toString();
+}

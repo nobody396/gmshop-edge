@@ -1184,6 +1184,8 @@
 	"store_payment_retry_failed": "无法重试支付",
 	"store_order_payment_remaining": "请在 {time} 内完成支付",
 	"store_order_payment_expired": "订单支付时间已结束",
+	"store_payment_return_processing": "支付结果同步中",
+	"store_payment_return_processing_description": "支付完成后正在确认并准备发货，请稍候，无需重复支付。",
 	"store_activation_code_title": "激活凭证已发放",
 	"store_activation_code_description": "复制下方 CDK，点击在线客服并将 CDK 发送给客服。订单核验后，我们将为您完成激活。",
 	"store_activation_code_processing": "订单已进入激活流程，我们将为您完成激活。",
