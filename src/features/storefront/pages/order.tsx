@@ -439,6 +439,17 @@ export function StorefrontOrderPage({
 										orderNumber={orderNumber}
 									/>
 								) : null}
+								{["paid", "fulfilling", "completed"].includes(data.status) &&
+								data.refundedAt == null ? (
+									<Button asChild className="w-full" variant="secondary">
+										<a
+											href={`https://lsrai.shop/invoice?source=gmshop&order_no=${encodeURIComponent(orderNumber)}`}
+											rel="noopener noreferrer"
+										>
+											申请开票
+										</a>
+									</Button>
+								) : null}
 								{data.status !== "pending_payment" &&
 								(claimableDeliveries.length || downloadableAssets.length) ? (
 									<section className="grid gap-4 border-t pt-6">
