@@ -36,8 +36,9 @@ describe("storefront account-required purchase guidance", () => {
 		const catalog = source("src/features/storefront/server/catalog.ts");
 
 		expect(product).toContain("m.store_stock({ count: item.availableStock })");
-		expect(card).toContain("product.syncedStockQuantity");
-		expect(catalog).toContain("AS synced_stock_quantity");
+		expect(card).toContain("product.displayStockQuantity");
+		expect(card).not.toContain("store_low_stock");
+		expect(catalog).toContain("AS display_stock_quantity");
 		expect(card).not.toContain("m.store_sales(");
 	});
 

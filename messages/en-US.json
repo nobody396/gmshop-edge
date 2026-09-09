@@ -805,7 +805,6 @@
 	"store_delivery_promise_card": "Ready to reveal immediately after payment succeeds",
 	"store_delivery_promise_download": "Ready to download after payment succeeds",
 	"store_delivery_promise_build": "Your automated task is ready to start after purchase",
-	"store_low_stock": "Only {count} left",
 	"store_empty_title": "We couldn't find what you're looking for",
 	"store_empty_description": "Try another search or category.",
 	"store_no_products_title": "There are no products available yet",

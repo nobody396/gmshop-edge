@@ -18,14 +18,14 @@ export function StorefrontProductCard({
 	product: StorefrontCatalogProduct;
 }) {
 	const currency = useCurrency();
-	const available = product.availableStock !== 0;
+	const available = product.displayStockQuantity !== 0;
 	const isFree = BigInt(product.maxPriceMinor) === 0n;
 	const singlePrice = product.maxPriceMinor === product.priceMinor;
 	const hasDiscount =
 		singlePrice &&
 		product.listPriceMinor != null &&
 		BigInt(product.listPriceMinor) > BigInt(product.priceMinor);
-	const availability = stockLabel(product);
+	const availability = stockLabel(product.displayStockQuantity);
 	let price: string = m.store_price_free();
 	if (!isFree) {
 		price = singlePrice
@@ -113,12 +113,12 @@ export function StorefrontProductCard({
 								</span>
 							) : null}
 						</div>
-						{product.syncedStockQuantity != null || availability ? (
+						{product.displayStockQuantity != null || availability ? (
 							<div className="text-right text-muted-foreground text-xs">
-								{product.syncedStockQuantity != null ? (
+								{product.displayStockQuantity != null ? (
 									<p className="flex items-center justify-end gap-1.5">
 										<span className="font-medium text-foreground/75">
-											{m.store_stock({ count: product.syncedStockQuantity })}
+											{m.store_stock({ count: product.displayStockQuantity })}
 										</span>
 									</p>
 								) : null}
@@ -160,9 +160,7 @@ export function StorefrontProductCardSkeleton() {
 	);
 }
 
-function stockLabel(product: StorefrontCatalogProduct) {
-	if (product.availableStock === 0) return m.store_sold_out();
-	if (product.availableStock > 0 && product.availableStock <= 5)
-		return m.store_low_stock({ count: product.availableStock });
+function stockLabel(displayStockQuantity: number | null) {
+	if (displayStockQuantity === 0) return m.store_sold_out();
 	return null;
 }
