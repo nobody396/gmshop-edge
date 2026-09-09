@@ -28,9 +28,16 @@ export interface SupplierQueueMessage {
 	supplierOrderId: string;
 }
 
+export interface InventoryEventQueueMessage {
+	kind: "commerce.inventory-event";
+	version: 1;
+	outboxId: string;
+}
+
 export type CommerceQueueMessage =
 	| DeliveryQueueMessage
 	| AutomationQueueMessage
 	| NotificationQueueMessage
 	| RefundQueueMessage
-	| SupplierQueueMessage;
+	| SupplierQueueMessage
+	| InventoryEventQueueMessage;

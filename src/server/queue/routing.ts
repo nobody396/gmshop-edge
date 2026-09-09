@@ -3,6 +3,10 @@ import { processDelivery } from "#/features/fulfillment/server/process";
 import { processNotificationDelivery } from "#/features/notifications/server/delivery";
 import { flushPendingCommerceNotifications } from "#/features/notifications/server/flush";
 import { processShopRefund } from "#/features/shop-payments/server/refunds";
+import {
+	deliverInventoryEvent,
+	publishPendingInventoryEvents,
+} from "#/features/supplier-api/server/inventory-events";
 import { processSupplierOrder } from "#/features/suppliers/server/process";
 import type { CommerceQueueMessage } from "#/server/queue/types";
 
@@ -20,6 +24,7 @@ export async function handleQueue(
 		);
 	}
 	await flushPendingCommerceNotifications(env.DB, env.COMMERCE_QUEUE, 100);
+	await publishPendingInventoryEvents(env.DB, env.COMMERCE_QUEUE, 100);
 	const oldest = batch.messages.reduce(
 		(ageMs, message) =>
 			Math.max(ageMs, Date.now() - message.timestamp.getTime()),
@@ -91,6 +96,8 @@ async function processQueueMessage(body: CommerceQueueMessage, env: Env) {
 			return processSupplierOrder(db, body.supplierOrderId, {
 				files: env.FILES,
 			});
+		case "commerce.inventory-event":
+			return deliverInventoryEvent(db, body.outboxId);
 	}
 }
 
@@ -115,6 +122,8 @@ function isCommerceQueueMessage(value: unknown): value is CommerceQueueMessage {
 			return validReference(value, "refundId");
 		case "commerce.supplier":
 			return validReference(value, "supplierOrderId");
+		case "commerce.inventory-event":
+			return validReference(value, "outboxId");
 		default:
 			return false;
 	}

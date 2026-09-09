@@ -11,6 +11,11 @@ describe("commerce queue envelope routing", () => {
 			notificationDeliveryId: "notification-1",
 		},
 		{ kind: "commerce.refund", version: 1, refundId: "refund-1" },
+		{
+			kind: "commerce.inventory-event",
+			version: 1,
+			outboxId: "inventory-event-1",
+		},
 	])("accepts $kind", (message) => {
 		expect(queueMessageKind(message)).toBe("commerce");
 	});

@@ -78,6 +78,13 @@
       "when": 1788504306220,
       "tag": "0010_supplier_diagnostics",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788928500000,
+      "tag": "0011_realtime_inventory_events",
+      "breakpoints": true
     }
   ]
 }

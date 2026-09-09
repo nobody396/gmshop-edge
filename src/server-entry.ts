@@ -3,6 +3,7 @@ import {
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
 import { handleLivenessRequest } from "#/features/status/server/health";
+import { publishPendingInventoryEvents } from "#/features/supplier-api/server/inventory-events";
 import { applySecurityHeaders } from "#/server/http-security";
 import { validateRequestAuthority } from "#/server/middleware/authority";
 import { handleI18nRequest } from "#/server/middleware/i18n";
@@ -46,6 +47,19 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 		env.CACHE as KVNamespace | undefined,
 		appFetch,
 	);
+	if (
+		request.method !== "GET" &&
+		request.method !== "HEAD" &&
+		env.DB &&
+		env.COMMERCE_QUEUE
+	) {
+		env.waitUntil?.(
+			publishPendingInventoryEvents(
+				env.DB as D1Database,
+				env.COMMERCE_QUEUE as Queue,
+			),
+		);
+	}
 	return applySecurityHeaders(
 		request,
 		appendServerTiming(response, [

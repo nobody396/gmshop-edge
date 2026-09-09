@@ -45,6 +45,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0008_typical_tana_nile.sql",
 			"0009_modern_adam_destine.sql",
 			"0010_supplier_diagnostics.sql",
+			"0011_realtime_inventory_events.sql",
 		]);
 		const legacyTables = await database
 			.prepare(

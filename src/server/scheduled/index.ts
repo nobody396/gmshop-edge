@@ -6,6 +6,7 @@ import { publishPendingOwnerSaleAlerts } from "#/features/notifications/server/o
 import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
 import { publishPendingRefunds } from "#/features/shop-payments/server/refunds";
 import { reconcilePendingShopPayments } from "#/features/shop-payments/server/service";
+import { publishPendingInventoryEvents } from "#/features/supplier-api/server/inventory-events";
 import { publishPendingSupplierOrders } from "#/features/suppliers/server/outbox";
 import { runTelegramMaintenance } from "#/features/telegram/server/maintenance";
 import { runMaintenance } from "#/server/scheduled/maintenance";
@@ -44,6 +45,11 @@ export async function runScheduledCommerceWork(
 		env.COMMERCE_QUEUE,
 		publishBatchSize,
 	);
+	const inventoryEvents = await publishPendingInventoryEvents(
+		env.DB,
+		env.COMMERCE_QUEUE,
+		publishBatchSize,
+	);
 	const ownerSaleAlerts = await publishPendingOwnerSaleAlerts({
 		db: env.DB,
 		limit: publishBatchSize,
@@ -75,6 +81,7 @@ export async function runScheduledCommerceWork(
 		expired,
 		deliveries,
 		suppliers,
+		inventoryEvents,
 		ownerSaleAlerts,
 		builds,
 		refunds,
