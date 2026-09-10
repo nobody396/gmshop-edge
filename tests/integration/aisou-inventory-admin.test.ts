@@ -96,18 +96,24 @@ describe("AISOU inventory admin", { timeout: 30_000 }, () => {
 			)
 			.bind("aisou_batch_00000001")
 			.run();
-		await expect(listAisouInventory(db)).resolves.toEqual([
-			expect.objectContaining({
-				componentId: ITEM_ID,
-				available: 2,
-				reserved: 0,
-				delivered: 1,
-				disabled: 0,
-				costedAvailable: 1,
-				availableValueMinor: "103000",
-				latestUnitCostMinor: "103000",
-			}),
-		]);
+		await expect(listAisouInventory(db)).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					componentId: ITEM_ID,
+					available: 2,
+					reserved: 0,
+					delivered: 1,
+					disabled: 0,
+					costedAvailable: 2,
+					availableValueMinor: "206000",
+					defaultUnitCostMinor: "103000",
+				}),
+				expect.objectContaining({
+					componentId: PLUS_ITEM_ID,
+					defaultUnitCostMinor: "11300",
+				}),
+			]),
+		);
 
 		await expect(
 			importAisouInventory(
@@ -155,6 +161,7 @@ describe("AISOU inventory admin", { timeout: 30_000 }, () => {
 const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PRODUCT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const ITEM_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const PLUS_ITEM_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const OTHER_ITEM_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const COMMERCE_SECRET = "aisou-inventory-integration-commerce-secret";
 
@@ -191,16 +198,24 @@ async function seed(db: D1Database) {
 			.prepare(
 				`INSERT INTO product_sellable_items
 				 (id, product_id, name, fulfillment_source, supplier_status, currency,
-				  currency_decimals, price_minor, enabled, sort_order, created_at, updated_at)
-				 VALUES (?, ?, '20X 菲区', 'local', NULL, 'CNY', 2, '120000', 1, 1, 1, 1)`,
+				  currency_decimals, price_minor, cost_minor, enabled, sort_order, created_at, updated_at)
+				 VALUES (?, ?, '20X 菲区', 'local', NULL, 'CNY', 2, '120000', '103000', 1, 1, 1, 1)`,
 			)
 			.bind(ITEM_ID, PRODUCT_ID),
 		db
 			.prepare(
 				`INSERT INTO product_sellable_items
 				 (id, product_id, name, fulfillment_source, currency, currency_decimals,
+				  price_minor, cost_minor, enabled, sort_order, created_at, updated_at)
+				 VALUES (?, ?, 'Plus 菲区', 'local', 'CNY', 2, '15000', '11300', 1, 2, 1, 1)`,
+			)
+			.bind(PLUS_ITEM_ID, PRODUCT_ID),
+		db
+			.prepare(
+				`INSERT INTO product_sellable_items
+				 (id, product_id, name, fulfillment_source, currency, currency_decimals,
 				  price_minor, enabled, sort_order, created_at, updated_at)
-				 VALUES (?, ?, 'iOS', 'local', 'CNY', 2, '120000', 1, 2, 1, 1)`,
+				 VALUES (?, ?, 'iOS', 'local', 'CNY', 2, '120000', 1, 3, 1, 1)`,
 			)
 			.bind(OTHER_ITEM_ID, PRODUCT_ID),
 		db.prepare(
@@ -224,5 +239,17 @@ async function seed(db: D1Database) {
 				  '110000', 30, 'active', 1, 1, 1)`,
 			)
 			.bind(ITEM_ID),
+		db
+			.prepare(
+				`INSERT INTO supplier_bindings
+				 (id, sellable_item_id, provider, normalized_api_origin, protocol_version,
+				  upstream_product_id, upstream_sku_id, upstream_product_name,
+				  upstream_sku_name, reference_cost_minor, max_cost_minor, stock_quantity,
+				  remote_status, enabled, created_at, updated_at)
+				 VALUES ('binding-plus', ?, 'shared_stock', 'https://supplier.example', '1',
+				  'remote-product', 'remote-plus', 'ChatGPT Plus', 'Plus PH', '11500',
+				  '12000', 30, 'active', 1, 1, 1)`,
+			)
+			.bind(PLUS_ITEM_ID),
 	]);
 }

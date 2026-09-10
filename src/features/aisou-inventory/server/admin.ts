@@ -53,7 +53,7 @@ type InventoryRow = {
 	disabled: number | null;
 	costed_available: number | null;
 	available_value_minor: number | null;
-	latest_unit_cost_minor: string | null;
+	default_unit_cost_minor: string | null;
 	last_restocked_at: number | null;
 };
 
@@ -75,17 +75,13 @@ export async function listAisouInventory(db: D1Database) {
 				 SUM(CASE WHEN stock.status = 'reserved' THEN 1 ELSE 0 END) AS reserved,
 				 SUM(CASE WHEN stock.status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
 				 SUM(CASE WHEN stock.status = 'disabled' THEN 1 ELSE 0 END) AS disabled,
-				 SUM(CASE WHEN stock.status = 'available' AND stock.unit_cost_minor IS NOT NULL
+				 SUM(CASE WHEN stock.status = 'available'
+				     AND coalesce(stock.unit_cost_minor, item.cost_minor) IS NOT NULL
 				     THEN 1 ELSE 0 END) AS costed_available,
-				 SUM(CASE WHEN stock.status = 'available' AND stock.unit_cost_minor IS NOT NULL
-				     THEN CAST(stock.unit_cost_minor AS INTEGER) ELSE 0 END) AS available_value_minor,
-				 (SELECT latest.unit_cost_minor FROM stock_entries latest
-				   WHERE latest.sellable_item_id = item.id
-				    AND latest.unit_cost_minor IS NOT NULL
-				    AND (latest.procurement_source = 'aisou'
-				     OR (latest.procurement_source IS NULL
-				      AND lower(coalesce(latest.note, '')) LIKE '%source=aisou%'))
-				   ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1) AS latest_unit_cost_minor,
+				 SUM(CASE WHEN stock.status = 'available'
+				     THEN CAST(coalesce(stock.unit_cost_minor, item.cost_minor, '0') AS INTEGER)
+				     ELSE 0 END) AS available_value_minor,
+				 item.cost_minor AS default_unit_cost_minor,
 				 MAX(stock.created_at) AS last_restocked_at
 				 FROM product_sellable_items item
 				 JOIN products product ON product.id = item.product_id
@@ -111,7 +107,7 @@ export async function listAisouInventory(db: D1Database) {
 		disabled: Number(row.disabled ?? 0),
 		costedAvailable: Number(row.costed_available ?? 0),
 		availableValueMinor: String(row.available_value_minor ?? 0),
-		latestUnitCostMinor: row.latest_unit_cost_minor,
+		defaultUnitCostMinor: row.default_unit_cost_minor,
 		lastRestockedAt: row.last_restocked_at,
 	}));
 }

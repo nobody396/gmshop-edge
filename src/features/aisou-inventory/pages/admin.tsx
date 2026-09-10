@@ -15,10 +15,15 @@ import {
 } from "#/components/ui/card";
 import { PageHeader } from "#/layouts/components/page-header";
 import { formatDateTime, formatMinorAmount } from "#/lib/format";
+import { formatMinorInput } from "#/lib/money-input";
 import { m } from "#/paraglide/messages";
 import { importAisouInventoryFn, listAisouInventoryFn } from "../server/admin";
 
 const inventoryKey = ["admin", "aisou-inventory"] as const;
+type AisouInventoryRow = Awaited<
+	ReturnType<typeof listAisouInventoryFn>
+>[number];
+type AisouImportInput = Parameters<typeof importAisouInventoryFn>[0]["data"];
 
 export function AisouInventoryAdminPage() {
 	const client = useQueryClient();
@@ -47,79 +52,14 @@ export function AisouInventoryAdminPage() {
 				title={m.aisou_inventory_title()}
 				description={m.aisou_inventory_description()}
 				actions={
-					<>
-						<ProButton
-							variant="outline"
-							disabled={inventory.isFetching}
-							onClick={() => inventory.refetch()}
-						>
-							<RefreshCw />
-							{m.common_refresh()}
-						</ProButton>
-						<ModalForm
-							title={m.aisou_inventory_import()}
-							trigger={
-								<ProButton disabled={rows.length === 0}>
-									<PackagePlus />
-									{m.aisou_inventory_import()}
-								</ProButton>
-							}
-							schema={[
-								{
-									name: "componentId",
-									label: m.aisou_inventory_target_item(),
-									valueType: "select",
-									required: true,
-									fieldProps: {
-										options: rows.map((row) => ({
-											label: `${row.productName} · ${row.itemName}`,
-											value: row.componentId,
-										})),
-										searchable: true,
-									},
-								},
-								{
-									name: "unitCostYuan",
-									label: m.redeem_warehouse_unit_cost(),
-									valueType: "text",
-									required: true,
-									fieldProps: { inputMode: "decimal", placeholder: "113.00" },
-								},
-								{
-									name: "content",
-									label: m.aisou_inventory_cards(),
-									valueType: "textarea",
-									required: true,
-									tooltip: m.aisou_inventory_cards_description(),
-									fieldProps: {
-										rows: 12,
-										autoComplete: "off",
-										spellCheck: false,
-									},
-								},
-								{
-									name: "usageUrl",
-									label: m.inventory_usage_url(),
-									valueType: "text",
-									required: true,
-									fieldProps: { type: "url" },
-								},
-							]}
-							initialValues={{ usageUrl: "https://aiee.fun/" }}
-							onFinish={async (values) => {
-								await importInventory.mutateAsync({
-									data: {
-										requestRef: `aisou_${crypto.randomUUID()}`,
-										componentId: String(values.componentId ?? ""),
-										unitCostYuan: String(values.unitCostYuan ?? ""),
-										content: String(values.content ?? ""),
-										usageUrl: String(values.usageUrl ?? ""),
-									},
-								});
-							}}
-							onFinishFailed={showError}
-						/>
-					</>
+					<ProButton
+						variant="outline"
+						disabled={inventory.isFetching}
+						onClick={() => inventory.refetch()}
+					>
+						<RefreshCw />
+						{m.common_refresh()}
+					</ProButton>
 				}
 			/>
 
@@ -149,11 +89,21 @@ export function AisouInventoryAdminPage() {
 										<CardTitle>{row.productName}</CardTitle>
 										<CardDescription>{row.itemName}</CardDescription>
 									</div>
-									<Badge variant={row.available > 0 ? "default" : "secondary"}>
-										{row.available > 0
-											? m.redeem_warehouse_available()
-											: m.redeem_warehouse_empty()}
-									</Badge>
+									<div className="flex shrink-0 flex-col items-end gap-2">
+										<Badge
+											variant={row.available > 0 ? "default" : "secondary"}
+										>
+											{row.available > 0
+												? m.redeem_warehouse_available()
+												: m.redeem_warehouse_empty()}
+										</Badge>
+										<AisouRestockModal
+											row={row}
+											onRestock={(data) =>
+												importInventory.mutateAsync({ data })
+											}
+										/>
+									</div>
 								</div>
 							</CardHeader>
 							<CardContent className="space-y-3">
@@ -178,11 +128,11 @@ export function AisouInventoryAdminPage() {
 								<div className="grid grid-cols-2 gap-3 border-t pt-3 text-sm">
 									<div>
 										<span className="block text-muted-foreground">
-											{m.aisou_inventory_latest_unit_cost()}
+											{m.aisou_inventory_default_unit_cost()}
 										</span>
 										<strong>
-											{row.latestUnitCostMinor
-												? formatMinorAmount(row.latestUnitCostMinor, "CNY", 2)
+											{row.defaultUnitCostMinor
+												? formatMinorAmount(row.defaultUnitCostMinor, "CNY", 2)
 												: "—"}
 										</strong>
 									</div>
@@ -209,6 +159,70 @@ export function AisouInventoryAdminPage() {
 				})}
 			</div>
 		</div>
+	);
+}
+
+function AisouRestockModal({
+	row,
+	onRestock,
+}: {
+	row: AisouInventoryRow;
+	onRestock: (data: AisouImportInput) => Promise<unknown>;
+}) {
+	return (
+		<ModalForm
+			title={`${m.aisou_inventory_import()} · ${row.itemName}`}
+			trigger={
+				<ProButton size="sm" variant="outline">
+					<PackagePlus />
+					{m.aisou_inventory_quick_restock_short()}
+				</ProButton>
+			}
+			schema={[
+				{
+					name: "unitCostYuan",
+					label: m.redeem_warehouse_unit_cost(),
+					valueType: "text",
+					required: true,
+					fieldProps: { inputMode: "decimal" },
+				},
+				{
+					name: "content",
+					label: m.aisou_inventory_cards(),
+					valueType: "textarea",
+					required: true,
+					tooltip: m.aisou_inventory_cards_description(),
+					fieldProps: {
+						rows: 12,
+						autoComplete: "off",
+						spellCheck: false,
+					},
+				},
+				{
+					name: "usageUrl",
+					label: m.inventory_usage_url(),
+					valueType: "text",
+					required: true,
+					fieldProps: { type: "url" },
+				},
+			]}
+			initialValues={{
+				unitCostYuan: row.defaultUnitCostMinor
+					? formatMinorInput(row.defaultUnitCostMinor, 2)
+					: "",
+				usageUrl: "https://aiee.fun/",
+			}}
+			onFinish={async (values) => {
+				await onRestock({
+					requestRef: `aisou_${crypto.randomUUID()}`,
+					componentId: row.componentId,
+					unitCostYuan: String(values.unitCostYuan ?? ""),
+					content: String(values.content ?? ""),
+					usageUrl: String(values.usageUrl ?? ""),
+				});
+			}}
+			onFinishFailed={showError}
+		/>
 	);
 }
 
