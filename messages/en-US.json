@@ -1819,7 +1819,6 @@
 	"aisou_inventory_import": "AISOU quick restock",
 	"aisou_inventory_quick_restock_short": "Quick restock",
 	"aisou_inventory_import_result": "Imported {imported} cards; {duplicates} duplicates",
-	"aisou_inventory_target_item": "Target sellable item",
 	"aisou_inventory_cards": "AISOU cards",
 	"aisou_inventory_cards_description": "One card per line, up to 90. Cards are encrypted and never echoed in results.",
 	"aisou_inventory_pool_notice": "This page counts only owned cards bought in AISOU batches. Cards enter the main-store pool once and are shared by the agent marketplace and subsites; AISOU online stock and balance are not added.",
