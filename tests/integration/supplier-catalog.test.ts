@@ -72,6 +72,49 @@ describe("supplier catalog", () => {
 		expect(result.items.map((product) => product.id)).toEqual(["product-1"]);
 	});
 
+	it("exports supplier availability for a local-first SKU without duplicating its local stock", async () => {
+		const now = Date.now();
+		await db.batch([
+			db
+				.prepare(
+					`INSERT INTO supplier_accounts
+				 (id, provider, base_url, normalized_api_origin, protocol_version,
+				  currency, currency_decimals, name, credentials_encrypted,
+				  credentials_revision, credential_fingerprint, balance_minor,
+				  balance_synced_at, enabled, health_status, created_at, updated_at)
+				 VALUES ('account', 'shared_stock', 'https://supplier.example',
+				  'https://supplier.example', 'acg-sharedstock-v1', 'USD', 2,
+				  'Supplier', 'ciphertext', 1, 'fingerprint', '1000', ?, 1,
+				  'healthy', ?, ?)`,
+				)
+				.bind(now, now, now),
+			db
+				.prepare(
+					`INSERT INTO supplier_bindings
+				 (id, sellable_item_id, provider, normalized_api_origin,
+				  protocol_version, upstream_product_id, upstream_sku_id,
+				  upstream_product_name, upstream_sku_name, reference_cost_minor,
+				  max_cost_minor, stock_quantity, remote_status, last_synced_at,
+				  enabled, created_at, updated_at)
+				 VALUES ('binding', 'sku-1-a', 'shared_stock',
+				  'https://supplier.example', 'acg-sharedstock-v1', 'product', 'sku',
+				  'Product', 'SKU', '70', '90', 7, 'active', ?, 1, ?, ?)`,
+				)
+				.bind(now, now, now),
+		]);
+
+		const result = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+			updatedAfter: new Date(now - 1).toISOString(),
+		});
+		const product = result.items.find((row) => row.id === "product-1");
+		expect(product?.skus.find((sku) => sku.id === "sku-1-a")).toMatchObject({
+			stock_quantity: 7,
+			active: true,
+		});
+	});
+
 	it("loads a product directly by ID independently of catalog page limits", async () => {
 		await expect(getSupplierProduct(db, "product-3")).resolves.toMatchObject({
 			product: { id: "product-3", skus: [{ id: "sku-3-a" }] },

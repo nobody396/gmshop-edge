@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { completeWalletStoreOrder } from "#/features/shop-payments/server/service";
+import { storefrontStockExpression } from "#/features/storefront/server/stock-availability";
 import { mutateWallet } from "#/features/wallet/server/ledger";
 import { DomainError } from "#/lib/domain-error";
 import { isSafeWebhookUrl } from "#/lib/webhook-url";
@@ -66,8 +67,7 @@ export async function createSupplierApiOrder(
 			`SELECT item.id, item.product_id, item.name, item.version, item.currency,
 			 item.currency_decimals, product.name AS product_name,
 			 COALESCE(listing.price_minor, item.price_minor) AS price_minor,
-			 (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id = item.id
-			  AND stock.status = 'available') AS stock_quantity
+			 ${storefrontStockExpression("product", "item")} AS stock_quantity
 			 FROM product_sellable_items item
 			 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 			 JOIN products product ON product.id = item.product_id

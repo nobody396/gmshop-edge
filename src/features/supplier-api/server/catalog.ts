@@ -1,3 +1,4 @@
+import { storefrontStockExpression } from "#/features/storefront/server/stock-availability";
 import { DomainError } from "#/lib/domain-error";
 
 type ProductRow = {
@@ -22,7 +23,9 @@ const ELIGIBLE_PRODUCTS = `
 	 product.description, product.cover_object_key, product.tag_names, product.sort_order,
 	 MAX(MAX(product.updated_at, item.updated_at, COALESCE(listing.updated_at, 0),
 	  COALESCE((SELECT MAX(stock.updated_at) FROM stock_entries stock
-	   WHERE stock.sellable_item_id = item.id), 0)))
+	   WHERE stock.sellable_item_id = item.id), 0),
+	  COALESCE((SELECT MAX(binding.updated_at) FROM supplier_bindings binding
+	   WHERE binding.sellable_item_id = item.id AND binding.enabled = 1), 0)))
 	  AS export_updated_at
 	 FROM products product
 	 JOIN product_sellable_items item ON item.product_id = product.id
@@ -39,8 +42,7 @@ const ELIGIBLE_PRODUCTS = `
 const ELIGIBLE_SKUS = `
 	SELECT item.product_id, item.id AS sku_id, item.name AS sku_name,
 	 COALESCE(listing.price_minor, item.price_minor) AS price_minor,
-	 (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id = item.id
-	  AND stock.status = 'available') AS stock_quantity
+	 ${storefrontStockExpression("product", "item")} AS stock_quantity
 	 FROM product_sellable_items item
 	 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 	 JOIN products product ON product.id = item.product_id
