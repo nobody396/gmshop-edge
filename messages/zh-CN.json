@@ -1817,6 +1817,7 @@
 	"aisou_inventory_title": "AISOU 兑换库存",
 	"aisou_inventory_description": "查看 AISOU 批量采购卡密的真实剩余与状态，并直接补入主站共享库存。",
 	"aisou_inventory_import": "AISOU 快速补货",
+	"aisou_inventory_quick_restock_short": "快速补货",
 	"aisou_inventory_import_result": "成功入库 {imported} 张，重复 {duplicates} 张",
 	"aisou_inventory_target_item": "目标商品规格",
 	"aisou_inventory_cards": "AISOU 卡密",
@@ -1825,7 +1826,7 @@
 	"aisou_inventory_reserved": "已预留",
 	"aisou_inventory_delivered": "已发货",
 	"aisou_inventory_disabled": "已停用",
-	"aisou_inventory_latest_unit_cost": "最近采购单价",
+	"aisou_inventory_default_unit_cost": "默认进货价",
 	"aisou_inventory_available_value": "剩余库存成本",
 	"aisou_inventory_last_restocked": "最近补货",
 	"aisou_inventory_unavailable": "AISOU 库存暂时不可用"

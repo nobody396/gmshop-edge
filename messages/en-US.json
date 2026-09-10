@@ -1817,6 +1817,7 @@
 	"aisou_inventory_title": "AISOU Redemption Inventory",
 	"aisou_inventory_description": "See the real remaining status of bulk-purchased AISOU cards and restock the shared main-store pool.",
 	"aisou_inventory_import": "AISOU quick restock",
+	"aisou_inventory_quick_restock_short": "Quick restock",
 	"aisou_inventory_import_result": "Imported {imported} cards; {duplicates} duplicates",
 	"aisou_inventory_target_item": "Target sellable item",
 	"aisou_inventory_cards": "AISOU cards",
@@ -1825,7 +1826,7 @@
 	"aisou_inventory_reserved": "Reserved",
 	"aisou_inventory_delivered": "Delivered",
 	"aisou_inventory_disabled": "Disabled",
-	"aisou_inventory_latest_unit_cost": "Latest unit cost",
+	"aisou_inventory_default_unit_cost": "Default unit cost",
 	"aisou_inventory_available_value": "Remaining inventory cost",
 	"aisou_inventory_last_restocked": "Last restocked",
 	"aisou_inventory_unavailable": "AISOU inventory is unavailable"
