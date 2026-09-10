@@ -35,6 +35,7 @@ export type NavigationModuleId =
 	| "products"
 	| "product-recycle-bin"
 	| "redeem-inventory"
+	| "aisou-inventory"
 	| "suppliers"
 	| "orders"
 	| "customers"
@@ -141,6 +142,20 @@ export const navigationGroups: readonly NavigationGroup[] = [
 						"redeem-inventory",
 						() => m.redeem_warehouse_title(),
 						"/admin/redeem-inventory",
+						Warehouse,
+						systemPermission("inventory", "read"),
+					),
+				],
+			},
+			{
+				id: "aisou-inventory",
+				title: () => m.aisou_inventory_title(),
+				icon: Warehouse,
+				entries: [
+					entry(
+						"aisou-inventory",
+						() => m.aisou_inventory_title(),
+						"/admin/aisou-inventory",
 						Warehouse,
 						systemPermission("inventory", "read"),
 					),

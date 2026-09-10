@@ -1813,5 +1813,20 @@
 	"redeem_warehouse_generate_sellable": "Generate sellable codes",
 	"redeem_warehouse_target_item": "Target main-store SKU",
 	"redeem_warehouse_generate_count": "Generation count",
-	"redeem_warehouse_sellable_result": "Planned {count} and added {imported} codes to central sellable inventory"
+	"redeem_warehouse_sellable_result": "Planned {count} and added {imported} codes to central sellable inventory",
+	"aisou_inventory_title": "AISOU Redemption Inventory",
+	"aisou_inventory_description": "See the real remaining status of bulk-purchased AISOU cards and restock the shared main-store pool.",
+	"aisou_inventory_import": "AISOU quick restock",
+	"aisou_inventory_import_result": "Imported {imported} cards; {duplicates} duplicates",
+	"aisou_inventory_target_item": "Target sellable item",
+	"aisou_inventory_cards": "AISOU cards",
+	"aisou_inventory_cards_description": "One card per line, up to 90. Cards are encrypted and never echoed in results.",
+	"aisou_inventory_pool_notice": "This page counts only owned cards bought in AISOU batches. Cards enter the main-store pool once and are shared by the agent marketplace and subsites; AISOU online stock and balance are not added.",
+	"aisou_inventory_reserved": "Reserved",
+	"aisou_inventory_delivered": "Delivered",
+	"aisou_inventory_disabled": "Disabled",
+	"aisou_inventory_latest_unit_cost": "Latest unit cost",
+	"aisou_inventory_available_value": "Remaining inventory cost",
+	"aisou_inventory_last_restocked": "Last restocked",
+	"aisou_inventory_unavailable": "AISOU inventory is unavailable"
 }

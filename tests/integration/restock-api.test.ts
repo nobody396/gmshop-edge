@@ -90,16 +90,26 @@ describe("restock API", () => {
 
 		const row = await db
 			.prepare(
-				"SELECT content_encrypted, content_mask, note FROM stock_entries WHERE sellable_item_id = ?",
+				`SELECT content_encrypted, content_mask, note, procurement_source,
+				 procurement_request_ref, unit_cost_minor FROM stock_entries
+				 WHERE sellable_item_id = ?`,
 			)
 			.bind(componentId)
 			.first<{
 				content_encrypted: string;
 				content_mask: string;
 				note: string;
+				procurement_source: string;
+				procurement_request_ref: string;
+				unit_cost_minor: string;
 			}>();
 		expect(row?.content_mask).toBe("••••••••-001");
 		expect(row?.note).toContain("source=86");
+		expect(row).toMatchObject({
+			procurement_source: "86",
+			procurement_request_ref: requestRef,
+			unit_cost_minor: "12500",
+		});
 		expect(
 			await decryptDeliveryContent(row?.content_encrypted ?? "", keyring),
 		).toBe("CDK：TEST-RESTOCK-001\n充值地址：https://redeem.example/");
@@ -291,6 +301,7 @@ function payload() {
 		usageUrl: "https://redeem.example/",
 		note: "test",
 		source: "86",
+		unitCostMinor: "12500",
 	};
 }
 

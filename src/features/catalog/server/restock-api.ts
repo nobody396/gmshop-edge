@@ -29,6 +29,10 @@ const restockRequestSchema = z.object({
 	usageUrl: z.string().optional(),
 	note: z.string().trim().max(500).optional(),
 	source: z.string().trim().min(1).max(100),
+	unitCostMinor: z
+		.string()
+		.regex(/^(0|[1-9]\d*)$/)
+		.optional(),
 });
 
 const deliveryReconcileSchema = z.object({
@@ -45,7 +49,7 @@ const deliveryReconcileSchema = z.object({
 	source: z.string().trim().min(1).max(100),
 });
 
-type RestockRequest = z.infer<typeof restockRequestSchema>;
+export type RestockRequest = z.infer<typeof restockRequestSchema>;
 
 type ComponentRow = {
 	id: string;
@@ -314,7 +318,7 @@ async function reconcileDeliveredOrder(
 	};
 }
 
-async function importRestockBatch(
+export async function importRestockBatch(
 	db: D1Database,
 	request: Request,
 	data: RestockRequest,
@@ -435,8 +439,9 @@ async function importRestockBatch(
 				.prepare(
 					`INSERT OR IGNORE INTO stock_entries
 					 (id, sellable_item_id, content_encrypted, key_version,
-					  content_fingerprint, content_mask, status, note, created_at, updated_at)
-					 VALUES (?, ?, ?, 1, ?, ?, 'available', ?, ?, ?)`,
+					  content_fingerprint, content_mask, status, procurement_source,
+					  procurement_request_ref, unit_cost_minor, note, created_at, updated_at)
+					 VALUES (?, ?, ?, 1, ?, ?, 'available', ?, ?, ?, ?, ?, ?)`,
 				)
 				.bind(
 					item.id,
@@ -444,6 +449,9 @@ async function importRestockBatch(
 					item.encrypted,
 					item.fingerprint,
 					item.mask,
+					data.source,
+					data.requestRef,
+					data.unitCostMinor ?? null,
 					note,
 					now,
 					now,
@@ -466,6 +474,7 @@ async function importRestockBatch(
 					requestRef: data.requestRef,
 					source: data.source,
 					requested: prepared.length,
+					unitCostMinor: data.unitCostMinor ?? null,
 				}),
 				now,
 			),
