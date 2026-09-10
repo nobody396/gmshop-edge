@@ -24,12 +24,24 @@ type SaleAlertRow = {
 	currency: string;
 	currency_decimals: number;
 	total_minor: string;
+	contact_email: string;
 	items_summary: string;
+	cost_total_minor: string;
+	cost_missing_count: number;
+	local_fulfilled_count: number;
+	supplier_fulfilled_count: number;
+	local_stock_remaining_summary: string | null;
 	supplier_item_count: number;
 	manual_item_count: number;
 	supplier_pending_count: number;
 	supplier_failed_count: number;
 	payment_channel: string | null;
+	payment_amount_minor: string | null;
+	payment_currency: string | null;
+	payment_currency_decimals: number | null;
+	wallet_balance_after_minor: string | null;
+	internal_supply_count: number;
+	downstream_order_no: string | null;
 };
 
 type Balance = {
@@ -54,10 +66,60 @@ export async function publishPendingOwnerSaleAlerts(input: {
 			`SELECT event.id, event.aggregate_id, event.attempt_count,
 			        orders.order_number, orders.status AS order_status,
 			        orders.currency, orders.currency_decimals, orders.total_minor,
+			        orders.contact_email,
 			        (SELECT GROUP_CONCAT(order_item.product_name || ' · ' ||
 			          order_item.sellable_item_name || ' × ' || order_item.quantity, '；')
 			         FROM shop_order_items order_item
 			         WHERE order_item.order_id = orders.id) AS items_summary,
+			        COALESCE((SELECT SUM(CASE
+			          WHEN EXISTS (SELECT 1 FROM supplier_orders supplied_cost
+			                       WHERE supplied_cost.order_item_id = cost_item.id
+			                        AND supplied_cost.state = 'supplied')
+			          THEN COALESCE((SELECT CAST(supplied_cost.total_cost_minor AS INTEGER)
+			                         FROM supplier_orders supplied_cost
+			                         WHERE supplied_cost.order_item_id = cost_item.id
+			                          AND supplied_cost.state = 'supplied'
+			                         ORDER BY supplied_cost.updated_at DESC,
+			                                  supplied_cost.id DESC LIMIT 1),
+			                        CAST(cost_item.unit_cost_minor AS INTEGER) * cost_item.quantity, 0)
+			          ELSE COALESCE((SELECT SUM(CAST(stock_cost.unit_cost_minor AS INTEGER))
+			                         FROM stock_entries stock_cost
+			                         WHERE stock_cost.order_item_id = cost_item.id
+			                          AND stock_cost.status IN ('reserved', 'delivered')
+			                          AND stock_cost.unit_cost_minor IS NOT NULL),
+			                        CAST(cost_item.unit_cost_minor AS INTEGER) * cost_item.quantity, 0)
+			         END) FROM shop_order_items cost_item
+			         WHERE cost_item.order_id = orders.id), 0) AS cost_total_minor,
+			        (SELECT COUNT(*) FROM shop_order_items missing_cost
+			         WHERE missing_cost.order_id = orders.id
+			          AND NOT EXISTS (SELECT 1 FROM supplier_orders exact_supplier_cost
+			                          WHERE exact_supplier_cost.order_item_id = missing_cost.id
+			                           AND exact_supplier_cost.state = 'supplied'
+			                           AND exact_supplier_cost.total_cost_minor IS NOT NULL)
+			          AND NOT EXISTS (SELECT 1 FROM stock_entries exact_stock_cost
+			                          WHERE exact_stock_cost.order_item_id = missing_cost.id
+			                           AND exact_stock_cost.status IN ('reserved', 'delivered')
+			                           AND exact_stock_cost.unit_cost_minor IS NOT NULL)
+			          AND missing_cost.unit_cost_minor IS NULL) AS cost_missing_count,
+			        (SELECT COUNT(*) FROM shop_order_items local_item
+			         WHERE local_item.order_id = orders.id
+			          AND EXISTS (SELECT 1 FROM stock_entries local_stock
+			                      WHERE local_stock.order_item_id = local_item.id
+			                       AND local_stock.status IN ('reserved', 'delivered'))
+			          AND NOT EXISTS (SELECT 1 FROM supplier_orders local_supplier
+			                          WHERE local_supplier.order_item_id = local_item.id))
+			         AS local_fulfilled_count,
+			        (SELECT COUNT(*) FROM supplier_orders supplied_source
+			         WHERE supplied_source.order_id = orders.id
+			          AND supplied_source.state = 'supplied') AS supplier_fulfilled_count,
+			        (SELECT GROUP_CONCAT(remaining_item.name || ' ' ||
+			          (SELECT COUNT(*) FROM stock_entries remaining_stock
+			           WHERE remaining_stock.sellable_item_id = remaining_item.id
+			            AND remaining_stock.status = 'available'), '；')
+			         FROM product_sellable_items remaining_item
+			         WHERE remaining_item.id IN (SELECT purchased.sellable_item_id
+			          FROM shop_order_items purchased WHERE purchased.order_id = orders.id))
+			         AS local_stock_remaining_summary,
 			        (SELECT COUNT(*) FROM shop_order_items supplier_item
 			         JOIN product_sellable_items supplier_sellable
 			          ON supplier_sellable.id = supplier_item.sellable_item_id
@@ -83,7 +145,28 @@ export async function publishPendingOwnerSaleAlerts(input: {
 			         JOIN payment_channels channel ON channel.id = payment.channel_id
 			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
 			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
-			                  payment.id DESC LIMIT 1) AS payment_channel
+			                  payment.id DESC LIMIT 1) AS payment_channel,
+			        (SELECT payment.amount_minor FROM payment_attempts payment
+			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
+			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
+			                  payment.id DESC LIMIT 1) AS payment_amount_minor,
+			        (SELECT payment.currency FROM payment_attempts payment
+			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
+			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
+			                  payment.id DESC LIMIT 1) AS payment_currency,
+			        (SELECT payment.currency_decimals FROM payment_attempts payment
+			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
+			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
+			                  payment.id DESC LIMIT 1) AS payment_currency_decimals,
+			        (SELECT wallet.balance_after_minor FROM wallet_entries wallet
+			         WHERE wallet.source_type = 'shop_order' AND wallet.source_id = orders.id
+			          AND wallet.direction = 'debit'
+			         ORDER BY wallet.created_at DESC, wallet.id DESC LIMIT 1)
+			         AS wallet_balance_after_minor,
+			        (SELECT COUNT(*) FROM supplier_api_orders internal_order
+			         WHERE internal_order.shop_order_id = orders.id) AS internal_supply_count,
+			        (SELECT internal_order.downstream_order_no FROM supplier_api_orders internal_order
+			         WHERE internal_order.shop_order_id = orders.id LIMIT 1) AS downstream_order_no
 			 FROM outbox_events event
 			 JOIN shop_orders orders ON orders.id = event.aggregate_id
 			 WHERE event.event_type = 'owner.sale_alert'
@@ -150,6 +233,57 @@ export function formatFeishuOwnerSaleAlert(
 		row.currency_decimals,
 		"zh-CN",
 	);
+	const cost =
+		row.cost_missing_count > 0
+			? "待核对"
+			: formatMinorAmountWithSymbol(
+					row.cost_total_minor,
+					row.currency,
+					row.currency_decimals,
+					"zh-CN",
+				);
+	const profit =
+		row.cost_missing_count > 0
+			? "待核对"
+			: formatMinorAmountWithSymbol(
+					(BigInt(row.total_minor) - BigInt(row.cost_total_minor)).toString(),
+					row.currency,
+					row.currency_decimals,
+					"zh-CN",
+				);
+	const walletPaid = row.wallet_balance_after_minor !== null;
+	const actualPaid = walletPaid
+		? amount
+		: row.payment_amount_minor && row.payment_currency
+			? formatMinorAmountWithSymbol(
+					row.payment_amount_minor,
+					row.payment_currency,
+					row.payment_currency_decimals ?? row.currency_decimals,
+					"zh-CN",
+				)
+			: amount;
+	let fee = walletPaid ? "¥0.00（无手续费）" : "待核对";
+	if (
+		row.payment_amount_minor !== null &&
+		row.payment_currency === row.currency &&
+		row.payment_currency_decimals === row.currency_decimals
+	) {
+		const feeMinor = BigInt(row.payment_amount_minor) - BigInt(row.total_minor);
+		fee = `${formatMinorAmountWithSymbol(
+			feeMinor > 0n ? feeMinor.toString() : "0",
+			row.currency,
+			row.currency_decimals,
+			"zh-CN",
+		)}（${feeMinor > 0n ? "用户承担" : "无手续费"}）`;
+	}
+	const walletRemaining = walletPaid
+		? formatMinorAmountWithSymbol(
+				row.wallet_balance_after_minor ?? "0",
+				row.currency,
+				row.currency_decimals,
+				"zh-CN",
+			)
+		: "不适用";
 	const remaining = balance
 		? `${formatMinorAmountWithSymbol(
 				balance.amountMinor,
@@ -161,11 +295,21 @@ export function formatFeishuOwnerSaleAlert(
 	const fulfillment =
 		row.supplier_failed_count > 0
 			? "自动交付异常"
-			: row.supplier_item_count > 0
+			: row.supplier_fulfilled_count > 0 || row.supplier_item_count > 0
 				? "自动交付完成"
 				: row.manual_item_count > 0
 					? "人工采购"
 					: "自动交付";
+	const cdkSource =
+		row.supplier_fulfilled_count > 0 && row.local_fulfilled_count > 0
+			? "混合：内置库存＋钱包额度下单"
+			: row.supplier_fulfilled_count > 0
+				? "钱包额度下单"
+				: row.local_fulfilled_count > 0
+					? "内置库存"
+					: row.manual_item_count > 0
+						? "人工采购"
+						: "待核对";
 	const time = new Intl.DateTimeFormat("zh-CN", {
 		timeZone: "Asia/Shanghai",
 		year: "numeric",
@@ -177,14 +321,32 @@ export function formatFeishuOwnerSaleAlert(
 	})
 		.format(now)
 		.replaceAll("/", "-");
+	const title =
+		row.internal_supply_count > 0
+			? "💰 老实人VIP内部供货单"
+			: "💰 老实人VIP新订单";
 	return [
-		"💰 老实人VIP新订单",
+		title,
 		`订单：${row.order_number}`,
+		...(row.downstream_order_no
+			? [`关联子站订单：${row.downstream_order_no}`]
+			: []),
+		`下单邮箱：${row.contact_email || "未填写"}`,
 		`商品：${row.items_summary}`,
-		`实收：${amount}`,
-		`支付：${row.payment_channel ?? "余额/无需支付"}`,
+		`商品售价：${amount}`,
+		`用户实际支付：${actualPaid}`,
+		`手续费：${fee}`,
+		`支付方式：${walletPaid ? "用户钱包" : (row.payment_channel ?? "无需支付")}`,
+		`用户钱包剩余额度：${walletRemaining}`,
+		`CDK来源：${cdkSource}`,
+		`我们的成本：${cost}`,
+		`${row.internal_supply_count > 0 ? "VIP供货层利润" : "我们的利润"}：${profit}`,
+		...(row.internal_supply_count > 0
+			? ["利润口径：已包含在lsrai.shop整单利润中，请勿重复相加"]
+			: []),
 		`交付：${fulfillment}`,
-		`Aisou剩余额度：${remaining}`,
+		`内置库存剩余：${row.local_stock_remaining_summary ?? "不适用"}`,
+		`采购钱包剩余额度：${remaining}`,
 		`时间：${time}（北京时间）`,
 	].join("\n");
 }
