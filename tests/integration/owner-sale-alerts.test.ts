@@ -43,8 +43,10 @@ describe("owner sale alerts", { timeout: 30_000 }, () => {
 		expect(messages).toHaveLength(1);
 		expect(messages[0]).toContain("💰 老实人VIP新订单");
 		expect(messages[0]).toContain("商品：ChatGPT会员 · Plus菲区 × 1");
-		expect(messages[0]).toContain("实收：¥119.00");
-		expect(messages[0]).toContain("Aisou剩余额度：¥467.00");
+		expect(messages[0]).toContain("商品售价：¥119.00");
+		expect(messages[0]).toContain("下单邮箱：未填写");
+		expect(messages[0]).toContain("CDK来源：人工采购");
+		expect(messages[0]).toContain("采购钱包剩余额度：¥467.00");
 		await expect(
 			publishPendingOwnerSaleAlerts({
 				db,
@@ -99,7 +101,63 @@ describe("owner sale alerts", { timeout: 30_000 }, () => {
 			}),
 		).resolves.toEqual({ scanned: 1, sent: 1, deferred: 0, failed: 0 });
 		expect(messages[0]).toContain("交付：自动交付完成");
-		expect(messages[0]).toContain("Aisou剩余额度：¥385.00");
+		expect(messages[0]).toContain("CDK来源：钱包额度下单");
+		expect(messages[0]).toContain("采购钱包剩余额度：¥385.00");
+	});
+
+	it("uses the order wallet ledger and allocated stock instead of current mutable state", async () => {
+		const messages: string[] = [];
+		await db.batch([
+			db.prepare(
+				`INSERT INTO users
+				 (id, name, email, email_verified, preferred_locale, enabled,
+				  balance_minor, balance_version, role_ids, created_at, updated_at)
+				 VALUES ('wallet-user', 'Wallet User', 'wallet@example.com', 1, 'zh-CN', 1,
+				  '111', 2, '[]', 1, 2)`,
+			),
+			db.prepare(
+				`UPDATE shop_orders SET user_id='wallet-user', contact_email='wallet@example.com'
+				 WHERE id='order'`,
+			),
+			db.prepare(
+				`INSERT INTO wallet_entries
+				 (id, user_id, direction, amount_minor, balance_before_minor,
+				  balance_after_minor, currency, source_type, source_id,
+				  idempotency_key, created_at)
+				 VALUES ('wallet-order', 'wallet-user', 'debit', '11900', '12899',
+				  '999', 'CNY', 'shop_order', 'order', 'wallet-order:order', 1)`,
+			),
+			db.prepare(
+				`UPDATE product_sellable_items SET fulfillment_source='local',
+				 cost_minor='11500' WHERE id='sellable'`,
+			),
+			db.prepare(
+				`UPDATE shop_order_items SET unit_cost_minor='11500' WHERE id='item'`,
+			),
+			db.prepare(
+				`INSERT INTO stock_entries
+				 (id, sellable_item_id, content_encrypted, key_version,
+				  content_fingerprint, content_mask, status, order_item_id,
+				  unit_cost_minor, created_at, updated_at)
+				 VALUES ('allocated-stock', 'sellable', 'ciphertext', 1,
+				  'fingerprint', '••••1234', 'delivered', 'item', '11500', 1, 1)`,
+			),
+		]);
+		await publishPendingOwnerSaleAlerts({
+			db,
+			readBalance: async () => null,
+			deliver: async (text) => {
+				messages.push(text);
+			},
+		});
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toContain("下单邮箱：wallet@example.com");
+		expect(messages[0]).toContain("支付方式：用户钱包");
+		expect(messages[0]).toContain("用户钱包剩余额度：¥9.99");
+		expect(messages[0]).not.toContain("¥1.11");
+		expect(messages[0]).toContain("CDK来源：内置库存");
+		expect(messages[0]).toContain("我们的成本：¥115.00");
+		expect(messages[0]).toContain("我们的利润：¥4.00");
 	});
 });
 
@@ -111,12 +169,24 @@ it("formats cached balances explicitly", () => {
 			currency: "CNY",
 			currency_decimals: 2,
 			total_minor: "4000",
+			contact_email: "buyer@example.com",
 			items_summary: "Grok会员 · SuperGrok 3个月 × 1",
+			cost_total_minor: "3300",
+			cost_missing_count: 0,
+			local_fulfilled_count: 1,
+			supplier_fulfilled_count: 0,
+			local_stock_remaining_summary: "SuperGrok 3个月 2",
 			supplier_item_count: 0,
 			manual_item_count: 1,
 			supplier_pending_count: 0,
 			supplier_failed_count: 0,
 			payment_channel: "支付宝",
+			payment_amount_minor: "4167",
+			payment_currency: "CNY",
+			payment_currency_decimals: 2,
+			wallet_balance_after_minor: null,
+			internal_supply_count: 1,
+			downstream_order_no: "DJ-INTERNAL-1",
 		},
 		{
 			amountMinor: "50000",
@@ -125,7 +195,14 @@ it("formats cached balances explicitly", () => {
 			fresh: false,
 		},
 	);
-	expect(text).toContain("Aisou剩余额度：¥500.00（缓存）");
+	expect(text).toContain("用户实际支付：¥41.67");
+	expect(text).toContain("手续费：¥1.67（用户承担）");
+	expect(text).toContain("CDK来源：内置库存");
+	expect(text).toContain("💰 老实人VIP内部供货单");
+	expect(text).toContain("关联子站订单：DJ-INTERNAL-1");
+	expect(text).toContain("VIP供货层利润：¥7.00");
+	expect(text).toContain("请勿重复相加");
+	expect(text).toContain("采购钱包剩余额度：¥500.00（缓存）");
 });
 
 async function seedSale(db: D1Database) {
