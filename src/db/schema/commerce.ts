@@ -1454,6 +1454,9 @@ export const stockEntries = sqliteTable(
 			.default("available"),
 		orderItemId: text("order_item_id").references(() => shopOrderItems.id),
 		supplierOrderId: text("supplier_order_id"),
+		procurementSource: text("procurement_source"),
+		procurementRequestRef: text("procurement_request_ref"),
+		unitCostMinor: text("unit_cost_minor"),
 		note: text("note"),
 		reservedAt: integer("reserved_at", { mode: "timestamp_ms" }),
 		deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
@@ -1472,7 +1475,17 @@ export const stockEntries = sqliteTable(
 		),
 		index("stock_entries_order_item_idx").on(table.orderItemId),
 		index("stock_entries_supplier_order_idx").on(table.supplierOrderId),
+		index("stock_entries_procurement_status_idx").on(
+			table.procurementSource,
+			table.sellableItemId,
+			table.status,
+			table.createdAt,
+		),
 		check("stock_entries_key_version_check", sql`${table.keyVersion} > 0`),
+		check(
+			"stock_entries_unit_cost_check",
+			sql`${table.unitCostMinor} IS NULL OR (${moneyCheck(table.unitCostMinor)})`,
+		),
 	],
 );
 

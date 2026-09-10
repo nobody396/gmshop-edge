@@ -24,6 +24,7 @@ import { Route as AdminDeliveryRouteImport } from './routes/admin/delivery'
 import { Route as AdminCouponsRouteImport } from './routes/admin/coupons'
 import { Route as AdminAutomationRouteImport } from './routes/admin/automation'
 import { Route as AdminAuthRouteImport } from './routes/admin/auth'
+import { Route as AdminAisouInventoryRouteImport } from './routes/admin/aisou-inventory'
 import { Route as publicStatusRouteImport } from './routes/(public)/status'
 import { Route as publicMeRouteImport } from './routes/(public)/me'
 import { Route as publicCartRouteImport } from './routes/(public)/cart'
@@ -190,6 +191,11 @@ const AdminAutomationRoute = AdminAutomationRouteImport.update({
 const AdminAuthRoute = AdminAuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAisouInventoryRoute = AdminAisouInventoryRouteImport.update({
+  id: '/aisou-inventory',
+  path: '/aisou-inventory',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const publicStatusRoute = publicStatusRouteImport.update({
@@ -708,6 +714,7 @@ export interface FileRoutesByFullPath {
   '/cart': typeof publicCartRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
+  '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
@@ -808,6 +815,7 @@ export interface FileRoutesByTo {
   '/cart': typeof publicCartRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
+  '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
@@ -918,6 +926,7 @@ export interface FileRoutesById {
   '/(public)/cart': typeof publicCartRoute
   '/(public)/me': typeof publicMeRoute
   '/(public)/status': typeof publicStatusRoute
+  '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
@@ -1028,6 +1037,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/me'
     | '/status'
+    | '/admin/aisou-inventory'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
@@ -1128,6 +1138,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/me'
     | '/status'
+    | '/admin/aisou-inventory'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
@@ -1237,6 +1248,7 @@ export interface FileRouteTypes {
     | '/(public)/cart'
     | '/(public)/me'
     | '/(public)/status'
+    | '/admin/aisou-inventory'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
@@ -1464,6 +1476,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/admin/auth'
       preLoaderRoute: typeof AdminAuthRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/aisou-inventory': {
+      id: '/admin/aisou-inventory'
+      path: '/aisou-inventory'
+      fullPath: '/admin/aisou-inventory'
+      preLoaderRoute: typeof AdminAisouInventoryRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/(public)/status': {
@@ -2348,6 +2367,7 @@ interface AdminRouteRouteChildren {
   AdminProductsRouteRoute: typeof AdminProductsRouteRouteWithChildren
   AdminSettingsRouteRoute: typeof AdminSettingsRouteRouteWithChildren
   AdminSuppliersRouteRoute: typeof AdminSuppliersRouteRouteWithChildren
+  AdminAisouInventoryRoute: typeof AdminAisouInventoryRoute
   AdminAuthRoute: typeof AdminAuthRoute
   AdminAutomationRoute: typeof AdminAutomationRoute
   AdminCouponsRoute: typeof AdminCouponsRoute
@@ -2365,6 +2385,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminProductsRouteRoute: AdminProductsRouteRouteWithChildren,
   AdminSettingsRouteRoute: AdminSettingsRouteRouteWithChildren,
   AdminSuppliersRouteRoute: AdminSuppliersRouteRouteWithChildren,
+  AdminAisouInventoryRoute: AdminAisouInventoryRoute,
   AdminAuthRoute: AdminAuthRoute,
   AdminAutomationRoute: AdminAutomationRoute,
   AdminCouponsRoute: AdminCouponsRoute,

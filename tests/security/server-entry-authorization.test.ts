@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, "../..");
 const adminServerModules = [
 	"src/features/access/server/admin.ts",
 	"src/features/auth/server/provider-admin.ts",
+	"src/features/aisou-inventory/server/admin.ts",
 	"src/features/builds/server/admin.ts",
 	"src/features/builds/server/center.ts",
 	"src/features/catalog/server/admin.ts",
