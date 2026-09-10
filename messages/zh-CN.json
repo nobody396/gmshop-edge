@@ -1819,7 +1819,6 @@
 	"aisou_inventory_import": "AISOU 快速补货",
 	"aisou_inventory_quick_restock_short": "快速补货",
 	"aisou_inventory_import_result": "成功入库 {imported} 张，重复 {duplicates} 张",
-	"aisou_inventory_target_item": "目标商品规格",
 	"aisou_inventory_cards": "AISOU 卡密",
 	"aisou_inventory_cards_description": "每行一张，最多 90 张。卡密加密保存，结果不会回显原文。",
 	"aisou_inventory_pool_notice": "这里只统计 AISOU 批量采购的自有卡。所有卡只进入主站库存，代理站和子站共享同一库存；AISOU 在线库存与余额不相加。",
