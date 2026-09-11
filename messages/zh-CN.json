@@ -788,7 +788,7 @@
 	"store_chatgpt_region_intro": "主要区别是充值渠道、可选套餐和能否覆盖现有订阅，不是同档位的“正版/盗版”区别。实际会员权益与额度以充值完成后的 ChatGPT 官方账户页面为准。",
 	"store_chatgpt_region_ph_title": "菲区充值",
 	"store_chatgpt_region_ph_description": "适合当前订阅已经到期、希望优先考虑价格的账号。",
-	"store_chatgpt_region_ph_plan": "当前提供 ChatGPT Plus 1个月、ChatGPT Pro 20X 1个月。",
+	"store_chatgpt_region_ph_plan": "当前提供 ChatGPT Plus 1个月、ChatGPT Pro 5X 1个月。",
 	"store_chatgpt_region_ph_coverage": "不支持覆盖已有订阅；下单前必须确认当前 Plus 或 Pro 已经到期。",
 	"store_chatgpt_region_ph_entry": "付款后订单会自动显示卡密和菲区充值入口，按页面提示提交账号信息。",
 	"store_chatgpt_region_us_title": "美区 iOS 充值",

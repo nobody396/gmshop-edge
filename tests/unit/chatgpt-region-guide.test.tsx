@@ -33,6 +33,8 @@ describe("ChatGPT region guide", () => {
 
 		const text = container.textContent ?? "";
 		expect(text).toContain("Philippines recharge");
+		expect(text).toContain("ChatGPT Pro 5X");
+		expect(text).not.toContain("ChatGPT Pro 20X");
 		expect(text).toContain("US iOS recharge");
 		expect(text).toContain("Cannot replace an active subscription");
 		expect(text).toContain("Supports replacement");
