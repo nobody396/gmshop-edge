@@ -1285,15 +1285,10 @@ function fulfillmentStatements(
 	const supplierStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "supplier";
-	const localFirst =
-		item.delivery_component_type === "stock" &&
-		item.fulfillment_source === "local" &&
-		supplierBindingReady(item);
 	const manualStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "manual";
-	const supplierFallback = supplierStock || localFirst;
-	if ((supplierStock || localFirst) && !supplierBindingReady(item))
+	if (supplierStock && !supplierBindingReady(item))
 		throw new DomainError(
 			"supplier_binding_unavailable",
 			409,
@@ -1301,7 +1296,7 @@ function fulfillmentStatements(
 		);
 	if (
 		item.delivery_component_type === "stock" &&
-		(item.fulfillment_source === "local" || supplierStock)
+		item.fulfillment_source === "local"
 	) {
 		statements.push(
 			db
@@ -1348,18 +1343,18 @@ function fulfillmentStatements(
 					manualStock,
 					item.id,
 					item.quantity,
-					supplierFallback,
+					supplierStock,
 					now,
 					manualStock,
 					item.id,
 					item.quantity,
-					supplierFallback,
+					supplierStock,
 					now,
 					now,
 					orderId,
 				),
 		);
-		if (supplierFallback) {
+		if (supplierStock) {
 			const totalCostMinor = (
 				BigInt(item.reference_cost_minor ?? "0") * BigInt(item.quantity)
 			).toString();
@@ -1480,7 +1475,7 @@ function fulfillmentStatements(
 				requireDownloadAsset: item.delivery_component_type === "download",
 			}),
 		);
-	if (!manualStock && supplierFallback)
+	if (!manualStock && supplierStock)
 		statements.push(
 			db
 				.prepare(

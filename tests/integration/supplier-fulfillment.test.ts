@@ -103,8 +103,11 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
-	it("uses staged local CDKs before the configured supplier", async () => {
+	it("uses staged local CDKs only in local mode", async () => {
 		await db.batch([
+			db.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source = 'local', supplier_status = NULL WHERE id = 'item'",
+			),
 			db.prepare(
 				`INSERT INTO stock_entries
 				 (id, sellable_item_id, content_encrypted, key_version,
@@ -132,14 +135,14 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
-	it("creates a supplier order when a local-first SKU has no owned CDKs", async () => {
+	it("fails closed instead of buying when local mode has no owned CDKs", async () => {
 		await db
 			.prepare(
 				"UPDATE product_sellable_items SET fulfillment_source = 'local', supplier_status = NULL WHERE id = 'item'",
 			)
 			.run();
 		await completeFreeStoreOrder(db, "order");
-		const fallback = await db
+		const localOnly = await db
 			.prepare(
 				`SELECT delivery.status,
 				 (SELECT COUNT(*) FROM supplier_orders WHERE order_id = 'order') AS supplier_orders,
@@ -148,11 +151,41 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 				 FROM delivery_records delivery WHERE delivery.order_item_id = 'order-item'`,
 			)
 			.first<Record<string, unknown>>();
-		expect(fallback).toMatchObject({
+		expect(localOnly).toMatchObject({
+			status: "failed",
+			supplier_orders: 0,
+			supplier_events: 0,
+			delivery_events: 1,
+		});
+	});
+
+	it("buys directly from the supplier without consuming staged local CDKs", async () => {
+		await db
+			.prepare(
+				`INSERT INTO stock_entries
+			 (id, sellable_item_id, content_encrypted, key_version,
+			  content_fingerprint, content_mask, status, created_at, updated_at)
+			 VALUES ('owned-1', 'item', 'ciphertext-1', 1,
+			  'owned-fingerprint-1', '•••0001', 'available', 1, 1)`,
+			)
+			.run();
+		await completeFreeStoreOrder(db, "order");
+		const supplierOnly = await db
+			.prepare(
+				`SELECT delivery.status,
+				 (SELECT COUNT(*) FROM stock_entries WHERE status = 'available') AS available,
+				 (SELECT COUNT(*) FROM stock_entries WHERE order_item_id = 'order-item') AS reserved,
+				 (SELECT COUNT(*) FROM supplier_orders WHERE order_id = 'order') AS supplier_orders,
+				 (SELECT COUNT(*) FROM outbox_events WHERE event_type = 'supplier.requested') AS supplier_events
+				 FROM delivery_records delivery WHERE delivery.order_item_id = 'order-item'`,
+			)
+			.first<Record<string, unknown>>();
+		expect(supplierOnly).toMatchObject({
 			status: "awaiting_supply",
+			available: 1,
+			reserved: 0,
 			supplier_orders: 1,
 			supplier_events: 1,
-			delivery_events: 0,
 		});
 	});
 
