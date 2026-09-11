@@ -1,3 +1,4 @@
+import { paymentProcessingFeeAmount } from "#/features/shop-payments/fees";
 import {
 	adapterForSupplierAccount,
 	type SupplierAccountRuntimeRow,
@@ -39,6 +40,8 @@ type SaleAlertRow = {
 	payment_amount_minor: string | null;
 	payment_currency: string | null;
 	payment_currency_decimals: number | null;
+	payment_fee_bps: number | null;
+	payment_fixed_fee_minor: string | null;
 	wallet_balance_after_minor: string | null;
 	internal_supply_count: number;
 	downstream_order_no: string | null;
@@ -158,6 +161,16 @@ export async function publishPendingOwnerSaleAlerts(input: {
 			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
 			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
 			                  payment.id DESC LIMIT 1) AS payment_currency_decimals,
+			        (SELECT channel.fee_bps FROM payment_attempts payment
+			         JOIN payment_channels channel ON channel.id = payment.channel_id
+			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
+			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
+			                  payment.id DESC LIMIT 1) AS payment_fee_bps,
+			        (SELECT channel.fixed_fee_minor FROM payment_attempts payment
+			         JOIN payment_channels channel ON channel.id = payment.channel_id
+			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
+			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
+			                  payment.id DESC LIMIT 1) AS payment_fixed_fee_minor,
 			        (SELECT wallet.balance_after_minor FROM wallet_entries wallet
 			         WHERE wallet.source_type = 'shop_order' AND wallet.source_id = orders.id
 			          AND wallet.direction = 'debit'
@@ -242,15 +255,6 @@ export function formatFeishuOwnerSaleAlert(
 					row.currency_decimals,
 					"zh-CN",
 				);
-	const profit =
-		row.cost_missing_count > 0
-			? "待核对"
-			: formatMinorAmountWithSymbol(
-					(BigInt(row.total_minor) - BigInt(row.cost_total_minor)).toString(),
-					row.currency,
-					row.currency_decimals,
-					"zh-CN",
-				);
 	const walletPaid = row.wallet_balance_after_minor !== null;
 	const actualPaid = walletPaid
 		? amount
@@ -263,19 +267,47 @@ export function formatFeishuOwnerSaleAlert(
 				)
 			: amount;
 	let fee = walletPaid ? "¥0.00（无手续费）" : "待核对";
+	let netRevenueMinor = BigInt(row.total_minor);
 	if (
 		row.payment_amount_minor !== null &&
 		row.payment_currency === row.currency &&
 		row.payment_currency_decimals === row.currency_decimals
 	) {
-		const feeMinor = BigInt(row.payment_amount_minor) - BigInt(row.total_minor);
+		const paymentMinor = BigInt(row.payment_amount_minor);
+		const feeMinor = BigInt(
+			paymentProcessingFeeAmount(
+				row.payment_amount_minor,
+				row.payment_fee_bps ?? 0,
+				row.payment_fixed_fee_minor ?? "0",
+			),
+		);
+		const surchargeMinor = paymentMinor - BigInt(row.total_minor);
+		const customerCoveredFeeMinor = surchargeMinor > 0n ? surchargeMinor : 0n;
+		const bearer =
+			feeMinor === 0n
+				? "无手续费"
+				: customerCoveredFeeMinor >= feeMinor
+					? "用户承担"
+					: customerCoveredFeeMinor === 0n
+						? "我们承担"
+						: "用户和我们共同承担";
 		fee = `${formatMinorAmountWithSymbol(
-			feeMinor > 0n ? feeMinor.toString() : "0",
+			feeMinor.toString(),
 			row.currency,
 			row.currency_decimals,
 			"zh-CN",
-		)}（${feeMinor > 0n ? "用户承担" : "无手续费"}）`;
+		)}（${bearer}）`;
+		netRevenueMinor = paymentMinor - feeMinor;
 	}
+	const profit =
+		row.cost_missing_count > 0
+			? "待核对"
+			: formatMinorAmountWithSymbol(
+					(netRevenueMinor - BigInt(row.cost_total_minor)).toString(),
+					row.currency,
+					row.currency_decimals,
+					"zh-CN",
+				);
 	const walletRemaining = walletPaid
 		? formatMinorAmountWithSymbol(
 				row.wallet_balance_after_minor ?? "0",
