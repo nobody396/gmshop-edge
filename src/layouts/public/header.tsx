@@ -3,10 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+	ChevronDown,
 	ChevronRight,
 	ExternalLink,
 	Headphones,
 	MessageCircle,
+	QrCode,
 	Send,
 	Settings,
 	ShoppingCart,
@@ -16,6 +18,11 @@ import {
 import { type ComponentProps, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import { Button } from "#/components/ui/button";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "#/components/ui/collapsible";
 import {
 	Popover,
 	PopoverContent,
@@ -128,6 +135,7 @@ export function DeliveryTicker() {
 
 const telegramSupportUrl = "https://t.me/laoshirenai_support_bot";
 const telegramGroupUrl = "https://t.me/laoshirengroup";
+const wechatQrUrl = "/support/wechat-jerrys.png";
 
 function CustomerSupport() {
 	const [open, setOpen] = useState(false);
@@ -167,6 +175,38 @@ function CustomerSupport() {
 					icon={Send}
 					label={m.store_support_private()}
 				/>
+				<Collapsible className="group/wechat mx-1 my-1 rounded-2xl border bg-muted/30">
+					<CollapsibleTrigger className="flex w-full items-center gap-3 rounded-2xl p-3 text-start transition-colors hover:bg-muted">
+						<span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+							<QrCode className="size-4" />
+						</span>
+						<span className="min-w-0 flex-1">
+							<span className="block font-medium text-sm">
+								{m.store_support_wechat()}
+							</span>
+							<span className="block text-muted-foreground text-xs">
+								{m.store_support_wechat_description()}
+							</span>
+						</span>
+						<ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]/wechat:rotate-180" />
+					</CollapsibleTrigger>
+					<CollapsibleContent className="px-3 pb-3">
+						<a
+							className="block rounded-xl bg-white p-2 shadow-sm ring-1 ring-black/5 transition-transform hover:scale-[1.01]"
+							href={wechatQrUrl}
+							rel="noreferrer"
+							target="_blank"
+						>
+							<img
+								alt={m.store_support_wechat_qr_alt()}
+								className="mx-auto h-auto w-44 max-w-full"
+								height={620}
+								src={wechatQrUrl}
+								width={613}
+							/>
+						</a>
+					</CollapsibleContent>
+				</Collapsible>
 			</PopoverContent>
 		</Popover>
 	);
