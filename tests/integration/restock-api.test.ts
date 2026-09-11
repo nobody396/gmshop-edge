@@ -128,6 +128,38 @@ describe("restock API", () => {
 		).toEqual({ total: 1 });
 	});
 
+	it("uses persisted request rows when D1 batch metadata reports zero changes", async () => {
+		const maskedChangesDb = {
+			prepare: db.prepare.bind(db),
+			batch: async (statements: D1PreparedStatement[]) =>
+				(await db.batch(statements)).map((result) => ({
+					...result,
+					meta: { ...result.meta, changes: 0 },
+				})),
+			exec: db.exec.bind(db),
+			dump: db.dump.bind(db),
+		} as D1Database;
+		const response = await handleRestockApiRequest(
+			new Request("https://shop.example/api/ops/restock", {
+				method: "POST",
+				body: JSON.stringify(payload()),
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"content-type": "application/json",
+				},
+			}),
+			{ DB: maskedChangesDb, RESTOCK_API_TOKEN: token },
+		);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			ok: true,
+			idempotent: false,
+			imported: 1,
+			duplicates: 0,
+			counts: { available: 1 },
+		});
+	});
+
 	it("rejects a missing recharge URL and conflicting request reference", async () => {
 		const missing = await request("POST", {
 			...payload(),

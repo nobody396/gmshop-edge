@@ -417,7 +417,7 @@ export async function importRestockBatch(
 	]
 		.filter(Boolean)
 		.join("; ");
-	const results = await db.batch([
+	await db.batch([
 		db
 			.prepare(
 				`INSERT INTO replay_receipts
@@ -479,11 +479,24 @@ export async function importRestockBatch(
 				now,
 			),
 	]);
-	const stockResults = results.slice(1, 1 + prepared.length);
-	const imported = stockResults.reduce(
-		(total, result) => total + Number(result.meta.changes ?? 0),
-		0,
-	);
+	// Cloudflare D1 may report `meta.changes = 0` for successful statements in a
+	// batch. The rows themselves are authoritative, and every imported row is
+	// stamped with this request reference. Count those rows instead of deriving
+	// success from transport metadata, otherwise a successful restock is exposed
+	// as a historical-duplicate failure to the operator.
+	const importedRow = await db
+		.prepare(
+			`SELECT COUNT(*) AS total FROM stock_entries
+			 WHERE sellable_item_id = ? AND procurement_request_ref = ?
+			 AND content_fingerprint IN (${prepared.map(() => "?").join(", ")})`,
+		)
+		.bind(
+			inventory.componentId,
+			data.requestRef,
+			...prepared.map((item) => item.fingerprint),
+		)
+		.first<{ total: number }>();
+	const imported = Number(importedRow?.total ?? 0);
 	const counts = await inventoryCounts(db, inventory.componentId);
 	return {
 		ok: true,
