@@ -184,6 +184,8 @@ it("formats cached balances explicitly", () => {
 			payment_amount_minor: "4167",
 			payment_currency: "CNY",
 			payment_currency_decimals: 2,
+			payment_fee_bps: 400,
+			payment_fixed_fee_minor: "0",
 			wallet_balance_after_minor: null,
 			internal_supply_count: 1,
 			downstream_order_no: "DJ-INTERNAL-1",
@@ -203,6 +205,42 @@ it("formats cached balances explicitly", () => {
 	expect(text).toContain("VIP供货层利润：¥7.00");
 	expect(text).toContain("请勿重复相加");
 	expect(text).toContain("采购钱包剩余额度：¥500.00（缓存）");
+});
+
+it("subtracts a seller-borne channel fee from owner profit", () => {
+	const text = formatFeishuOwnerSaleAlert(
+		{
+			order_number: "GMSELLERFEE",
+			order_status: "completed",
+			currency: "CNY",
+			currency_decimals: 2,
+			total_minor: "4500",
+			contact_email: "buyer@example.com",
+			items_summary: "ChatGPT 会员充值 · ChatGPT Go 1个月 × 1",
+			cost_total_minor: "3500",
+			cost_missing_count: 0,
+			local_fulfilled_count: 0,
+			supplier_fulfilled_count: 1,
+			local_stock_remaining_summary: "ChatGPT Go 1个月 48",
+			supplier_item_count: 1,
+			manual_item_count: 0,
+			supplier_pending_count: 0,
+			supplier_failed_count: 0,
+			payment_channel: "支付宝",
+			payment_amount_minor: "4500",
+			payment_currency: "CNY",
+			payment_currency_decimals: 2,
+			payment_fee_bps: 160,
+			payment_fixed_fee_minor: "0",
+			wallet_balance_after_minor: null,
+			internal_supply_count: 0,
+			downstream_order_no: null,
+		},
+		null,
+	);
+	expect(text).toContain("用户实际支付：¥45.00");
+	expect(text).toContain("手续费：¥0.72（我们承担）");
+	expect(text).toContain("我们的利润：¥9.28");
 });
 
 async function seedSale(db: D1Database) {

@@ -28,3 +28,21 @@ export function paymentSurchargeAmount(
 		BigInt(amountMinor)
 	).toString();
 }
+
+export function paymentProcessingFeeAmount(
+	amountMinor: string,
+	feeBps: number,
+	fixedFeeMinor: string,
+) {
+	const amount = BigInt(amountMinor);
+	const fixed = BigInt(fixedFeeMinor);
+	if (feeBps < 0 || feeBps >= 10_000 || amount < 0n || fixed < 0n)
+		throw new DomainError(
+			"payment_channel_fee_invalid",
+			500,
+			"Payment channel fee configuration is invalid",
+		);
+	const proportional =
+		(amount * BigInt(feeBps) + (feeBps > 0 ? 9_999n : 0n)) / 10_000n;
+	return (proportional + fixed).toString();
+}

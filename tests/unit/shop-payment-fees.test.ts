@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	grossUpPaymentAmount,
+	paymentProcessingFeeAmount,
 	paymentSurchargeAmount,
 } from "#/features/shop-payments/fees";
 
@@ -13,5 +14,10 @@ describe("payment channel fees", () => {
 	it("rounds the payable amount upward in minor units", () => {
 		expect(grossUpPaymentAmount("1990", 300, "0")).toBe("2052");
 		expect(paymentSurchargeAmount("1990", 300, "0")).toBe("62");
+	});
+
+	it("calculates the processing fee withheld from a fixed channel price", () => {
+		expect(paymentProcessingFeeAmount("4500", 160, "0")).toBe("72");
+		expect(paymentProcessingFeeAmount("4167", 400, "0")).toBe("167");
 	});
 });
