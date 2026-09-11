@@ -126,7 +126,7 @@ describe("public header settings", () => {
 		expect(invoice?.textContent).toContain("Invoice");
 	});
 
-	it("shows group and private Telegram links with WeChat collapsed by default", () => {
+	it("shows online and Telegram support without a personal contact QR", () => {
 		act(() => root.render(<PublicHeader />));
 		const support = Array.from(container.querySelectorAll("button")).find(
 			(button) => button.textContent?.includes("store_support"),
@@ -158,15 +158,8 @@ describe("public header settings", () => {
 			document.body.textContent?.indexOf("store_support_private") ?? -1,
 		);
 
-		const wechat = Array.from(document.querySelectorAll("button")).find(
-			(button) => button.textContent?.includes("store_support_wechat"),
-		);
-		act(() => wechat?.click());
-		expect(
-			document.querySelector(
-				'img[src="/support/wechat-jerrys.png"][alt="store_support_wechat_qr_alt"]',
-			),
-		).not.toBeNull();
+		expect(document.body.textContent).not.toContain("store_support_wechat");
+		expect(document.body.innerHTML).not.toContain("wechat-jerrys.png");
 	});
 
 	it("shows the delivery notice as an accessible ticker", () => {
