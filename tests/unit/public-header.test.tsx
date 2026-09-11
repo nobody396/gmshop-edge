@@ -126,7 +126,7 @@ describe("public header settings", () => {
 		expect(invoice?.textContent).toContain("Invoice");
 	});
 
-	it("shows online and Telegram support without a personal contact QR", () => {
+	it("shows online, Telegram, and an on-demand WeChat QR", () => {
 		act(() => root.render(<PublicHeader />));
 		const support = Array.from(container.querySelectorAll("button")).find(
 			(button) => button.textContent?.includes("store_support"),
@@ -158,8 +158,16 @@ describe("public header settings", () => {
 			document.body.textContent?.indexOf("store_support_private") ?? -1,
 		);
 
-		expect(document.body.textContent).not.toContain("store_support_wechat");
-		expect(document.body.innerHTML).not.toContain("wechat-jerrys.png");
+		const wechat = Array.from(document.querySelectorAll("button")).find(
+			(button) => button.textContent?.includes("store_support_wechat"),
+		);
+		expect(wechat).toBeDefined();
+		act(() => wechat?.click());
+		expect(
+			document.querySelector(
+				'img[src="/support/wechat-jerrys.png"][alt="store_support_wechat_qr_alt"]',
+			),
+		).not.toBeNull();
 	});
 
 	it("shows the delivery notice as an accessible ticker", () => {
