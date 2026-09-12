@@ -7,11 +7,14 @@ const source = (path: string) =>
 describe("storefront account-required purchase guidance", () => {
 	it("shows the shared Alipay fee notice on every product page", () => {
 		const product = source("src/features/storefront/pages/product.tsx");
+		const catalog = source("src/features/storefront/server/catalog.ts");
 
 		expect(product).toContain("m.store_alipay_fee_notice()");
 		expect(product).toContain("BadgePercent");
 		expect(product).toContain("sellableItem.channelPrices.length > 0");
 		expect(product).toContain("m.store_payment_prices_title()");
+		expect(catalog).toContain("channelPrices.length === 1");
+		expect(catalog).toContain("channelPrices[0]?.price_minor");
 	});
 
 	it("highlights the Claude iOS channel and warranty boundary", () => {

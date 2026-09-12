@@ -313,12 +313,16 @@ function presentSellableItem(
 	// Never expose the internal supplier/local routing decision in the catalog.
 	const publicFulfillmentSource =
 		row.fulfillment_source === "manual" ? "manual" : "local";
+	const priceMinor =
+		channelPrices.length === 1
+			? (channelPrices[0]?.price_minor ?? String(row.price_minor))
+			: String(row.price_minor);
 	return {
 		id: String(row.id),
 		name: localized.name,
 		listPriceMinor:
 			row.list_price_minor == null ? null : String(row.list_price_minor),
-		priceMinor: String(row.price_minor),
+		priceMinor,
 		currency: String(row.currency),
 		currencyDecimals: Number(row.currency_decimals),
 		minimumQuantity: Number(row.minimum_quantity),
