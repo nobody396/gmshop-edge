@@ -106,7 +106,12 @@ describe("application security headers", () => {
 				"private, no-store",
 			);
 		}
-		for (const path of ["/", "/favicon.ico", "/robots.txt"]) {
+		const storefront = applySecurityHeaders(
+			new Request("https://pay.example/"),
+			new Response("ok"),
+		);
+		expect(storefront.headers.get("cache-control")).toBe("private, no-store");
+		for (const path of ["/favicon.ico", "/robots.txt"]) {
 			const response = applySecurityHeaders(
 				new Request(`https://pay.example${path}`),
 				new Response("ok"),
