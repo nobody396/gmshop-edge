@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { buildDefinitionListSchema } from "#/features/builds/schema";
 import {
@@ -12,6 +13,10 @@ import {
 	localizeProduct,
 	localizeSellableItem,
 } from "../catalog-localizations";
+import {
+	paymentChannelIsVisible,
+	requestIsFromMainlandChina,
+} from "./payment-region";
 import { selectStorefrontProductRow } from "./product-query";
 import { storefrontStockExpression } from "./stock-availability";
 
@@ -30,7 +35,9 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 		storefrontCatalogSchema.parse(input),
 	)
 	.handler(async ({ data }) => {
-		const db = getDb().$client;
+		const request = getRequest();
+		const db = getDb(request).$client;
+		const mainlandChina = requestIsFromMainlandChina(request);
 		const search = data.search ? `%${data.search}%` : null;
 		const filters = ["p.status = 'active'"];
 		const bindings: string[] = [];
@@ -51,8 +58,12 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 		const orderBy = {
 			featured: "p.sort_order, p.created_at DESC, p.id",
 			newest: "p.created_at DESC, p.id DESC",
-			price_asc: "length(s.price_minor), s.price_minor, p.id",
-			price_desc: "length(max_price_minor) DESC, max_price_minor DESC, p.id",
+			price_asc: mainlandChina
+				? "length(COALESCE(mainland_min_price_minor, s.price_minor)), COALESCE(mainland_min_price_minor, s.price_minor), p.id"
+				: "length(s.price_minor), s.price_minor, p.id",
+			price_desc: mainlandChina
+				? "length(COALESCE(mainland_max_price_minor, max_price_minor)) DESC, COALESCE(mainland_max_price_minor, max_price_minor) DESC, p.id"
+				: "length(max_price_minor) DESC, max_price_minor DESC, p.id",
 			popular: "sales_count DESC, p.created_at DESC, p.id",
 		}[data.sort];
 		const [tags, products] = await db.batch([
@@ -67,6 +78,32 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			 p.cover_object_key, p.updated_at,
 			 p.tag_names AS tags_json,
 			 s.id AS sellable_item_id, s.price_minor, s.list_price_minor, s.currency, s.currency_decimals,
+			 (SELECT COALESCE(channel_price.price_minor, priced_item.price_minor)
+			  FROM product_sellable_items priced_item
+			  CROSS JOIN payment_channels price_channel
+			  LEFT JOIN sellable_item_channel_prices channel_price
+			   ON channel_price.sellable_item_id = priced_item.id
+			   AND channel_price.channel_id = price_channel.id
+			   AND channel_price.enabled = 1
+			  WHERE priced_item.product_id = p.id AND priced_item.enabled = 1
+			   AND price_channel.enabled = 1
+			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap')
+			  ORDER BY length(COALESCE(channel_price.price_minor, priced_item.price_minor)),
+			           COALESCE(channel_price.price_minor, priced_item.price_minor),
+			           priced_item.sort_order, priced_item.id LIMIT 1) AS mainland_min_price_minor,
+			 (SELECT COALESCE(channel_price.price_minor, priced_item.price_minor)
+			  FROM product_sellable_items priced_item
+			  CROSS JOIN payment_channels price_channel
+			  LEFT JOIN sellable_item_channel_prices channel_price
+			   ON channel_price.sellable_item_id = priced_item.id
+			   AND channel_price.channel_id = price_channel.id
+			   AND channel_price.enabled = 1
+			  WHERE priced_item.product_id = p.id AND priced_item.enabled = 1
+			   AND price_channel.enabled = 1
+			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap')
+			  ORDER BY length(COALESCE(channel_price.price_minor, priced_item.price_minor)) DESC,
+			           COALESCE(channel_price.price_minor, priced_item.price_minor) DESC,
+			           priced_item.sort_order, priced_item.id LIMIT 1) AS mainland_max_price_minor,
 				 (SELECT ps.price_minor FROM product_sellable_items ps
 			  WHERE ps.product_id = p.id AND ps.enabled = 1
 			  ORDER BY length(ps.price_minor) DESC, ps.price_minor DESC, ps.id LIMIT 1) AS max_price_minor,
@@ -121,8 +158,16 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 						? `/api/shop/products/${row.id}/cover?v=${row.updated_at}`
 						: null,
 					sellableItemId: String(row.sellable_item_id),
-					priceMinor: String(row.price_minor),
-					maxPriceMinor: String(row.max_price_minor),
+					priceMinor: String(
+						mainlandChina && row.mainland_min_price_minor != null
+							? row.mainland_min_price_minor
+							: row.price_minor,
+					),
+					maxPriceMinor: String(
+						mainlandChina && row.mainland_max_price_minor != null
+							? row.mainland_max_price_minor
+							: row.max_price_minor,
+					),
 					listPriceMinor:
 						row.list_price_minor == null ? null : String(row.list_price_minor),
 					currency: String(row.currency),
@@ -148,7 +193,8 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 		productIdSchema.parse(input),
 	)
 	.handler(async ({ data }) => {
-		const db = getDb().$client;
+		const request = getRequest();
+		const db = getDb(request).$client;
 		const product = await selectStorefrontProductRow(db, data.productId);
 		if (!product)
 			throw new DomainError("product_not_found", 404, "Product not found");
@@ -196,14 +242,16 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 					)
 					.bind(product.id),
 			]);
-		const channelPrices = rows(channelPricesResult) as Array<{
-			sellable_item_id: string;
-			id: string;
-			name: string;
-			provider: string;
-			fee_bps: number;
-			price_minor: string;
-		}>;
+		const channelPrices = (
+			rows(channelPricesResult) as Array<{
+				sellable_item_id: string;
+				id: string;
+				name: string;
+				provider: string;
+				fee_bps: number;
+				price_minor: string;
+			}>
+		).filter((channel) => paymentChannelIsVisible(request, channel));
 		const localizedProduct = localizeProduct(String(product.id), data.locale, {
 			name: String(product.name),
 			description:

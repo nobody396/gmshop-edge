@@ -10,7 +10,7 @@ describe("storefront account-required purchase guidance", () => {
 
 		expect(product).toContain("m.store_alipay_fee_notice()");
 		expect(product).toContain("BadgePercent");
-		expect(product).toContain("sellableItem.channelPrices.length > 1");
+		expect(product).toContain("sellableItem.channelPrices.length > 0");
 		expect(product).toContain("m.store_payment_prices_title()");
 	});
 
