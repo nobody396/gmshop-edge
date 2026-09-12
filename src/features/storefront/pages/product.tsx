@@ -782,7 +782,7 @@ function SellableItemSummary({ sellableItem }: { sellableItem: SellableItem }) {
 	const hasDiscount =
 		sellableItem.listPriceMinor != null &&
 		BigInt(sellableItem.listPriceMinor) > BigInt(sellableItem.priceMinor);
-	if (sellableItem.channelPrices.length > 1)
+	if (sellableItem.channelPrices.length > 0)
 		return (
 			<div>
 				<p className="font-medium text-muted-foreground text-sm">

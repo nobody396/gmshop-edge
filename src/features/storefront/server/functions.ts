@@ -25,6 +25,10 @@ import { resolveStoreAccount } from "./account";
 import { removeUserCartItems } from "./cart";
 import { createStoreOrder } from "./order";
 import { getStoreOrder } from "./order-query";
+import {
+	paymentChannelIsVisible,
+	requestIsFromMainlandChina,
+} from "./payment-region";
 
 export const createStoreOrderFn = createServerFn({ method: "POST" })
 	.validator((input: z.input<typeof createStoreOrderSchema>) =>
@@ -88,8 +92,9 @@ const checkoutPaymentChannelsSchema = z.object({
 export const listCheckoutPaymentChannelsFn = createServerFn({
 	method: "GET",
 }).handler(async () => {
+	const request = getRequest();
 	requireStorefrontPermission("guest", "catalog.read");
-	const rows = await getDb()
+	const rows = await getDb(request)
 		.$client.prepare(
 			`SELECT id, name, provider, fee_bps, fixed_fee_minor,
 			        logo_object_key, logo_updated_at
@@ -105,17 +110,19 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 			logo_object_key: string | null;
 			logo_updated_at: number | null;
 		}>();
-	return rows.results.map((channel) => ({
-		id: channel.id,
-		name: channel.name,
-		provider: channel.provider,
-		feeBps: channel.fee_bps,
-		fixedFeeMinor: channel.fixed_fee_minor,
-		logoUrl:
-			channel.logo_object_key && channel.logo_updated_at
-				? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
-				: null,
-	}));
+	return rows.results
+		.filter((channel) => paymentChannelIsVisible(request, channel))
+		.map((channel) => ({
+			id: channel.id,
+			name: channel.name,
+			provider: channel.provider,
+			feeBps: channel.fee_bps,
+			fixedFeeMinor: channel.fixed_fee_minor,
+			logoUrl:
+				channel.logo_object_key && channel.logo_updated_at
+					? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
+					: null,
+		}));
 });
 
 export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
@@ -123,8 +130,9 @@ export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
 		checkoutPaymentChannelsSchema.parse(input),
 	)
 	.handler(async ({ data }) => {
+		const request = getRequest();
 		requireStorefrontPermission("guest", "catalog.read");
-		const db = getDb().$client;
+		const db = getDb(request).$client;
 		const [channelsResult, pricesResult] = await db.batch([
 			db.prepare(
 				`SELECT id, name, provider, fee_bps, fixed_fee_minor,
@@ -162,22 +170,28 @@ export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
 			sellable_item_id: string;
 			price_minor: string;
 		}>;
-		return rows.map((channel) => ({
-			id: channel.id,
-			name: channel.name,
-			provider: channel.provider,
-			feeBps: channel.fee_bps,
-			fixedFeeMinor: channel.fixed_fee_minor,
-			logoUrl:
-				channel.logo_object_key && channel.logo_updated_at
-					? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
-					: null,
-			itemPrices: Object.fromEntries(
-				prices
-					.filter((price) => price.channel_id === channel.id)
-					.map((price) => [price.sellable_item_id, price.price_minor]),
-			),
-		}));
+		return rows
+			.filter((channel) => paymentChannelIsVisible(request, channel))
+			.map((channel) => ({
+				id: channel.id,
+				name: channel.name,
+				provider: channel.provider,
+				feeBps: channel.fee_bps,
+				fixedFeeMinor: channel.fixed_fee_minor,
+				logoUrl:
+					channel.logo_object_key && channel.logo_updated_at
+						? configurationLogoUrl(
+								"payment",
+								channel.id,
+								channel.logo_updated_at,
+							)
+						: null,
+				itemPrices: Object.fromEntries(
+					prices
+						.filter((price) => price.channel_id === channel.id)
+						.map((price) => [price.sellable_item_id, price.price_minor]),
+				),
+			}));
 	});
 
 export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
@@ -200,6 +214,20 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 						: account.user.email,
 				}
 			: data;
+		if (data.paymentChannelId && requestIsFromMainlandChina(request)) {
+			const channel = await db
+				.prepare(
+					"SELECT provider FROM payment_channels WHERE id = ? AND enabled = 1 LIMIT 1",
+				)
+				.bind(data.paymentChannelId)
+				.first<{ provider: string }>();
+			if (!channel || !paymentChannelIsVisible(request, channel))
+				throw new DomainError(
+					"payment_channel_unavailable",
+					404,
+					"Payment channel unavailable",
+				);
+		}
 		const order = await createStoreOrder(db, input, {
 			userId: account?.user.id,
 			identityEmail: account?.user.email,
