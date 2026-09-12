@@ -65,8 +65,7 @@ function responseCacheControl(request: Request) {
 	)
 		return "private, no-store";
 	if (routePath === "/status") return "no-store";
-	if (["", "/"].includes(routePath))
-		return "public, max-age=0, must-revalidate";
+	if (["", "/"].includes(routePath)) return "private, no-store";
 	if (
 		/^\/(?:apple-touch-icon\.png|favicon\.(?:ico|png)|pwa-(?:192x192|512x512|maskable-192x192|maskable-512x512)\.png|robots\.txt|site\.webmanifest)$/.test(
 			routePath,
