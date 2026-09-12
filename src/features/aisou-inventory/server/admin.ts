@@ -129,15 +129,14 @@ export async function importAisouInventory(
 		.prepare(
 			`SELECT item.id FROM product_sellable_items item
 				 JOIN products product ON product.id = item.product_id
-				 JOIN supplier_bindings binding ON binding.sellable_item_id = item.id
 				 WHERE item.id = ? AND item.enabled = 1 AND product.status = 'active'
-				  AND product.product_type = 'stock' AND binding.enabled = 1
-				  AND binding.provider = 'shared_stock'
-				  AND (item.fulfillment_source = 'local' OR EXISTS (
+				  AND product.product_type = 'stock'
+				  AND ((item.fulfillment_source = 'local' AND EXISTS (
+				   SELECT 1 FROM supplier_bindings binding
+				    WHERE binding.sellable_item_id = item.id AND binding.enabled = 1
+				     AND binding.provider = 'shared_stock')) OR EXISTS (
 				   SELECT 1 FROM stock_entries stock WHERE stock.sellable_item_id = item.id
-				    AND (stock.procurement_source = 'aisou'
-				     OR (stock.procurement_source IS NULL
-				      AND lower(coalesce(stock.note, '')) LIKE '%source=aisou%')))) LIMIT 1`,
+				    AND ${sourceCondition})) LIMIT 1`,
 		)
 		.bind(data.componentId)
 		.first<{ id: string }>();
