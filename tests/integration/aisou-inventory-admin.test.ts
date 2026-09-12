@@ -129,6 +129,66 @@ describe("AISOU inventory admin", { timeout: 30_000 }, () => {
 		).resolves.toMatchObject({ imported: 0, idempotent: true });
 	});
 
+	it("restocks a visible AISOU pool with automatic supplier purchasing disabled", async () => {
+		await db
+			.prepare(
+				"UPDATE supplier_bindings SET enabled = 0 WHERE sellable_item_id = ?",
+			)
+			.bind(PLUS_ITEM_ID)
+			.run();
+		await db
+			.prepare(`INSERT INTO stock_entries
+			(id, sellable_item_id, content_encrypted, key_version, content_fingerprint,
+			content_mask, status, procurement_source, created_at, updated_at)
+			VALUES ('plus-owned', ?, 'encrypted', 1, 'plus-owned', 'masked', 'available', 'aisou', 1, 1)`)
+			.bind(PLUS_ITEM_ID)
+			.run();
+		expect(await listAisouInventory(db)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ componentId: PLUS_ITEM_ID, available: 1 }),
+			]),
+		);
+		await expect(
+			importAisouInventory(
+				{
+					requestRef: "aisou_disabled_binding_01",
+					componentId: PLUS_ITEM_ID,
+					unitCostYuan: "113",
+					content: Array.from(
+						{ length: 30 },
+						(_, i) => `TEST-PLUS-CARD-${i}`,
+					).join("\n"),
+					usageUrl: "https://aiee.fun/",
+				},
+				testContext(db),
+			),
+		).resolves.toMatchObject({ imported: 30, duplicates: 0 });
+		expect(await listAisouInventory(db)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ componentId: PLUS_ITEM_ID, available: 31 }),
+			]),
+		);
+	});
+
+	it("restocks an existing AISOU pool without a supplier binding", async () => {
+		await db
+			.prepare("DELETE FROM supplier_bindings WHERE sellable_item_id = ?")
+			.bind(PLUS_ITEM_ID)
+			.run();
+		await expect(
+			importAisouInventory(
+				{
+					requestRef: "aisou_missing_binding_01",
+					componentId: PLUS_ITEM_ID,
+					unitCostYuan: "113",
+					content: "TEST-PLUS-NO-BINDING",
+					usageUrl: "https://aiee.fun/",
+				},
+				testContext(db),
+			),
+		).resolves.toMatchObject({ imported: 1, duplicates: 0 });
+	});
+
 	it("rejects duplicate input and non-AISOU targets", async () => {
 		await expect(
 			importAisouInventory(
