@@ -6,6 +6,7 @@ vi.mock("#/server/rate-limit", () => ({
 }));
 
 import { invoiceRequest } from "../../src/features/invoice/server";
+import { isPublicApiRequest } from "../../src/server/api-boundaries";
 
 const req = (data: unknown, origin = "https://laoshirenvip.com") =>
 	new Request("https://laoshirenvip.com/api/shop/invoice", {
@@ -15,6 +16,21 @@ const req = (data: unknown, origin = "https://laoshirenvip.com") =>
 	});
 afterEach(() => vi.unstubAllGlobals());
 describe("independent invoice intake", () => {
+	it("allows only the exact guest POST route through the application boundary", () => {
+		expect(isPublicApiRequest(req({ action: "preview" }))).toBe(true);
+		expect(
+			isPublicApiRequest(
+				new Request("https://laoshirenvip.com/api/shop/invoice"),
+			),
+		).toBe(false);
+		expect(
+			isPublicApiRequest(
+				new Request("https://laoshirenvip.com/api/shop/invoice/admin", {
+					method: "POST",
+				}),
+			),
+		).toBe(false);
+	});
 	it("rejects cross-site writes before upstream access", async () => {
 		expect(
 			(await invoiceRequest(req({ action: "create" }, "https://evil.example")))
