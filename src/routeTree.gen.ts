@@ -27,6 +27,7 @@ import { Route as AdminAuthRouteImport } from './routes/admin/auth'
 import { Route as AdminAisouInventoryRouteImport } from './routes/admin/aisou-inventory'
 import { Route as publicStatusRouteImport } from './routes/(public)/status'
 import { Route as publicMeRouteImport } from './routes/(public)/me'
+import { Route as publicInvoiceRouteImport } from './routes/(public)/invoice'
 import { Route as publicCartRouteImport } from './routes/(public)/cart'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
@@ -55,6 +56,7 @@ import { Route as publicCheckoutIndexRouteImport } from './routes/(public)/check
 import { Route as publicAccountIndexRouteImport } from './routes/(public)/account/index'
 import { Route as ApiTelegramWebhookRouteImport } from './routes/api/telegram/webhook'
 import { Route as ApiShopInvoiceOrderRouteImport } from './routes/api/shop/invoice-order'
+import { Route as ApiShopInvoiceRouteImport } from './routes/api/shop/invoice'
 import { Route as ApiOpsRestockRouteImport } from './routes/api/ops/restock'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminDownloadAssetsRouteImport } from './routes/api/admin/download-assets'
@@ -208,6 +210,11 @@ const publicMeRoute = publicMeRouteImport.update({
   path: '/me',
   getParentRoute: () => publicRouteRoute,
 } as any)
+const publicInvoiceRoute = publicInvoiceRouteImport.update({
+  id: '/invoice',
+  path: '/invoice',
+  getParentRoute: () => publicRouteRoute,
+} as any)
 const publicCartRoute = publicCartRouteImport.update({
   id: '/cart',
   path: '/cart',
@@ -346,6 +353,11 @@ const ApiTelegramWebhookRoute = ApiTelegramWebhookRouteImport.update({
 const ApiShopInvoiceOrderRoute = ApiShopInvoiceOrderRouteImport.update({
   id: '/api/shop/invoice-order',
   path: '/api/shop/invoice-order',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiShopInvoiceRoute = ApiShopInvoiceRouteImport.update({
+  id: '/api/shop/invoice',
+  path: '/api/shop/invoice',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOpsRestockRoute = ApiOpsRestockRouteImport.update({
@@ -712,6 +724,7 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/cart': typeof publicCartRoute
+  '/invoice': typeof publicInvoiceRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -762,6 +775,7 @@ export interface FileRoutesByFullPath {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/shop/invoice': typeof ApiShopInvoiceRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/account/': typeof publicAccountIndexRoute
@@ -813,6 +827,7 @@ export interface FileRoutesByTo {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/cart': typeof publicCartRoute
+  '/invoice': typeof publicInvoiceRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -862,6 +877,7 @@ export interface FileRoutesByTo {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/shop/invoice': typeof ApiShopInvoiceRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/account': typeof publicAccountIndexRoute
@@ -924,6 +940,7 @@ export interface FileRoutesById {
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
   '/(public)/cart': typeof publicCartRoute
+  '/(public)/invoice': typeof publicInvoiceRoute
   '/(public)/me': typeof publicMeRoute
   '/(public)/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -974,6 +991,7 @@ export interface FileRoutesById {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/shop/invoice': typeof ApiShopInvoiceRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/(public)/account/': typeof publicAccountIndexRoute
@@ -1035,6 +1053,7 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/cart'
+    | '/invoice'
     | '/me'
     | '/status'
     | '/admin/aisou-inventory'
@@ -1085,6 +1104,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/restock'
+    | '/api/shop/invoice'
     | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
     | '/account/'
@@ -1136,6 +1156,7 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/cart'
+    | '/invoice'
     | '/me'
     | '/status'
     | '/admin/aisou-inventory'
@@ -1185,6 +1206,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/restock'
+    | '/api/shop/invoice'
     | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
     | '/account'
@@ -1246,6 +1268,7 @@ export interface FileRouteTypes {
     | '/(errors)/500'
     | '/(errors)/503'
     | '/(public)/cart'
+    | '/(public)/invoice'
     | '/(public)/me'
     | '/(public)/status'
     | '/admin/aisou-inventory'
@@ -1296,6 +1319,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/restock'
+    | '/api/shop/invoice'
     | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
     | '/(public)/account/'
@@ -1350,6 +1374,7 @@ export interface RootRouteChildren {
   ApiAdminDownloadAssetsRoute: typeof ApiAdminDownloadAssetsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
+  ApiShopInvoiceRoute: typeof ApiShopInvoiceRoute
   ApiShopInvoiceOrderRoute: typeof ApiShopInvoiceOrderRoute
   ApiTelegramWebhookRoute: typeof ApiTelegramWebhookRoute
   ApiConfigurationLogoScopeIdRoute: typeof ApiConfigurationLogoScopeIdRoute
@@ -1497,6 +1522,13 @@ declare module '@tanstack/react-router' {
       path: '/me'
       fullPath: '/me'
       preLoaderRoute: typeof publicMeRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
+    '/(public)/invoice': {
+      id: '/(public)/invoice'
+      path: '/invoice'
+      fullPath: '/invoice'
+      preLoaderRoute: typeof publicInvoiceRouteImport
       parentRoute: typeof publicRouteRoute
     }
     '/(public)/cart': {
@@ -1693,6 +1725,13 @@ declare module '@tanstack/react-router' {
       path: '/api/shop/invoice-order'
       fullPath: '/api/shop/invoice-order'
       preLoaderRoute: typeof ApiShopInvoiceOrderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shop/invoice': {
+      id: '/api/shop/invoice'
+      path: '/api/shop/invoice'
+      fullPath: '/api/shop/invoice'
+      preLoaderRoute: typeof ApiShopInvoiceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ops/restock': {
@@ -2191,6 +2230,7 @@ const publicAccountRouteRouteWithChildren =
 interface publicRouteRouteChildren {
   publicAccountRouteRoute: typeof publicAccountRouteRouteWithChildren
   publicCartRoute: typeof publicCartRoute
+  publicInvoiceRoute: typeof publicInvoiceRoute
   publicMeRoute: typeof publicMeRoute
   publicStatusRoute: typeof publicStatusRoute
   publicIndexRoute: typeof publicIndexRoute
@@ -2203,6 +2243,7 @@ interface publicRouteRouteChildren {
 const publicRouteRouteChildren: publicRouteRouteChildren = {
   publicAccountRouteRoute: publicAccountRouteRouteWithChildren,
   publicCartRoute: publicCartRoute,
+  publicInvoiceRoute: publicInvoiceRoute,
   publicMeRoute: publicMeRoute,
   publicStatusRoute: publicStatusRoute,
   publicIndexRoute: publicIndexRoute,
@@ -2448,6 +2489,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminDownloadAssetsRoute: ApiAdminDownloadAssetsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,
+  ApiShopInvoiceRoute: ApiShopInvoiceRoute,
   ApiShopInvoiceOrderRoute: ApiShopInvoiceOrderRoute,
   ApiTelegramWebhookRoute: ApiTelegramWebhookRoute,
   ApiConfigurationLogoScopeIdRoute: ApiConfigurationLogoScopeIdRoute,
