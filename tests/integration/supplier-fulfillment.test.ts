@@ -1,5 +1,6 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { processDelivery } from "#/features/fulfillment/server/process";
 import { completeFreeStoreOrder } from "#/features/shop-payments/server/service";
 import { revealStoreDelivery } from "#/features/storefront/server/delivery-reveal";
@@ -400,6 +401,45 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			"CDK：CARD-1\n充值地址：https://verified.example/redeem",
 			"CDK：CARD-2\n充值地址：https://verified.example/redeem",
 		]);
+		const ownedContent = [
+			"gpt-plus-ph-AAAA-BBBB-CCCC-DDDD",
+			"gpt-plus-ph-EEEE-FFFF-GGGG-HHHH",
+		]
+			.map((code) => `CDK：${code}\n充值地址：https://redeem.lsrai.shop`)
+			.join("\n");
+		await db
+			.prepare(
+				"UPDATE delivery_records SET redeem_sku='GPT_PLUS_PH',content_encrypted=? WHERE id=?",
+			)
+			.bind(
+				await encryptDeliveryContent(ownedContent, runtime.commerceSecret),
+				target?.delivery_record_id,
+			)
+			.run();
+		expect(
+			await revealStoreDelivery(db, {
+				orderNumber: "ORDER-TEST-1",
+				deliveryId: target?.delivery_record_id ?? "",
+				email: "buyer@example.com",
+			}),
+		).toEqual({ content: ownedContent, usageUrl: "https://redeem.lsrai.shop" });
+		await db
+			.prepare("UPDATE delivery_records SET redeem_sku=NULL WHERE id=?")
+			.bind(target?.delivery_record_id)
+			.run();
+		await db
+			.prepare(
+				"UPDATE stock_entries SET redeem_sku='GPT_PLUS_PH' WHERE supplier_order_id=?",
+			)
+			.bind(supplierOrder?.id)
+			.run();
+		expect(
+			await revealStoreDelivery(db, {
+				orderNumber: "ORDER-TEST-1",
+				deliveryId: target?.delivery_record_id ?? "",
+				email: "buyer@example.com",
+			}),
+		).toEqual({ content: ownedContent });
 	});
 
 	it.each([
