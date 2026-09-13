@@ -1443,6 +1443,7 @@ export const stockEntries = sqliteTable(
 		sellableItemId: text("sellable_item_id")
 			.notNull()
 			.references(() => productSellableItems.id),
+		redeemSku: text("redeem_sku"),
 		contentEncrypted: text("content_encrypted").notNull(),
 		keyVersion: integer("key_version").notNull(),
 		contentFingerprint: text("content_fingerprint").notNull(),
@@ -1506,6 +1507,7 @@ export const deliveryRecords = sqliteTable(
 			.notNull()
 			.default("pending"),
 		contentEncrypted: text("content_encrypted"),
+		redeemSku: text("redeem_sku"),
 		contentKeyVersion: integer("content_key_version"),
 		attemptCount: integer("attempt_count").notNull().default(0),
 		nextAttemptAt: integer("next_attempt_at", { mode: "timestamp_ms" }),
