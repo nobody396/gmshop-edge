@@ -1,38 +1,11 @@
 "use client";
 import { QRCodeSVG } from "qrcode.react";
 import { type SyntheticEvent, useEffect, useState } from "react";
-import { z } from "zod";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { m } from "#/paraglide/messages";
+import { type Invoice, send } from "./client";
 
-const invoiceSchema = z.object({
-	request_no: z.string().optional(),
-	status: z.string().optional(),
-	invoice_total_amount: z.string(),
-	invoice_fee_amount: z.string(),
-	payment_fee_amount: z.string(),
-	payment_amount: z.string(),
-	pay_url: z.string().optional(),
-	qr_code: z.string().optional(),
-});
-type Invoice = z.infer<typeof invoiceSchema>;
-async function send(payload: Record<string, string>): Promise<Invoice> {
-	const response = await fetch("/api/shop/invoice", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(payload),
-	});
-	const body = z
-		.object({
-			msg: z.string().optional(),
-			data: invoiceSchema.nullable().optional(),
-		})
-		.parse(await response.json());
-	if (!response.ok || !body.data)
-		throw new Error(body.msg || m.invoice_error());
-	return body.data;
-}
 export function InvoicePage() {
 	const [form, setForm] = useState({
 		order_no: "",
