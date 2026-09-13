@@ -120,9 +120,7 @@ describe("public header settings", () => {
 	it("keeps invoice issuance visible in the desktop navigation", () => {
 		act(() => root.render(<PublicHeader />));
 
-		const invoice = container.querySelector(
-			'a[href="https://lsrai.shop/invoice?source=gmshop"]',
-		);
+		const invoice = container.querySelector('a[href="/invoice"]');
 		expect(invoice?.textContent).toContain("Invoice");
 	});
 

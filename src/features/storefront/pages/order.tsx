@@ -467,7 +467,7 @@ export function StorefrontOrderPage({
 								data.refundedAt == null ? (
 									<Button asChild className="w-full" variant="secondary">
 										<a
-											href={`https://lsrai.shop/invoice?source=gmshop&order_no=${encodeURIComponent(orderNumber)}`}
+											href={`/invoice?order_no=${encodeURIComponent(orderNumber)}`}
 											rel="noopener noreferrer"
 										>
 											申请开票
