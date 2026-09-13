@@ -1,5 +1,10 @@
 import { activateEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
 import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
+import {
+	type ConvertibleStock,
+	convertReservedStock,
+} from "#/features/redeem-warehouse/server/convert-delivery";
+import { loadDeliveryWarehouseToken } from "#/features/redeem-warehouse/server/warehouse-client";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret } from "#/lib/secrets";
 import { loadRuntimeConfig } from "#/server/runtime-config";
@@ -14,6 +19,7 @@ type DeliveryContext = {
 	order_status: string;
 	order_version: number;
 	quantity: number;
+	redeem_sku: string | null;
 };
 
 export async function processDelivery(db: D1Database, deliveryId: string) {
@@ -21,7 +27,7 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 		.prepare(
 			`SELECT dr.id, dr.status, dr.delivery_type, dr.content_encrypted,
 			 dr.order_item_id,
-			 oi.order_id, oi.quantity, o.status AS order_status, o.version AS order_version
+			 oi.order_id, oi.quantity, dr.redeem_sku, o.status AS order_status, o.version AS order_version
 			 FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
 			 JOIN shop_orders o ON o.id = oi.order_id WHERE dr.id = ? LIMIT 1`,
 		)
@@ -49,26 +55,63 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 			);
 		const entries = await db
 			.prepare(
-				`SELECT content_encrypted FROM stock_entries
+				`SELECT id, content_encrypted, content_fingerprint, unit_cost_minor, redeem_sku FROM stock_entries
 				 WHERE order_item_id = ? AND status = 'reserved' ORDER BY created_at, id`,
 			)
 			.bind(delivery.order_item_id)
-			.all<{ content_encrypted: string }>();
+			.all<ConvertibleStock>();
 		if (entries.results.length !== delivery.quantity)
 			throw new DomainError(
 				"delivery_inventory_invalid",
 				409,
 				"Reserved inventory is incomplete",
 			);
-		const plaintext = await Promise.all(
-			entries.results.map((entry) =>
-				decryptSecret(
-					entry.content_encrypted,
+		let plaintext: string[];
+		if (delivery.redeem_sku) {
+			let currentStockId: string | null = null;
+			try {
+				const token = await loadDeliveryWarehouseToken(
+					db,
 					runtime.commerceSecret,
-					"stock-entry",
+				);
+				plaintext = [];
+				for (const [index, entry] of entries.results.entries()) {
+					currentStockId = entry.id;
+					if (index > 0 && !entry.redeem_sku)
+						await new Promise((resolve) => setTimeout(resolve, 3_100));
+					plaintext.push(
+						await convertReservedStock(
+							db,
+							entry,
+							delivery.order_item_id,
+							delivery.redeem_sku,
+							runtime.commerceSecret,
+							token,
+						),
+					);
+				}
+			} catch (error) {
+				await recordOwnedDeliveryFailure(
+					db,
+					delivery.id,
+					delivery.redeem_sku,
+					"conversion",
+					error,
+					currentStockId,
+				);
+				throw error;
+			}
+		} else {
+			plaintext = await Promise.all(
+				entries.results.map((entry) =>
+					decryptSecret(
+						entry.content_encrypted,
+						runtime.commerceSecret,
+						"stock-entry",
+					),
 				),
-			),
-		);
+			);
+		}
 		contentEncrypted = await encryptDeliveryContent(
 			plaintext.join("\n"),
 			runtime.commerceSecret,
@@ -83,10 +126,22 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 				`UPDATE delivery_records SET status = 'delivered', content_encrypted = ?,
 			 content_key_version = CASE WHEN ? IS NULL THEN NULL ELSE 1 END,
 			 attempt_count = attempt_count + 1, next_attempt_at = NULL, error_code = NULL,
-			 delivered_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
+			 delivered_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'processing')${delivery.redeem_sku ? " AND EXISTS (SELECT 1 FROM shop_order_items oi JOIN shop_orders o ON o.id=oi.order_id WHERE oi.id=delivery_records.order_item_id AND o.status IN ('paid','fulfilling')) AND (SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=delivery_records.order_item_id AND s.status='reserved' AND s.redeem_sku=delivery_records.redeem_sku)=(SELECT quantity FROM shop_order_items WHERE id=delivery_records.order_item_id)" : ""}`,
 			)
 			.bind(contentEncrypted, contentEncrypted, now, now, delivery.id),
 	];
+	if (delivery.redeem_sku) {
+		// D1 batches are transactions. A failed delivery CAS must abort BEFORE stock,
+		// outbox or entitlement writes; throwing after batch completion is too late.
+		statements.push(
+			db
+				.prepare(
+					"SELECT CASE WHEN EXISTS (SELECT 1 FROM delivery_records WHERE id=? AND status='delivered') THEN 1 ELSE json_extract('redeem_delivery_conflict','$') END",
+				)
+				.bind(delivery.id),
+		);
+	}
+
 	if (delivery.delivery_type === "stock")
 		statements.push(
 			db
@@ -163,7 +218,21 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 		statements.push(
 			...activateEntitlementGrantStatements(db, delivery.order_item_id, now),
 		);
-	const results = await db.batch(statements);
+	let results: D1Result<unknown>[];
+	try {
+		results = await db.batch(statements);
+	} catch (error) {
+		if (delivery.redeem_sku)
+			await recordOwnedDeliveryFailure(
+				db,
+				delivery.id,
+				delivery.redeem_sku,
+				"finalization",
+				error,
+			);
+		throw error;
+	}
+
 	if (Number(results[0]?.meta.changes ?? 0) !== 1)
 		return { id: delivery.id, status: "delivered", duplicate: true };
 	return {
@@ -172,6 +241,43 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 		orderStatus: nextStatus,
 		duplicate: false,
 	};
+}
+
+async function recordOwnedDeliveryFailure(
+	db: D1Database,
+	deliveryId: string,
+	sku: string,
+	stage: "conversion" | "finalization",
+	error: unknown,
+	stockId: string | null = null,
+) {
+	const code =
+		error instanceof DomainError
+			? error.code
+			: `redeem_delivery_${stage}_failed`;
+	const now = Date.now();
+	await db.batch([
+		db
+			.prepare(
+				"UPDATE delivery_records SET attempt_count=attempt_count+1,error_code=?,updated_at=? WHERE id=? AND status IN ('pending','processing')",
+			)
+			.bind(code, now, deliveryId),
+		db
+			.prepare(
+				"INSERT INTO audit_logs (id,action,target_type,target_id,after,created_at) VALUES (?,'redeem_delivery.failure','delivery',?,?,?)",
+			)
+			.bind(
+				crypto.randomUUID(),
+				deliveryId,
+				JSON.stringify({
+					sku,
+					stage,
+					code,
+					stockRef: stockId ? `gmstock-${stockId}` : null,
+				}),
+				now,
+			),
+	]);
 }
 
 type ManualDeliveryContext = Omit<DeliveryContext, "status"> & {
@@ -183,7 +289,7 @@ export async function startManualDelivery(db: D1Database, deliveryId: string) {
 	const delivery = await db
 		.prepare(
 			`SELECT dr.id, dr.status, dr.delivery_type, dr.content_encrypted,
-			 dr.order_item_id, item.fulfillment_source,
+			 dr.order_item_id, item.fulfillment_source, dr.redeem_sku,
 			 oi.order_id, oi.quantity, o.status AS order_status, o.version AS order_version
 			 FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
 			 JOIN product_sellable_items item ON item.id = oi.sellable_item_id
@@ -195,7 +301,8 @@ export async function startManualDelivery(db: D1Database, deliveryId: string) {
 		throw new DomainError("delivery_not_found", 404, "Delivery not found");
 	if (
 		delivery.delivery_type !== "stock" ||
-		delivery.fulfillment_source !== "manual"
+		delivery.fulfillment_source !== "manual" ||
+		delivery.redeem_sku !== null
 	)
 		throw new DomainError(
 			"delivery_not_manual",
@@ -295,7 +402,7 @@ export async function completeManualDelivery(
 	const delivery = await db
 		.prepare(
 			`SELECT dr.id, dr.status, dr.delivery_type, dr.content_encrypted,
-			 dr.order_item_id, item.fulfillment_source,
+			 dr.order_item_id, item.fulfillment_source, dr.redeem_sku,
 			 oi.order_id, oi.quantity, o.status AS order_status, o.version AS order_version
 			 FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
 			 JOIN product_sellable_items item ON item.id = oi.sellable_item_id
@@ -309,7 +416,8 @@ export async function completeManualDelivery(
 		return { id: delivery.id, status: "delivered", duplicate: true };
 	if (
 		delivery.delivery_type !== "stock" ||
-		delivery.fulfillment_source !== "manual"
+		delivery.fulfillment_source !== "manual" ||
+		delivery.redeem_sku !== null
 	)
 		throw new DomainError(
 			"delivery_not_manual",

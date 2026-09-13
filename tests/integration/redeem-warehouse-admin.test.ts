@@ -39,10 +39,22 @@ describe("redeem warehouse admin", { timeout: 30_000 }, () => {
 
 	afterAll(async () => miniflare.dispose());
 
-	it("generates idempotent sellable inventory without returning raw codes", async () => {
+	it.each([
+		"GPT_PLUS_IOS",
+		"GPT_PLUS_PH",
+		"GPT_5X_PH",
+		"GPT_20X_PH",
+	])("generates idempotent owned delivery for %s without returning raw codes", async (sku) => {
+		await db.prepare("DELETE FROM stock_entries").run();
+		await db
+			.prepare(
+				"DELETE FROM replay_receipts WHERE namespace = 'redeem_sellable_generation'",
+			)
+			.run();
+		const prefix = sku.toLowerCase().replaceAll("_", "-");
 		const testCodes = [
-			"gpt-plus-ios-AAAA-BBBB-CCCC-DDDD",
-			"gpt-plus-ios-EEEE-FFFF-GGGG-HHHH",
+			`${prefix}-AAAA-BBBB-CCCC-DDDD`,
+			`${prefix}-EEEE-FFFF-GGGG-HHHH`,
 		];
 		const fetcher = vi.fn(async (input: string | URL | Request) => {
 			const url = String(input);
@@ -51,7 +63,7 @@ describe("redeem warehouse admin", { timeout: 30_000 }, () => {
 			if (url.endsWith("/api/internal/codes/batch"))
 				return Response.json({
 					success: true,
-					data: { sku: "GPT_PLUS_IOS", count: 2, codes: testCodes },
+					data: { sku, count: 2, codes: testCodes },
 				});
 			return Response.json({ success: false }, { status: 404 });
 		});
@@ -59,7 +71,7 @@ describe("redeem warehouse admin", { timeout: 30_000 }, () => {
 			requestWarehouse(token, path, init, fetcher as typeof fetch);
 		const input = {
 			requestRef: "redeem_generation_0001",
-			sku: "GPT_PLUS_IOS",
+			sku,
 			componentId: ITEM_ID,
 			count: 2,
 		};
@@ -78,13 +90,13 @@ describe("redeem warehouse admin", { timeout: 30_000 }, () => {
 			.all<{ content_encrypted: string; content_mask: string; note: string }>();
 		expect(rows.results).toHaveLength(2);
 		expect(JSON.stringify(rows.results)).not.toContain(testCodes[0]);
-		expect(rows.results[0]?.note).toContain("sku=GPT_PLUS_IOS");
+		expect(rows.results[0]?.note).toContain(`sku=${sku}`);
 		const delivery = await decryptSecret(
 			rows.results[0]?.content_encrypted ?? "",
 			COMMERCE_SECRET,
 			"stock-entry",
 		);
-		expect(delivery).toContain("CDK：gpt-plus-ios-");
+		expect(delivery).toContain(`CDK：${prefix}-`);
 		expect(delivery).toContain("充值地址：https://redeem.lsrai.shop");
 
 		await expect(

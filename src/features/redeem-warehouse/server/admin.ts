@@ -11,10 +11,13 @@ import { DomainError } from "#/lib/domain-error";
 import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import { decimalToMinor } from "#/lib/units";
 import { getAdminRuntimeServerContext } from "#/server/context";
+import {
+	loadDeliveryWarehouseToken,
+	requestWarehouse,
+} from "./warehouse-client";
 
 const tokenKey = "integration.redeem_warehouse_token";
 const tokenPurpose = "redeem-warehouse-token";
-const warehouseBaseUrl = "https://redeem.laoshirenvip.com";
 
 const configurationSchema = z.object({
 	token: z.string().trim().min(32).max(500).optional(),
@@ -46,6 +49,7 @@ const inventoryRowSchema = z.object({
 	family: z.enum(["gpt", "claude"]),
 	input_kind: z.enum(["gpt_session", "claude_session_key"]),
 	available: z.number().int().nonnegative(),
+	assigned: z.number().int().nonnegative().default(0),
 	leased: z.number().int().nonnegative(),
 	processing: z.number().int().nonnegative(),
 	consumed: z.number().int().nonnegative(),
@@ -54,7 +58,7 @@ const inventoryRowSchema = z.object({
 
 const inventoryEnvelopeSchema = z.object({
 	success: z.literal(true),
-	data: z.array(inventoryRowSchema).length(7),
+	data: z.array(inventoryRowSchema).min(1).max(100),
 });
 
 const importEnvelopeSchema = z.object({
@@ -172,6 +176,7 @@ export const listRedeemWarehouseInventoryFn = createServerFn({
 		family: row.family,
 		inputKind: row.input_kind,
 		available: row.available,
+		assigned: row.assigned,
 		leased: row.leased,
 		processing: row.processing,
 		consumed: row.consumed,
@@ -312,6 +317,22 @@ export async function generateRedeemSellableInventory(
 			}),
 		}),
 	);
+	if (
+		batch.data.sku !== data.sku ||
+		batch.data.count !== data.count ||
+		batch.data.codes.length !== data.count ||
+		new Set(batch.data.codes).size !== data.count ||
+		batch.data.codes.some(
+			(code) =>
+				!code.startsWith(`${data.sku.toLowerCase().replaceAll("_", "-")}-`),
+		)
+	) {
+		throw new DomainError(
+			"redeem_warehouse_batch_mismatch",
+			502,
+			"Redemption batch does not match the requested SKU and count",
+		);
+	}
 	const commerceSecret = context.runtime.commerceSecret;
 	const prepared = await Promise.all(
 		batch.data.codes.map(async (code) => ({
@@ -347,8 +368,8 @@ export async function generateRedeemSellableInventory(
 				.prepare(
 					`INSERT OR IGNORE INTO stock_entries
 					 (id, sellable_item_id, content_encrypted, key_version, content_fingerprint, content_mask,
-					  status, note, created_at, updated_at)
-					 VALUES (?, ?, ?, 1, ?, ?, 'available', ?, ?, ?)`,
+					  status, note, created_at, updated_at, redeem_sku)
+					 VALUES (?, ?, ?, 1, ?, ?, 'available', ?, ?, ?, ?)`,
 				)
 				.bind(
 					item.id,
@@ -359,6 +380,9 @@ export async function generateRedeemSellableInventory(
 					`source=redeem-warehouse; sku=${data.sku}; request_ref=${data.requestRef}`,
 					now,
 					now,
+					["GPT_PLUS_PH", "GPT_5X_PH", "GPT_20X_PH"].includes(data.sku)
+						? data.sku
+						: null,
 				),
 		),
 		context.db
@@ -391,14 +415,10 @@ async function loadWarehouseConfig(
 	context: Awaited<ReturnType<typeof getAdminRuntimeServerContext>>,
 ) {
 	if (!context.runtime.commerceSecret) throw unavailable();
-	const rows = await loadSettingRows(context.db);
-	const encryptedToken = settingString(rows.get(tokenKey));
-	if (!encryptedToken) throw unavailable();
 	return {
-		token: await decryptSecret(
-			encryptedToken,
+		token: await loadDeliveryWarehouseToken(
+			context.db,
 			context.runtime.commerceSecret,
-			tokenPurpose,
 		),
 	};
 }
@@ -435,54 +455,7 @@ function upsertSetting(
 		.bind(key, JSON.stringify(value), secret ? 1 : 0, userId, now, now);
 }
 
-export async function requestWarehouse(
-	token: string,
-	path: string,
-	init: RequestInit = {},
-	fetcher: typeof fetch = fetch,
-) {
-	let response: Response;
-	try {
-		response = await fetcher(`${warehouseBaseUrl}${path}`, {
-			...init,
-			headers: {
-				Authorization: `Bearer ${token}`,
-				...(init.body ? { "Content-Type": "application/json" } : {}),
-			},
-			signal: AbortSignal.timeout(30_000),
-		});
-	} catch {
-		throw new DomainError(
-			"redeem_warehouse_unreachable",
-			502,
-			"Warehouse unavailable",
-		);
-	}
-	const text = await response.text();
-	if (text.length > 1_000_000)
-		throw new DomainError(
-			"redeem_warehouse_response_too_large",
-			502,
-			"Warehouse response too large",
-		);
-	let body: unknown;
-	try {
-		body = JSON.parse(text);
-	} catch {
-		throw new DomainError(
-			"redeem_warehouse_invalid_response",
-			502,
-			"Warehouse returned invalid data",
-		);
-	}
-	if (!response.ok)
-		throw new DomainError(
-			"redeem_warehouse_request_failed",
-			502,
-			"Warehouse request failed",
-		);
-	return body;
-}
+export { requestWarehouse } from "./warehouse-client";
 
 function unavailable() {
 	return new DomainError(

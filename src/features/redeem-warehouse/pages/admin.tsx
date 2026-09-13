@@ -282,15 +282,25 @@ export function RedeemWarehouseAdminPage() {
 								<Badge variant={row.available > 0 ? "default" : "secondary"}>
 									{row.available > 0
 										? m.redeem_warehouse_available()
-										: m.redeem_warehouse_empty()}
+										: row.assigned > 0
+											? m.redeem_warehouse_assigned()
+											: m.redeem_warehouse_empty()}
 								</Badge>
 							</div>
 						</CardHeader>
-						<CardContent className="grid grid-cols-5 gap-2 text-center">
+						<CardContent
+							className={`grid ${row.sku.endsWith("_PH") ? "grid-cols-3" : "grid-cols-5"} gap-2 text-center`}
+						>
 							<Metric
 								label={m.redeem_warehouse_available()}
 								value={row.available}
 							/>
+							{row.sku.endsWith("_PH") && (
+								<Metric
+									label={m.redeem_warehouse_assigned()}
+									value={row.assigned}
+								/>
+							)}
 							<Metric label={m.redeem_warehouse_leased()} value={row.leased} />
 							<Metric
 								label={m.redeem_warehouse_processing()}

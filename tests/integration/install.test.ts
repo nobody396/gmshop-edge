@@ -47,6 +47,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0010_supplier_diagnostics.sql",
 			"0011_realtime_inventory_events.sql",
 			"0012_aisou_inventory.sql",
+			"0013_redeem_delivery.sql",
 		]);
 		const legacyTables = await database
 			.prepare(

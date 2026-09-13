@@ -152,7 +152,7 @@ async function reconcileDeliveredOrder(
 			`SELECT orders.id AS order_id, orders.status AS order_status,
 			 orders.paid_minor, orders.total_minor, item.id AS order_item_id,
 			 item.sellable_item_id, delivery.id AS delivery_id,
-			 delivery.status AS delivery_status
+			 delivery.status AS delivery_status, delivery.redeem_sku
 			 FROM shop_orders orders JOIN shop_order_items item ON item.order_id = orders.id
 			 JOIN delivery_records delivery ON delivery.order_item_id = item.id
 			 WHERE orders.order_number = ?`,
@@ -167,6 +167,7 @@ async function reconcileDeliveredOrder(
 			sellable_item_id: string;
 			delivery_id: string;
 			delivery_status: string;
+			redeem_sku: string | null;
 		}>();
 	if (rows.results.length !== 1)
 		throw new DomainError(
@@ -185,6 +186,12 @@ async function reconcileDeliveredOrder(
 			"restock_order_not_delivered",
 			409,
 			"Order is not a completed paid delivery",
+		);
+	if (order.redeem_sku)
+		throw new DomainError(
+			"restock_owned_delivery_required",
+			409,
+			"Owned redemption deliveries must use automatic recovery",
 		);
 	const validated = inventoryImportSchema.parse({
 		componentId: order.sellable_item_id,
