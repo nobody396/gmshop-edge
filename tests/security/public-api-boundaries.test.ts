@@ -33,6 +33,13 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/ops/restock/extra", "POST")).toBe(false);
 	});
 
+	it("lets the exact cutover endpoint reach its own bearer guard without exposing prefixes or other methods", () => {
+		expect(publicRequest("/api/ops/redeem-cutover", "GET")).toBe(true);
+		expect(publicRequest("/api/ops/redeem-cutover", "POST")).toBe(true);
+		expect(publicRequest("/api/ops/redeem-cutover/extra", "POST")).toBe(false);
+		expect(publicRequest("/api/ops/redeem-cutover", "PATCH")).toBe(false);
+	});
+
 	it("lets only the exact bearer-authenticated invoice lookup route through", () => {
 		expect(publicRequest("/api/shop/invoice-order", "POST")).toBe(true);
 		expect(publicRequest("/api/shop/invoice-order", "GET")).toBe(false);

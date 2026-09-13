@@ -10,6 +10,7 @@ const supplierApiPattern = /^\/api\/v1\/supplier(?:\/[^/]+)+$/;
 const publicGetPatterns = [
 	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
+	/^\/api\/ops\/redeem-cutover$/,
 	/^\/api\/support\/web\/(?:status|current)$/,
 	paymentWebhookPattern,
 	new RegExp(`^/api/configuration-logo/payment/${uuidSegment}$`, "i"),
@@ -21,6 +22,7 @@ const publicPostPatterns = [
 	/^\/api\/shop\/invoice-order$/,
 	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
+	/^\/api\/ops\/redeem-cutover$/,
 	/^\/api\/ops\/restock\/reconcile$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
 	/^\/api\/telegram\/webhook$/,
