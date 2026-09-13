@@ -15,7 +15,7 @@ export type Invoice = z.infer<typeof invoiceSchema>;
 
 export async function send(input: Record<string, string>): Promise<Invoice> {
 	const { action, request_no, ...form } = input;
-	if (!["preview", "create", "status"].includes(action))
+	if (!["preview", "create", "status"].includes(action ?? ""))
 		throw new Error(m.invoice_error());
 	if (action === "status" && !/^[A-Za-z0-9_-]{1,100}$/.test(request_no ?? ""))
 		throw new Error(m.invoice_error());
