@@ -9,7 +9,10 @@ import { multiStoreOrderSchema } from "#/features/storefront/schema";
 import { DomainError } from "#/lib/domain-error";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import { encryptOrderInput } from "./order-input-secrets";
-import { SUPPLIER_SNAPSHOT_MAX_AGE_MS } from "./stock-availability";
+import {
+	SUPPLIER_SNAPSHOT_MAX_AGE_MS,
+	supplierFallbackEnabledExpression,
+} from "./stock-availability";
 
 type MultiOrderInput = ReturnType<typeof multiStoreOrderSchema.parse>;
 type SellableItemContext = {
@@ -40,6 +43,7 @@ type SellableItemContext = {
 	definition_version_id: string | null;
 	download_asset_count: number;
 	fulfillment_source: "local" | "manual" | "supplier";
+	supplier_fallback_enabled: number;
 	supplier_status: "not_applicable" | "available" | "unavailable";
 };
 
@@ -472,6 +476,7 @@ async function loadSellableItem(
 			 ), s.price_minor) AS price_minor,
 			 s.cost_minor, s.currency, s.currency_decimals,
 			 s.fulfillment_source, s.supplier_status,
+ ${supplierFallbackEnabledExpression("s")} AS supplier_fallback_enabled,
 			 s.id AS delivery_component_id, p.product_type AS delivery_component_type,
 			 s.version AS delivery_component_version,
 			 s.duration_ms, s.usage_limit, s.access_limit,
@@ -569,17 +574,11 @@ async function assertStockAvailability(
 		.bind(sellableItem.sellable_item_id)
 		.first<{ total: number }>();
 	if (Number(row?.total ?? 0) >= quantity) return;
-	const binding = await db
-		.prepare(
-			"SELECT 1 FROM supplier_bindings WHERE sellable_item_id = ? AND enabled = 1 LIMIT 1",
-		)
-		.bind(sellableItem.sellable_item_id)
-		.first();
-	if (binding) {
+	if (sellableItem.supplier_fallback_enabled === 1) {
 		await assertSupplierAvailability(
 			db,
 			sellableItem.sellable_item_id,
-			quantity,
+			quantity - Number(row?.total ?? 0),
 		);
 		return;
 	}
@@ -591,12 +590,12 @@ async function assertStockAvailability(
 		);
 }
 
-async function assertSupplierAvailability(
+export async function assertSupplierAvailability(
 	db: D1Database,
 	sellableItemId: string,
 	quantity: number,
+	now = Date.now(),
 ) {
-	const now = Date.now();
 	const binding = await db
 		.prepare(
 			`SELECT provider, normalized_api_origin, protocol_version,

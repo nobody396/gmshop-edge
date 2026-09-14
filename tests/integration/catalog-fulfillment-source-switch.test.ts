@@ -81,6 +81,77 @@ describe("catalog stock fulfillment source switch", () => {
 			binding_enabled: 1,
 		});
 	});
+	it.each([
+		"empty-balance",
+		"reserved-balance",
+		"max-order-cost",
+		"cooldown",
+	])("does not switch to supplier when %s prevents purchase", async (reason) => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL",
+			)
+			.run();
+		const update = {
+			"empty-balance": "balance_minor='0'",
+			"reserved-balance": "reserve_balance_minor=balance_minor",
+			"max-order-cost": "max_order_cost_minor='1'",
+			cooldown: "cooldown_until=2000000",
+		}[reason];
+		await db.prepare(`UPDATE supplier_accounts SET ${update}`).run();
+		await expect(
+			switchStockFulfillmentMode(db, "item", "supplier", 1000000),
+		).rejects.toMatchObject({ code: "supplier_not_ready" });
+		expect((await state(db))?.fulfillment_source).toBe("local");
+	});
+	it.each([
+		"local",
+		"supplier",
+	] as const)("a manual %s selection disables automatic fallback", async (mode) => {
+		await db.batch([
+			db.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL",
+			),
+			db.prepare(
+				"INSERT INTO system_settings(key,value) VALUES ('fulfillment.supplier_fallback.item','true')",
+			),
+		]);
+		await expect(
+			switchStockFulfillmentMode(db, "item", mode, 1000000),
+		).resolves.toMatchObject({ mode, duplicate: false });
+		expect(
+			await db
+				.prepare(
+					"SELECT value FROM system_settings WHERE key='fulfillment.supplier_fallback.item'",
+				)
+				.first(),
+		).toEqual({ value: "false" });
+		await expect(
+			switchStockFulfillmentMode(db, "item", mode, 1000000),
+		).resolves.toMatchObject({ duplicate: true });
+	});
+	it("does not clear fallback after a failed concurrent mode update", async () => {
+		await db
+			.prepare(
+				"INSERT INTO system_settings(key,value) VALUES ('fulfillment.supplier_fallback.item','true')",
+			)
+			.run();
+		await db
+			.prepare(
+				"CREATE TRIGGER reject_switch BEFORE UPDATE ON product_sellable_items BEGIN SELECT RAISE(IGNORE); END",
+			)
+			.run();
+		await expect(
+			switchStockFulfillmentMode(db, "item", "supplier", 1000000),
+		).rejects.toThrow();
+		expect(
+			await db
+				.prepare(
+					"SELECT value FROM system_settings WHERE key='fulfillment.supplier_fallback.item'",
+				)
+				.first(),
+		).toEqual({ value: "true" });
+	});
 });
 
 async function state(db: D1Database) {

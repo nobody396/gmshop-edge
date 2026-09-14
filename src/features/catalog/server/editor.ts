@@ -10,6 +10,7 @@ import {
 } from "#/features/catalog/editor-schema";
 import { assertProductTypeChange } from "#/features/catalog/product-type-invariant";
 import { removeSellableItemsFromAllCarts } from "#/features/storefront/server/cart";
+import { supplierFallbackEnabledExpression } from "#/features/storefront/server/stock-availability";
 import { DomainError } from "#/lib/domain-error";
 import { getAdminServerContext } from "#/server/context";
 
@@ -178,7 +179,7 @@ export const getProductEditorFn = createServerFn({ method: "GET" })
 				.first<Row>(),
 			all(
 				context,
-				`SELECT item.*, binding.id AS supplier_binding_id,
+				`SELECT item.*, ${supplierFallbackEnabledExpression("item")} AS supplier_fallback_enabled, binding.id AS supplier_binding_id,
 				        binding.provider AS supplier_provider,
 				        binding.normalized_api_origin AS supplier_api_origin,
 				        binding.upstream_product_id, binding.upstream_sku_id,
@@ -237,6 +238,9 @@ export const getProductEditorFn = createServerFn({ method: "GET" })
 						: Number(sellableItem.maximum_per_customer),
 				deliveryComponentId: String(sellableItem.id),
 				enabled: Boolean(sellableItem.enabled),
+				supplierFallbackEnabled: Boolean(
+					sellableItem.supplier_fallback_enabled,
+				),
 				fulfillmentSource: String(sellableItem.fulfillment_source) as
 					| "local"
 					| "manual"

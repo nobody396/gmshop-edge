@@ -1,3 +1,4 @@
+import { storefrontStockExpression } from "#/features/storefront/server/stock-availability";
 import { DomainError } from "#/lib/domain-error";
 
 type ProductRow = {
@@ -21,6 +22,10 @@ const ELIGIBLE_PRODUCTS = `
 	 SELECT product.id AS product_id, product.name AS product_name,
 	 product.description, product.cover_object_key, product.tag_names, product.sort_order,
 	 MAX(MAX(product.updated_at, item.updated_at, COALESCE(listing.updated_at, 0),
+  COALESCE((SELECT MAX(binding.updated_at) FROM supplier_bindings binding
+   WHERE binding.sellable_item_id=item.id AND binding.enabled=1),0),
+  COALESCE((SELECT setting.updated_at FROM system_settings setting
+   WHERE setting.key='fulfillment.supplier_fallback.' || item.id),0),
 	  COALESCE((SELECT MAX(stock.updated_at) FROM stock_entries stock
 	   WHERE stock.sellable_item_id = item.id), 0)))
 	  AS export_updated_at
@@ -29,7 +34,7 @@ const ELIGIBLE_PRODUCTS = `
 	 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 	 WHERE listing.enabled = 1
 	  AND product.status = 'active' AND product.product_type = 'stock'
-	  AND item.enabled = 1 AND item.fulfillment_source = 'local'
+	  AND item.enabled = 1 AND item.fulfillment_source IN ('local','supplier')
 	  AND item.currency = COALESCE((SELECT json_extract(value, '$') FROM system_settings
 	   WHERE key = 'commerce.default_currency'), 'USD')
 	  AND item.currency_decimals = COALESCE((SELECT CAST(json_extract(value, '$') AS INTEGER)
@@ -39,14 +44,13 @@ const ELIGIBLE_PRODUCTS = `
 const ELIGIBLE_SKUS = `
 	SELECT item.product_id, item.id AS sku_id, item.name AS sku_name,
 	 COALESCE(listing.price_minor, item.price_minor) AS price_minor,
-	 (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id = item.id
-	  AND stock.status = 'available') AS stock_quantity
+	 ${storefrontStockExpression("product", "item")} AS stock_quantity
 	 FROM product_sellable_items item
 	 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 	 JOIN products product ON product.id = item.product_id
 	 WHERE listing.enabled = 1
 	  AND product.status = 'active' AND product.product_type = 'stock'
-	  AND item.enabled = 1 AND item.fulfillment_source = 'local'
+	  AND item.enabled = 1 AND item.fulfillment_source IN ('local','supplier')
 	  AND item.currency = COALESCE((SELECT json_extract(value, '$') FROM system_settings
 	   WHERE key = 'commerce.default_currency'), 'USD')
 	  AND item.currency_decimals = COALESCE((SELECT CAST(json_extract(value, '$') AS INTEGER)

@@ -566,7 +566,7 @@ export function ProductEditorPage({
 							productId={editorProductId}
 						/>
 					</div>
-					<div className="grid min-w-0 gap-6">
+					<div className="grid min-w-0 grid-cols-1 gap-6">
 						<div className="grid gap-4 sm:grid-cols-2">
 							<FormItem label={m.common_name()} required>
 								<Input
@@ -875,6 +875,7 @@ function SellableItemsEditor({
 	};
 	return (
 		<ProArrayField
+			className="min-w-0 grid-cols-1"
 			addLabel={m.catalog_sellable_item_add()}
 			canRemoveItem={(sellableItem) =>
 				sellableItem.fulfillmentSource === "local"
@@ -944,7 +945,7 @@ function SellableItemsEditor({
 				const moneySymbol =
 					sellableItem.currency === baseCurrency ? currencySymbol : "";
 				return (
-					<div className="grid gap-4">
+					<div className="grid min-w-0 grid-cols-1 gap-4">
 						<div className="grid gap-4 sm:grid-cols-3">
 							<FormItem label={m.common_name()} required>
 								<Input
@@ -1213,7 +1214,7 @@ function ComponentEditor({
 	const index = components.findIndex((item) => item.id === component.id);
 	const pendingBuild = pendingBuilds[component.id];
 	return (
-		<div className="grid gap-4">
+		<div className="grid min-w-0 grid-cols-1 gap-4">
 			<div className="grid gap-3 sm:grid-cols-3">
 				<Toggle
 					label={m.catalog_email_delivery_mode()}
@@ -1315,7 +1316,7 @@ function SupplierFulfillmentPanel({
 	});
 	const localMode = sellableItem.fulfillmentSource === "local";
 	return (
-		<div className="grid gap-3 border-t pt-4">
+		<div className="grid min-w-0 grid-cols-1 gap-3 border-t pt-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<p className="font-medium text-sm">
@@ -1363,7 +1364,9 @@ function SupplierFulfillmentPanel({
 			</div>
 			<p className="text-muted-foreground text-sm">
 				{localMode
-					? m.catalog_supply_mode_local_description()
+					? sellableItem.supplierFallbackEnabled
+						? m.catalog_supply_mode_fallback_description()
+						: m.catalog_supply_mode_local_description()
 					: m.catalog_supply_mode_supplier_description()}
 			</p>
 			{binding ? (
@@ -1827,6 +1830,7 @@ function defaultSellableItem(
 		enabled: true,
 		fulfillmentSource: "local",
 		supplierStatus: null,
+		supplierFallbackEnabled: false,
 		supplierBinding: null,
 	};
 }

@@ -144,7 +144,14 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 		});
 	});
 
-	it("accepts fresh supplier stock without purchasing upstream before payment", async () => {
+	it.each([
+		"supplier",
+		"local-first",
+		"local-only",
+		"local-shortfall",
+		"no-balance",
+		"stale",
+	])("checks supplier eligibility without purchasing before payment: %s", async (mode) => {
 		const now = Date.now();
 		await database.batch([
 			database
@@ -186,6 +193,61 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 				.bind(sellableItemId, now, now, now),
 		]);
 
+		if (mode !== "supplier") {
+			await database
+				.prepare(
+					"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL WHERE id=?",
+				)
+				.bind(sellableItemId)
+				.run();
+			if (mode !== "local-only")
+				await database
+					.prepare("INSERT INTO system_settings(key,value) VALUES (?, 'true')")
+					.bind(`fulfillment.supplier_fallback.${sellableItemId}`)
+					.run();
+		}
+		if (mode === "local-shortfall") {
+			await database
+				.prepare(`INSERT INTO stock_entries(id,sellable_item_id,content_encrypted,key_version,content_fingerprint,content_mask,status,created_at,updated_at)
+    VALUES ('partial',?,'ciphertext',1,'partial','masked','available',1,1)`)
+				.bind(sellableItemId)
+				.run();
+			await database
+				.prepare("UPDATE supplier_bindings SET stock_quantity=1")
+				.run();
+		}
+		if (mode === "no-balance")
+			await database
+				.prepare("UPDATE supplier_accounts SET balance_minor='0'")
+				.run();
+		if (mode === "stale")
+			await database
+				.prepare("UPDATE supplier_bindings SET last_synced_at=1")
+				.run();
+		if (["local-only", "no-balance", "stale"].includes(mode)) {
+			await expect(
+				createStoreOrder(database, {
+					sellableItemId,
+					quantity: 2,
+					email: "supplier-buyer@example.com",
+					idempotencyKey: "blocked-checkout",
+					customerNote: "",
+				}),
+			).rejects.toMatchObject({
+				code:
+					mode === "local-only"
+						? "inventory_unavailable"
+						: mode === "no-balance"
+							? "supplier_account_unavailable"
+							: "supplier_inventory_unavailable",
+			});
+			expect(
+				(await database.prepare("SELECT id FROM supplier_orders").all())
+					.results,
+			).toHaveLength(0);
+			return;
+		}
+
 		const result = await createStoreOrder(database, {
 			sellableItemId,
 			quantity: 2,
@@ -206,7 +268,10 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 			)
 			.bind(result.id, sellableItemId)
 			.first<{ supplier_orders: number; local_stock: number }>();
-		expect(state).toEqual({ supplier_orders: 0, local_stock: 0 });
+		expect(state).toEqual({
+			supplier_orders: 0,
+			local_stock: mode === "local-shortfall" ? 1 : 0,
+		});
 	});
 
 	it("accepts a manual-procurement item without preloaded stock", async () => {

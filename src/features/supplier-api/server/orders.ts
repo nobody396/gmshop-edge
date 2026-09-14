@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { completeWalletStoreOrder } from "#/features/shop-payments/server/service";
+import { assertSupplierAvailability } from "#/features/storefront/server/multi-order";
+import { storefrontStockExpression } from "#/features/storefront/server/stock-availability";
 import { mutateWallet } from "#/features/wallet/server/ledger";
 import { DomainError } from "#/lib/domain-error";
 import { isSafeWebhookUrl } from "#/lib/webhook-url";
@@ -66,13 +68,14 @@ export async function createSupplierApiOrder(
 			`SELECT item.id, item.product_id, item.name, item.version, item.currency,
 			 item.currency_decimals, item.cost_minor, product.name AS product_name,
 			 COALESCE(listing.price_minor, item.price_minor) AS price_minor,
-			 (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id = item.id
-			  AND stock.status = 'available') AS stock_quantity
+			 ${storefrontStockExpression("product", "item")} AS stock_quantity,
+   CASE WHEN item.fulfillment_source='local' THEN (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id=item.id
+    AND stock.status='available') ELSE 0 END AS owned_stock_quantity
 			 FROM product_sellable_items item
 			 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 			 JOIN products product ON product.id = item.product_id
 			 WHERE item.id = ? AND listing.enabled = 1 AND item.enabled = 1
-			  AND item.fulfillment_source = 'local' AND product.status = 'active'
+			  AND item.fulfillment_source IN ('local','supplier') AND product.status = 'active'
 			  AND product.product_type = 'stock'
 			  AND item.currency = COALESCE((SELECT json_extract(value, '$') FROM system_settings
 			   WHERE key = 'commerce.default_currency'), 'USD')
@@ -91,6 +94,7 @@ export async function createSupplierApiOrder(
 			product_name: string;
 			price_minor: string;
 			stock_quantity: number;
+			owned_stock_quantity: number;
 		}>();
 	if (!item)
 		throw new DomainError("supplier_sku_not_found", 404, "SKU not found");
@@ -99,6 +103,12 @@ export async function createSupplierApiOrder(
 			"supplier_stock_unavailable",
 			409,
 			"Insufficient stock",
+		);
+	if (item.owned_stock_quantity < input.quantity)
+		await assertSupplierAvailability(
+			db,
+			item.id,
+			input.quantity - item.owned_stock_quantity,
 		);
 	const total = (BigInt(item.price_minor) * BigInt(input.quantity)).toString();
 	const orderId = crypto.randomUUID();
