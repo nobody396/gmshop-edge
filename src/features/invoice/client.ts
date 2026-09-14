@@ -40,13 +40,21 @@ export async function send(input: Record<string, string>): Promise<Invoice> {
 			: { body: JSON.stringify({ ...payload, payment_method: "alipay" }) }),
 		signal: AbortSignal.timeout(20000),
 	});
-	const body = z
+	const envelope = z
 		.object({
+			status_code: z.number().optional(),
 			msg: z.string().optional(),
-			data: invoiceSchema.nullable().optional(),
+			data: z.unknown().optional(),
 		})
-		.parse(await response.json());
-	if (!response.ok || !body.data)
+		.safeParse(await response.json().catch(() => null));
+	if (!envelope.success) throw new Error(m.invoice_error());
+	const body = envelope.data;
+	if (
+		!response.ok ||
+		(body.status_code !== undefined && body.status_code !== 0)
+	)
 		throw new Error(body.msg || m.invoice_error());
-	return body.data;
+	const invoice = invoiceSchema.safeParse(body.data);
+	if (!invoice.success) throw new Error(m.invoice_error());
+	return invoice.data;
 }

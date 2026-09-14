@@ -74,3 +74,56 @@ describe("independent VIP invoice API", () => {
 		).rejects.toThrow("Unavailable");
 	});
 });
+
+it("preserves the backend business failure instead of exposing a Zod error", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			Response.json(
+				{ status_code: 400, msg: "创建开票补款失败，请稍后重试", data: {} },
+				{ status: 400 },
+			),
+		),
+	);
+	await expect(
+		send({ action: "create", order_no: "TEST", invoice_amount: "685" }),
+	).rejects.toThrow("创建开票补款失败，请稍后重试");
+});
+
+it("checks HTTP-200 business errors before decoding success data", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			Response.json({
+				status_code: 409,
+				msg: "该订单已申请开票",
+				data: { request_id: "test" },
+			}),
+		),
+	);
+	await expect(
+		send({ action: "create", order_no: "TEST", invoice_amount: "685" }),
+	).rejects.toThrow("该订单已申请开票");
+});
+it("does not expose schema internals for malformed success responses", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			Response.json({ status_code: 0, msg: "success", data: {} }),
+		),
+	);
+	await expect(
+		send({ action: "create", order_no: "TEST", invoice_amount: "685" }),
+	).rejects.not.toThrow("invalid_type");
+});
+it("does not expose a JSON parse error for gateway HTML failures", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			async () => new Response("<html>Bad gateway</html>", { status: 502 }),
+		),
+	);
+	await expect(
+		send({ action: "create", order_no: "TEST", invoice_amount: "685" }),
+	).rejects.not.toThrow("JSON");
+});
