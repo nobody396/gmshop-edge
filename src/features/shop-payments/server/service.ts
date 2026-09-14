@@ -9,6 +9,7 @@ import { grossUpPaymentAmount } from "#/features/shop-payments/fees";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import { epusdtMerchantOrderId } from "#/features/shop-payments/providers/epusdt";
+import { supplierFallbackEnabledExpression } from "#/features/storefront/server/stock-availability";
 import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { mutateWallet } from "#/features/wallet/server/ledger";
 import { DomainError } from "#/lib/domain-error";
@@ -57,6 +58,7 @@ type PaymentCreationContext = {
 
 type OrderItem = EntitlementOrderItem & {
 	policy_json: string | null;
+	supplier_fallback_enabled: number;
 	fulfillment_source: "local" | "manual" | "supplier";
 	supplier_status: string | null;
 	supplier_binding_id: string | null;
@@ -1285,6 +1287,12 @@ function fulfillmentStatements(
 	const supplierStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "supplier";
+	const supplierFallback =
+		item.delivery_component_type === "stock" &&
+		item.fulfillment_source === "local" &&
+		item.supplier_fallback_enabled === 1 &&
+		supplierBindingReady(item);
+	const useSupplier = supplierStock || supplierFallback;
 	const manualStock =
 		item.delivery_component_type === "stock" &&
 		item.fulfillment_source === "manual";
@@ -1304,7 +1312,7 @@ function fulfillmentStatements(
 					`UPDATE stock_entries SET status = 'reserved', order_item_id = ?, reserved_at = ?, updated_at = ?
 					 WHERE id IN (SELECT id FROM stock_entries WHERE sellable_item_id = ? AND status = 'available'
 					 ORDER BY created_at, id LIMIT ?)
-					 AND (SELECT COUNT(*) FROM stock_entries WHERE sellable_item_id = ? AND status = 'available') >= ?`,
+					 AND (? = 1 OR (SELECT COUNT(*) FROM stock_entries WHERE sellable_item_id = ? AND status = 'available') >= ?)`,
 				)
 				.bind(
 					item.id,
@@ -1312,6 +1320,7 @@ function fulfillmentStatements(
 					now,
 					item.delivery_component_id,
 					item.quantity,
+					supplierFallback,
 					item.delivery_component_id,
 					item.quantity,
 				),
@@ -1343,21 +1352,30 @@ function fulfillmentStatements(
 					manualStock,
 					item.id,
 					item.quantity,
-					supplierStock,
+					useSupplier,
 					now,
 					manualStock,
 					item.id,
 					item.quantity,
-					supplierStock,
+					useSupplier,
 					now,
 					now,
 					orderId,
 				),
 		);
-		if (supplierStock) {
+		if (useSupplier) {
 			const totalCostMinor = (
 				BigInt(item.reference_cost_minor ?? "0") * BigInt(item.quantity)
 			).toString();
+			// D1 calculates the deficit inside the reservation transaction. Keep its
+			// integer multiplication exact rather than allowing SQLite REAL overflow.
+			if (BigInt(totalCostMinor) > 9223372036854775807n)
+				throw new DomainError(
+					"supplier_cost_out_of_range",
+					409,
+					"Supplier cost exceeds the supported range",
+				);
+			const remaining = `(SELECT ${item.quantity} - COUNT(*) FROM stock_entries WHERE order_item_id = ? AND status = 'reserved')`;
 			statements.push(
 				db
 					.prepare(
@@ -1367,7 +1385,7 @@ function fulfillmentStatements(
 						  total_cost_minor, currency, binding_snapshot_json,
 						  state, attempt_count, selection_count, next_retry_at,
 						  created_at, updated_at)
-						 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 0, ?, ?, ?
+						 SELECT ?, ?, ?, ?, ?, ${remaining}, ?, CAST(CAST(? AS INTEGER) * ${remaining} AS TEXT), ?, ?, 'pending', 0, 0, ?, ?, ?
 						 FROM shop_orders WHERE id = ? AND status = 'paid'
 						  AND ((SELECT COUNT(*) FROM stock_entries
 						   WHERE order_item_id = ? AND status = 'reserved') < ?)`,
@@ -1378,9 +1396,10 @@ function fulfillmentStatements(
 						item.id,
 						deliveryId,
 						item.supplier_binding_id,
-						item.quantity,
+						item.id,
 						item.reference_cost_minor,
-						totalCostMinor,
+						item.reference_cost_minor,
+						item.id,
 						item.supplier_currency,
 						JSON.stringify({
 							customerUsageUrl: resolveSupplierUsageUrl(item.policy_json, {
@@ -1475,7 +1494,7 @@ function fulfillmentStatements(
 				requireDownloadAsset: item.delivery_component_type === "download",
 			}),
 		);
-	if (!manualStock && supplierStock)
+	if (useSupplier)
 		statements.push(
 			db
 				.prepare(
@@ -1567,6 +1586,7 @@ const orderItemsForFulfillmentSql = `SELECT
  oi.delivery_component_type, oi.quantity, oi.duration_ms, oi.usage_limit,
  oi.access_limit, oi.renewed_from_entitlement_id, oi.renewal_mode,
  oi.definition_version_id, psi.fulfillment_source, psi.supplier_status, psi.policy_json,
+ ${supplierFallbackEnabledExpression("psi")} AS supplier_fallback_enabled,
  sb.id AS supplier_binding_id, sb.provider AS supplier_provider,
  sb.normalized_api_origin AS supplier_origin,
  sb.protocol_version AS supplier_protocol,

@@ -1,5 +1,12 @@
 const SUPPLIER_SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
 
+// Explicit per-SKU opt-in: local-only items must never spend supplier balance.
+export function supplierFallbackEnabledExpression(itemAlias: string) {
+	return `EXISTS (SELECT 1 FROM system_settings setting
+  WHERE setting.key = 'fulfillment.supplier_fallback.' || ${itemAlias}.id
+   AND setting.value = 'true')`;
+}
+
 export function storefrontStockExpression(
 	productAlias: string,
 	itemAlias: string,
@@ -15,10 +22,8 @@ export function storefrontStockExpression(
 		WHEN ${productAlias}.product_type <> 'stock' THEN -1
 		WHEN ${itemAlias}.fulfillment_source = 'manual' THEN -1
 		WHEN ${itemAlias}.fulfillment_source = 'supplier' THEN ${syncedSupplierStock}
-		WHEN EXISTS (SELECT 1 FROM supplier_bindings binding
-		 WHERE binding.sellable_item_id = ${itemAlias}.id AND binding.enabled = 1)
-		 THEN CASE WHEN ${localStock} >= ${syncedSupplierStock}
-		  THEN ${localStock} ELSE ${syncedSupplierStock} END
+		WHEN ${supplierFallbackEnabledExpression(itemAlias)}
+		 THEN ${localStock} + ${syncedSupplierStock}
 		ELSE ${localStock}
 	END`;
 }

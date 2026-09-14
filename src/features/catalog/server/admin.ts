@@ -19,6 +19,7 @@ import {
 	stockFulfillmentModeSchema,
 } from "#/features/catalog/schema";
 import { removeSellableItemsFromAllCarts } from "#/features/storefront/server/cart";
+import { supplierFallbackEnabledExpression } from "#/features/storefront/server/stock-availability";
 import { csvCell } from "#/lib/csv";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret, encryptSecret } from "#/lib/secrets";
@@ -891,10 +892,13 @@ export const switchStockFulfillmentModeFn = createServerFn({ method: "POST" })
 		const context = await adminContext(systemPermission("inventory", "update"));
 		const before = await context.db
 			.prepare(
-				"SELECT fulfillment_source FROM product_sellable_items WHERE id = ? LIMIT 1",
+				`SELECT fulfillment_source,${supplierFallbackEnabledExpression("item")} AS supplier_fallback_enabled FROM product_sellable_items item WHERE id = ? LIMIT 1`,
 			)
 			.bind(data.sellableItemId)
-			.first<{ fulfillment_source: string }>();
+			.first<{
+				fulfillment_source: string;
+				supplier_fallback_enabled: number;
+			}>();
 		const now = Date.now();
 		const result = await switchStockFulfillmentMode(
 			context.db,
@@ -908,8 +912,11 @@ export const switchStockFulfillmentModeFn = createServerFn({ method: "POST" })
 					action: "inventory.fulfillment_source_switched",
 					targetType: "delivery_component",
 					targetId: data.sellableItemId,
-					before: { mode: before?.fulfillment_source ?? null },
-					after: { mode: data.mode },
+					before: {
+						mode: before?.fulfillment_source ?? null,
+						supplierFallbackEnabled: Boolean(before?.supplier_fallback_enabled),
+					},
+					after: { mode: data.mode, supplierFallbackEnabled: false },
 					now,
 				}),
 			]);

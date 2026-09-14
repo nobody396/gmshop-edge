@@ -1,10 +1,13 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { switchStockFulfillmentMode } from "#/features/catalog/server/fulfillment-source";
 import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { processDelivery } from "#/features/fulfillment/server/process";
 import { completeFreeStoreOrder } from "#/features/shop-payments/server/service";
 import { revealStoreDelivery } from "#/features/storefront/server/delivery-reveal";
 import { getStoreOrder } from "#/features/storefront/server/order-query";
+import { getSupplierProduct } from "#/features/supplier-api/server/catalog";
+import { createSupplierApiOrder } from "#/features/supplier-api/server/orders";
 import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { supplierFetchJson } from "#/features/suppliers/providers/http";
 import { signDujiaoNextRequest } from "#/features/suppliers/providers/signatures";
@@ -12,7 +15,7 @@ import { createSupplierCredentialVault } from "#/features/suppliers/secrets";
 import { createSupplierHttpAudit } from "#/features/suppliers/server/diagnostics";
 import { handleDujiaoSupplierCallback } from "#/features/suppliers/server/dujiao-callback";
 import { processSupplierOrder } from "#/features/suppliers/server/process";
-import { decryptSecret } from "#/lib/secrets";
+import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import {
 	createInitialRuntimeConfig,
 	runtimeConfigEntries,
@@ -158,6 +161,495 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			supplier_events: 0,
 			delivery_events: 1,
 		});
+	});
+
+	async function enableFallback() {
+		await db.batch([
+			db.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL WHERE id='item'",
+			),
+			db.prepare(
+				"INSERT INTO system_settings(key,value) VALUES ('fulfillment.supplier_fallback.item','true')",
+			),
+		]);
+	}
+	async function addOwned(count: number) {
+		for (let i = 0; i < count; i++)
+			await db
+				.prepare(`INSERT INTO stock_entries
+   (id,sellable_item_id,content_encrypted,key_version,content_fingerprint,content_mask,status,created_at,updated_at)
+   VALUES (?,'item',?,1,?,?,'available',?,?)`)
+				.bind(
+					`owned-${i}`,
+					await encryptSecret(
+						`OWNED-${i}`,
+						runtime.commerceSecret,
+						"stock-entry",
+					),
+					`fp-${i}`,
+					`masked-${i}`,
+					i + 1,
+					i + 1,
+				)
+				.run();
+	}
+	it.each([
+		0, 1, 2, 3,
+	])("local-first reserves owned stock before quoting only the deficit (stock=%i)", async (owned) => {
+		await enableFallback();
+		await addOwned(owned);
+		await completeFreeStoreOrder(db, "order");
+		await completeFreeStoreOrder(db, "order");
+		const reserved = await db
+			.prepare(
+				"SELECT id FROM stock_entries WHERE status='reserved' ORDER BY created_at,id",
+			)
+			.all();
+		expect(reserved.results).toHaveLength(Math.min(owned, 2));
+		const orders = await db
+			.prepare("SELECT quantity,total_cost_minor FROM supplier_orders")
+			.all();
+		expect(orders.results).toEqual(
+			owned >= 2
+				? []
+				: [
+						{
+							quantity: 2 - owned,
+							total_cost_minor: String(100 * (2 - owned)),
+						},
+					],
+		);
+		const delivery = await db
+			.prepare("SELECT id,status FROM delivery_records")
+			.first<{ id: string; status: string }>();
+		expect(delivery?.status).toBe(owned >= 2 ? "pending" : "awaiting_supply");
+		expect(
+			(
+				await db
+					.prepare(
+						"SELECT id FROM outbox_events WHERE event_type='supplier.requested'",
+					)
+					.all()
+			).results,
+		).toHaveLength(owned >= 2 ? 0 : 1);
+		if (owned >= 2) {
+			await processDelivery(db, delivery?.id ?? "");
+			const row = await db
+				.prepare("SELECT content_encrypted FROM delivery_records")
+				.first<{ content_encrypted: string }>();
+			expect(
+				await decryptSecret(
+					row?.content_encrypted ?? "",
+					runtime.commerceSecret,
+					"delivery-content",
+				),
+			).toBe("OWNED-0\nOWNED-1");
+		}
+	});
+	it("keeps local stock usable when the fallback binding is disabled", async () => {
+		await enableFallback();
+		await addOwned(2);
+		await db.prepare("UPDATE supplier_bindings SET enabled=0").run();
+		await completeFreeStoreOrder(db, "order");
+		expect(
+			await db.prepare("SELECT status FROM delivery_records").first(),
+		).toEqual({ status: "pending" });
+		expect(
+			(await db.prepare("SELECT id FROM supplier_orders").all()).results,
+		).toHaveLength(0);
+	});
+	it("does not create a purchase when fallback is enabled but the binding is disabled", async () => {
+		await enableFallback();
+		await db.prepare("UPDATE supplier_bindings SET enabled=0").run();
+		await completeFreeStoreOrder(db, "order");
+		expect(
+			await db.prepare("SELECT status FROM delivery_records").first(),
+		).toEqual({ status: "failed" });
+		expect(
+			(await db.prepare("SELECT id FROM supplier_orders").all()).results,
+		).toHaveLength(0);
+	});
+	it("delivers prepaid AISOU renewal stock plus only the exact deficit without duplicate purchase", async () => {
+		const sku = "fixture-renewal";
+		await enableFallback();
+		await addOwned(1);
+		const vault = await createSupplierCredentialVault(
+			"shared_stock",
+			{ appId: "merchant", appKey: "test-secret" },
+			runtime.commerceSecret,
+		);
+		await db.batch([
+			db
+				.prepare(
+					"UPDATE supplier_accounts SET provider='shared_stock', protocol_version='acg-sharedstock-v1',credentials_encrypted=?",
+				)
+				.bind(vault),
+			db
+				.prepare(
+					"UPDATE supplier_bindings SET provider='shared_stock',protocol_version='acg-sharedstock-v1',upstream_product_id=?,upstream_sku_id=?",
+				)
+				.bind(sku, sku),
+		]);
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id,delivery_record_id FROM supplier_orders")
+			.first<{ id: string; delivery_record_id: string }>();
+		const trades: URLSearchParams[] = [];
+		const fetcher: typeof fetch = async (input, init) => {
+			const request = new Request(input, init),
+				path = new URL(request.url).pathname;
+			if (path.endsWith("/connect"))
+				return Response.json({
+					code: 200,
+					data: { shopName: "Supplier", balance: "100.00" },
+				});
+			if (path.endsWith("/inventory"))
+				return Response.json({
+					code: 200,
+					data: { count: 10, delivery_way: 0, price: "1.00" },
+				});
+			if (path.endsWith("/trade")) {
+				trades.push(new URLSearchParams(await request.text()));
+				return Response.json({
+					code: 200,
+					data: { tradeNo: "trade-exact", secret: "AISOU-CARD" },
+				});
+			}
+			throw Error("Unexpected request");
+		};
+		await processSupplierOrder(db, order?.id ?? "", { fetcher });
+		await processSupplierOrder(db, order?.id ?? "", { fetcher });
+		expect(trades).toHaveLength(1);
+		expect(trades[0]?.get("shared_code")).toBe(sku);
+		expect(trades[0]?.get("num")).toBe("1");
+		await processDelivery(db, order?.delivery_record_id ?? "");
+		await processDelivery(db, order?.delivery_record_id ?? "");
+		expect(
+			(await db.prepare("SELECT status FROM stock_entries ORDER BY id").all())
+				.results,
+		).toEqual([{ status: "delivered" }, { status: "delivered" }]);
+		expect(
+			await db
+				.prepare("SELECT status FROM shop_orders WHERE id='order'")
+				.first(),
+		).toEqual({ status: "completed" });
+		const row = await db
+			.prepare("SELECT content_encrypted FROM delivery_records")
+			.first<{ content_encrypted: string }>();
+		expect(
+			await decryptSecret(
+				row?.content_encrypted ?? "",
+				runtime.commerceSecret,
+				"delivery-content",
+			),
+		).toBe("OWNED-0\nAISOU-CARD");
+	});
+	it("does not charge AISOU when its live balance is insufficient", async () => {
+		await enableFallback();
+		await addOwned(1);
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id FROM supplier_orders")
+			.first<{ id: string }>();
+		const requests: string[] = [];
+		const fetcher: typeof fetch = async (input, init) => {
+			const req = new Request(input, init);
+			requests.push(new URL(req.url).pathname);
+			if (req.url.endsWith("/ping"))
+				return Response.json({
+					ok: true,
+					site_name: "Supplier",
+					balance: "0.00",
+					currency: "CNY",
+				});
+			return pendingSupplierFetcher(input, init);
+		};
+		await expect(
+			processSupplierOrder(db, order?.id ?? "", { fetcher }),
+		).rejects.toMatchObject({ code: "supplier_accounts_exhausted" });
+		expect(requests).not.toContain("/api/v1/upstream/orders");
+		expect(
+			await db.prepare("SELECT status FROM stock_entries").first(),
+		).toEqual({ status: "reserved" });
+	});
+
+	it("exports and accepts reseller fallback only when explicitly enabled, with balance guards", async () => {
+		await db.batch([
+			db.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL WHERE id='item'",
+			),
+			db.prepare(
+				"INSERT INTO users(id,name,email,email_verified,enabled,balance_minor) VALUES ('buyer','Buyer','buyer@example.com',1,1,'10000')",
+			),
+			db.prepare(
+				"INSERT INTO supplier_api_keys(id,user_id,name,key_id,secret_encrypted) VALUES ('api-key','buyer','Test','key-id','encrypted')",
+			),
+			db.prepare(
+				"INSERT INTO supplier_export_listings(id,sellable_item_id,price_minor,currency,currency_decimals,enabled) VALUES ('export','item','100','USD',2,1)",
+			),
+		]);
+		await addOwned(1);
+		const identity = {
+			userId: "buyer",
+			keyRowId: "api-key",
+			keyId: "key-id",
+			allowedCallbackOrigin: null,
+		};
+		const input = {
+			skuId: "item",
+			quantity: 2,
+			downstreamOrderNo: "reseller-test",
+		};
+		expect(
+			(await getSupplierProduct(db, "product")).product?.skus[0]
+				?.stock_quantity,
+		).toBe(1);
+		await expect(
+			createSupplierApiOrder(db, identity, input),
+		).rejects.toMatchObject({ code: "supplier_stock_unavailable" });
+		await enableFallback();
+		expect(
+			(await getSupplierProduct(db, "product")).product?.skus[0]
+				?.stock_quantity,
+		).toBe(11);
+		await db.prepare("UPDATE supplier_accounts SET balance_minor='0'").run();
+		await expect(
+			createSupplierApiOrder(db, identity, input),
+		).rejects.toMatchObject({ code: "supplier_account_unavailable" });
+		expect(
+			await db
+				.prepare("SELECT balance_minor FROM users WHERE id='buyer'")
+				.first(),
+		).toEqual({ balance_minor: "10000" });
+		await db
+			.prepare("UPDATE supplier_accounts SET balance_minor='10000'")
+			.run();
+		const created = await createSupplierApiOrder(db, identity, input);
+		const duplicate = await createSupplierApiOrder(db, identity, input);
+		expect(duplicate.order_id).toBe(created.order_id);
+		expect(
+			await db
+				.prepare("SELECT quantity,total_cost_minor FROM supplier_orders")
+				.first(),
+		).toEqual({ quantity: 1, total_cost_minor: "100" });
+		expect(
+			await db
+				.prepare("SELECT balance_minor FROM users WHERE id='buyer'")
+				.first(),
+		).toEqual({ balance_minor: "9800" });
+		expect(
+			(
+				await db
+					.prepare("SELECT id FROM wallet_entries WHERE direction='debit'")
+					.all()
+			).results,
+		).toHaveLength(1);
+		await db.prepare("UPDATE supplier_bindings SET last_synced_at=1").run();
+		expect(
+			(await getSupplierProduct(db, "product")).product?.skus[0]
+				?.stock_quantity,
+		).toBe(0);
+	});
+
+	it("two concurrent paid orders cannot consume the same last owned card", async () => {
+		await enableFallback();
+		await addOwned(1);
+		const now = Date.now();
+		await db.batch([
+			db.prepare(
+				"UPDATE shop_order_items SET quantity=1 WHERE id='order-item'",
+			),
+			db
+				.prepare(`INSERT INTO shop_orders(id,order_number,status,currency,currency_decimals,subtotal_minor,discount_minor,total_minor,paid_minor,expires_at)
+    VALUES ('order-2','ORDER-2','pending_payment','USD',2,'0','0','0','0',?)`)
+				.bind(now + 60000),
+			db.prepare(`INSERT INTO shop_order_items(id,order_id,product_id,sellable_item_id,product_name,delivery_component_id,delivery_component_type,delivery_component_version,sellable_item_name,quantity,unit_price_minor,discount_minor,subtotal_minor)
+    VALUES ('order-item-2','order-2','product','item','Product','item','stock',1,'SKU',1,'0','0','0')`),
+		]);
+		await Promise.all([
+			completeFreeStoreOrder(db, "order"),
+			completeFreeStoreOrder(db, "order-2"),
+		]);
+		expect(
+			(await db.prepare("SELECT status FROM stock_entries").all()).results,
+		).toEqual([{ status: "reserved" }]);
+		expect(
+			(await db.prepare("SELECT quantity FROM supplier_orders").all()).results,
+		).toEqual([{ quantity: 1 }]);
+		expect(
+			(
+				await db
+					.prepare("SELECT status FROM delivery_records ORDER BY status")
+					.all()
+			).results,
+		).toEqual([{ status: "awaiting_supply" }, { status: "pending" }]);
+	});
+	it("quotes the deficit without floating-point money loss", async () => {
+		await enableFallback();
+		await addOwned(1);
+		await db
+			.prepare(
+				"UPDATE supplier_bindings SET reference_cost_minor='9007199254740993',max_cost_minor='9007199254740993'",
+			)
+			.run();
+		await completeFreeStoreOrder(db, "order");
+		expect(
+			await db
+				.prepare("SELECT quantity,total_cost_minor FROM supplier_orders")
+				.first(),
+		).toEqual({ quantity: 1, total_cost_minor: "9007199254740993" });
+	});
+
+	it.each([
+		"fixture-claude",
+		"fixture-go",
+	])("manual mode switch preserves owned deliveries and purchases the exact AISOU SKU: %s", async (sku) => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL",
+			)
+			.run();
+		await addOwned(3);
+		const ownedText = "CDK：OWNED-LOCAL\n充值地址：https://redeem.lsrai.shop/";
+		await db
+			.prepare(
+				"UPDATE stock_entries SET content_encrypted=? WHERE id='owned-0'",
+			)
+			.bind(
+				await encryptSecret(ownedText, runtime.commerceSecret, "stock-entry"),
+			)
+			.run();
+		await completeFreeStoreOrder(db, "order");
+		const original = await db
+			.prepare("SELECT id FROM delivery_records")
+			.first<{ id: string }>();
+		const vault = await createSupplierCredentialVault(
+			"shared_stock",
+			{ appId: "merchant", appKey: "test-secret" },
+			runtime.commerceSecret,
+		);
+		const usageUrl =
+			sku === "fixture-claude"
+				? "https://redeem.example/claude"
+				: "https://redeem.example/";
+		await db.batch([
+			db
+				.prepare(
+					"UPDATE supplier_accounts SET provider='shared_stock',protocol_version='acg-sharedstock-v1',credentials_encrypted=?",
+				)
+				.bind(vault),
+			db
+				.prepare(
+					"UPDATE supplier_bindings SET provider='shared_stock',protocol_version='acg-sharedstock-v1',upstream_product_id=?,upstream_sku_id=?",
+				)
+				.bind(sku, sku),
+			db.prepare("UPDATE product_sellable_items SET policy_json=?").bind(
+				JSON.stringify({
+					supplierUsageGuide: {
+						provider: "shared_stock",
+						origin: "https://supplier.example",
+						skuId: sku,
+						url: usageUrl,
+					},
+				}),
+			),
+			db.prepare(
+				"INSERT INTO users(id,name,email,email_verified,enabled,balance_minor) VALUES ('buyer','Buyer','buyer@example.com',1,1,'10000')",
+			),
+			db.prepare(
+				"INSERT INTO supplier_api_keys(id,user_id,name,key_id,secret_encrypted) VALUES ('api-key','buyer','Test','key-id','encrypted')",
+			),
+			db.prepare(
+				"INSERT INTO supplier_export_listings(id,sellable_item_id,price_minor,currency,currency_decimals,enabled) VALUES ('export','item','100','USD',2,1)",
+			),
+		]);
+		await switchStockFulfillmentMode(db, "item", "supplier");
+		expect(
+			(await getSupplierProduct(db, "product")).product?.skus[0]
+				?.stock_quantity,
+		).toBe(10);
+		await processDelivery(db, original?.id ?? "");
+		const old = await db
+			.prepare("SELECT content_encrypted FROM delivery_records WHERE id=?")
+			.bind(original?.id)
+			.first<{ content_encrypted: string }>();
+		expect(
+			await decryptSecret(
+				old?.content_encrypted ?? "",
+				runtime.commerceSecret,
+				"delivery-content",
+			),
+		).toContain("https://redeem.lsrai.shop/");
+		const input = {
+			skuId: "item",
+			quantity: 1,
+			downstreamOrderNo: "manual-aisou",
+		};
+		const identity = {
+			userId: "buyer",
+			keyRowId: "api-key",
+			keyId: "key-id",
+			allowedCallbackOrigin: null,
+		};
+		await createSupplierApiOrder(db, identity, input);
+		await createSupplierApiOrder(db, identity, input);
+		const purchase = await db
+			.prepare("SELECT id,delivery_record_id FROM supplier_orders")
+			.first<{ id: string; delivery_record_id: string }>();
+		const trades: URLSearchParams[] = [];
+		const fetcher: typeof fetch = async (input, init) => {
+			const request = new Request(input, init),
+				path = new URL(request.url).pathname;
+			if (path.endsWith("/connect"))
+				return Response.json({
+					code: 200,
+					data: { shopName: "Supplier", balance: "100.00" },
+				});
+			if (path.endsWith("/inventory"))
+				return Response.json({
+					code: 200,
+					data: { count: 10, delivery_way: 0, price: "1.00" },
+				});
+			if (path.endsWith("/trade")) {
+				trades.push(new URLSearchParams(await request.text()));
+				return Response.json({
+					code: 200,
+					data: {
+						tradeNo: "manual-trade",
+						secret: "AISOU-EXACT-CDK",
+						url: "https://supplier.example/payment-only",
+					},
+				});
+			}
+			throw Error("Unexpected request");
+		};
+		await processSupplierOrder(db, purchase?.id ?? "", { fetcher });
+		await processSupplierOrder(db, purchase?.id ?? "", { fetcher });
+		await processDelivery(db, purchase?.delivery_record_id ?? "");
+		expect(trades).toHaveLength(1);
+		expect(trades[0]?.get("shared_code")).toBe(sku);
+		const delivered = await db
+			.prepare("SELECT content_encrypted FROM delivery_records WHERE id=?")
+			.bind(purchase?.delivery_record_id)
+			.first<{ content_encrypted: string }>();
+		const text = await decryptSecret(
+			delivered?.content_encrypted ?? "",
+			runtime.commerceSecret,
+			"delivery-content",
+		);
+		expect(text).toContain("AISOU-EXACT-CDK");
+		expect(text).toContain(usageUrl);
+		expect(text).not.toContain("payment-only");
+		expect(
+			await db
+				.prepare("SELECT status FROM stock_entries WHERE id='owned-2'")
+				.first(),
+		).toEqual({ status: "available" });
+		await switchStockFulfillmentMode(db, "item", "local");
+		expect(
+			(await getSupplierProduct(db, "product")).product?.skus[0]
+				?.stock_quantity,
+		).toBe(1);
 	});
 
 	it("buys directly from the supplier without consuming staged local CDKs", async () => {
