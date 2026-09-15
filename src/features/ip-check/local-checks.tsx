@@ -1,3 +1,4 @@
+import { m } from "#/paraglide/messages";
 // Read-only diagnostics: never print values, proxy URLs, API keys or config bodies.
 export const localChecksCommand = `node <<'NODE'
 const fs = require('node:fs');
@@ -27,3 +28,23 @@ foreach ($key in $keys) {
   Write-Output ($key + ': ' + $state)
 }
 Get-TimeZone | Select-Object -ExpandProperty Id`;
+
+export function LocalChecks() {
+	return (
+		<div className="space-y-3">
+			{[
+				[m.ip_shell_unix(), localChecksCommand],
+				[m.ip_shell_windows(), windowsChecksCommand],
+			].map(([label, command]) => (
+				<details key={label} className="rounded-xl border bg-muted/30 p-4">
+					<summary className="cursor-pointer rounded font-medium text-sm focus-visible:outline-2">
+						{label}
+					</summary>
+					<pre className="mt-4 overflow-x-auto text-xs leading-6">
+						<code>{command}</code>
+					</pre>
+				</details>
+			))}
+		</div>
+	);
+}

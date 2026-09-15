@@ -38,13 +38,15 @@ export async function createShareImage(
 	ctx.font = "24px sans-serif";
 	function wrap(text: string, y: number, width = 680) {
 		let line = "";
-		for (const char of text) {
+		for (const char of text.match(
+			/[A-Za-z0-9]+(?:[’'-][A-Za-z0-9]+)*|\s+|[^A-Za-z0-9\s]/gu,
+		) ?? []) {
 			if (ctx && ctx.measureText(line + char).width > width) {
-				ctx.fillText(line, 90, y);
+				ctx.fillText(line.trimEnd(), 90, y);
 				y += 38;
 				line = "";
 			}
-			line += char;
+			if (line || char.trim()) line += char;
 		}
 		ctx?.fillText(line, 90, y);
 		return y + 38;

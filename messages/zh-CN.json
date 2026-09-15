@@ -1984,5 +1984,8 @@
 	"ip_coverage_title": "检测覆盖与边界",
 	"ip_coverage_body": "可自动检测：公网 IP、国家/城市、ASN/组织、机房、VPN、代理、Tor、移动网络、风险评分。住宅代理为规则推断。时区与 WebRTC 在浏览器检查。系统代理、终端变量和工具配置只能自行在本机核对。所有字段来自有限数据源，不是 Anthropic 的内部风控结果。",
 	"ip_query_invalid": "请输入有效的公网 IPv4 或 IPv6 地址，未开始新的检测。",
-	"ip_asn_abuse": "ASN 滥用比例（当前源未提供）"
+	"ip_asn_abuse": "ASN 滥用比例（当前源未提供）",
+	"ip_shell_unix": "macOS / Linux：终端只读检查",
+	"ip_shell_windows": "Windows：PowerShell 只读检查",
+	"ip_article_score_title": "分数是怎么算出来的？"
 }

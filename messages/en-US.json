@@ -1984,5 +1984,8 @@
 	"ip_coverage_title": "Coverage and limits",
 	"ip_coverage_body": "Automatic: public IP, country/city, ASN/organization, hosting, VPN, proxy, Tor, mobile and risk. Residential proxy is inferred. Timezone and WebRTC are browser checks. System proxies, shell variables and tool settings require local review. These are limited external sources, not Anthropic internal enforcement results.",
 	"ip_query_invalid": "Enter a valid public IPv4 or IPv6 address. No new check has started.",
-	"ip_asn_abuse": "ASN abuse fraction (not supplied)"
+	"ip_asn_abuse": "ASN abuse fraction (not supplied)",
+	"ip_shell_unix": "macOS / Linux: read-only terminal checks",
+	"ip_shell_windows": "Windows: read-only PowerShell checks",
+	"ip_article_score_title": "How is the score calculated?"
 }

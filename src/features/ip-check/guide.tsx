@@ -1,10 +1,10 @@
 import { m } from "#/paraglide/messages";
-import { localChecksCommand, windowsChecksCommand } from "./local-checks";
+import { LocalChecks } from "./local-checks";
 export function IpCheckGuide() {
 	const sections = [
 		[m.ip_a1_title, m.ip_a1_body],
 		[m.ip_a2_title, m.ip_a2_body],
-		[m.ip_g2_title, m.ip_g2_body],
+		[m.ip_article_score_title, m.ip_g2_body],
 		[m.ip_a3_title, m.ip_a3_body],
 		[m.ip_a4_title, m.ip_a4_body],
 		[m.ip_a5_title, m.ip_a5_body],
@@ -48,15 +48,7 @@ export function IpCheckGuide() {
 				>
 					<h2 className="font-semibold text-xl">{title()}</h2>
 					<p className="text-muted-foreground leading-8">{body()}</p>
-					{i === 6 && (
-						<pre className="overflow-x-auto rounded-xl bg-muted p-4 text-xs leading-6">
-							<code>
-								{localChecksCommand +
-									"\n\n# Windows PowerShell\n" +
-									windowsChecksCommand}
-							</code>
-						</pre>
-					)}
+					{i === 6 && <LocalChecks />}
 				</section>
 			))}
 			<footer className="space-y-4 border-t pt-7">

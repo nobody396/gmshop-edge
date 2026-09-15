@@ -19,7 +19,7 @@ import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 import { publicIpSchema } from "./address";
 import { type IpCheck, ipCheckSchema, maskIp, regionPolicyDate } from "./check";
-import { localChecksCommand, windowsChecksCommand } from "./local-checks";
+import { LocalChecks } from "./local-checks";
 import { checkerShareUrl, createShareImage } from "./share";
 import { checkWebRtc } from "./webrtc";
 
@@ -68,6 +68,9 @@ export function IpCheckPage() {
 		setFailed(false);
 		setResult(null);
 		setVisible(false);
+		rtcAbort.current?.abort();
+		setRtc(null);
+		setShareMessage("");
 		fetch(`/api/ip-check${target ? `?ip=${encodeURIComponent(target)}` : ""}`, {
 			cache: "no-store",
 			signal: controller.signal,
@@ -133,6 +136,8 @@ export function IpCheckPage() {
 		try {
 			if (navigator.canShare?.({ files: [share.file] }))
 				await navigator.share({ files: [share.file], title: m.ip_title() });
+			else if (navigator.share)
+				await navigator.share({ title: m.ip_title(), url: checkerShareUrl });
 			else setShareMessage(m.ip_share_error());
 		} catch {
 			setShareMessage(m.ip_share_error());
@@ -527,15 +532,7 @@ export function IpCheckPage() {
 						<p className="max-w-3xl text-muted-foreground text-sm leading-7">
 							{body()}
 						</p>
-						{index === 3 && (
-							<pre className="overflow-x-auto rounded-xl bg-muted p-4 text-xs leading-6">
-								<code>
-									{localChecksCommand +
-										"\n\n# Windows PowerShell\n" +
-										windowsChecksCommand}
-								</code>
-							</pre>
-						)}
+						{index === 3 && <LocalChecks />}
 					</article>
 				))}
 			</section>
