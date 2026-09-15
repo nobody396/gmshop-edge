@@ -49,7 +49,9 @@ export const previewStoreCartFn = createServerFn({ method: "POST" })
 						 s.maximum_quantity,
 						 p.id AS product_id, p.name AS product_name,
 						 s.id AS delivery_component_id, p.product_type AS delivery_type,
-					 p.status, p.cover_object_key, p.updated_at,
+						 p.status, p.sale_disabled AS product_sale_disabled,
+						 s.sale_disabled AS sellable_item_sale_disabled,
+						 p.cover_object_key, p.updated_at,
 						 ${storefrontStockExpression("p", "s")} AS available_stock
 						 FROM product_sellable_items s JOIN products p ON p.id = s.product_id
 						 WHERE s.id = ? AND s.enabled = 1 LIMIT 1`,
@@ -77,6 +79,8 @@ export const previewStoreCartFn = createServerFn({ method: "POST" })
 				const maximum = Number(row.maximum_quantity);
 				const issues: string[] = [];
 				if (String(row.status) !== "active") issues.push("unavailable");
+				if (row.product_sale_disabled || row.sellable_item_sale_disabled)
+					issues.push("sale_disabled");
 				if (stock === 0) issues.push("sold_out");
 				if (
 					item.quantity < Number(row.minimum_quantity) ||
@@ -458,7 +462,8 @@ export async function loadCartSellableItem(
 			`SELECT s.price_minor, s.minimum_quantity, s.maximum_quantity
 			 FROM product_sellable_items s
 			 JOIN products p ON p.id = s.product_id
-			 WHERE s.id = ? AND s.enabled = 1 AND p.status = 'active' LIMIT 1`,
+			 WHERE s.id = ? AND s.enabled = 1 AND s.sale_disabled = 0
+			  AND p.status = 'active' AND p.sale_disabled = 0 LIMIT 1`,
 		)
 		.bind(sellableItemId)
 		.first<{
@@ -510,7 +515,9 @@ export async function presentCart(db: D1Database, userId: string) {
 					 s.maximum_quantity, s.enabled AS sellable_item_enabled,
 					 p.id AS product_id, p.name AS product_name,
 					 s.id AS delivery_component_id, p.product_type AS delivery_type,
-					 p.status, p.cover_object_key, p.updated_at,
+					 p.status, p.sale_disabled AS product_sale_disabled,
+					 s.sale_disabled AS sellable_item_sale_disabled,
+					 p.cover_object_key, p.updated_at,
 					 ${storefrontStockExpression("p", "s")} AS available_stock
 					 FROM product_sellable_items s JOIN products p ON p.id = s.product_id
 					 WHERE s.id = ? LIMIT 1`,
@@ -539,6 +546,8 @@ export async function presentCart(db: D1Database, userId: string) {
 			const issues: string[] = [];
 			if (String(row.status) !== "active" || !row.sellable_item_enabled)
 				issues.push("unavailable");
+			if (row.product_sale_disabled || row.sellable_item_sale_disabled)
+				issues.push("sale_disabled");
 			if (stock === 0) issues.push("sold_out");
 			if (
 				item.quantity < Number(row.minimum_quantity) ||

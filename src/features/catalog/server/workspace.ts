@@ -40,7 +40,7 @@ export const getProductWorkspaceFn = createServerFn({ method: "GET" })
 				db.$client
 					.prepare(
 						`SELECT sellableItem.id,
-						 sellableItem.name, sellableItem.price_minor, sellableItem.currency, sellableItem.currency_decimals, sellableItem.enabled,
+						 sellableItem.name, sellableItem.price_minor, sellableItem.currency, sellableItem.currency_decimals, sellableItem.enabled, sellableItem.sale_disabled,
 						 product.product_type AS delivery_type,
 						 COALESCE((SELECT SUM(item.quantity) FROM shop_order_items item JOIN shop_orders orders ON orders.id = item.order_id WHERE item.sellable_item_id = sellableItem.id AND orders.status IN ('paid','fulfilling','completed','refunding')), 0) AS sales_count
 						 FROM product_sellable_items sellableItem
@@ -67,6 +67,8 @@ export const getProductWorkspaceFn = createServerFn({ method: "GET" })
 				id: String(product.id),
 				name: String(product.name),
 				status: String(product.status) as "draft" | "active" | "trashed",
+				revision: Number(product.revision),
+				saleDisabled: Boolean(product.sale_disabled),
 				mediaCount: Number(product.media_count),
 				sellableItemCount: Number(product.sellable_item_count),
 				activeSellableItemCount: Number(product.active_sellable_item_count),
@@ -90,6 +92,7 @@ export const getProductWorkspaceFn = createServerFn({ method: "GET" })
 				currency: String(row.currency),
 				currencyDecimals: Number(row.currency_decimals),
 				enabled: Boolean(row.enabled),
+				saleDisabled: Boolean(row.sale_disabled),
 				deliveryType:
 					row.delivery_type == null ? null : String(row.delivery_type),
 				salesCount: Number(row.sales_count),

@@ -64,6 +64,7 @@ export const productSellableItemsInputSchema = z
 					maximumPerCustomer: nullablePositiveInt,
 					delivery: deliveryPolicySchema,
 					enabled: z.boolean(),
+					saleDisabled: z.boolean().default(false),
 				}),
 			)
 			.min(1)
@@ -128,6 +129,19 @@ export const publishProductInputSchema = z.object({
 	productId: id,
 	expectedRevision: z.number().int().positive(),
 	publish: z.boolean().default(true),
+});
+
+export const productSaleDisabledInputSchema = z.object({
+	productId: id,
+	expectedRevision: z.number().int().positive(),
+	disabled: z.boolean(),
+});
+
+export const sellableItemSaleDisabledInputSchema = z.object({
+	productId: id,
+	sellableItemId: id,
+	expectedRevision: z.number().int().positive(),
+	disabled: z.boolean(),
 });
 
 export const productRevisionInputSchema = z.object({

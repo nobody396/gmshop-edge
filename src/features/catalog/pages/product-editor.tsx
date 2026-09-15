@@ -3,12 +3,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+	Ban,
 	ChevronLeft,
 	ChevronRight,
 	Copy,
 	Info,
 	Save,
 	Send,
+	ShoppingCart,
 	Star,
 	Trash2,
 } from "lucide-react";
@@ -57,6 +59,7 @@ import {
 	publishProductFn,
 	saveProductContentFn,
 	saveProductSellableItemsFn,
+	setProductSaleDisabledFn,
 } from "#/features/catalog/server/editor";
 import { getStoreCurrencyConfigurationFn } from "#/features/exchange-rates/server/public";
 import { ProductDownloadAssets } from "#/features/fulfillment/pages/download-assets";
@@ -491,6 +494,24 @@ export function ProductEditorPage({
 		},
 		onError: showError,
 	});
+	const saleDisabled = useMutation({
+		mutationFn: (disabled: boolean) => {
+			if (!productId) throw new Error("Save the product before changing sales");
+			return setProductSaleDisabledFn({
+				data: { productId, expectedRevision: revision, disabled },
+			});
+		},
+		onSuccess: async (result) => {
+			setRevision(result.revision);
+			await query.refetch();
+			toast.success(
+				result.saleDisabled
+					? m.catalog_sale_disabled_success()
+					: m.catalog_sale_enabled_success(),
+			);
+		},
+		onError: showError,
+	});
 	if (!isNew && query.isError)
 		return (
 			<div className="grid min-h-80 place-items-center">
@@ -524,6 +545,27 @@ export function ProductEditorPage({
 								<Save />
 								{m.catalog_editor_save()}
 							</ProButton>
+							{current ? (
+								<ProButton
+									disabled={
+										saleDisabled.isPending ||
+										current.product.status !== "active"
+									}
+									onClick={() =>
+										saleDisabled.mutate(!current.product.saleDisabled)
+									}
+									tooltip={m.catalog_sale_disabled_tooltip()}
+									type="button"
+									variant={
+										current.product.saleDisabled ? "outline" : "destructive"
+									}
+								>
+									{current.product.saleDisabled ? <ShoppingCart /> : <Ban />}
+									{current.product.saleDisabled
+										? m.catalog_sale_enable()
+										: m.catalog_sale_disable()}
+								</ProButton>
+							) : null}
 							{current ? (
 								<ProButton
 									disabled={
@@ -885,6 +927,9 @@ function SellableItemsEditor({
 			itemLabel={(sellableItem, index) => (
 				<span className="inline-flex items-center gap-2">
 					{index + 1}. {sellableItem.name || m.catalog_sellable_item_unnamed()}
+					{sellableItem.saleDisabled ? (
+						<Badge variant="destructive">{m.catalog_sale_disabled()}</Badge>
+					) : null}
 					{sellableItem.fulfillmentSource === "supplier" ? (
 						<Badge variant="outline">{m.catalog_supplier_fulfillment()}</Badge>
 					) : null}
@@ -903,6 +948,19 @@ function SellableItemsEditor({
 									sellableItems,
 									index,
 									{ enabled },
+									onSellableItemsChange,
+								)
+							}
+						/>
+						<Toggle
+							checked={sellableItem.saleDisabled}
+							label={m.catalog_sale_disabled()}
+							tooltip={m.catalog_sku_sale_disabled_tooltip()}
+							onChange={(disabled) =>
+								updateSellableItem(
+									sellableItems,
+									index,
+									{ saleDisabled: disabled },
 									onSellableItemsChange,
 								)
 							}
@@ -1828,6 +1886,7 @@ function defaultSellableItem(
 		maximumPerCustomer: null,
 		deliveryComponentId,
 		enabled: true,
+		saleDisabled: false,
 		fulfillmentSource: "local",
 		supplierStatus: null,
 		supplierFallbackEnabled: false,

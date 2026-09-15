@@ -35,6 +35,7 @@ import {
 import {
 	duplicateProductFn,
 	publishProductFn,
+	setProductSaleDisabledFn,
 } from "#/features/catalog/server/editor";
 import { ConfirmDialog } from "#/layouts/components/confirm-dialog";
 import { PageHeader } from "#/layouts/components/page-header";
@@ -75,6 +76,31 @@ export function ProductsPage({
 				},
 			}),
 		onSuccess: refresh,
+		onError: (error) => toast.error(catalogOperationErrorMessage(error)),
+	});
+	const saleDisabled = useMutation({
+		mutationFn: ({
+			product,
+			disabled,
+		}: {
+			product: Product;
+			disabled: boolean;
+		}) =>
+			setProductSaleDisabledFn({
+				data: {
+					productId: product.id,
+					expectedRevision: product.revision,
+					disabled,
+				},
+			}),
+		onSuccess: async (result) => {
+			toast.success(
+				result.saleDisabled
+					? m.catalog_sale_disabled_success()
+					: m.catalog_sale_enabled_success(),
+			);
+			await refresh();
+		},
 		onError: (error) => toast.error(catalogOperationErrorMessage(error)),
 	});
 	const trash = useMutation({
@@ -178,6 +204,25 @@ export function ProductsPage({
 						{row.original.name}
 					</Link>
 				),
+			},
+			{
+				accessorKey: "saleDisabled",
+				header: m.catalog_sale_disabled(),
+				cell: ({ row }) =>
+					view === "trash" ? (
+						"—"
+					) : (
+						<Switch
+							aria-label={m.catalog_sale_disabled()}
+							checked={row.original.saleDisabled}
+							disabled={
+								saleDisabled.isPending || row.original.status !== "active"
+							}
+							onCheckedChange={(disabled) =>
+								saleDisabled.mutate({ product: row.original, disabled })
+							}
+						/>
+					),
 			},
 			{
 				id: "tags",
@@ -318,6 +363,8 @@ export function ProductsPage({
 			duplicate.mutate,
 			publish.isPending,
 			publish.mutate,
+			saleDisabled.isPending,
+			saleDisabled.mutate,
 			restore.mutate,
 			trash.mutate,
 			view,

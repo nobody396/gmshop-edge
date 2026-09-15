@@ -1,10 +1,14 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ExternalLink, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { ProButton } from "#/components/pro/base/button";
 import { Badge } from "#/components/ui/badge";
+import { Switch } from "#/components/ui/switch";
+import { catalogOperationErrorMessage } from "#/features/catalog/error-message";
+import { setSellableItemSaleDisabledFn } from "#/features/catalog/server/editor";
 import { getProductWorkspaceFn } from "#/features/catalog/server/workspace";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
 import { PageHeader } from "#/layouts/components/page-header";
@@ -16,6 +20,34 @@ export function ProductWorkspacePage({ productId }: { productId: string }) {
 	const query = useQuery({
 		queryKey: ["admin", "catalog", "product-workspace", productId],
 		queryFn: () => getProductWorkspaceFn({ data: { productId } }),
+	});
+	const saleDisabled = useMutation({
+		mutationFn: ({
+			sellableItemId,
+			disabled,
+		}: {
+			sellableItemId: string;
+			disabled: boolean;
+		}) => {
+			if (!query.data) throw new Error("Product is unavailable");
+			return setSellableItemSaleDisabledFn({
+				data: {
+					productId,
+					sellableItemId,
+					expectedRevision: query.data.product.revision,
+					disabled,
+				},
+			});
+		},
+		onSuccess: async (result) => {
+			toast.success(
+				result.saleDisabled
+					? m.catalog_sku_sale_disabled_success()
+					: m.catalog_sku_sale_enabled_success(),
+			);
+			await query.refetch();
+		},
+		onError: (error) => toast.error(catalogOperationErrorMessage(error)),
 	});
 	if (query.isError)
 		return (
@@ -69,7 +101,7 @@ export function ProductWorkspacePage({ productId }: { productId: string }) {
 			<div className="grid border-y sm:grid-cols-2 xl:grid-cols-5">
 				<Metric
 					label={m.common_status()}
-					value={productStatus(product.status)}
+					value={productStatus(product.status, product.saleDisabled)}
 				/>
 				<Metric
 					label={m.catalog_workspace_sellable_items()}
@@ -132,6 +164,7 @@ export function ProductWorkspacePage({ productId }: { productId: string }) {
 								<th className="p-3">{m.catalog_price_minor()}</th>
 								<th className="p-3">{m.catalog_workspace_sales()}</th>
 								<th className="p-3">{m.common_status()}</th>
+								<th className="p-3">{m.catalog_sale_disabled()}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -163,6 +196,21 @@ export function ProductWorkspacePage({ productId }: { productId: string }) {
 												? m.catalog_status_active()
 												: m.catalog_workspace_disabled()}
 										</Badge>
+									</td>
+									<td className="p-3">
+										<Switch
+											aria-label={`${sellableItem.name} · ${m.catalog_sale_disabled()}`}
+											checked={sellableItem.saleDisabled}
+											disabled={
+												saleDisabled.isPending || product.status !== "active"
+											}
+											onCheckedChange={(disabled) =>
+												saleDisabled.mutate({
+													sellableItemId: sellableItem.id,
+													disabled,
+												})
+											}
+										/>
 									</td>
 								</tr>
 							))}
@@ -228,7 +276,11 @@ function Metric({
 	);
 }
 
-function productStatus(status: "draft" | "active" | "trashed") {
+function productStatus(
+	status: "draft" | "active" | "trashed",
+	saleDisabled: boolean,
+) {
+	if (status === "active" && saleDisabled) return m.catalog_sale_disabled();
 	if (status === "active") return m.catalog_status_active();
 	if (status === "trashed") return m.catalog_status_trashed();
 	return m.catalog_status_draft();

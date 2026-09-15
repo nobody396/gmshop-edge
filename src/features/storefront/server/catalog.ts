@@ -75,6 +75,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			),
 			db
 				.prepare(`SELECT p.id, p.name, p.description, p.product_type,
+			 p.sale_disabled,
 			 p.cover_object_key, p.updated_at,
 			 p.tag_names AS tags_json,
 			 s.id AS sellable_item_id, s.price_minor, s.list_price_minor, s.currency, s.currency_decimals,
@@ -86,6 +87,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			   AND channel_price.channel_id = price_channel.id
 			   AND channel_price.enabled = 1
 			  WHERE priced_item.product_id = p.id AND priced_item.enabled = 1
+			   AND priced_item.sale_disabled = 0
 			   AND price_channel.enabled = 1
 			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap')
 			  ORDER BY length(COALESCE(channel_price.price_minor, priced_item.price_minor)),
@@ -99,14 +101,20 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			   AND channel_price.channel_id = price_channel.id
 			   AND channel_price.enabled = 1
 			  WHERE priced_item.product_id = p.id AND priced_item.enabled = 1
+			   AND priced_item.sale_disabled = 0
 			   AND price_channel.enabled = 1
 			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap')
 			  ORDER BY length(COALESCE(channel_price.price_minor, priced_item.price_minor)) DESC,
 			           COALESCE(channel_price.price_minor, priced_item.price_minor) DESC,
 			           priced_item.sort_order, priced_item.id LIMIT 1) AS mainland_max_price_minor,
-				 (SELECT ps.price_minor FROM product_sellable_items ps
-			  WHERE ps.product_id = p.id AND ps.enabled = 1
-			  ORDER BY length(ps.price_minor) DESC, ps.price_minor DESC, ps.id LIMIT 1) AS max_price_minor,
+				 COALESCE((SELECT ps.price_minor FROM product_sellable_items ps
+			  WHERE ps.product_id = p.id AND ps.enabled = 1 AND ps.sale_disabled = 0
+			  ORDER BY length(ps.price_minor) DESC, ps.price_minor DESC, ps.id LIMIT 1), s.price_minor) AS max_price_minor,
+				 CASE WHEN p.sale_disabled = 1 OR NOT EXISTS (
+				  SELECT 1 FROM product_sellable_items sale_item
+				  WHERE sale_item.product_id = p.id AND sale_item.enabled = 1
+				   AND sale_item.sale_disabled = 0
+				 ) THEN 1 ELSE 0 END AS effective_sale_disabled,
 				 json_array(p.product_type) AS delivery_types,
 				 EXISTS (SELECT 1 FROM product_sellable_items manual_item
 				  WHERE manual_item.product_id = p.id AND manual_item.enabled = 1
@@ -130,7 +138,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			 JOIN product_sellable_items s ON s.id = (
 			  SELECT ps.id FROM product_sellable_items ps
 			  WHERE ps.product_id = p.id AND ps.enabled = 1
-			  ORDER BY length(ps.price_minor), ps.price_minor, ps.sort_order, ps.id LIMIT 1)
+			  ORDER BY ps.sale_disabled, length(ps.price_minor), ps.price_minor, ps.sort_order, ps.id LIMIT 1)
 			 WHERE ${filters.join(" AND ")}
 			 ORDER BY ${orderBy} LIMIT 100`)
 				.bind(...bindings),
@@ -153,6 +161,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 						| "stock"
 						| "download"
 						| "automation",
+					saleDisabled: Boolean(row.effective_sale_disabled),
 					tags: JSON.parse(String(row.tags_json)) as string[],
 					coverUrl: row.cover_object_key
 						? `/api/shop/products/${row.id}/cover?v=${row.updated_at}`
@@ -265,6 +274,7 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 				| "stock"
 				| "download"
 				| "automation",
+			saleDisabled: Boolean(product.sale_disabled),
 			tags: JSON.parse(String(product.tags_json)) as string[],
 			coverUrl: product.cover_object_key
 				? `/api/shop/products/${product.id}/cover?v=${product.updated_at}`
@@ -347,6 +357,7 @@ function presentSellableItem(
 		emailMode: String(row.email_mode) as "none" | "link" | "content",
 		showOnOrderPage: Boolean(row.show_on_order_page),
 		allowResend: Boolean(row.allow_resend),
+		saleDisabled: Boolean(row.sale_disabled),
 		availableStock: Number(row.available_stock),
 		channelPrices: channelPrices.map((price) => ({
 			id: String(price.id),

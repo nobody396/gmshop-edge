@@ -7,6 +7,7 @@ type ProductRow = {
 	description: string | null;
 	cover_object_key: string | null;
 	tag_names: string;
+	product_sale_disabled: number;
 	export_updated_at: number;
 };
 
@@ -16,11 +17,13 @@ type SkuRow = {
 	sku_name: string;
 	price_minor: string;
 	stock_quantity: number;
+	sku_sale_disabled: number;
 };
 
 const ELIGIBLE_PRODUCTS = `
 	 SELECT product.id AS product_id, product.name AS product_name,
 	 product.description, product.cover_object_key, product.tag_names, product.sort_order,
+	 product.sale_disabled AS product_sale_disabled,
 	 MAX(MAX(product.updated_at, item.updated_at, COALESCE(listing.updated_at, 0),
   COALESCE((SELECT MAX(binding.updated_at) FROM supplier_bindings binding
    WHERE binding.sellable_item_id=item.id AND binding.enabled=1),0),
@@ -44,6 +47,7 @@ const ELIGIBLE_PRODUCTS = `
 const ELIGIBLE_SKUS = `
 	SELECT item.product_id, item.id AS sku_id, item.name AS sku_name,
 	 COALESCE(listing.price_minor, item.price_minor) AS price_minor,
+	 item.sale_disabled AS sku_sale_disabled,
 	 ${storefrontStockExpression("product", "item")} AS stock_quantity
 	 FROM product_sellable_items item
 	 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
@@ -73,7 +77,8 @@ export async function listSupplierCatalog(
 		db
 			.prepare(
 				`WITH eligible_products AS (${ELIGIBLE_PRODUCTS})
-				 SELECT product_id, product_name, description, cover_object_key, tag_names, export_updated_at
+				 SELECT product_id, product_name, description, cover_object_key, tag_names,
+				        product_sale_disabled, export_updated_at
 				 FROM eligible_products WHERE export_updated_at >= ?
 				 ORDER BY sort_order, product_id LIMIT ? OFFSET ?`,
 			)
@@ -96,7 +101,8 @@ export async function getSupplierProduct(db: D1Database, productId: string) {
 	const product = await db
 		.prepare(
 			`WITH eligible_products AS (${ELIGIBLE_PRODUCTS})
-			 SELECT product_id, product_name, description, cover_object_key, tag_names, export_updated_at
+			 SELECT product_id, product_name, description, cover_object_key, tag_names,
+			        product_sale_disabled, export_updated_at
 			 FROM eligible_products WHERE product_id = ? LIMIT 1`,
 		)
 		.bind(productId)
@@ -141,6 +147,7 @@ function assembleProducts(products: ProductRow[], skus: SkuRow[]) {
 			: [],
 		category_names: JSON.parse(product.tag_names) as string[],
 		active: true,
+		sale_disabled: Boolean(product.product_sale_disabled),
 		updated_at: new Date(product.export_updated_at).toISOString(),
 		skus: (skusByProduct.get(product.product_id) ?? []).map((sku) => ({
 			id: sku.sku_id,
@@ -148,6 +155,9 @@ function assembleProducts(products: ProductRow[], skus: SkuRow[]) {
 			cost_minor: sku.price_minor,
 			stock_quantity: Number(sku.stock_quantity),
 			active: Number(sku.stock_quantity) > 0,
+			sale_disabled:
+				Boolean(product.product_sale_disabled) ||
+				Boolean(sku.sku_sale_disabled),
 		})),
 	}));
 }

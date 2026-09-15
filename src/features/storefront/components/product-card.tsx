@@ -1,7 +1,7 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
-import { Boxes, Zap } from "lucide-react";
+import { Ban, Boxes, Zap } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Skeleton } from "#/components/ui/skeleton";
 import { useCurrency } from "#/features/exchange-rates/currency-context";
@@ -67,6 +67,14 @@ export function StorefrontProductCard({
 							<Boxes className="size-12 text-primary/60" />
 						</div>
 					)}
+					{product.saleDisabled ? (
+						<div className="absolute start-3 top-3">
+							<Badge variant="destructive">
+								<Ban />
+								{m.store_sale_disabled()}
+							</Badge>
+						</div>
+					) : null}
 					{product.deliveryTypes.includes("stock") && available ? (
 						<div className="absolute end-3 top-3">
 							<Badge

@@ -507,7 +507,8 @@ async function loadSellableItem(
 			  WHERE pdv.sellable_item_id = s.id ORDER BY pdv.version DESC LIMIT 1
 			 ) END AS definition_version_id
 			 FROM product_sellable_items s JOIN products p ON p.id = s.product_id
-			 WHERE s.id = ? AND s.enabled = 1 AND p.status = 'active' LIMIT 1`,
+			 WHERE s.id = ? AND s.enabled = 1 AND s.sale_disabled = 0
+			  AND p.status = 'active' AND p.sale_disabled = 0 LIMIT 1`,
 		)
 		.bind(pricingChannelId ?? null, sellableItemId)
 		.first<SellableItemContext>();
