@@ -975,6 +975,7 @@ function CheckoutInputField({
 
 function checkoutIssueMessage(issue: string) {
 	if (issue === "unavailable") return m.store_cart_issue_unavailable();
+	if (issue === "sale_disabled") return m.store_cart_issue_sale_disabled();
 	if (issue === "sold_out") return m.store_cart_issue_sold_out();
 	if (issue === "quantity_unavailable") return m.store_cart_issue_quantity();
 	if (issue === "price_changed") return m.store_cart_issue_price_changed();

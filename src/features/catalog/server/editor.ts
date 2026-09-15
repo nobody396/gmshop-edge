@@ -5,8 +5,10 @@ import {
 	productContentInputSchema,
 	productCreateInputSchema,
 	productEditorIdSchema,
+	productSaleDisabledInputSchema,
 	productSellableItemsInputSchema,
 	publishProductInputSchema,
+	sellableItemSaleDisabledInputSchema,
 } from "#/features/catalog/editor-schema";
 import { assertProductTypeChange } from "#/features/catalog/product-type-invariant";
 import { removeSellableItemsFromAllCarts } from "#/features/storefront/server/cart";
@@ -211,6 +213,7 @@ export const getProductEditorFn = createServerFn({ method: "GET" })
 					.array(z.string())
 					.parse(JSON.parse(String(product.tag_names))),
 				status: String(product.status) as "draft" | "active" | "trashed",
+				saleDisabled: Boolean(product.sale_disabled),
 				revision: Number(product.revision),
 				coverObjectKey: product.cover_object_key
 					? String(product.cover_object_key)
@@ -238,6 +241,7 @@ export const getProductEditorFn = createServerFn({ method: "GET" })
 						: Number(sellableItem.maximum_per_customer),
 				deliveryComponentId: String(sellableItem.id),
 				enabled: Boolean(sellableItem.enabled),
+				saleDisabled: Boolean(sellableItem.sale_disabled),
 				supplierFallbackEnabled: Boolean(
 					sellableItem.supplier_fallback_enabled,
 				),
@@ -411,9 +415,9 @@ export const saveProductSellableItemsFn = createServerFn({ method: "POST" })
 						  renewal_mode, email_mode, show_on_order_page, allow_resend,
 						  low_stock_threshold, version, currency, currency_decimals,
 						  list_price_minor, price_minor, cost_minor, minimum_quantity,
-						  maximum_quantity, maximum_per_customer, sort_order, enabled,
+						  maximum_quantity, maximum_per_customer, sort_order, enabled, sale_disabled,
 						  created_at, updated_at)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 						 ON CONFLICT(id) DO UPDATE SET name = excluded.name,
 						  duration_ms = excluded.duration_ms,
 						  usage_limit = excluded.usage_limit,
@@ -434,6 +438,7 @@ export const saveProductSellableItemsFn = createServerFn({ method: "POST" })
 						  maximum_per_customer = excluded.maximum_per_customer,
 						  sort_order = excluded.sort_order,
 						  enabled = excluded.enabled,
+						  sale_disabled = excluded.sale_disabled,
 						  updated_at = excluded.updated_at`,
 					)
 					.bind(
@@ -459,6 +464,7 @@ export const saveProductSellableItemsFn = createServerFn({ method: "POST" })
 						item.maximumPerCustomer,
 						(index + 1) * 100,
 						item.enabled ? 1 : 0,
+						item.saleDisabled ? 1 : 0,
 						now,
 						now,
 					),
@@ -554,6 +560,125 @@ export const publishProductFn = createServerFn({ method: "POST" })
 			status: data.publish ? ("active" as const) : ("draft" as const),
 		};
 	});
+
+export const setProductSaleDisabledFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof productSaleDisabledInputSchema>) =>
+		productSaleDisabledInputSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const context = await getAdminServerContext(
+			systemPermission("products", "update"),
+		);
+		return setProductSaleDisabled(context, data);
+	});
+
+export async function setProductSaleDisabled(
+	context: EditorContext,
+	data: z.infer<typeof productSaleDisabledInputSchema>,
+) {
+	const product = await context.db.$client
+		.prepare("SELECT status FROM products WHERE id = ? LIMIT 1")
+		.bind(data.productId)
+		.first<{ status: string }>();
+	if (!product)
+		throw new DomainError("product_not_found", 404, "Product not found");
+	if (product.status !== "active")
+		throw new DomainError(
+			"product_not_active",
+			409,
+			"Only an active product can change its sale-disabled state",
+		);
+	const revision = await claimRevision(
+		context,
+		data.productId,
+		data.expectedRevision,
+	);
+	const now = Date.now();
+	await context.db.$client.batch([
+		context.db.$client
+			.prepare(
+				"UPDATE products SET sale_disabled = ?, updated_at = ? WHERE id = ?",
+			)
+			.bind(data.disabled ? 1 : 0, now, data.productId),
+		audit(
+			context,
+			data.disabled ? "product.sale_disabled" : "product.sale_enabled",
+			"product",
+			data.productId,
+			now,
+		),
+	]);
+	return {
+		id: data.productId,
+		revision,
+		saleDisabled: data.disabled,
+	};
+}
+
+export const setSellableItemSaleDisabledFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof sellableItemSaleDisabledInputSchema>) =>
+		sellableItemSaleDisabledInputSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const context = await getAdminServerContext(
+			systemPermission("products", "update"),
+		);
+		return setSellableItemSaleDisabled(context, data);
+	});
+
+export async function setSellableItemSaleDisabled(
+	context: EditorContext,
+	data: z.infer<typeof sellableItemSaleDisabledInputSchema>,
+) {
+	const item = await context.db.$client
+		.prepare(
+			`SELECT item.id, product.status
+			 FROM product_sellable_items item
+			 JOIN products product ON product.id = item.product_id
+			 WHERE item.id = ? AND item.product_id = ? LIMIT 1`,
+		)
+		.bind(data.sellableItemId, data.productId)
+		.first<{ id: string; status: string }>();
+	if (!item)
+		throw new DomainError(
+			"sellable_item_not_found",
+			404,
+			"Sellable item not found",
+		);
+	if (item.status !== "active")
+		throw new DomainError(
+			"product_not_active",
+			409,
+			"Only an active product can change its sale-disabled state",
+		);
+	const revision = await claimRevision(
+		context,
+		data.productId,
+		data.expectedRevision,
+	);
+	const now = Date.now();
+	await context.db.$client.batch([
+		context.db.$client
+			.prepare(
+				"UPDATE product_sellable_items SET sale_disabled = ?, updated_at = ? WHERE id = ?",
+			)
+			.bind(data.disabled ? 1 : 0, now, data.sellableItemId),
+		audit(
+			context,
+			data.disabled
+				? "product.sellable_item_sale_disabled"
+				: "product.sellable_item_sale_enabled",
+			"sellable_item",
+			data.sellableItemId,
+			now,
+		),
+	]);
+	return {
+		id: data.sellableItemId,
+		revision,
+		saleDisabled: data.disabled,
+	};
+}
 
 export async function checkProduct(context: EditorContext, productId: string) {
 	const rows = await all(

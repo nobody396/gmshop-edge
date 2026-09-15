@@ -75,6 +75,7 @@ export async function createSupplierApiOrder(
 			 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 			 JOIN products product ON product.id = item.product_id
 			 WHERE item.id = ? AND listing.enabled = 1 AND item.enabled = 1
+			  AND item.sale_disabled = 0 AND product.sale_disabled = 0
 			  AND item.fulfillment_source IN ('local','supplier') AND product.status = 'active'
 			  AND product.product_type = 'stock'
 			  AND item.currency = COALESCE((SELECT json_extract(value, '$') FROM system_settings

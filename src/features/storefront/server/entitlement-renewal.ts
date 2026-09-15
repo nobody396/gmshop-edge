@@ -19,7 +19,9 @@ export function loadRenewableEntitlement(
 			  AND ce.status IN ('active', 'expired', 'exhausted')
 			  AND sellable_item.renewal_mode = 'stack'
 			  AND sellable_item.enabled = 1
+			  AND sellable_item.sale_disabled = 0
 			  AND product.status = 'active'
+			  AND product.sale_disabled = 0
 			 LIMIT 1`,
 		)
 		.bind(entitlementId, userId)

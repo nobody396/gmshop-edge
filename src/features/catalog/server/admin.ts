@@ -62,7 +62,7 @@ export const listProductsFn = createServerFn({ method: "GET" })
 				db
 					.prepare(
 						`SELECT p.id, p.name, p.description, p.product_type,
-						 p.status, p.cover_object_key, p.revision, p.sort_order,
+						 p.status, p.sale_disabled, p.cover_object_key, p.revision, p.sort_order,
 					 p.created_at, p.updated_at,
 						 COUNT(DISTINCT s.id) AS sellable_item_count,
 							 COUNT(DISTINCT CASE WHEN s.enabled = 1 THEN s.id END) AS enabled_sellable_item_count,
@@ -99,6 +99,7 @@ export const listProductsFn = createServerFn({ method: "GET" })
 					| "download"
 					| "automation",
 				status: String(row.status) as "draft" | "active" | "trashed",
+				saleDisabled: Boolean(row.sale_disabled),
 				coverObjectKey: row.cover_object_key
 					? String(row.cover_object_key)
 					: null,

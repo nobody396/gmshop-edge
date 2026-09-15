@@ -41,6 +41,9 @@ export const products = sqliteTable(
 		status: text("status", { enum: ["draft", "active", "trashed"] })
 			.notNull()
 			.default("draft"),
+		saleDisabled: integer("sale_disabled", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		trashedAt: integer("trashed_at", { mode: "timestamp_ms" }),
 		coverObjectKey: text("cover_object_key"),
 		revision: integer("revision").notNull().default(1),
@@ -191,6 +194,9 @@ export const productSellableItems = sqliteTable(
 		maximumPerCustomer: integer("maximum_per_customer"),
 		sortOrder: integer("sort_order").notNull().default(100),
 		enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+		saleDisabled: integer("sale_disabled", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		...timestamps,
 	},
 	(table) => [

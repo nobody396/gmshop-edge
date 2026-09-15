@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import {
 	ArrowLeft,
 	BadgePercent,
+	Ban,
 	BookOpenCheck,
 	Boxes,
 	ChevronLeft,
@@ -95,7 +96,10 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 			});
 	}, [product.data?.id]);
 	useEffect(() => {
-		const first = product.data?.sellableItems.find(isAvailable);
+		const first =
+			product.data?.sellableItems.find(
+				(item) => isAvailable(item) && !item.saleDisabled,
+			) ?? product.data?.sellableItems.find(isAvailable);
 		if (!selectedItemId && first) {
 			setSelectedItemId(first.id);
 			setQuantity(first.minimumQuantity);
@@ -136,6 +140,8 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 		: undefined;
 	const canPurchase =
 		selectedItem != null &&
+		!data.saleDisabled &&
+		!selectedItem.saleDisabled &&
 		isAvailable(selectedItem) &&
 		Number.isInteger(quantity) &&
 		quantity >= selectedItem.minimumQuantity &&
@@ -278,6 +284,12 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 						<BadgePercent className="mt-0.5 size-4 shrink-0" />
 						<p>{m.store_alipay_fee_notice()}</p>
 					</div>
+					{data.saleDisabled ? (
+						<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-destructive text-sm leading-6">
+							<Ban className="mt-0.5 size-4 shrink-0" />
+							<p>{m.store_sale_disabled_description()}</p>
+						</div>
+					) : null}
 					{showPurchaseOptions ? (
 						<fieldset className="mt-7">
 							<legend className="mb-3 font-medium">
@@ -310,6 +322,11 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 												) : !isAvailable(item) ? (
 													<span className="shrink-0 text-muted-foreground text-xs">
 														{m.store_sold_out()}
+													</span>
+												) : null}
+												{item.saleDisabled ? (
+													<span className="shrink-0 text-destructive text-xs">
+														{m.store_sale_disabled()}
 													</span>
 												) : null}
 											</span>
@@ -469,7 +486,9 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 									}}
 								>
 									<Zap />
-									{m.store_buy_now()}
+									{data.saleDisabled || selectedItem?.saleDisabled
+										? m.store_sale_disabled()
+										: m.store_buy_now()}
 								</Button>
 							)}
 							<Button
