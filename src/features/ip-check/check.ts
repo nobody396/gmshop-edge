@@ -168,6 +168,7 @@ export function checkIp(
 
 export function maskIp(ip: string | null) {
 	if (!ip) return "—";
+	ip = ip.replace(/^\[|\]$/g, "");
 	return ip.includes(":")
 		? `${ip.split(":")[0]}:••••:••••`
 		: `${ip.split(".")[0]}.•••.•••.${ip.split(".")[3]}`;

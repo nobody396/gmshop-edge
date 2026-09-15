@@ -36,7 +36,11 @@ const providerSchema = z.object({
 
 const ipquerySchema = z.object({
 	ip: z.union([z.ipv4(), z.ipv6()]),
-	isp: z.object({ asn: z.string().nullable(), org: z.string().nullable() }),
+	isp: z.object({
+		asn: z.string().nullable(),
+		org: z.string().nullable(),
+		isp: z.string().nullable().optional(),
+	}),
 	location: z.object({
 		country_code: z
 			.string()
@@ -85,7 +89,11 @@ function assess(base: IpCheck, data: Intelligence): IpCheck {
 					? "listed"
 					: "unlisted";
 	const risk = Math.max(local.risk, data.risk);
-	const complete = Boolean(country && asn && org && region !== "unknown");
+	const complete = Boolean(
+		country &&
+			region !== "unknown" &&
+			((asn && org) || datacenter || vpn || proxy || tor || local.chinaCloud),
+	);
 	const regionCap = ["KP", "IR", "CU", "SY", "RU", "BY"].includes(cc ?? "")
 		? 5
 		: region === "unlisted" || region === "review"
@@ -152,12 +160,12 @@ export function applyIpQuery(base: IpCheck, raw: unknown): IpCheck {
 	if (!base.ip || canonicalIp(data.ip) !== canonicalIp(base.ip))
 		throw new Error("IP response mismatch");
 	return assess(base, {
-		country: data.location.country_code,
-		city: data.location.city,
-		asn: Number(data.isp.asn?.replace(/^AS/, "")) || null,
-		org: data.isp.org,
+		country: data.location.country_code || base.country,
+		city: data.location.city || base.city,
+		asn: Number(data.isp.asn?.replace(/^AS/, "")) || base.asn,
+		org: data.isp.org?.trim() || data.isp.isp?.trim() || base.organization,
 		timezone: data.location.timezone,
-		datacenter: data.risk.is_datacenter,
+		datacenter: data.risk.is_datacenter || base.hosting === "suspected",
 		vpn: data.risk.is_vpn,
 		proxy: data.risk.is_proxy,
 		tor: data.risk.is_tor,
@@ -165,6 +173,28 @@ export function applyIpQuery(base: IpCheck, raw: unknown): IpCheck {
 		risk: data.risk.risk_score,
 		source: "ipquery.io",
 	});
+}
+function providerFailure(source: string, error: unknown) {
+	console.warn(
+		JSON.stringify({
+			event: "ip_check_provider_failure",
+			source,
+			kind:
+				error instanceof z.ZodError
+					? "schema"
+					: typeof error === "number"
+						? `http_${error}`
+						: error instanceof Error
+							? error.name
+							: typeof error === "string"
+								? error
+								: "unknown",
+			field:
+				error instanceof z.ZodError
+					? error.issues[0]?.path.join(".")
+					: undefined,
+		}),
+	);
 }
 async function hash(value: string) {
 	return [
@@ -256,11 +286,16 @@ export async function handleIpCheck(
 			);
 			if (response.ok)
 				result = applyIpQuery(base, await readProviderJson(response));
-			else failure = response.status === 429 ? "quota" : "provider";
-		} catch {
+			else {
+				failure = response.status === 429 ? "quota" : "provider";
+				providerFailure("ipquery", response.status);
+			}
+		} catch (error) {
+			providerFailure("ipquery", error);
 			/* One bounded fallback, never retry the same provider. */
 		}
 		if (!result || result.score === null) {
+			if (result) providerFailure("ipquery", "incomplete_metadata");
 			const budget = await claimFixedWindowRateLimit(db, {
 				bucketKey: "ip-check:proxycheck:daily",
 				limit: 80,
@@ -271,19 +306,29 @@ export async function handleIpCheck(
 				const response = await fetchProvider(
 					`https://proxycheck.io/v3/${encodeURIComponent(ip)}?ver=24-June-2026`,
 				);
-				if (!response.ok)
+				if (!response.ok) {
+					providerFailure("proxycheck", response.status);
 					return respond({
 						...base,
 						warning: response.status === 429 ? "quota" : failure,
 					});
+				}
 				const raw = (await readProviderJson(response)) as Record<
 					string,
 					unknown
 				>;
-				if (raw.status !== "ok" && raw.status !== "warning")
+				if (raw.status !== "ok" && raw.status !== "warning") {
+					providerFailure(
+						"proxycheck",
+						/limit|quota|queries/i.test(String(raw.message ?? ""))
+							? "provider_quota"
+							: "provider_status",
+					);
 					return respond({ ...base, warning: failure });
+				}
 				result = applyIntelligence(base, raw[ip]);
-			} catch {
+			} catch (error) {
+				providerFailure("proxycheck", error);
 				return respond({ ...base, warning: failure });
 			}
 		}
@@ -333,7 +378,8 @@ export async function handleIpCheck(
 			/* Return the result even when cache writes fail. */
 		}
 		return respond(result);
-	} catch {
+	} catch (error) {
+		providerFailure("storage", error);
 		return respond({ ...base, warning: "provider" });
 	}
 }

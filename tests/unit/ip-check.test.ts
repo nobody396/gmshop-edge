@@ -146,3 +146,6 @@ it("local Wrangler metadata is never presented as the visitor's live result", ()
 		),
 	).toMatchObject({ ip: null, country: null, status: "incomplete" });
 });
+it("masks browser WebRTC IPv6 addresses that include brackets", () => {
+	expect(maskIp("[2001:db8::1]")).toBe("2001:••••:••••");
+});

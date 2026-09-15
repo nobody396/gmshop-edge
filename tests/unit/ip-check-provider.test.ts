@@ -239,10 +239,13 @@ it("cannot approve a region that conflicts with the trusted ingress", () => {
 });
 it("retains unknown when ownership data is missing", () => {
 	expect(
-		applyIpQuery(checkIp(request(), "cloudflare"), {
-			...primary,
-			isp: { asn: null, org: null },
-		}),
+		applyIpQuery(
+			{ ...checkIp(request(), "cloudflare"), asn: null, organization: null },
+			{
+				...primary,
+				isp: { asn: null, org: null },
+			},
+		),
 	).toMatchObject({ status: "incomplete", score: null });
 });
 it("schema retains every required negative flag rather than omitting it", () => {
@@ -279,5 +282,52 @@ it("a known VPN warning survives incomplete ownership metadata", () => {
 			isp: { asn: null, org: null },
 			risk: { ...primary.risk, is_vpn: true },
 		}),
-	).toMatchObject({ status: "risk", score: null });
+	).toMatchObject({ status: "risk", score: 40 });
+});
+it("fills missing primary identity only from the same checked connection", () => {
+	const result = applyIpQuery(checkIp(request(), "cloudflare"), {
+		...primary,
+		isp: { asn: "AS0", org: "", isp: "Example ISP" },
+		risk: { ...primary.risk, is_datacenter: true },
+	});
+	expect(result).toMatchObject({
+		asn: 12345,
+		organization: "Example ISP",
+		score: 60,
+		status: "hosting",
+		source: "ipquery.io",
+	});
+});
+it("retains a positive risk score for an arbitrary IP with unknown ASN", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn().mockResolvedValue(
+			Response.json({
+				...primary,
+				ip: "1.1.1.1",
+				isp: { asn: "AS0", org: "", isp: "Example host" },
+				risk: { ...primary.risk, is_datacenter: true },
+			}),
+		),
+	);
+	const response = await handleIpCheck(request("?ip=1.1.1.1"), env());
+	expect(await response?.json()).toMatchObject({
+		asn: null,
+		organization: "Example host",
+		score: 60,
+		status: "hosting",
+		edgeCountry: null,
+	});
+	expect(fetch).toHaveBeenCalledOnce();
+});
+it("never invents 100 when all identity sources are empty and no positive risk is known", () => {
+	const empty = {
+		...checkIp(request(), "cloudflare"),
+		asn: null,
+		organization: null,
+	};
+	expect(
+		applyIpQuery(empty, { ...primary, isp: { asn: "AS0", org: "", isp: "" } })
+			.score,
+	).toBeNull();
 });
