@@ -600,6 +600,28 @@ export async function setProductSaleDisabled(
 				"UPDATE products SET sale_disabled = ?, updated_at = ? WHERE id = ?",
 			)
 			.bind(data.disabled ? 1 : 0, now, data.productId),
+		context.db.$client
+			.prepare(
+				`INSERT OR IGNORE INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+				  status, attempt_count, created_at, updated_at)
+				 SELECT ?, 'inventory.changed', 'sellable_item', item.id, ?,
+				  json_object('sellableItemId', item.id, 'changedAt', ?),
+				  'pending', 0, ?, ?
+				 FROM product_sellable_items item
+				 JOIN supplier_export_listings listing
+				  ON listing.sellable_item_id = item.id AND listing.enabled = 1
+				 WHERE item.product_id = ? AND item.enabled = 1
+				 ORDER BY item.sort_order, item.id LIMIT 1`,
+			)
+			.bind(
+				`sale-product:${data.productId}:${revision}`,
+				`sale-product:${data.productId}:${revision}`,
+				now,
+				now,
+				now,
+				data.productId,
+			),
 		audit(
 			context,
 			data.disabled ? "product.sale_disabled" : "product.sale_enabled",
@@ -663,6 +685,27 @@ export async function setSellableItemSaleDisabled(
 				"UPDATE product_sellable_items SET sale_disabled = ?, updated_at = ? WHERE id = ?",
 			)
 			.bind(data.disabled ? 1 : 0, now, data.sellableItemId),
+		context.db.$client
+			.prepare(
+				`INSERT OR IGNORE INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+				  status, attempt_count, created_at, updated_at)
+				 SELECT ?, 'inventory.changed', 'sellable_item', item.id, ?,
+				  json_object('sellableItemId', item.id, 'changedAt', ?),
+				  'pending', 0, ?, ?
+				 FROM product_sellable_items item
+				 JOIN supplier_export_listings listing
+				  ON listing.sellable_item_id = item.id AND listing.enabled = 1
+				 WHERE item.id = ? AND item.enabled = 1`,
+			)
+			.bind(
+				`sale-item:${data.sellableItemId}:${revision}`,
+				`sale-item:${data.sellableItemId}:${revision}`,
+				now,
+				now,
+				now,
+				data.sellableItemId,
+			),
 		audit(
 			context,
 			data.disabled
