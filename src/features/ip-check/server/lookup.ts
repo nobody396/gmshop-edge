@@ -9,6 +9,7 @@ import {
 	supportedCountries,
 } from "../check";
 import { scoreIp } from "../score";
+import { fetchProvider, readProviderJson } from "./provider-transport";
 
 const providerSchema = z.object({
 	network: z.object({
@@ -165,31 +166,6 @@ export function applyIpQuery(base: IpCheck, raw: unknown): IpCheck {
 		source: "ipquery.io",
 	});
 }
-async function boundedJson(response: Response): Promise<unknown> {
-	if (!response.body) throw new Error("Empty provider response");
-	const reader = response.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let length = 0;
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			length += value.length;
-			if (length > 65536) throw new Error("Provider response too large");
-			chunks.push(value);
-		}
-	} finally {
-		await reader.cancel().catch(() => {});
-		reader.releaseLock();
-	}
-	const bytes = new Uint8Array(length);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.length;
-	}
-	return JSON.parse(new TextDecoder().decode(bytes));
-}
 async function hash(value: string) {
 	return [
 		...new Uint8Array(
@@ -275,15 +251,11 @@ export async function handleIpCheck(
 		let result: IpCheck | null = null;
 		let failure: "quota" | "provider" = "provider";
 		try {
-			const response = await fetch(
+			const response = await fetchProvider(
 				`https://api.ipquery.io/${encodeURIComponent(ip)}`,
-				{
-					signal: AbortSignal.timeout(4000),
-					redirect: "error",
-					headers: { accept: "application/json" },
-				},
 			);
-			if (response.ok) result = applyIpQuery(base, await boundedJson(response));
+			if (response.ok)
+				result = applyIpQuery(base, await readProviderJson(response));
 			else failure = response.status === 429 ? "quota" : "provider";
 		} catch {
 			/* One bounded fallback, never retry the same provider. */
@@ -296,20 +268,18 @@ export async function handleIpCheck(
 			});
 			if (!budget.allowed) return respond({ ...base, warning: "quota" });
 			try {
-				const response = await fetch(
+				const response = await fetchProvider(
 					`https://proxycheck.io/v3/${encodeURIComponent(ip)}?ver=24-June-2026`,
-					{
-						signal: AbortSignal.timeout(4000),
-						redirect: "error",
-						headers: { accept: "application/json" },
-					},
 				);
 				if (!response.ok)
 					return respond({
 						...base,
 						warning: response.status === 429 ? "quota" : failure,
 					});
-				const raw = (await boundedJson(response)) as Record<string, unknown>;
+				const raw = (await readProviderJson(response)) as Record<
+					string,
+					unknown
+				>;
 				if (raw.status !== "ok" && raw.status !== "warning")
 					return respond({ ...base, warning: failure });
 				result = applyIntelligence(base, raw[ip]);
