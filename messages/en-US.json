@@ -741,7 +741,7 @@
 	"store_support_description": "Choose web chat, Telegram group/private chat, or WeChat.",
 	"store_support_online": "Contact support online",
 	"store_support_online_description": "Start a live web conversation and receive replies here",
-	"store_delivery_ticker": "24/7 automatic top-up and delivery — order directly｜If a product is out of stock, join the group and ask us｜For manually sourced items, send your order CDK to online support after payment｜Send after-sales questions through online support or the Telegram group/private chat. If there is no reply, we are probably asleep and will respond as soon as we wake up. Thank you for understanding",
+	"store_delivery_ticker": "24/7 automatic top-up and delivery — order directly｜If a product is out of stock, join the group and ask us｜For all after-sales questions, use the customer support button on this page. If there is no reply, we are probably asleep and will respond as soon as we wake up. Thank you for understanding",
 	"store_support_wechat": "Add us on WeChat",
 	"store_support_wechat_description": "If online support does not reply within one minute, scan the QR code below to add customer support on WeChat",
 	"store_support_wechat_qr_alt": "LaoshirenAI WeChat support QR code",
