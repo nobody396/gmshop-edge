@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import { checkIp, handleIpCheck, maskIp } from "#/features/ip-check/check";
+import { describe, expect, it } from "vitest";
+import { checkIp, maskIp } from "#/features/ip-check/check";
+import { handleIpCheck } from "#/features/ip-check/server/lookup";
 
 function request(
 	cf: Record<string, unknown> = {},
@@ -104,38 +105,37 @@ describe("owned IP check and ablations", () => {
 		expect(maskIp("203.0.113.10")).toBe("203.•••.•••.10");
 		expect(maskIp(null)).toBe("—");
 	});
-	it("is no-store, independent of third-party availability and has no lookup query", async () => {
-		const fetch = vi
-			.spyOn(globalThis, "fetch")
-			.mockRejectedValue(new Error("offline"));
-		try {
-			const response = handleIpCheck(request(), "cloudflare");
-			expect(response?.headers.get("cache-control")).toBe("private, no-store");
-			expect(response?.headers.get("cdn-cache-control")).toBe("no-store");
-			expect(await response?.json()).toMatchObject({ ip: "203.0.113.10" });
-			expect(fetch).not.toHaveBeenCalled();
-			expect(
-				handleIpCheck(
+
+	it("is no-store and rejects private queries and writes", async () => {
+		const response = await handleIpCheck(request(), { runtime: "cloudflare" });
+		expect(response?.headers.get("cache-control")).toBe("private, no-store");
+		expect(response?.headers.get("cdn-cache-control")).toBe("no-store");
+		expect(await response?.json()).toMatchObject({ ip: "203.0.113.10" });
+		expect(
+			(
+				await handleIpCheck(
 					request(
 						{},
 						undefined,
-						"https://shop.example/api/ip-check?ip=8.8.8.8",
+						"https://shop.example/api/ip-check?ip=127.0.0.1",
 					),
-					"cloudflare",
-				)?.status,
-			).toBe(400);
-			expect(
-				handleIpCheck(
+					{ runtime: "cloudflare" },
+				)
+			)?.status,
+		).toBe(400);
+		expect(
+			(
+				await handleIpCheck(
 					new Request("https://shop.example/api/ip-check", { method: "POST" }),
-					"cloudflare",
-				)?.status,
-			).toBe(405);
-			expect(
-				handleIpCheck(new Request("https://shop.example/other"), "cloudflare"),
-			).toBeNull();
-		} finally {
-			fetch.mockRestore();
-		}
+					{ runtime: "cloudflare" },
+				)
+			)?.status,
+		).toBe(405);
+		expect(
+			await handleIpCheck(new Request("https://shop.example/other"), {
+				runtime: "cloudflare",
+			}),
+		).toBeNull();
 	});
 });
 it("local Wrangler metadata is never presented as the visitor's live result", () => {

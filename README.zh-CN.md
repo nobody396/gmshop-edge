@@ -393,12 +393,15 @@ Claude 充值商品的全部规格共用“三种不可充值情况、两种自�
 商品购买区提供明显入口；直接结算或混合购物车含 Claude 时，结算页也展示一次。
 配图存于本站，点击在站内弹窗放大。不会自动创建订单、发消息或请求第三方 IP 检测。
 
-IP 自查已改为本站 `/ip-check`，`GET /api/ip-check` 在原有 Host 校验后读取当前
-Cloudflare 连接，禁止缓存、不需要密钥、不写记录。本地预览与 Bun 部署明确显示
-信息不足；有限 ASN/组织名规则仅提示疑似机房，VPN、代理、Tor 与滥用信誉明确为未知。
-不提供安全分数或防封保证。页面含中英双语详细说明、本地时区及需用户同意才运行的
-Google STUN 检查。检测网页与实际客户端可能使用不同出口；不改价格、交付、订单或
-后端购买规则。来源、消融和验证记录见 `src/features/ip-check/NOTES.md`。
+本站 `/ip-check` 提供带来源的 0–100 评分、IP/ASN/地区与威胁标签、当前与指定
+IPv4/IPv6 查询、浏览器时区对照、手动 WebRTC、脱敏 PNG 分享图及本站二维码、
+近 30 天本站样本排名。完整中英技术指南在 `/guides/claude-network-check`。
+`GET /api/ip-check`（或 `/ip-check` 配合 JSON Accept）采用无需 Key 的 IPQuery
+为主源，proxycheck.io 为有界备用。结果缓存 10 分钟，D1 执行访客限流与备用
+每日 80 次预算；数据不可用时不显示 100 分。Anycast 仅覆盖公开的常见 DNS 地址，
+ASN 滥用比例无法取得，不编造。评分不是 Anthropic 官方结论或防封保证。
+新增迁移 `0014_ip_check_score_buckets.sql` 仅存每日分数计数，不改订单和资金。
+来源、MIT 许可、覆盖边界、消融与验证见 `src/features/ip-check/NOTES.md`。
 
 图文依据 https://aisou.pro/item/45 （2026-09-04 核对），三张 `qn.ldxp.cn` 原始截图
 保存为 `public/guides/claude/` 下的 active-subscription、message-disabled、

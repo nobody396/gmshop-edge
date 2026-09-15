@@ -1,93 +1,101 @@
-# Owned IP check / 自有 IP 检查
+# Owned IP check — release evidence and coverage
 
-## Scope and reference
+## Scope and provenance
 
-- Base: `b92b0f6` (existing 1.16.2 delivery worktree), branch `feat/owned-ip-check`.
-- Reference UX: https://ip-check.leeguoo.com/ and
-  https://blog.leeguoo.com/en/posts/claude-account-ban-network-detection/
-- Complexity: L2, independently rebuilt diagnostic page, not a pixel-identical clone.
-  Retains result/evidence/browser/self-check hierarchy; uses existing store header,
-  typography, spacing, buttons, light/dark themes and localization.
-- No original code, text paragraphs, images or proprietary APIs copied. No reusable
-  source license was established, so the article and implementation were not mirrored.
-- Primary references: https://developers.cloudflare.com/workers/runtime-apis/request/
-  and https://www.anthropic.com/supported-countries (Claude.ai section, 2026-09-15).
-  Region list is a dated snapshot, not live policy. Ukraine is manual-review because
-  country-level geolocation cannot establish compliance with territorial exceptions.
+- Initial baseline: `86170fc` on deployed v1.17.0 `a847530`; ticker-only `fa927e5`
+  is preserved, including removal of manual CDK handoff copy.
+- Reference: https://ip-check.leeguoo.com/ and the author's linked Claude network
+  article. This is a store-native implementation, NOT a byte/pixel-identical clone.
+- Algorithm port: leeguooooo/claude-code-usage-bar `ip_score.py`, MIT, pinned at
+  `a36a0b51c464b31c1b9b6189c29857e06ef63795`. License is retained in
+  `LICENSE.upstream`. 800 differential cases matched risk/type/score exactly.
+- External risk may conservatively lower that score. Current official country
+  allowlist and trusted-ingress regional conflicts also constrain the result.
+- Article: independently written with source links, not a copied/rebranded full
+  article. Community fingerprint theories are not presented as official ban rules.
 
-## Implementation
+## Data providers
 
-- `/ip-check`: thin public route; page lives alongside feature logic.
-- `/api/ip-check`: GET current connection only, before i18n request cloning and after
-  the existing Host authority guard. No query-IP, credentials, database writes,
-  third-party risk lookups, queues, order mutations, payment or notification actions.
-- Uses Cloudflare's original `request.cf` and `CF-Connecting-IP`; never trusts Bun
-  forwarding headers. Localhost ignores Wrangler's synthetic metadata. Private and
-  CDN no-store headers prevent one visitor's result being cached for another.
-- Hosting: explicit small ASN set and organization regex, heuristics only. Unknown
-  VPN/proxy/Tor/abuse flags are never converted to false. No residential assertion.
-- Client: 10-second timeout, cancellation on unmount, retry, no stale result on error,
-  response validation, default IP masking. Browser timezone is read locally.
-- WebRTC: optional Google STUN connection, disclosed before opt-in, 5-second bound,
-  `srflx` candidates only, deduplication and cleanup. Candidates are masked, not
-  uploaded or scored. No candidates is inconclusive, not a no-leak certificate.
-- Source file `check.ts` is isomorphic and side-effect-free; shared result schema and
-  mask function are reused. No additional dependency or service/repository layer.
-- Product and checkout use the existing shared purchase-guide component; its link is
-  now relative `/ip-check`. Existing account/billing checks remain unchanged.
+- Primary: https://ipquery.io/ — official page states no API key, free tier and
+  commercial use permitted. IPv4 and IPv6 examples were checked live.
+- Fallback: https://proxycheck.io/api/ — anonymous full response, 100/day advertised;
+  site-wide D1 allowance is conservatively capped at 80 fallback calls/day.
+- ipapi.is was NOT integrated: Google registration was rejected for the connection;
+  its free tier is for development/testing, and public redistribution has separate
+  restrictions. No account key was acquired/stored and no paid plan was bought.
+- No attempt to bypass registration controls, rotate IPs or evade provider quotas.
+- Both providers get only the queried IP. No account, cookie, order, CDK or secret
+  is forwarded. Public visitor data still traverses normal hosting/network logs.
 
-## Ablation / 消融
+## Reference feature matrix
 
-Removed from the reference concept: score/ranking, share-image rendering, API keys,
-arbitrary IP lookups, persistent history, blog duplication and secret-printing shell
-commands. None is needed to let customers inspect their current connection.
+| Reference feature | Owned implementation | Boundary |
+| --- | --- | --- |
+| Current exit IPv4/IPv6 | Trusted original Cloudflare request metadata | Not proof of Claude's network route |
+| Country/city/ASN/organization/colo | IPQuery + edge metadata, source labeled | Approximate geolocation |
+| Other IP query / URL parameter | Public-IP validation, canonical IPv6 | Rejects local/reserved targets |
+| JSON API | `/api/ip-check`, JSON Accept on `/ip-check` | Same limits; no extra API-key account system |
+| Purity / risk score | MIT port, provider risk, 0–100 | Not a probability or official safety certificate |
+| Clean/caution/high-risk/region bands | Explicit verdicts plus incomplete state | Missing evidence never gives 100 |
+| Hosting / VPN / proxy / Tor | Required boolean provider flags | Database detection, not exhaustive scanning |
+| Residential proxy | Original rule inference | Labeled inferred, not direct measurement |
+| China-cloud row | Original ASN/organization rule | No claim about user nationality or actual bans |
+| Mobile | IPQuery boolean; fallback may be unknown | Provider-supplied classification |
+| Anycast | Published Google/Cloudflare resolver matches | Others UNKNOWN, never default false |
+| ASN abuse fraction | UNKNOWN; alternative aggregate risk displayed separately | Not claimed to be equivalent |
+| Browser timezone | Local read + comparison to provider timezone | Not scored or uploaded |
+| WebRTC | Explicit Google STUN opt-in, 5s timeout, masked candidates | No-result is inconclusive; no automatic leak verdict |
+| Local configuration checks | Safe macOS/Linux + PowerShell instructions | Website cannot read shell/config itself |
+| Share image | 900×1200 masked PNG + QR + source/time/brand | Always masked even after UI reveal; no auto-post |
+| Download / device share / copy link | Native browser actions, error handling | Device share depends on browser support |
+| Ranking | Last 30 days of site-only score bins, one sample/IP/day | Not global; small samples say collecting |
+| Technical blog | Standalone bilingual guide + coverage table + references | Independent prose, not unauthorized verbatim copy |
+| Privacy/contact | Coverage/data notice + existing site support controls | No new third-party tracking scripts |
+| Language/theme/mobile/keyboard | Existing Paraglide, theme and accessible controls | Production readback required below |
 
-Tests ablate ASN, organization, region, edge metadata, third-party availability and
-WebRTC availability separately. Missing evidence must degrade to incomplete/unknown,
-not improve a verdict. Region restrictions take priority over hosting. Timezone and
-WebRTC are not inputs to the assessment, so removing them cannot change it.
+## Implementation and ablation
 
-## Verification
+The public route stays thin. Feature-owned server code runs after Host validation
+and before i18n request cloning, preserving `request.cf`. No second auth system,
+router, database, SDK, screenshot dependency or generic provider/service framework.
 
-- Focused Vitest: 35 checks pass (rules, ablations, privacy, locales, loading/error/
-  retry, default masking and WebRTC lifecycle).
-- Browser: actual local route rendered; refresh returns incomplete in local mode;
-  Chinese/English and light/dark viewed; 390 px phone view has no document horizontal
-  overflow; guide and opt-in controls wrap; keyboard Tab reaches official-policy
-  link with visible outline; no warning/error console entries at check time.
-- Empty local D1 migration passed (existing migrations 0000–0013); no schema change.
-- Local API test: GET returns no-store incomplete, POST/query-IP are rejected.
-- Full gates: see `artifacts/ip-check/` logs; record final outcomes below.
-- Not verified: real deployed Cloudflare visitor metadata, classification accuracy
-  against a labeled network dataset, live STUN reachability, production checkout
-  readback. No deployment, push, payment, email or notification was performed.
+Provider timeouts are 4s each, at most one fallback, 64 KiB response cap, redirects
+rejected. Client timeout is 15s and cancels stale requests. Quota, malformed/missing
+fields and network failure degrade visibly without synthesizing negative flags.
+Cache keys include canonical IP and ingress-region context; cached normalized facts
+omit the raw IP. TTL is 600s, public responses are private/CDN no-store. D1 rate keys
+are hashed. No raw IP or account is stored in score bins. The ranking query uses the
+day index and excludes old/future bins; failures in optional ranking never stop a
+valid diagnostic result. No order/price/fulfillment/payment/notification behavior is
+changed.
 
-### Reference comparison (qualitative, not pixel similarity)
+Ablations remove ASN, organization, region, individual risk flags, data providers,
+cache, STUN availability and ranking success independently. These validate graceful
+loss of evidence, not feature deletion. Removed only redundant hosting rows and
+unsafe secret-printing examples. Sharing/ranking/guide remain user-facing features.
 
-- Structure: complete for retained sections; omits scores/ranking/share by design.
-- Visual: intentionally store-native, not a one-to-one yellow sketch theme clone.
-- Interaction: refresh, masking and optional probe covered by tests; actual local
-  refresh and keyboard navigation verified in browser.
-- Responsive/localization: desktop and 390 px inspected; both locales rendered.
-- Branding/content: independent store copy; no original brand links in customer page.
-- Function: real edge endpoint implemented; production end-to-end remains unverified.
+## Verification ledger
 
-## Run locally
+- 800 pure-scoring differential cases against pinned upstream: passed.
+- Focused unit/integration checks: see `artifacts/ip-check/pre-release-tests.log`
+  and subsequent final-gate logs (counts may grow as edge cases are added).
+- Empty D1 + real SQL: at-most-once sample, no raw IP in counter keys, old/future
+  exclusion and indexed ranking query tested using Miniflare.
+- Local explicit fixture browser: 100-point display, masked share preview/download,
+  mobile dialog without document overflow, no error/warning console entries.
+- Downloaded PNG decoded with Apple Vision; QR equals the owned HTTPS checker URL
+  with share attribution only, no target IP. Evidence: `qr-validation.log`.
+- Local fixture is deliberately labeled TEST and is NOT evidence of a real visitor
+  receiving 100. It is not shipped in production.
+- Initial baseline deployment incident: stale build was inadvertently uploaded as
+  `b725043f`; immediately rolled back to known v1.17.0 `4f85b393`. Correct generated
+  baseline `904c23db` then passed live page/API readback. No database changed during
+  that correction. Deploy commands now stop on the first failed gate.
+- Ticker-only production version `1f40c6af` was read back on the real homepage.
+- Final enhanced build/deploy/live checks are recorded below when completed.
 
-From this worktree: `bun run db:migrate:local`, then
-`bunx vite dev --host 127.0.0.1 --port 3016`. Open `/ip-check`.
-Local mode intentionally does not show a real egress verdict; use unit fixtures to
-exercise complete result branches, not hardcoded data in the production page.
+## Not a guarantee
 
-### Final gates
-
-- `bun run typecheck`: passed.
-- `bun run test`: 1,064 Vitest tests passed (215 files; 1 existing skipped file,
-  2 existing TODO tests), plus 23 Bun runtime tests passed. No failures.
-- `bun run check`: 870 files passed, no fixes applied.
-- `bun run build`: Workers production build passed (local build only).
-- `bun run build:bun`: Bun production build passed.
-- Focused security suite: 10 tests passed; actual local endpoint returned HTTP 200
-  with private/CDN no-store, query lookup HTTP 400 and POST HTTP 405.
-- All changes remain uncommitted in the named feature worktree. Main and existing
-  deployment worktrees were not edited; no deployment or live catalog mutation.
+Detection is bounded by source coverage and freshness. Anycast outside the known
+resolver set, ASN abuse fraction, Claude-side request routing and internal account
+risk signals are not verified. This page cannot guarantee prevention of suspension.

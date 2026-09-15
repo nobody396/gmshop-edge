@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { scoreIp } from "./score";
 
 export const regionPolicyDate = "2026-09-15";
 // Claude.ai list, not API list: https://www.anthropic.com/supported-countries
-const supportedCountries = new Set(
+export const supportedCountries = new Set(
 	"AL DZ AD AO AG AR AM AU AT AZ BS BH BD BB BE BZ BJ BT BO BA BW BR BN BG BF BI CV KH CM CA CF TD CL CO KM CG CR CI HR CY CZ DK DJ DM DO EC EG SV GQ ER EE SZ ET FJ FI FR GA GM GE DE GH GR GD GT GN GW GY HT HN HU IS IN ID IQ IE IL IT JM JP JO KZ KE KI KW KG LA LV LB LS LR LY LI LT LU MG MW MY MV ML MT MH MR MU MX FM MD MC MN ME MA MZ NA NR NP NL NZ NI NE NG MK NO OM PK PW PS PA PG PY PE PH PL PT QA RO RW KN LC VC WS SM ST SA SN RS SC SL SG SK SI SO SB ZA KR SS ES LK SD SR SE CH TW TJ TZ TH TL TG TO TT TN TR TM TV UG UA AE GB US UY UZ VU VA VN ZM ZW".split(
 		" ",
 	),
@@ -34,7 +35,51 @@ export const ipCheckSchema = z.object({
 	colo: z.string().nullable(),
 	region: z.enum(["listed", "unlisted", "review", "unknown"]),
 	hosting: z.enum(["suspected", "unknown"]),
-	status: z.enum(["incomplete", "region", "hosting", "limited"]),
+	status: z.enum([
+		"incomplete",
+		"region",
+		"hosting",
+		"limited",
+		"clear",
+		"risk",
+	]),
+	source: z
+		.enum(["cloudflare-edge", "ipquery.io", "proxycheck.io"])
+		.default("cloudflare-edge"),
+	networkTimezone: z.string().nullable().default(null),
+	edgeCountry: z.string().nullable().default(null),
+	score: z.number().int().min(0).max(100).nullable().default(null),
+	risk: z.number().int().min(0).max(100).nullable().default(null),
+	type: z.string().default("unknown"),
+	mode: z.enum(["edge", "intelligence", "unavailable"]).default("unavailable"),
+	flags: z
+		.object({
+			datacenter: z.boolean().nullable(),
+			chinaCloud: z.boolean().nullable(),
+			vpn: z.boolean().nullable(),
+			proxy: z.boolean().nullable(),
+			residentialProxy: z.boolean().nullable(),
+			tor: z.boolean().nullable(),
+			mobile: z.boolean().nullable(),
+			anycast: z.boolean().nullable(),
+		})
+		.default({
+			datacenter: null,
+			chinaCloud: null,
+			vpn: null,
+			proxy: null,
+			residentialProxy: null,
+			tor: null,
+			mobile: null,
+			anycast: null,
+		}),
+	providerRisk: z.number().min(0).max(100).nullable().default(null),
+	warning: z.enum(["quota", "provider", "disabled"]).nullable().default(null),
+	checkedAt: z.string().default(""),
+	ranking: z
+		.object({ total: z.number(), percentile: z.number() })
+		.nullable()
+		.default(null),
 });
 export type IpCheck = z.infer<typeof ipCheckSchema>;
 
@@ -69,7 +114,39 @@ export function checkIp(
 		hostingName.test(cf?.asOrganization ?? "")
 			? "suspected"
 			: "unknown";
+	const assessment = scoreIp(
+		{
+			datacenter: hosting === "suspected",
+			vpn: null,
+			proxy: null,
+			tor: null,
+			org: cf?.asOrganization,
+			asn: cf?.asn,
+		},
+		country,
+	);
 	return {
+		score: null,
+		risk: null,
+		source: "cloudflare-edge",
+		networkTimezone: null,
+		edgeCountry: country,
+		type: assessment.type,
+		mode: ip.success ? "edge" : "unavailable",
+		flags: {
+			datacenter: hosting === "suspected" ? true : null,
+			chinaCloud: assessment.chinaCloud,
+			vpn: null,
+			proxy: null,
+			residentialProxy: null,
+			tor: null,
+			mobile: null,
+			anycast: null,
+		},
+		providerRisk: null,
+		warning: null,
+		checkedAt: new Date().toISOString(),
+		ranking: null,
 		ip: ip.success ? ip.data : null,
 		country,
 		city: cf?.city ?? null,
@@ -87,27 +164,6 @@ export function checkIp(
 						? "hosting"
 						: "limited",
 	};
-}
-
-export function handleIpCheck(request: Request, runtime: "cloudflare" | "bun") {
-	const url = new URL(request.url);
-	if (url.pathname !== "/api/ip-check") return null;
-	const headers = {
-		"cache-control": "private, no-store",
-		"cdn-cache-control": "no-store",
-		"referrer-policy": "no-referrer",
-	};
-	if (request.method !== "GET")
-		return Response.json(
-			{ error: "method_not_allowed" },
-			{ status: 405, headers: { ...headers, allow: "GET" } },
-		);
-	if (url.search)
-		return Response.json(
-			{ error: "current_connection_only" },
-			{ status: 400, headers },
-		);
-	return Response.json(checkIp(request, runtime), { headers });
 }
 
 export function maskIp(ip: string | null) {

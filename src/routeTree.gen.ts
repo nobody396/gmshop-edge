@@ -87,6 +87,7 @@ import { Route as AdminAccessPermissionBitsRouteImport } from './routes/admin/ac
 import { Route as AdminAccessModulesRouteImport } from './routes/admin/access/modules'
 import { Route as publicProductsProductIdRouteImport } from './routes/(public)/products/$productId'
 import { Route as publicOrdersOrderNumberRouteImport } from './routes/(public)/orders/$orderNumber'
+import { Route as publicGuidesClaudeNetworkCheckRouteImport } from './routes/(public)/guides/claude-network-check'
 import { Route as publicAccountWalletRouteImport } from './routes/(public)/account/wallet'
 import { Route as publicAccountSettingsRouteImport } from './routes/(public)/account/settings'
 import { Route as publicAccountSessionsRouteImport } from './routes/(public)/account/sessions'
@@ -516,6 +517,12 @@ const publicOrdersOrderNumberRoute = publicOrdersOrderNumberRouteImport.update({
   path: '/orders/$orderNumber',
   getParentRoute: () => publicRouteRoute,
 } as any)
+const publicGuidesClaudeNetworkCheckRoute =
+  publicGuidesClaudeNetworkCheckRouteImport.update({
+    id: '/guides/claude-network-check',
+    path: '/guides/claude-network-check',
+    getParentRoute: () => publicRouteRoute,
+  } as any)
 const publicAccountWalletRoute = publicAccountWalletRouteImport.update({
   id: '/wallet',
   path: '/wallet',
@@ -753,6 +760,7 @@ export interface FileRoutesByFullPath {
   '/account/sessions': typeof publicAccountSessionsRoute
   '/account/settings': typeof publicAccountSettingsRoute
   '/account/wallet': typeof publicAccountWalletRoute
+  '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
@@ -856,6 +864,7 @@ export interface FileRoutesByTo {
   '/account/sessions': typeof publicAccountSessionsRoute
   '/account/settings': typeof publicAccountSettingsRoute
   '/account/wallet': typeof publicAccountWalletRoute
+  '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
@@ -971,6 +980,7 @@ export interface FileRoutesById {
   '/(public)/account/sessions': typeof publicAccountSessionsRoute
   '/(public)/account/settings': typeof publicAccountSettingsRoute
   '/(public)/account/wallet': typeof publicAccountWalletRoute
+  '/(public)/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/(public)/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/(public)/products/$productId': typeof publicProductsProductIdRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
@@ -1085,6 +1095,7 @@ export interface FileRouteTypes {
     | '/account/sessions'
     | '/account/settings'
     | '/account/wallet'
+    | '/guides/claude-network-check'
     | '/orders/$orderNumber'
     | '/products/$productId'
     | '/admin/access/modules'
@@ -1188,6 +1199,7 @@ export interface FileRouteTypes {
     | '/account/sessions'
     | '/account/settings'
     | '/account/wallet'
+    | '/guides/claude-network-check'
     | '/orders/$orderNumber'
     | '/products/$productId'
     | '/admin/access/modules'
@@ -1302,6 +1314,7 @@ export interface FileRouteTypes {
     | '/(public)/account/sessions'
     | '/(public)/account/settings'
     | '/(public)/account/wallet'
+    | '/(public)/guides/claude-network-check'
     | '/(public)/orders/$orderNumber'
     | '/(public)/products/$productId'
     | '/admin/access/modules'
@@ -1956,6 +1969,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof publicOrdersOrderNumberRouteImport
       parentRoute: typeof publicRouteRoute
     }
+    '/(public)/guides/claude-network-check': {
+      id: '/(public)/guides/claude-network-check'
+      path: '/guides/claude-network-check'
+      fullPath: '/guides/claude-network-check'
+      preLoaderRoute: typeof publicGuidesClaudeNetworkCheckRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
     '/(public)/account/wallet': {
       id: '/(public)/account/wallet'
       path: '/wallet'
@@ -2254,6 +2274,7 @@ interface publicRouteRouteChildren {
   publicMeRoute: typeof publicMeRoute
   publicStatusRoute: typeof publicStatusRoute
   publicIndexRoute: typeof publicIndexRoute
+  publicGuidesClaudeNetworkCheckRoute: typeof publicGuidesClaudeNetworkCheckRoute
   publicOrdersOrderNumberRoute: typeof publicOrdersOrderNumberRoute
   publicProductsProductIdRoute: typeof publicProductsProductIdRoute
   publicCheckoutIndexRoute: typeof publicCheckoutIndexRoute
@@ -2268,6 +2289,7 @@ const publicRouteRouteChildren: publicRouteRouteChildren = {
   publicMeRoute: publicMeRoute,
   publicStatusRoute: publicStatusRoute,
   publicIndexRoute: publicIndexRoute,
+  publicGuidesClaudeNetworkCheckRoute: publicGuidesClaudeNetworkCheckRoute,
   publicOrdersOrderNumberRoute: publicOrdersOrderNumberRoute,
   publicProductsProductIdRoute: publicProductsProductIdRoute,
   publicCheckoutIndexRoute: publicCheckoutIndexRoute,

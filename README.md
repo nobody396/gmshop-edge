@@ -457,16 +457,19 @@ The shared Claude recharge product displays three account/subscription blockers,
  checkout. Images are hosted locally and enlarge in an in-page dialog. The guide
  does not create orders, submit messages or run third-party IP tests automatically.
 
-The IP-check entry now opens the owned `/ip-check` page; `GET /api/ip-check`
-reads only the current Cloudflare connection after the normal Host authority guard.
-It is private/no-store, needs no key and writes no records. Local preview and Bun
-show insufficient data rather than fabricated results. A limited ASN/name heuristic
-can flag hosting; VPN, proxy, Tor and abuse reputation remain explicitly unknown.
-There is no numerical safety score or guarantee. The page includes a detailed
-bilingual guide, locally read timezone and an optional, consent-gated Google STUN
-probe. Browser and Claude traffic may use different exits. No prices, fulfillment,
-purchase records or backend acceptance rules change. See
-`src/features/ip-check/NOTES.md` for scope, sources, ablations and verification.
+The owned `/ip-check` page now includes source-labeled 0–100 scoring, IP/ASN/region
+and threat flags, current/specific IPv4/IPv6 lookups, browser timezone comparison,
+opt-in WebRTC, masked PNG shares with a first-party QR code, and 30-day site-only
+rankings. The detailed bilingual guide lives at `/guides/claude-network-check`.
+`GET /api/ip-check` (also `Accept: application/json` on `/ip-check`) uses IPQuery
+as the keyless primary and a bounded proxycheck.io fallback. No paid plan or API
+key is needed. Results cache for 10 minutes; per-caller limits and the fallback's
+80/day budget are enforced in D1. Missing intelligence never produces a 100 score.
+Anycast covers known published DNS resolver addresses only; ASN abuse fraction is
+not available. The score is not an Anthropic verdict or an account-safety guarantee.
+Migration `0014_ip_check_score_buckets.sql` adds only aggregate score bins; no
+commerce schema or state is changed. See `src/features/ip-check/NOTES.md` for
+coverage, MIT attribution, failure behavior and final verification evidence.
 
 Source checked 2026-09-04: https://aisou.pro/item/45. The three locally hosted
  screenshot files preserve the original bytes from that page's `qn.ldxp.cn` images:
