@@ -27,6 +27,7 @@ import { Route as AdminAuthRouteImport } from './routes/admin/auth'
 import { Route as AdminAisouInventoryRouteImport } from './routes/admin/aisou-inventory'
 import { Route as publicStatusRouteImport } from './routes/(public)/status'
 import { Route as publicMeRouteImport } from './routes/(public)/me'
+import { Route as publicIpCheckRouteImport } from './routes/(public)/ip-check'
 import { Route as publicInvoiceRouteImport } from './routes/(public)/invoice'
 import { Route as publicCartRouteImport } from './routes/(public)/cart'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
@@ -208,6 +209,11 @@ const publicStatusRoute = publicStatusRouteImport.update({
 const publicMeRoute = publicMeRouteImport.update({
   id: '/me',
   path: '/me',
+  getParentRoute: () => publicRouteRoute,
+} as any)
+const publicIpCheckRoute = publicIpCheckRouteImport.update({
+  id: '/ip-check',
+  path: '/ip-check',
   getParentRoute: () => publicRouteRoute,
 } as any)
 const publicInvoiceRoute = publicInvoiceRouteImport.update({
@@ -725,6 +731,7 @@ export interface FileRoutesByFullPath {
   '/503': typeof errors503Route
   '/cart': typeof publicCartRoute
   '/invoice': typeof publicInvoiceRoute
+  '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -828,6 +835,7 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/cart': typeof publicCartRoute
   '/invoice': typeof publicInvoiceRoute
+  '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -941,6 +949,7 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/(public)/cart': typeof publicCartRoute
   '/(public)/invoice': typeof publicInvoiceRoute
+  '/(public)/ip-check': typeof publicIpCheckRoute
   '/(public)/me': typeof publicMeRoute
   '/(public)/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -1054,6 +1063,7 @@ export interface FileRouteTypes {
     | '/503'
     | '/cart'
     | '/invoice'
+    | '/ip-check'
     | '/me'
     | '/status'
     | '/admin/aisou-inventory'
@@ -1157,6 +1167,7 @@ export interface FileRouteTypes {
     | '/503'
     | '/cart'
     | '/invoice'
+    | '/ip-check'
     | '/me'
     | '/status'
     | '/admin/aisou-inventory'
@@ -1269,6 +1280,7 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/(public)/cart'
     | '/(public)/invoice'
+    | '/(public)/ip-check'
     | '/(public)/me'
     | '/(public)/status'
     | '/admin/aisou-inventory'
@@ -1522,6 +1534,13 @@ declare module '@tanstack/react-router' {
       path: '/me'
       fullPath: '/me'
       preLoaderRoute: typeof publicMeRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
+    '/(public)/ip-check': {
+      id: '/(public)/ip-check'
+      path: '/ip-check'
+      fullPath: '/ip-check'
+      preLoaderRoute: typeof publicIpCheckRouteImport
       parentRoute: typeof publicRouteRoute
     }
     '/(public)/invoice': {
@@ -2231,6 +2250,7 @@ interface publicRouteRouteChildren {
   publicAccountRouteRoute: typeof publicAccountRouteRouteWithChildren
   publicCartRoute: typeof publicCartRoute
   publicInvoiceRoute: typeof publicInvoiceRoute
+  publicIpCheckRoute: typeof publicIpCheckRoute
   publicMeRoute: typeof publicMeRoute
   publicStatusRoute: typeof publicStatusRoute
   publicIndexRoute: typeof publicIndexRoute
@@ -2244,6 +2264,7 @@ const publicRouteRouteChildren: publicRouteRouteChildren = {
   publicAccountRouteRoute: publicAccountRouteRouteWithChildren,
   publicCartRoute: publicCartRoute,
   publicInvoiceRoute: publicInvoiceRoute,
+  publicIpCheckRoute: publicIpCheckRoute,
   publicMeRoute: publicMeRoute,
   publicStatusRoute: publicStatusRoute,
   publicIndexRoute: publicIndexRoute,

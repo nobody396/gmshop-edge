@@ -40,7 +40,7 @@ export function ClaudePurchaseGuide() {
 					{m.store_claude_preflight_ip_steps()}
 				</p>
 				<a
-					href="https://ip-check.leeguoo.com/"
+					href="/ip-check"
 					target="_blank"
 					rel="noopener noreferrer"
 					referrerPolicy="no-referrer"

@@ -457,11 +457,16 @@ The shared Claude recharge product displays three account/subscription blockers,
  checkout. Images are hosted locally and enlarge in an in-page dialog. The guide
  does not create orders, submit messages or run third-party IP tests automatically.
 
-The optional IP-check link is https://ip-check.leeguoo.com/. Its purity score is
- higher-is-better, unlike the risk score. A purity score of at least 90 is the
- owner's recommendation, not an Anthropic requirement or a ban-safety guarantee.
- The recommendation applies to phone, computer and web use; avoid frequent node switching. The checker and actual client may use different egress IPs. No prices, fulfillment routes, existing
- purchase records or backend acceptance rules are changed by this guide.
+The IP-check entry now opens the owned `/ip-check` page; `GET /api/ip-check`
+reads only the current Cloudflare connection after the normal Host authority guard.
+It is private/no-store, needs no key and writes no records. Local preview and Bun
+show insufficient data rather than fabricated results. A limited ASN/name heuristic
+can flag hosting; VPN, proxy, Tor and abuse reputation remain explicitly unknown.
+There is no numerical safety score or guarantee. The page includes a detailed
+bilingual guide, locally read timezone and an optional, consent-gated Google STUN
+probe. Browser and Claude traffic may use different exits. No prices, fulfillment,
+purchase records or backend acceptance rules change. See
+`src/features/ip-check/NOTES.md` for scope, sources, ablations and verification.
 
 Source checked 2026-09-04: https://aisou.pro/item/45. The three locally hosted
  screenshot files preserve the original bytes from that page's `qn.ldxp.cn` images:
