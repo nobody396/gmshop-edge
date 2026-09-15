@@ -27,6 +27,7 @@ import { Route as AdminAuthRouteImport } from './routes/admin/auth'
 import { Route as AdminAisouInventoryRouteImport } from './routes/admin/aisou-inventory'
 import { Route as publicStatusRouteImport } from './routes/(public)/status'
 import { Route as publicMeRouteImport } from './routes/(public)/me'
+import { Route as publicIpCheckRouteImport } from './routes/(public)/ip-check'
 import { Route as publicInvoiceRouteImport } from './routes/(public)/invoice'
 import { Route as publicCartRouteImport } from './routes/(public)/cart'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
@@ -86,6 +87,7 @@ import { Route as AdminAccessPermissionBitsRouteImport } from './routes/admin/ac
 import { Route as AdminAccessModulesRouteImport } from './routes/admin/access/modules'
 import { Route as publicProductsProductIdRouteImport } from './routes/(public)/products/$productId'
 import { Route as publicOrdersOrderNumberRouteImport } from './routes/(public)/orders/$orderNumber'
+import { Route as publicGuidesClaudeNetworkCheckRouteImport } from './routes/(public)/guides/claude-network-check'
 import { Route as publicAccountWalletRouteImport } from './routes/(public)/account/wallet'
 import { Route as publicAccountSettingsRouteImport } from './routes/(public)/account/settings'
 import { Route as publicAccountSessionsRouteImport } from './routes/(public)/account/sessions'
@@ -208,6 +210,11 @@ const publicStatusRoute = publicStatusRouteImport.update({
 const publicMeRoute = publicMeRouteImport.update({
   id: '/me',
   path: '/me',
+  getParentRoute: () => publicRouteRoute,
+} as any)
+const publicIpCheckRoute = publicIpCheckRouteImport.update({
+  id: '/ip-check',
+  path: '/ip-check',
   getParentRoute: () => publicRouteRoute,
 } as any)
 const publicInvoiceRoute = publicInvoiceRouteImport.update({
@@ -510,6 +517,12 @@ const publicOrdersOrderNumberRoute = publicOrdersOrderNumberRouteImport.update({
   path: '/orders/$orderNumber',
   getParentRoute: () => publicRouteRoute,
 } as any)
+const publicGuidesClaudeNetworkCheckRoute =
+  publicGuidesClaudeNetworkCheckRouteImport.update({
+    id: '/guides/claude-network-check',
+    path: '/guides/claude-network-check',
+    getParentRoute: () => publicRouteRoute,
+  } as any)
 const publicAccountWalletRoute = publicAccountWalletRouteImport.update({
   id: '/wallet',
   path: '/wallet',
@@ -725,6 +738,7 @@ export interface FileRoutesByFullPath {
   '/503': typeof errors503Route
   '/cart': typeof publicCartRoute
   '/invoice': typeof publicInvoiceRoute
+  '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -746,6 +760,7 @@ export interface FileRoutesByFullPath {
   '/account/sessions': typeof publicAccountSessionsRoute
   '/account/settings': typeof publicAccountSettingsRoute
   '/account/wallet': typeof publicAccountWalletRoute
+  '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
@@ -828,6 +843,7 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/cart': typeof publicCartRoute
   '/invoice': typeof publicInvoiceRoute
+  '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -848,6 +864,7 @@ export interface FileRoutesByTo {
   '/account/sessions': typeof publicAccountSessionsRoute
   '/account/settings': typeof publicAccountSettingsRoute
   '/account/wallet': typeof publicAccountWalletRoute
+  '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
@@ -941,6 +958,7 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/(public)/cart': typeof publicCartRoute
   '/(public)/invoice': typeof publicInvoiceRoute
+  '/(public)/ip-check': typeof publicIpCheckRoute
   '/(public)/me': typeof publicMeRoute
   '/(public)/status': typeof publicStatusRoute
   '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
@@ -962,6 +980,7 @@ export interface FileRoutesById {
   '/(public)/account/sessions': typeof publicAccountSessionsRoute
   '/(public)/account/settings': typeof publicAccountSettingsRoute
   '/(public)/account/wallet': typeof publicAccountWalletRoute
+  '/(public)/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/(public)/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/(public)/products/$productId': typeof publicProductsProductIdRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
@@ -1054,6 +1073,7 @@ export interface FileRouteTypes {
     | '/503'
     | '/cart'
     | '/invoice'
+    | '/ip-check'
     | '/me'
     | '/status'
     | '/admin/aisou-inventory'
@@ -1075,6 +1095,7 @@ export interface FileRouteTypes {
     | '/account/sessions'
     | '/account/settings'
     | '/account/wallet'
+    | '/guides/claude-network-check'
     | '/orders/$orderNumber'
     | '/products/$productId'
     | '/admin/access/modules'
@@ -1157,6 +1178,7 @@ export interface FileRouteTypes {
     | '/503'
     | '/cart'
     | '/invoice'
+    | '/ip-check'
     | '/me'
     | '/status'
     | '/admin/aisou-inventory'
@@ -1177,6 +1199,7 @@ export interface FileRouteTypes {
     | '/account/sessions'
     | '/account/settings'
     | '/account/wallet'
+    | '/guides/claude-network-check'
     | '/orders/$orderNumber'
     | '/products/$productId'
     | '/admin/access/modules'
@@ -1269,6 +1292,7 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/(public)/cart'
     | '/(public)/invoice'
+    | '/(public)/ip-check'
     | '/(public)/me'
     | '/(public)/status'
     | '/admin/aisou-inventory'
@@ -1290,6 +1314,7 @@ export interface FileRouteTypes {
     | '/(public)/account/sessions'
     | '/(public)/account/settings'
     | '/(public)/account/wallet'
+    | '/(public)/guides/claude-network-check'
     | '/(public)/orders/$orderNumber'
     | '/(public)/products/$productId'
     | '/admin/access/modules'
@@ -1522,6 +1547,13 @@ declare module '@tanstack/react-router' {
       path: '/me'
       fullPath: '/me'
       preLoaderRoute: typeof publicMeRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
+    '/(public)/ip-check': {
+      id: '/(public)/ip-check'
+      path: '/ip-check'
+      fullPath: '/ip-check'
+      preLoaderRoute: typeof publicIpCheckRouteImport
       parentRoute: typeof publicRouteRoute
     }
     '/(public)/invoice': {
@@ -1937,6 +1969,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof publicOrdersOrderNumberRouteImport
       parentRoute: typeof publicRouteRoute
     }
+    '/(public)/guides/claude-network-check': {
+      id: '/(public)/guides/claude-network-check'
+      path: '/guides/claude-network-check'
+      fullPath: '/guides/claude-network-check'
+      preLoaderRoute: typeof publicGuidesClaudeNetworkCheckRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
     '/(public)/account/wallet': {
       id: '/(public)/account/wallet'
       path: '/wallet'
@@ -2231,9 +2270,11 @@ interface publicRouteRouteChildren {
   publicAccountRouteRoute: typeof publicAccountRouteRouteWithChildren
   publicCartRoute: typeof publicCartRoute
   publicInvoiceRoute: typeof publicInvoiceRoute
+  publicIpCheckRoute: typeof publicIpCheckRoute
   publicMeRoute: typeof publicMeRoute
   publicStatusRoute: typeof publicStatusRoute
   publicIndexRoute: typeof publicIndexRoute
+  publicGuidesClaudeNetworkCheckRoute: typeof publicGuidesClaudeNetworkCheckRoute
   publicOrdersOrderNumberRoute: typeof publicOrdersOrderNumberRoute
   publicProductsProductIdRoute: typeof publicProductsProductIdRoute
   publicCheckoutIndexRoute: typeof publicCheckoutIndexRoute
@@ -2244,9 +2285,11 @@ const publicRouteRouteChildren: publicRouteRouteChildren = {
   publicAccountRouteRoute: publicAccountRouteRouteWithChildren,
   publicCartRoute: publicCartRoute,
   publicInvoiceRoute: publicInvoiceRoute,
+  publicIpCheckRoute: publicIpCheckRoute,
   publicMeRoute: publicMeRoute,
   publicStatusRoute: publicStatusRoute,
   publicIndexRoute: publicIndexRoute,
+  publicGuidesClaudeNetworkCheckRoute: publicGuidesClaudeNetworkCheckRoute,
   publicOrdersOrderNumberRoute: publicOrdersOrderNumberRoute,
   publicProductsProductIdRoute: publicProductsProductIdRoute,
   publicCheckoutIndexRoute: publicCheckoutIndexRoute,

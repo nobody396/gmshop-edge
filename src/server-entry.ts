@@ -2,6 +2,7 @@ import {
 	createStartHandler,
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
+import { handleIpCheck } from "#/features/ip-check/server/lookup";
 import { handleLivenessRequest } from "#/features/status/server/health";
 import { publishPendingInventoryEvents } from "#/features/supplier-api/server/inventory-events";
 import { applySecurityHeaders } from "#/server/http-security";
@@ -40,6 +41,8 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 				{ name: "total", durationMs: performance.now() - startedAt },
 			]),
 		);
+	const ipCheck = await handleIpCheck(request, env);
+	if (ipCheck) return applySecurityHeaders(request, ipCheck);
 	const appStartedAt = performance.now();
 	const response = await handleI18nRequest(
 		request,

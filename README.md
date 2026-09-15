@@ -457,11 +457,19 @@ The shared Claude recharge product displays three account/subscription blockers,
  checkout. Images are hosted locally and enlarge in an in-page dialog. The guide
  does not create orders, submit messages or run third-party IP tests automatically.
 
-The optional IP-check link is https://ip-check.leeguoo.com/. Its purity score is
- higher-is-better, unlike the risk score. A purity score of at least 90 is the
- owner's recommendation, not an Anthropic requirement or a ban-safety guarantee.
- The recommendation applies to phone, computer and web use; avoid frequent node switching. The checker and actual client may use different egress IPs. No prices, fulfillment routes, existing
- purchase records or backend acceptance rules are changed by this guide.
+The owned `/ip-check` page now includes source-labeled 0–100 scoring, IP/ASN/region
+and threat flags, current/specific IPv4/IPv6 lookups, browser timezone comparison,
+opt-in WebRTC, masked PNG shares with a first-party QR code, and 30-day site-only
+rankings. The detailed bilingual guide lives at `/guides/claude-network-check`.
+`GET /api/ip-check` (also `Accept: application/json` on `/ip-check`) uses IPQuery
+as the keyless primary and a bounded proxycheck.io fallback. No paid plan or API
+key is needed. Results cache for 10 minutes; per-caller limits and the fallback's
+80/day budget are enforced in D1. Missing intelligence never produces a 100 score.
+Anycast covers known published DNS resolver addresses only; ASN abuse fraction is
+not available. The score is not an Anthropic verdict or an account-safety guarantee.
+Migration `0014_ip_check_score_buckets.sql` adds only aggregate score bins; no
+commerce schema or state is changed. See `src/features/ip-check/NOTES.md` for
+coverage, MIT attribution, failure behavior and final verification evidence.
 
 Source checked 2026-09-04: https://aisou.pro/item/45. The three locally hosted
  screenshot files preserve the original bytes from that page's `qn.ldxp.cn` images:

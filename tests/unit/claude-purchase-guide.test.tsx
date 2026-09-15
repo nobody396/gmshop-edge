@@ -39,9 +39,8 @@ it("includes all three blockers, both checks, all three source images, all three
 		"这种情况属于隐性封禁，充值无法到账，并且无法退款",
 		"方法一",
 		"方法二",
-		"90 分",
-		"纯净度评分",
-		"IP 风险分",
+		"未检测项不代表安全",
+		"本站检查页面",
 		"避免频繁切换节点",
 		"手机、电脑和网页版都适用",
 		"不是 Claude 官方标准",
@@ -65,9 +64,7 @@ it("includes all three blockers, both checks, all three source images, all three
 		const bytes = readFileSync(join(process.cwd(), `public${src}`));
 		expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
 	}
-	const link = container.querySelector(
-		'a[href="https://ip-check.leeguoo.com/"]',
-	);
+	const link = container.querySelector('a[href="/ip-check"]');
 	expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
 	expect(link?.getAttribute("referrerpolicy")).toBe("no-referrer");
 	for (const href of [
@@ -85,7 +82,7 @@ it("includes all three blockers, both checks, all three source images, all three
 	expect(
 		[...container.querySelectorAll("a")].map((anchor) => anchor.href),
 	).toEqual([
-		"https://ip-check.leeguoo.com/",
+		"http://localhost:3000/ip-check",
 		"https://claude.ai/",
 		"https://claude.ai/upgrade?from=menu",
 	]);
@@ -135,14 +132,13 @@ it("opens source images in a dialog without navigation or submitting a purchase"
 	expect(location.href).toBe(url);
 });
 
-it("provides English copy while retaining the exact error examples and score direction", async () => {
+it("provides English copy while retaining the exact error examples and truthful IP check limits", async () => {
 	overwriteGetLocale(() => "en-US");
 	await act(async () => root.render(<ClaudePurchaseGuide />));
 	expect(container.textContent).toContain("Read before ordering Claude");
-	expect(container.textContent).toContain("at least 90/100");
-	expect(container.textContent).toContain("higher is better");
-	expect(container.textContent).toContain("lower is better");
-	expect(container.textContent).toContain("not an official Claude requirement");
+	expect(container.textContent).not.toContain("at least 90/100");
+	expect(container.textContent).toContain("unchecked signals");
+	expect(container.textContent).toContain("not an official Claude standard");
 	expect(container.querySelectorAll("img")).toHaveLength(6);
 });
 
