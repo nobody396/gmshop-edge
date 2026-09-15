@@ -32,6 +32,7 @@ describe("catalog sale-disabled state", { timeout: 30_000 }, () => {
 		db = await miniflare.getD1Database("DB");
 		await applyMigrations(db);
 		await seed(db);
+		await db.prepare("DELETE FROM outbox_events").run();
 	});
 
 	afterEach(async () => miniflare.dispose());
@@ -76,6 +77,10 @@ describe("catalog sale-disabled state", { timeout: 30_000 }, () => {
 			.bind(productId)
 			.first<{ action: string }>();
 		expect(audit?.action).toBe("product.sale_disabled");
+		await expect(latestInventoryEvent(db)).resolves.toMatchObject({
+			aggregate_id: sellableItemId,
+			status: "pending",
+		});
 	});
 
 	it("keeps an individually sale-disabled SKU visible without disabling its product", async () => {
@@ -112,6 +117,10 @@ describe("catalog sale-disabled state", { timeout: 30_000 }, () => {
 		await expect(createOrder(db, "sku-disabled-order")).rejects.toMatchObject({
 			code: "sellable_item_unavailable",
 		});
+		await expect(latestInventoryEvent(db)).resolves.toMatchObject({
+			aggregate_id: sellableItemId,
+			status: "pending",
+		});
 	});
 
 	it("does not allow the product-level control to create a hidden sale state", async () => {
@@ -133,6 +142,16 @@ describe("catalog sale-disabled state", { timeout: 30_000 }, () => {
 		expect(product).toEqual({ revision: 1, sale_disabled: 0 });
 	});
 });
+
+function latestInventoryEvent(db: D1Database) {
+	return db
+		.prepare(
+			`SELECT aggregate_id, status FROM outbox_events
+			 WHERE event_type = 'inventory.changed'
+			 ORDER BY created_at DESC, id DESC LIMIT 1`,
+		)
+		.first<{ aggregate_id: string; status: string }>();
+}
 
 function context(db: D1Database) {
 	return {
