@@ -99,3 +99,33 @@ unsafe secret-printing examples. Sharing/ranking/guide remain user-facing featur
 Detection is bounded by source coverage and freshness. Anycast outside the known
 resolver set, ASN abuse fraction, Claude-side request routing and internal account
 risk signals are not verified. This page cannot guarantee prevention of suspension.
+
+## Final production validation
+
+- PR #81 merged as `c805b803`; the subsequent transport/IPv6 correction is tracked
+  by PR #82. Final Worker version is recorded in `artifacts/ip-check/final/`.
+- Baseline feature CI: 1,151 Vitest + 23 Bun tests passed on the exact feature tree.
+- Corrected full local regression: 1,159 Vitest + 23 Bun tests passed; one existing
+  skipped file and two existing TODO tests remain, with no failures.
+- Workers-native transport regression covers normal/gzip bodies, redirect refusal
+  and response-size bounds. Workers does not accept `redirect: "error"`; the
+  shared transport uses `manual` and callers reject non-2xx responses.
+- IPv6 primary records can contain AS0/empty organization despite valid risk flags.
+  Missing identity is filled only from the same checked connection's edge metadata
+  or the provider's ISP field. Known positive risk remains reportable even when ASN
+  is unknown. No identity plus no positive evidence never becomes a score of 100.
+- The anonymous fallback returned HTTP 403 from Workers during the IPv6 probe.
+  It is best effort, not guaranteed failover. Missing usable primary evidence still
+  degrades visibly; no quota bypass, IP rotation or paid account was used.
+- Live browser IPv4: 100 from IPQuery, masked share image generated successfully.
+  Live IPv6 current-connection and explicit-address queries: 60/hosting from usable
+  primary evidence. Known public DNS IPv4/IPv6: 60 with positive anycast match.
+- `/healthz`, home, checker and guide returned 200; private/invalid query targets
+  returned 400 and POST returned 405. JSON Accept and no-store headers were checked.
+- Live WebRTC completed and displayed masked IPv4/IPv6 candidates, without claiming
+  a leak verdict. Guide expansion, mobile overflow and console checks passed.
+- Initial wrong-build exposure lasted approximately 24 seconds. A bounded read-only
+  audit around that window found zero new orders and zero order events. No schema
+  migration or manual business-data edit was executed during that correction.
+- Sharing uses a first-party QR URL without the target IP. Its generated PNG was
+  decoded successfully; the local sample download was labeled TEST-FIXTURE.

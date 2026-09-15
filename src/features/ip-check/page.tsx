@@ -38,6 +38,7 @@ export function IpCheckPage() {
 	const [sharing, setSharing] = useState(false);
 	const [shareMessage, setShareMessage] = useState("");
 	const qr = useRef<HTMLDivElement>(null);
+	const shareButtonRef = useRef<HTMLButtonElement>(null);
 	useEffect(() => {
 		const ip = new URLSearchParams(location.search).get("ip");
 		if (ip) {
@@ -377,6 +378,7 @@ export function IpCheckPage() {
 					<div className="flex flex-wrap gap-2">
 						<Button
 							disabled={!result || result.score === null || busy || sharing}
+							ref={shareButtonRef}
 							onClick={makeShare}
 						>
 							{sharing ? m.ip_share_busy() : m.ip_share()}
@@ -545,7 +547,13 @@ export function IpCheckPage() {
 					if (!open) setShare(null);
 				}}
 			>
-				<DialogContent className="max-h-[90dvh] overflow-y-auto">
+				<DialogContent
+					className="max-h-[90dvh] overflow-y-auto"
+					onCloseAutoFocus={(event) => {
+						event.preventDefault();
+						shareButtonRef.current?.focus();
+					}}
+				>
 					<DialogHeader>
 						<DialogTitle>{m.ip_share_title()}</DialogTitle>
 						<DialogDescription>{m.ip_share_description()}</DialogDescription>
