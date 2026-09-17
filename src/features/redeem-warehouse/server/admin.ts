@@ -17,6 +17,15 @@ import {
 } from "./warehouse-client";
 
 const tokenKey = "integration.redeem_warehouse_token";
+
+// The admin session context, or the ops API's token-authenticated one
+// (no acting user).
+export type WarehouseContext = {
+	db: D1Database;
+	currentUser: { id: string | null };
+	request: Request;
+	runtime: { commerceSecret: string };
+};
 // Last storefront item restocked per SKU; the card shows what it feeds.
 const targetsKey = "integration.redeem_warehouse_targets";
 const tokenPurpose = "redeem-warehouse-token";
@@ -35,7 +44,7 @@ const importSchema = z.object({
 	content: z.string().trim().min(1).max(250_000),
 });
 
-const quickRestockSchema = importSchema.extend({
+export const quickRestockSchema = importSchema.extend({
 	requestRef: z
 		.string()
 		.trim()
@@ -240,7 +249,7 @@ export const quickRestockRedeemWarehouseFn = createServerFn({
 // as the warehouse accepted as available into an on-sale storefront item.
 export async function quickRestockRedeemWarehouse(
 	data: z.infer<typeof quickRestockSchema>,
-	context: Awaited<ReturnType<typeof getAdminRuntimeServerContext>>,
+	context: WarehouseContext,
 	requester: typeof requestWarehouse = requestWarehouse,
 ) {
 	const targets = await listRestockTargets(context.db);
@@ -287,7 +296,7 @@ export async function quickRestockRedeemWarehouse(
 
 async function importWarehouseKeys(
 	data: z.infer<typeof importSchema>,
-	context: Awaited<ReturnType<typeof getAdminRuntimeServerContext>>,
+	context: WarehouseContext,
 	requester: typeof requestWarehouse = requestWarehouse,
 ) {
 	const config = await loadWarehouseConfig(context);
@@ -362,7 +371,7 @@ export const generateRedeemSellableInventoryFn = createServerFn({
 
 export async function generateRedeemSellableInventory(
 	data: z.infer<typeof generateSellableSchema>,
-	context: Awaited<ReturnType<typeof getAdminRuntimeServerContext>>,
+	context: WarehouseContext,
 	requester: typeof requestWarehouse = requestWarehouse,
 ) {
 	if (!context.runtime.commerceSecret) throw unavailable();
@@ -509,9 +518,7 @@ export async function generateRedeemSellableInventory(
 	return { idempotent: false, imported, count: data.count };
 }
 
-async function loadWarehouseConfig(
-	context: Awaited<ReturnType<typeof getAdminRuntimeServerContext>>,
-) {
+async function loadWarehouseConfig(context: WarehouseContext) {
 	if (!context.runtime.commerceSecret) throw unavailable();
 	return {
 		token: await loadDeliveryWarehouseToken(
@@ -578,7 +585,7 @@ function upsertSetting(
 	key: string,
 	value: string,
 	secret: boolean,
-	userId: string,
+	userId: string | null,
 	now: number,
 ) {
 	return db

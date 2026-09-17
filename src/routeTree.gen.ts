@@ -58,6 +58,7 @@ import { Route as publicAccountIndexRouteImport } from './routes/(public)/accoun
 import { Route as ApiTelegramWebhookRouteImport } from './routes/api/telegram/webhook'
 import { Route as ApiShopInvoiceOrderRouteImport } from './routes/api/shop/invoice-order'
 import { Route as ApiOpsRestockRouteImport } from './routes/api/ops/restock'
+import { Route as ApiOpsRedeemRestockRouteImport } from './routes/api/ops/redeem-restock'
 import { Route as ApiOpsRedeemCutoverRouteImport } from './routes/api/ops/redeem-cutover'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminDownloadAssetsRouteImport } from './routes/api/admin/download-assets'
@@ -365,6 +366,11 @@ const ApiShopInvoiceOrderRoute = ApiShopInvoiceOrderRouteImport.update({
 const ApiOpsRestockRoute = ApiOpsRestockRouteImport.update({
   id: '/api/ops/restock',
   path: '/api/ops/restock',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOpsRedeemRestockRoute = ApiOpsRedeemRestockRouteImport.update({
+  id: '/api/ops/redeem-restock',
+  path: '/api/ops/redeem-restock',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOpsRedeemCutoverRoute = ApiOpsRedeemCutoverRouteImport.update({
@@ -790,6 +796,7 @@ export interface FileRoutesByFullPath {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
+  '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
@@ -894,6 +901,7 @@ export interface FileRoutesByTo {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
+  '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
@@ -1010,6 +1018,7 @@ export interface FileRoutesById {
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
+  '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
@@ -1125,6 +1134,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/redeem-cutover'
+    | '/api/ops/redeem-restock'
     | '/api/ops/restock'
     | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
@@ -1229,6 +1239,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/redeem-cutover'
+    | '/api/ops/redeem-restock'
     | '/api/ops/restock'
     | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
@@ -1344,6 +1355,7 @@ export interface FileRouteTypes {
     | '/api/admin/download-assets'
     | '/api/auth/$'
     | '/api/ops/redeem-cutover'
+    | '/api/ops/redeem-restock'
     | '/api/ops/restock'
     | '/api/shop/invoice-order'
     | '/api/telegram/webhook'
@@ -1399,6 +1411,7 @@ export interface RootRouteChildren {
   ApiAdminDownloadAssetsRoute: typeof ApiAdminDownloadAssetsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiOpsRedeemCutoverRoute: typeof ApiOpsRedeemCutoverRoute
+  ApiOpsRedeemRestockRoute: typeof ApiOpsRedeemRestockRoute
   ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
   ApiShopInvoiceOrderRoute: typeof ApiShopInvoiceOrderRoute
   ApiTelegramWebhookRoute: typeof ApiTelegramWebhookRoute
@@ -1764,6 +1777,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ops/restock'
       fullPath: '/api/ops/restock'
       preLoaderRoute: typeof ApiOpsRestockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/redeem-restock': {
+      id: '/api/ops/redeem-restock'
+      path: '/api/ops/redeem-restock'
+      fullPath: '/api/ops/redeem-restock'
+      preLoaderRoute: typeof ApiOpsRedeemRestockRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ops/redeem-cutover': {
@@ -2532,6 +2552,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminDownloadAssetsRoute: ApiAdminDownloadAssetsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiOpsRedeemCutoverRoute: ApiOpsRedeemCutoverRoute,
+  ApiOpsRedeemRestockRoute: ApiOpsRedeemRestockRoute,
   ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,
   ApiShopInvoiceOrderRoute: ApiShopInvoiceOrderRoute,
   ApiTelegramWebhookRoute: ApiTelegramWebhookRoute,
