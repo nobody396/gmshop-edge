@@ -17,6 +17,8 @@ import {
 } from "./warehouse-client";
 
 const tokenKey = "integration.redeem_warehouse_token";
+// Last storefront item restocked per SKU; the card shows what it feeds.
+const targetsKey = "integration.redeem_warehouse_targets";
 const tokenPurpose = "redeem-warehouse-token";
 
 const configurationSchema = z.object({
@@ -31,6 +33,14 @@ const importSchema = z.object({
 		.regex(/^(0|[1-9]\d*)(\.\d{1,2})?$/)
 		.optional(),
 	content: z.string().trim().min(1).max(250_000),
+});
+
+const quickRestockSchema = importSchema.extend({
+	requestRef: z
+		.string()
+		.trim()
+		.regex(/^[A-Za-z0-9_-]{16,100}$/),
+	componentId: z.uuid(),
 });
 
 const generateSellableSchema = z.object({
@@ -167,10 +177,15 @@ export const listRedeemWarehouseInventoryFn = createServerFn({
 		systemPermission("inventory", "read"),
 	);
 	const config = await loadWarehouseConfig(context);
-	const result = inventoryEnvelopeSchema.parse(
-		await requestWarehouse(config.token, "/api/internal/inventory/summary"),
-	);
+	const [result, targets, items] = await Promise.all([
+		requestWarehouse(config.token, "/api/internal/inventory/summary").then(
+			(payload) => inventoryEnvelopeSchema.parse(payload),
+		),
+		loadTargets(context.db),
+		listRestockTargets(context.db),
+	]);
 	return result.data.map((row) => ({
+		target: items.find((item) => item.componentId === targets[row.sku]) ?? null,
 		sku: row.sku,
 		displayName: row.display_name,
 		family: row.family,
@@ -188,64 +203,147 @@ export const importRedeemWarehouseInventoryFn = createServerFn({
 	method: "POST",
 })
 	.validator((input: z.input<typeof importSchema>) => importSchema.parse(input))
-	.handler(async ({ data }) => {
-		const context = await getAdminRuntimeServerContext(
-			systemPermission("inventory", "create"),
+	.handler(async ({ data }) =>
+		importWarehouseKeys(
+			data,
+			await getAdminRuntimeServerContext(
+				systemPermission("inventory", "create"),
+			),
+		),
+	);
+
+export const listRedeemRestockTargetsFn = createServerFn({
+	method: "GET",
+}).handler(async () => {
+	const context = await getAdminRuntimeServerContext(
+		systemPermission("inventory", "read"),
+	);
+	return listRestockTargets(context.db);
+});
+
+export const quickRestockRedeemWarehouseFn = createServerFn({
+	method: "POST",
+})
+	.validator((input: z.input<typeof quickRestockSchema>) =>
+		quickRestockSchema.parse(input),
+	)
+	.handler(async ({ data }) =>
+		quickRestockRedeemWarehouse(
+			data,
+			await getAdminRuntimeServerContext(
+				systemPermission("inventory", "create"),
+			),
+		),
+	);
+
+// One step: import upstream keys, then issue exactly as many sellable codes
+// as the warehouse accepted as available into an on-sale storefront item.
+export async function quickRestockRedeemWarehouse(
+	data: z.infer<typeof quickRestockSchema>,
+	context: Awaited<ReturnType<typeof getAdminRuntimeServerContext>>,
+	requester: typeof requestWarehouse = requestWarehouse,
+) {
+	const targets = await listRestockTargets(context.db);
+	if (!targets.some((item) => item.componentId === data.componentId))
+		throw new DomainError(
+			"redeem_sellable_component_not_found",
+			404,
+			"Stock item not found",
 		);
-		const config = await loadWarehouseConfig(context);
-		const keys = data.content
-			.split(/\r?\n/)
-			.map((value) => value.trim())
-			.filter(Boolean);
-		if (keys.length > 100)
-			throw new DomainError(
-				"redeem_warehouse_batch_too_large",
-				400,
-				"Import at most 100 keys",
-			);
-		const unitCostMinor = data.unitCostYuan
-			? decimalToMinor(data.unitCostYuan, 2).toString()
-			: undefined;
-		const result = importEnvelopeSchema.parse(
-			await requestWarehouse(config.token, "/api/internal/inventory/import", {
-				method: "POST",
-				body: JSON.stringify({
-					sku: data.sku,
-					keys,
-					...(unitCostMinor ? { unit_cost_minor: unitCostMinor } : {}),
-				}),
+	const imported = await importWarehouseKeys(data, context, requester);
+	let generated = 0;
+	let generationFailed = false;
+	if (imported.imported > 0) {
+		try {
+			generated = (
+				await generateRedeemSellableInventory(
+					{
+						requestRef: data.requestRef,
+						sku: data.sku,
+						componentId: data.componentId,
+						count: imported.imported,
+					},
+					context,
+					requester,
+				)
+			).imported;
+		} catch {
+			// Keys are already in the warehouse; the owner can finish with
+			// "generate sellable" for the reported count.
+			generationFailed = true;
+		}
+	}
+	const current = await loadTargets(context.db);
+	await upsertSetting(
+		context.db,
+		targetsKey,
+		JSON.stringify({ ...current, [data.sku]: data.componentId }),
+		false,
+		context.currentUser.id,
+		Date.now(),
+	).run();
+	return { ...imported, generated, generationFailed };
+}
+
+async function importWarehouseKeys(
+	data: z.infer<typeof importSchema>,
+	context: Awaited<ReturnType<typeof getAdminRuntimeServerContext>>,
+	requester: typeof requestWarehouse = requestWarehouse,
+) {
+	const config = await loadWarehouseConfig(context);
+	const keys = data.content
+		.split(/\r?\n/)
+		.map((value) => value.trim())
+		.filter(Boolean);
+	if (keys.length > 100)
+		throw new DomainError(
+			"redeem_warehouse_batch_too_large",
+			400,
+			"Import at most 100 keys",
+		);
+	const unitCostMinor = data.unitCostYuan
+		? decimalToMinor(data.unitCostYuan, 2).toString()
+		: undefined;
+	const result = importEnvelopeSchema.parse(
+		await requester(config.token, "/api/internal/inventory/import", {
+			method: "POST",
+			body: JSON.stringify({
+				sku: data.sku,
+				keys,
+				...(unitCostMinor ? { unit_cost_minor: unitCostMinor } : {}),
 			}),
-		);
-		const counts = result.data.results.reduce<Record<string, number>>(
-			(summary, item) => {
-				summary[item.status] = (summary[item.status] ?? 0) + 1;
-				return summary;
-			},
-			{},
-		);
-		await context.db
-			.prepare(
-				`INSERT INTO audit_logs
-			 (id, actor_user_id, action, target_type, target_id, request_id, ip_address, after, created_at)
-			 VALUES (?, ?, 'redeem_warehouse.inventory_imported', 'redeem_sku', ?, ?, ?, ?, ?)`,
-			)
-			.bind(
-				crypto.randomUUID(),
-				context.currentUser.id,
-				data.sku,
-				context.request.headers.get("x-request-id"),
-				context.request.headers.get("cf-connecting-ip"),
-				JSON.stringify({
-					total: result.data.total,
-					imported: result.data.imported,
-					counts,
-					unitCostMinor: unitCostMinor ?? null,
-				}),
-				Date.now(),
-			)
-			.run();
-		return { total: result.data.total, imported: result.data.imported, counts };
-	});
+		}),
+	);
+	const counts = result.data.results.reduce<Record<string, number>>(
+		(summary, item) => {
+			summary[item.status] = (summary[item.status] ?? 0) + 1;
+			return summary;
+		},
+		{},
+	);
+	await context.db
+		.prepare(
+			`INSERT INTO audit_logs
+		 (id, actor_user_id, action, target_type, target_id, request_id, ip_address, after, created_at)
+		 VALUES (?, ?, 'redeem_warehouse.inventory_imported', 'redeem_sku', ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			crypto.randomUUID(),
+			context.currentUser.id,
+			data.sku,
+			context.request.headers.get("x-request-id"),
+			context.request.headers.get("cf-connecting-ip"),
+			JSON.stringify({
+				total: result.data.total,
+				imported: result.data.imported,
+				counts,
+				unitCostMinor: unitCostMinor ?? null,
+			}),
+			Date.now(),
+		)
+		.run();
+	return { total: result.data.total, imported: result.data.imported, counts };
+}
 
 export const generateRedeemSellableInventoryFn = createServerFn({
 	method: "POST",
@@ -421,6 +519,44 @@ async function loadWarehouseConfig(
 			context.runtime.commerceSecret,
 		),
 	};
+}
+
+async function loadTargets(db: D1Database): Promise<Record<string, string>> {
+	const row = await db
+		.prepare("SELECT value FROM system_settings WHERE key = ?")
+		.bind(targetsKey)
+		.first<{ value: string }>();
+	if (!row) return {};
+	const parsed = z
+		.record(z.string(), z.string())
+		.safeParse(JSON.parse(settingString(row.value) || "{}"));
+	return parsed.success ? parsed.data : {};
+}
+
+async function listRestockTargets(db: D1Database) {
+	const rows = await db
+		.prepare(
+			`SELECT item.id, item.name, product.name AS product_name,
+			 (SELECT COUNT(*) FROM stock_entries entry
+			  WHERE entry.sellable_item_id = item.id AND entry.status = 'available') AS available
+			 FROM product_sellable_items item JOIN products product ON product.id = item.product_id
+			 WHERE item.enabled = 1 AND item.sale_disabled = 0 AND item.fulfillment_source = 'local'
+			  AND product.status = 'active' AND product.sale_disabled = 0
+			  AND product.product_type = 'stock'
+			 ORDER BY product.sort_order, item.sort_order, item.name`,
+		)
+		.all<{
+			id: string;
+			name: string;
+			product_name: string;
+			available: number;
+		}>();
+	return rows.results.map((row) => ({
+		componentId: row.id,
+		itemName: row.name,
+		productName: row.product_name,
+		available: Number(row.available),
+	}));
 }
 
 async function loadSettingRows(db: D1Database) {

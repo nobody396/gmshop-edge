@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PackagePlus, RefreshCw, Settings } from "lucide-react";
+import { PackagePlus, RefreshCw, Settings, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { ProButton } from "#/components/pro/base/button";
 import { ModalForm } from "#/components/pro/form";
@@ -20,7 +20,9 @@ import {
 	generateRedeemSellableInventoryFn,
 	getRedeemWarehouseConfigurationFn,
 	importRedeemWarehouseInventoryFn,
+	listRedeemRestockTargetsFn,
 	listRedeemWarehouseInventoryFn,
+	quickRestockRedeemWarehouseFn,
 	saveRedeemWarehouseConfigurationFn,
 } from "../server/admin";
 
@@ -30,6 +32,7 @@ const configurationKey = [
 	"configuration",
 ] as const;
 const inventoryKey = ["admin", "redeem-warehouse", "inventory"] as const;
+const targetsKey = ["admin", "redeem-warehouse", "targets"] as const;
 
 export function RedeemWarehouseAdminPage() {
 	const client = useQueryClient();
@@ -43,6 +46,37 @@ export function RedeemWarehouseAdminPage() {
 		enabled: configuration.data?.configured === true,
 	});
 	const catalog = useQuery(catalogOptionsQuery);
+	const restockTargets = useQuery({
+		queryKey: targetsKey,
+		queryFn: () => listRedeemRestockTargetsFn(),
+		enabled: configuration.data?.configured === true,
+	});
+	const quickRestock = useMutation({
+		mutationFn: quickRestockRedeemWarehouseFn,
+		onSuccess: async (result) => {
+			await client.invalidateQueries({ queryKey: inventoryKey });
+			await client.invalidateQueries({ queryKey: targetsKey });
+			if (result.generationFailed)
+				toast.warning(
+					m.redeem_warehouse_quick_restock_partial({
+						imported: result.imported,
+					}),
+				);
+			else if (result.imported === 0)
+				toast.warning(
+					m.redeem_warehouse_quick_restock_none({ total: result.total }),
+				);
+			else
+				toast.success(
+					m.redeem_warehouse_quick_restock_result({
+						total: result.total,
+						imported: result.imported,
+						generated: result.generated,
+					}),
+				);
+		},
+		onError: showError,
+	});
 	const saveConfiguration = useMutation({
 		mutationFn: saveRedeemWarehouseConfigurationFn,
 		onSuccess: async () => {
@@ -288,6 +322,93 @@ export function RedeemWarehouseAdminPage() {
 								</Badge>
 							</div>
 						</CardHeader>
+						<CardContent className="flex items-center justify-between gap-3 pb-3 text-sm">
+							<div className="min-w-0">
+								<div className="text-muted-foreground text-xs">
+									{m.redeem_warehouse_feeds()}
+								</div>
+								{row.target ? (
+									<div className="truncate">
+										{row.target.productName} · {row.target.itemName}
+										<span className="ml-2 text-muted-foreground">
+											{m.redeem_warehouse_storefront_available({
+												count: row.target.available,
+											})}
+										</span>
+									</div>
+								) : (
+									<div className="text-muted-foreground">
+										{m.redeem_warehouse_feeds_none()}
+									</div>
+								)}
+							</div>
+							<ModalForm
+								title={`${m.redeem_warehouse_quick_restock()} · ${row.displayName}`}
+								description={m.redeem_warehouse_quick_restock_description()}
+								trigger={
+									<ProButton
+										size="sm"
+										disabled={(restockTargets.data ?? []).length === 0}
+									>
+										<Zap />
+										{m.redeem_warehouse_quick_restock()}
+									</ProButton>
+								}
+								schema={[
+									{
+										name: "componentId",
+										label: m.redeem_warehouse_restock_target(),
+										valueType: "select",
+										required: true,
+										tooltip: m.redeem_warehouse_restock_target_description(),
+										fieldProps: {
+											options: (restockTargets.data ?? []).map((item) => ({
+												label: `${item.productName} · ${item.itemName}`,
+												value: item.componentId,
+											})),
+											searchable: true,
+										},
+									},
+									{
+										name: "unitCostYuan",
+										label: m.redeem_warehouse_unit_cost(),
+										valueType: "text",
+										fieldProps: {
+											inputMode: "decimal",
+											placeholder: "1600.00",
+										},
+									},
+									{
+										name: "content",
+										label: m.redeem_warehouse_keys(),
+										valueType: "textarea",
+										required: true,
+										tooltip: m.redeem_warehouse_keys_description(),
+										fieldProps: {
+											rows: 8,
+											autoComplete: "off",
+											spellCheck: false,
+										},
+									},
+								]}
+								initialValues={{
+									componentId: row.target?.componentId ?? "",
+								}}
+								onFinish={async (values) => {
+									await quickRestock.mutateAsync({
+										data: {
+											requestRef: `restock_${crypto.randomUUID()}`,
+											sku: row.sku,
+											componentId: String(values.componentId ?? ""),
+											unitCostYuan:
+												String(values.unitCostYuan ?? "") || undefined,
+											content: String(values.content ?? ""),
+										},
+									});
+								}}
+								onFinishFailed={showError}
+							/>
+						</CardContent>
 						<CardContent
 							className={`grid ${row.sku.endsWith("_PH") ? "grid-cols-3" : "grid-cols-5"} gap-2 text-center`}
 						>
