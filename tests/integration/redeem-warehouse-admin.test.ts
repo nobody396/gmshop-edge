@@ -226,6 +226,36 @@ describe("redeem warehouse quick restock", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("runs without an acting user for the token-authenticated ops API", async () => {
+		await db.prepare("DELETE FROM stock_entries").run();
+		const fetcher = warehouse();
+		const requester: typeof requestWarehouse = (token, path, init) =>
+			requestWarehouse(token, path, init, fetcher as typeof fetch);
+		await expect(
+			quickRestockRedeemWarehouse(
+				{
+					requestRef: "restock_quick_ops_0001",
+					sku: "GPT_20X_IOS",
+					componentId: ITEM_ID,
+					content: "KEY-READY\nKEY-USED\nKEY-DUPLICATE",
+				},
+				{
+					db,
+					currentUser: { id: null },
+					request: new Request("https://shop.example/api/ops/redeem-restock"),
+					runtime: { commerceSecret: COMMERCE_SECRET },
+				},
+				requester,
+			),
+		).resolves.toMatchObject({ imported: 1, generated: 1 });
+		const audit = await db
+			.prepare(
+				"SELECT COUNT(*) AS count FROM audit_logs WHERE actor_user_id IS NULL AND action LIKE 'redeem_warehouse.%'",
+			)
+			.first<{ count: number }>();
+		expect(audit?.count).toBeGreaterThanOrEqual(2);
+	});
+
 	it("refuses a sale-disabled item before touching the warehouse", async () => {
 		const fetcher = warehouse();
 		const requester: typeof requestWarehouse = (token, path, init) =>

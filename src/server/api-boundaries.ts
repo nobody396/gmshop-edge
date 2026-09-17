@@ -23,6 +23,7 @@ const publicPostPatterns = [
 	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
 	/^\/api\/ops\/redeem-cutover$/,
+	/^\/api\/ops\/redeem-restock$/,
 	/^\/api\/ops\/restock\/reconcile$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
 	/^\/api\/telegram\/webhook$/,
