@@ -18,6 +18,7 @@ vi.mock("#/server/context", () => ({
 
 import {
 	generateRedeemSellableInventory,
+	quickRestockRedeemWarehouse,
 	requestWarehouse,
 } from "#/features/redeem-warehouse/server/admin";
 
@@ -124,7 +125,151 @@ describe("redeem warehouse admin", { timeout: 30_000 }, () => {
 	});
 });
 
+describe("redeem warehouse quick restock", { timeout: 30_000 }, () => {
+	let miniflare: Miniflare;
+	let db: D1Database;
+
+	beforeAll(async () => {
+		miniflare = new Miniflare({
+			modules: true,
+			script: "export default { fetch() { return new Response('ok') } }",
+			d1Databases: { DB: "gmshop-redeem-quick-restock" },
+		});
+		db = await miniflare.getD1Database("DB");
+		mocked.db = db;
+		await applyMigrations(db);
+		await seed(db);
+	});
+
+	afterAll(async () => miniflare.dispose());
+
+	function warehouse(batchStatus = 200) {
+		return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+			const url = String(input);
+			if (url.endsWith("/api/internal/inventory/import")) {
+				const body = JSON.parse(String(init?.body)) as { keys: string[] };
+				return Response.json({
+					success: true,
+					data: {
+						imported: 1,
+						total: body.keys.length,
+						results: [
+							{ index: 0, status: "available" },
+							{ index: 1, status: "quarantined", reason: "used" },
+							{ index: 2, status: "duplicate" },
+						],
+					},
+				});
+			}
+			if (url.endsWith("/api/internal/codes/batch")) {
+				if (batchStatus !== 200)
+					return Response.json({ success: false }, { status: batchStatus });
+				const body = JSON.parse(String(init?.body)) as { count: number };
+				return Response.json({
+					success: true,
+					data: {
+						sku: "GPT_20X_IOS",
+						count: body.count,
+						codes: Array.from(
+							{ length: body.count },
+							(_, index) => `gpt-20x-ios-QUICK-${index}-CCCC-DDDD`,
+						),
+					},
+				});
+			}
+			return Response.json({ success: false }, { status: 404 });
+		});
+	}
+
+	it("issues storefront stock only for keys the warehouse accepted", async () => {
+		await db.prepare("DELETE FROM stock_entries").run();
+		const fetcher = warehouse();
+		const requester: typeof requestWarehouse = (token, path, init) =>
+			requestWarehouse(token, path, init, fetcher as typeof fetch);
+		await expect(
+			quickRestockRedeemWarehouse(
+				{
+					requestRef: "restock_quick_0000001",
+					sku: "GPT_20X_IOS",
+					componentId: ITEM_ID,
+					unitCostYuan: "1600",
+					content: "KEY-READY\nKEY-USED\nKEY-DUPLICATE",
+				},
+				testContext(db),
+				requester,
+			),
+		).resolves.toEqual({
+			total: 3,
+			imported: 1,
+			counts: { available: 1, quarantined: 1, duplicate: 1 },
+			generated: 1,
+			generationFailed: false,
+		});
+		const batch = fetcher.mock.calls.find(([url]) =>
+			String(url).endsWith("/api/internal/codes/batch"),
+		);
+		expect(JSON.parse(String(batch?.[1]?.body))).toMatchObject({ count: 1 });
+		const stock = await db
+			.prepare(
+				"SELECT COUNT(*) AS count FROM stock_entries WHERE sellable_item_id = ? AND status = 'available'",
+			)
+			.bind(ITEM_ID)
+			.first<{ count: number }>();
+		expect(stock?.count).toBe(1);
+		const target = await db
+			.prepare(
+				"SELECT value FROM system_settings WHERE key = 'integration.redeem_warehouse_targets'",
+			)
+			.first<{ value: string }>();
+		expect(JSON.parse(JSON.parse(target?.value ?? '""'))).toEqual({
+			GPT_20X_IOS: ITEM_ID,
+		});
+	});
+
+	it("refuses a sale-disabled item before touching the warehouse", async () => {
+		const fetcher = warehouse();
+		const requester: typeof requestWarehouse = (token, path, init) =>
+			requestWarehouse(token, path, init, fetcher as typeof fetch);
+		await expect(
+			quickRestockRedeemWarehouse(
+				{
+					requestRef: "restock_quick_0000002",
+					sku: "GPT_20X_IOS",
+					componentId: DISABLED_ITEM_ID,
+					content: "KEY-READY",
+				},
+				testContext(db),
+				requester,
+			),
+		).rejects.toMatchObject({ code: "redeem_sellable_component_not_found" });
+		expect(fetcher).not.toHaveBeenCalled();
+	});
+
+	it("reports imported keys when storefront generation fails", async () => {
+		const fetcher = warehouse(502);
+		const requester: typeof requestWarehouse = (token, path, init) =>
+			requestWarehouse(token, path, init, fetcher as typeof fetch);
+		await expect(
+			quickRestockRedeemWarehouse(
+				{
+					requestRef: "restock_quick_0000003",
+					sku: "GPT_20X_IOS",
+					componentId: ITEM_ID,
+					content: "KEY-READY\nKEY-USED\nKEY-DUPLICATE",
+				},
+				testContext(db),
+				requester,
+			),
+		).resolves.toMatchObject({
+			imported: 1,
+			generated: 0,
+			generationFailed: true,
+		});
+	});
+});
+
 const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const DISABLED_ITEM_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const PRODUCT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const ITEM_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const COMMERCE_SECRET = "redeem-warehouse-integration-commerce-secret";
@@ -155,6 +300,13 @@ async function seed(db: D1Database) {
 			 VALUES (?, ?, 'Plus iOS', 'local', 'CNY', 2, '15000', 1, 1)`,
 			)
 			.bind(ITEM_ID, PRODUCT_ID),
+		db
+			.prepare(
+				`INSERT INTO product_sellable_items
+			 (id, product_id, name, fulfillment_source, currency, currency_decimals, price_minor, sale_disabled, created_at, updated_at)
+			 VALUES (?, ?, 'Retired 20X iOS', 'local', 'CNY', 2, '15000', 1, 1, 1)`,
+			)
+			.bind(DISABLED_ITEM_ID, PRODUCT_ID),
 		db
 			.prepare(
 				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
