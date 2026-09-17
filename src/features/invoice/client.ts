@@ -13,6 +13,14 @@ const invoiceSchema = z.object({
 });
 export type Invoice = z.infer<typeof invoiceSchema>;
 
+// An order preview can run before the amount is known: the service prefills
+// the face amount from the paid amount. Offline applications need the amount.
+export function canPreview(form: Record<string, string>): boolean {
+	return form.order_no?.trim()
+		? Boolean(form.order_email?.trim())
+		: Boolean(form.invoice_amount?.trim());
+}
+
 export async function send(input: Record<string, string>): Promise<Invoice> {
 	const { action, request_no, ...form } = input;
 	if (!["preview", "create", "status"].includes(action ?? ""))

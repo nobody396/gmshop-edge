@@ -4,7 +4,7 @@ import { type SyntheticEvent, useEffect, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { m } from "#/paraglide/messages";
-import { type Invoice, send } from "./client";
+import { canPreview, type Invoice, send } from "./client";
 
 export function InvoicePage() {
 	const [form, setForm] = useState({
@@ -72,6 +72,27 @@ export function InvoicePage() {
 					);
 				}
 			} else setPreview(data);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : m.invoice_error());
+		} finally {
+			setBusy(false);
+		}
+	}
+	async function refreshPreview(current: typeof form) {
+		if (busy || !canPreview(current)) return;
+		setBusy(true);
+		setError("");
+		try {
+			const data = await send({ ...current, action: "preview" });
+			setPreview(data);
+			if (!current.invoice_amount.trim())
+				setForm((f) =>
+					f.order_no === current.order_no &&
+					f.order_email === current.order_email &&
+					!f.invoice_amount.trim()
+						? { ...f, invoice_amount: data.invoice_total_amount }
+						: f,
+				);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : m.invoice_error());
 		} finally {
@@ -167,8 +188,20 @@ export function InvoicePage() {
 										required={key !== "order_no"}
 										disabled={busy}
 										onChange={(event) => {
-											setForm({ ...form, [key]: event.target.value });
+											const next = { ...form, [key]: event.target.value };
+											// A different order must be re-priced from its own paid amount.
+											if (key === "order_no" || key === "order_email")
+												next.invoice_amount = "";
+											setForm(next);
 											setPreview(null);
+										}}
+										onBlur={() => {
+											if (
+												key === "order_no" ||
+												key === "order_email" ||
+												key === "invoice_amount"
+											)
+												void refreshPreview(form);
 										}}
 									/>
 								</label>
