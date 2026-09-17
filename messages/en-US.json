@@ -721,7 +721,7 @@
 	"payment_channels_validation_serial_number": "The certificate serial number may contain hexadecimal characters only",
 	"payment_channels_validation_api_v3_key": "The WeChat APIv3 key must contain exactly 32 characters",
 	"payment_channels_validation_invalid": "This field value is invalid",
-	"store_hero_title": "AI source accounts, direct channels, reliable delivery",
+	"store_hero_title": "Reliable delivery, 24 hours a day",
 	"store_self_service_eyebrow": "Automatic delivery, 24/7",
 	"store_self_service_title": "Self-service recharge in as little as about 3 minutes",
 	"store_self_service_description": "You do not send account passwords or login details to support before ordering. After payment, the order automatically provides a recharge code and the matching recharge website so you can follow the on-page steps yourself.",

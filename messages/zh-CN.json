@@ -721,7 +721,7 @@
 	"payment_channels_validation_serial_number": "证书序列号只能包含十六进制字符",
 	"payment_channels_validation_api_v3_key": "微信 APIv3 密钥必须正好为 32 个字符",
 	"payment_channels_validation_invalid": "此字段的值无效",
-	"store_hero_title": "AI 源头账号，一手渠道，稳定交付",
+	"store_hero_title": "24小时稳定交付",
 	"store_self_service_eyebrow": "7×24 小时自动交付",
 	"store_self_service_title": "全程自助充值，最快约3分钟",
 	"store_self_service_description": "下单时无需先把账号密码或登录资料发给客服。付款后，订单会自动发放充值卡密和对应充值网址，你在充值页按提示自行完成。",
