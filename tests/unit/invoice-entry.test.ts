@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { send } from "../../src/features/invoice/client";
+import { canPreview, send } from "../../src/features/invoice/client";
 
 const data = {
 	invoice_total_amount: "100.00",
@@ -126,4 +126,40 @@ it("does not expose a JSON parse error for gateway HTML failures", async () => {
 	await expect(
 		send({ action: "create", order_no: "TEST", invoice_amount: "685" }),
 	).rejects.not.toThrow("JSON");
+});
+
+it("previews an order before the amount is entered so the service can prefill it", async () => {
+	expect(
+		canPreview({ order_no: "GM1", order_email: "", invoice_amount: "" }),
+	).toBe(false);
+	expect(
+		canPreview({
+			order_no: "GM1",
+			order_email: "a@example.com",
+			invoice_amount: "",
+		}),
+	).toBe(true);
+	expect(
+		canPreview({ order_no: "", order_email: "", invoice_amount: "" }),
+	).toBe(false);
+	expect(
+		canPreview({ order_no: "", order_email: "", invoice_amount: "100" }),
+	).toBe(true);
+	const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+		Response.json({ data }),
+	);
+	vi.stubGlobal("fetch", fetch);
+	await send({
+		action: "preview",
+		order_no: "GM1",
+		order_email: "a@example.com",
+		invoice_amount: "",
+	});
+	expect(fetch.mock.calls[0]?.[0]).toBe(
+		"https://lsrai.shop/api/v1/guest/invoices/gmshop/preview",
+	);
+	expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+		order_no: "GM1",
+		invoice_amount: "",
+	});
 });
