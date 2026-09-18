@@ -4,11 +4,11 @@ import {
 } from "@tanstack/react-start/server";
 import { handleIpCheck } from "#/features/ip-check/server/lookup";
 import { handleLivenessRequest } from "#/features/status/server/health";
-import { publishPendingInventoryEvents } from "#/features/supplier-api/server/inventory-events";
 import { applySecurityHeaders } from "#/server/http-security";
 import { validateRequestAuthority } from "#/server/middleware/authority";
 import { handleI18nRequest } from "#/server/middleware/i18n";
 import { handleQueue } from "#/server/queue";
+import { drainPendingCommerceOutbox } from "#/server/queue/drain";
 import { adaptCloudflareEnv } from "#/server/runtime/cloudflare";
 import { runWithRuntimeEnv } from "#/server/runtime/context";
 import type { RuntimeEnv } from "#/server/runtime/types";
@@ -56,8 +56,11 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 		env.DB &&
 		env.COMMERCE_QUEUE
 	) {
+		// Any web write can commit pending outbox events (auth emails, paid-order
+		// fulfillment, refunds, alerts); drain them off the response path so they
+		// never wait for the minute cron. The cron remains the recovery path.
 		env.waitUntil?.(
-			publishPendingInventoryEvents(
+			drainPendingCommerceOutbox(
 				env.DB as D1Database,
 				env.COMMERCE_QUEUE as Queue,
 			),
