@@ -17,14 +17,13 @@ import { Route as authRouteRouteImport } from './routes/(auth)/route'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as publicIndexRouteImport } from './routes/(public)/index'
 import { Route as ApiSiteLogoRouteImport } from './routes/api/site-logo'
-import { Route as AdminRedeemInventoryRouteImport } from './routes/admin/redeem-inventory'
+import { Route as AdminSupplyRouteImport } from './routes/admin/supply'
 import { Route as AdminPaymentConfigurationsRouteImport } from './routes/admin/payment-configurations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminDeliveryRouteImport } from './routes/admin/delivery'
 import { Route as AdminCouponsRouteImport } from './routes/admin/coupons'
 import { Route as AdminAutomationRouteImport } from './routes/admin/automation'
 import { Route as AdminAuthRouteImport } from './routes/admin/auth'
-import { Route as AdminAisouInventoryRouteImport } from './routes/admin/aisou-inventory'
 import { Route as publicStatusRouteImport } from './routes/(public)/status'
 import { Route as publicMeRouteImport } from './routes/(public)/me'
 import { Route as publicIpCheckRouteImport } from './routes/(public)/ip-check'
@@ -162,9 +161,9 @@ const ApiSiteLogoRoute = ApiSiteLogoRouteImport.update({
   path: '/api/site-logo',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminRedeemInventoryRoute = AdminRedeemInventoryRouteImport.update({
-  id: '/redeem-inventory',
-  path: '/redeem-inventory',
+const AdminSupplyRoute = AdminSupplyRouteImport.update({
+  id: '/supply',
+  path: '/supply',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminPaymentConfigurationsRoute =
@@ -196,11 +195,6 @@ const AdminAutomationRoute = AdminAutomationRouteImport.update({
 const AdminAuthRoute = AdminAuthRouteImport.update({
   id: '/auth',
   path: '/auth',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminAisouInventoryRoute = AdminAisouInventoryRouteImport.update({
-  id: '/aisou-inventory',
-  path: '/aisou-inventory',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const publicStatusRoute = publicStatusRouteImport.update({
@@ -747,14 +741,13 @@ export interface FileRoutesByFullPath {
   '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
-  '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
   '/admin/payment-configurations': typeof AdminPaymentConfigurationsRoute
-  '/admin/redeem-inventory': typeof AdminRedeemInventoryRoute
+  '/admin/supply': typeof AdminSupplyRoute
   '/api/site-logo': typeof ApiSiteLogoRoute
   '/': typeof publicIndexRoute
   '/admin/': typeof AdminIndexRoute
@@ -853,14 +846,13 @@ export interface FileRoutesByTo {
   '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
-  '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
   '/admin/payment-configurations': typeof AdminPaymentConfigurationsRoute
-  '/admin/redeem-inventory': typeof AdminRedeemInventoryRoute
+  '/admin/supply': typeof AdminSupplyRoute
   '/api/site-logo': typeof ApiSiteLogoRoute
   '/': typeof publicIndexRoute
   '/admin': typeof AdminIndexRoute
@@ -969,14 +961,13 @@ export interface FileRoutesById {
   '/(public)/ip-check': typeof publicIpCheckRoute
   '/(public)/me': typeof publicMeRoute
   '/(public)/status': typeof publicStatusRoute
-  '/admin/aisou-inventory': typeof AdminAisouInventoryRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
   '/admin/payment-configurations': typeof AdminPaymentConfigurationsRoute
-  '/admin/redeem-inventory': typeof AdminRedeemInventoryRoute
+  '/admin/supply': typeof AdminSupplyRoute
   '/api/site-logo': typeof ApiSiteLogoRoute
   '/(public)/': typeof publicIndexRoute
   '/admin/': typeof AdminIndexRoute
@@ -1085,14 +1076,13 @@ export interface FileRouteTypes {
     | '/ip-check'
     | '/me'
     | '/status'
-    | '/admin/aisou-inventory'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
     | '/admin/delivery'
     | '/admin/orders'
     | '/admin/payment-configurations'
-    | '/admin/redeem-inventory'
+    | '/admin/supply'
     | '/api/site-logo'
     | '/'
     | '/admin/'
@@ -1191,14 +1181,13 @@ export interface FileRouteTypes {
     | '/ip-check'
     | '/me'
     | '/status'
-    | '/admin/aisou-inventory'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
     | '/admin/delivery'
     | '/admin/orders'
     | '/admin/payment-configurations'
-    | '/admin/redeem-inventory'
+    | '/admin/supply'
     | '/api/site-logo'
     | '/'
     | '/admin'
@@ -1306,14 +1295,13 @@ export interface FileRouteTypes {
     | '/(public)/ip-check'
     | '/(public)/me'
     | '/(public)/status'
-    | '/admin/aisou-inventory'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
     | '/admin/delivery'
     | '/admin/orders'
     | '/admin/payment-configurations'
-    | '/admin/redeem-inventory'
+    | '/admin/supply'
     | '/api/site-logo'
     | '/(public)/'
     | '/admin/'
@@ -1492,11 +1480,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSiteLogoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/redeem-inventory': {
-      id: '/admin/redeem-inventory'
-      path: '/redeem-inventory'
-      fullPath: '/admin/redeem-inventory'
-      preLoaderRoute: typeof AdminRedeemInventoryRouteImport
+    '/admin/supply': {
+      id: '/admin/supply'
+      path: '/supply'
+      fullPath: '/admin/supply'
+      preLoaderRoute: typeof AdminSupplyRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/payment-configurations': {
@@ -1539,13 +1527,6 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/admin/auth'
       preLoaderRoute: typeof AdminAuthRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/aisou-inventory': {
-      id: '/admin/aisou-inventory'
-      path: '/aisou-inventory'
-      fullPath: '/admin/aisou-inventory'
-      preLoaderRoute: typeof AdminAisouInventoryRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/(public)/status': {
@@ -2471,14 +2452,13 @@ interface AdminRouteRouteChildren {
   AdminProductsRouteRoute: typeof AdminProductsRouteRouteWithChildren
   AdminSettingsRouteRoute: typeof AdminSettingsRouteRouteWithChildren
   AdminSuppliersRouteRoute: typeof AdminSuppliersRouteRouteWithChildren
-  AdminAisouInventoryRoute: typeof AdminAisouInventoryRoute
   AdminAuthRoute: typeof AdminAuthRoute
   AdminAutomationRoute: typeof AdminAutomationRoute
   AdminCouponsRoute: typeof AdminCouponsRoute
   AdminDeliveryRoute: typeof AdminDeliveryRoute
   AdminOrdersRoute: typeof AdminOrdersRouteWithChildren
   AdminPaymentConfigurationsRoute: typeof AdminPaymentConfigurationsRoute
-  AdminRedeemInventoryRoute: typeof AdminRedeemInventoryRoute
+  AdminSupplyRoute: typeof AdminSupplyRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -2489,14 +2469,13 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminProductsRouteRoute: AdminProductsRouteRouteWithChildren,
   AdminSettingsRouteRoute: AdminSettingsRouteRouteWithChildren,
   AdminSuppliersRouteRoute: AdminSuppliersRouteRouteWithChildren,
-  AdminAisouInventoryRoute: AdminAisouInventoryRoute,
   AdminAuthRoute: AdminAuthRoute,
   AdminAutomationRoute: AdminAutomationRoute,
   AdminCouponsRoute: AdminCouponsRoute,
   AdminDeliveryRoute: AdminDeliveryRoute,
   AdminOrdersRoute: AdminOrdersRouteWithChildren,
   AdminPaymentConfigurationsRoute: AdminPaymentConfigurationsRoute,
-  AdminRedeemInventoryRoute: AdminRedeemInventoryRoute,
+  AdminSupplyRoute: AdminSupplyRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

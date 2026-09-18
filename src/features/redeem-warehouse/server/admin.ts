@@ -62,24 +62,6 @@ const generateSellableSchema = z.object({
 	count: z.number().int().min(1).max(100),
 });
 
-const inventoryRowSchema = z.object({
-	sku: z.string(),
-	display_name: z.string(),
-	family: z.enum(["gpt", "claude"]),
-	input_kind: z.enum(["gpt_session", "claude_session_key"]),
-	available: z.number().int().nonnegative(),
-	assigned: z.number().int().nonnegative().default(0),
-	leased: z.number().int().nonnegative(),
-	processing: z.number().int().nonnegative(),
-	consumed: z.number().int().nonnegative(),
-	quarantined: z.number().int().nonnegative(),
-});
-
-const inventoryEnvelopeSchema = z.object({
-	success: z.literal(true),
-	data: z.array(inventoryRowSchema).min(1).max(100),
-});
-
 const importEnvelopeSchema = z.object({
 	success: z.literal(true),
 	data: z.object({
@@ -179,74 +161,6 @@ export const saveRedeemWarehouseConfigurationFn = createServerFn({
 		return { configured: true };
 	});
 
-export const listRedeemWarehouseInventoryFn = createServerFn({
-	method: "GET",
-}).handler(async () => {
-	const context = await getAdminRuntimeServerContext(
-		systemPermission("inventory", "read"),
-	);
-	const config = await loadWarehouseConfig(context);
-	const [result, targets, items] = await Promise.all([
-		requestWarehouse(config.token, "/api/internal/inventory/summary").then(
-			(payload) => inventoryEnvelopeSchema.parse(payload),
-		),
-		loadTargets(context.db),
-		listRestockTargets(context.db),
-	]);
-	return result.data.map((row) => ({
-		target: items.find((item) => item.componentId === targets[row.sku]) ?? null,
-		sku: row.sku,
-		displayName: row.display_name,
-		family: row.family,
-		inputKind: row.input_kind,
-		available: row.available,
-		assigned: row.assigned,
-		leased: row.leased,
-		processing: row.processing,
-		consumed: row.consumed,
-		quarantined: row.quarantined,
-	}));
-});
-
-export const importRedeemWarehouseInventoryFn = createServerFn({
-	method: "POST",
-})
-	.validator((input: z.input<typeof importSchema>) => importSchema.parse(input))
-	.handler(async ({ data }) =>
-		importWarehouseKeys(
-			data,
-			await getAdminRuntimeServerContext(
-				systemPermission("inventory", "create"),
-			),
-		),
-	);
-
-export const listRedeemRestockTargetsFn = createServerFn({
-	method: "GET",
-}).handler(async () => {
-	const context = await getAdminRuntimeServerContext(
-		systemPermission("inventory", "read"),
-	);
-	return listRestockTargets(context.db);
-});
-
-export const quickRestockRedeemWarehouseFn = createServerFn({
-	method: "POST",
-})
-	.validator((input: z.input<typeof quickRestockSchema>) =>
-		quickRestockSchema.parse(input),
-	)
-	.handler(async ({ data }) =>
-		quickRestockRedeemWarehouse(
-			data,
-			await getAdminRuntimeServerContext(
-				systemPermission("inventory", "create"),
-			),
-		),
-	);
-
-// One step: import upstream keys, then issue exactly as many sellable codes
-// as the warehouse accepted as available into an on-sale storefront item.
 export async function quickRestockRedeemWarehouse(
 	data: z.infer<typeof quickRestockSchema>,
 	context: WarehouseContext,
