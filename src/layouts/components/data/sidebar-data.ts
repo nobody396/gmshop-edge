@@ -34,8 +34,7 @@ export type NavigationModuleId =
 	| "dashboard"
 	| "products"
 	| "product-recycle-bin"
-	| "redeem-inventory"
-	| "aisou-inventory"
+	| "supply-console"
 	| "suppliers"
 	| "orders"
 	| "customers"
@@ -134,28 +133,14 @@ export const navigationGroups: readonly NavigationGroup[] = [
 				],
 			},
 			{
-				id: "redeem-inventory",
-				title: () => m.redeem_warehouse_title(),
+				id: "supply-console",
+				title: () => m.supply_console_title(),
 				icon: Warehouse,
 				entries: [
 					entry(
-						"redeem-inventory",
-						() => m.redeem_warehouse_title(),
-						"/admin/redeem-inventory",
-						Warehouse,
-						systemPermission("inventory", "read"),
-					),
-				],
-			},
-			{
-				id: "aisou-inventory",
-				title: () => m.aisou_inventory_title(),
-				icon: Warehouse,
-				entries: [
-					entry(
-						"aisou-inventory",
-						() => m.aisou_inventory_title(),
-						"/admin/aisou-inventory",
+						"supply-console",
+						() => m.supply_console_title(),
+						"/admin/supply",
 						Warehouse,
 						systemPermission("inventory", "read"),
 					),
