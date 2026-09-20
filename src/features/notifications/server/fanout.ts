@@ -58,6 +58,10 @@ export async function fanOutPendingCommerceNotifications(
 	const emailAvailable = await hasEnabledEmailChannel(db);
 	let delivered = 0;
 	for (const row of rows.results) {
+		if (row.event_type === "shop_order.paid") {
+			await markOutboxPublished(db, row.id);
+			continue;
+		}
 		const event = eventNames[row.event_type];
 		const order = await loadOrderForEvent(db, row);
 		if (!order) {
