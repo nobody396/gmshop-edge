@@ -148,9 +148,11 @@ export async function loadSupplyMap(
 		.bind(supplyMapKey)
 		.first<{ value: string }>();
 	if (!row?.value) return {};
+	const value: unknown = JSON.parse(row.value);
+	// Accept normal JSON objects and legacy JSON-encoded strings.
 	const parsed = z
 		.record(z.string(), z.string())
-		.safeParse(JSON.parse(JSON.parse(row.value) || "{}"));
+		.safeParse(typeof value === "string" ? JSON.parse(value || "{}") : value);
 	return parsed.success ? parsed.data : {};
 }
 

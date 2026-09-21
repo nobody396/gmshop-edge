@@ -99,6 +99,31 @@ describe("supply console", { timeout: 30_000 }, () => {
 		return call;
 	}
 
+	it("reads a single-encoded production supply map", async () => {
+		await db
+			.prepare("UPDATE system_settings SET value = ? WHERE key = ?")
+			.bind(JSON.stringify({ [CENTRAL_ITEM]: "GPT_20X_IOS" }), supplyMapKey)
+			.run();
+		try {
+			const rows = await listSupplyConsole(
+				db,
+				COMMERCE_SECRET,
+				requester(warehouse(1)),
+			);
+			expect(
+				rows.find((row) => row.componentId === CENTRAL_ITEM),
+			).toMatchObject({ centralSku: "GPT_20X_IOS", centralAvailable: 1 });
+		} finally {
+			await db
+				.prepare("UPDATE system_settings SET value = ? WHERE key = ?")
+				.bind(
+					JSON.stringify(JSON.stringify({ [CENTRAL_ITEM]: "GPT_20X_IOS" })),
+					supplyMapKey,
+				)
+				.run();
+		}
+	});
+
 	it("reports what each SKU can actually deliver", async () => {
 		const rows = await listSupplyConsole(
 			db,
