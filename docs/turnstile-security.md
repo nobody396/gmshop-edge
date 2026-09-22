@@ -13,7 +13,11 @@ they retain their existing authentication and durable rate limits.
 The browser sends a fresh `cf-turnstile-response` header for each attempt. The
 server verifies with Cloudflare and checks success, exact hostname and action.
 Missing, expired, replayed or wrong-context tokens are rejected; verifier outages
-fail closed. Client controls disable submission until the challenge is ready.
+fail closed. Before Siteverify, the existing D1 fixed-window counter allows at most
+20 verification attempts per source IP per minute across all three entry points.
+Only Cloudflare's trusted client-IP header is used; missing source addresses share
+an `unknown` bucket. Missing/oversized tokens do not consume D1/network budget.
+Missing or failing D1 returns 503 without a Siteverify call. Client controls disable submission until the challenge is ready.
 
 ## Activation (operator coordination required)
 

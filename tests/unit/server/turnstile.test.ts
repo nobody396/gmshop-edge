@@ -1,10 +1,22 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	publicTurnstileConfig,
 	turnstileAction,
 	verifyTurnstile,
 } from "../../../src/server/turnstile";
 
+const limiter = vi.hoisted(() => vi.fn());
+vi.mock("../../../src/server/rate-limit", () => ({
+	claimFixedWindowRateLimit: limiter,
+}));
+const db = {} as D1Database;
+beforeEach(() => {
+	limiter.mockReset().mockResolvedValue({ allowed: true });
+});
+const verify = (
+	request: Request,
+	config: Parameters<typeof verifyTurnstile>[1],
+) => verifyTurnstile(request, config, db);
 const config = {
 	TURNSTILE_SITE_KEY: "public-test",
 	TURNSTILE_SECRET_KEY: "private-test",
@@ -37,7 +49,7 @@ describe("Turnstile exact entry point enforcement", () => {
 		).toBeNull();
 	});
 	it("is explicitly optional with no configuration and never exposes the secret", async () => {
-		expect(await verifyTurnstile(request(), {})).toBeNull();
+		expect(await verify(request(), {})).toBeNull();
 		expect(publicTurnstileConfig(config)).toEqual({
 			enabled: true,
 			siteKey: "public-test",
@@ -48,11 +60,11 @@ describe("Turnstile exact entry point enforcement", () => {
 			{ TURNSTILE_SITE_KEY: "public-test" },
 			{ TURNSTILE_SECRET_KEY: "private-test" },
 		])
-			expect((await verifyTurnstile(request(), partial))?.status).toBe(503);
+			expect((await verify(request(), partial))?.status).toBe(503);
 		for (const token of ["", "x".repeat(2049)])
-			expect(
-				(await verifyTurnstile(request(undefined, token), config))?.status,
-			).toBe(403);
+			expect((await verify(request(undefined, token), config))?.status).toBe(
+				403,
+			);
 	});
 	it("requires success, exact hostname and action, including rejection of replayed tokens", async () => {
 		for (const result of [
@@ -62,7 +74,7 @@ describe("Turnstile exact entry point enforcement", () => {
 			{ success: true, hostname: "shop.example.com", action: "login" },
 		]) {
 			vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(result)));
-			expect((await verifyTurnstile(request(), config))?.status).toBe(403);
+			expect((await verify(request(), config))?.status).toBe(403);
 		}
 		const fetcher = vi.fn().mockResolvedValue(
 			Response.json({
@@ -72,7 +84,7 @@ describe("Turnstile exact entry point enforcement", () => {
 			}),
 		);
 		vi.stubGlobal("fetch", fetcher);
-		expect(await verifyTurnstile(request(), config)).toBeNull();
+		expect(await verify(request(), config)).toBeNull();
 		expect(fetcher.mock.calls[0]?.[0]).toBe(
 			"https://challenges.cloudflare.com/turnstile/v0/siteverify",
 		);
@@ -83,8 +95,68 @@ describe("Turnstile exact entry point enforcement", () => {
 			"fetch",
 			vi.fn().mockResolvedValue(new Response("error", { status: 500 })),
 		);
-		expect((await verifyTurnstile(request(), config))?.status).toBe(503);
+		expect((await verify(request(), config))?.status).toBe(503);
 		vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("timeout")));
-		expect((await verifyTurnstile(request(), config))?.status).toBe(503);
+		expect((await verify(request(), config))?.status).toBe(503);
+	});
+});
+
+it("budgets remote verification across entry points before calling Siteverify", async () => {
+	const remote = vi.fn().mockResolvedValue(Response.json({ success: false }));
+	vi.stubGlobal("fetch", remote);
+	limiter.mockResolvedValue({ allowed: false });
+	for (const path of [
+		"/api/auth/sign-up/email",
+		"/api/auth/sign-in/email",
+		"/api/support/web/conversations",
+	]) {
+		const req = request(path);
+		req.headers.set("cf-connecting-ip", "192.0.2.10");
+		req.headers.set("x-forwarded-for", "untrusted-changing-input");
+		const response = await verifyTurnstile(req, config, db);
+		expect(response?.status).toBe(429);
+		expect(response?.headers.get("retry-after")).toBe("60");
+		expect(limiter).toHaveBeenLastCalledWith(db, {
+			bucketKey: "turnstile:verify:192.0.2.10",
+			limit: 20,
+			windowMs: 60_000,
+		});
+	}
+	expect(remote).not.toHaveBeenCalled();
+});
+it("fails closed without D1 or if the durable budget fails", async () => {
+	const remote = vi.fn();
+	vi.stubGlobal("fetch", remote);
+	expect((await verifyTurnstile(request(), config))?.status).toBe(503);
+	limiter.mockRejectedValue(new Error("database unavailable"));
+	expect((await verifyTurnstile(request(), config, db))?.status).toBe(503);
+	expect(remote).not.toHaveBeenCalled();
+});
+it("does not spend D1/network budget for missing tokens, disabled protection or callback/API traffic", async () => {
+	const remote = vi.fn();
+	vi.stubGlobal("fetch", remote);
+	expect(
+		(await verifyTurnstile(request(undefined, ""), config, db))?.status,
+	).toBe(403);
+	expect(await verifyTurnstile(request(), {}, db)).toBeNull();
+	for (const path of [
+		"/api/auth/callback/google",
+		"/api/auth/telegram/callback",
+		"/api/payments/callback",
+		"/api/supply/orders",
+	])
+		expect(await verifyTurnstile(request(path), config, db)).toBeNull();
+	expect(limiter).not.toHaveBeenCalled();
+	expect(remote).not.toHaveBeenCalled();
+});
+it("uses a single unknown-source bucket rather than trusting forwarded headers", async () => {
+	limiter.mockResolvedValue({ allowed: false });
+	const req = request();
+	req.headers.set("x-forwarded-for", "192.0.2.44");
+	await verifyTurnstile(req, config, db);
+	expect(limiter).toHaveBeenCalledWith(db, {
+		bucketKey: "turnstile:verify:unknown",
+		limit: 20,
+		windowMs: 60_000,
 	});
 });
