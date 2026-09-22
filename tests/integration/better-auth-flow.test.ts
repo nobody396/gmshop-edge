@@ -279,9 +279,12 @@ describe("Better Auth account security flow", () => {
 						method: "POST",
 						headers: {
 							"content-type": "application/json",
-							"x-forwarded-for": "198.51.100.45",
+							"cf-connecting-ip": "198.51.100.45",
 						},
-						body: JSON.stringify({ email, password: "wrong-password-value" }),
+						body: JSON.stringify({
+							email: "rate-limit-only@example.com",
+							password: "wrong-password-value",
+						}),
 					}),
 				),
 			);

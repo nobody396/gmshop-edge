@@ -4,6 +4,7 @@ import type { z } from "zod";
 import { verifySensitiveAdminAction } from "#/features/auth/server/reauthenticate";
 import { resolveStoreAccount } from "#/features/storefront/server/account";
 import { DomainError } from "#/lib/domain-error";
+import { m } from "#/paraglide/messages";
 import { getDb } from "#/server/db.server";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import { supplierApiKeyCreateSchema, supplierApiKeyIdSchema } from "../schema";
@@ -46,6 +47,12 @@ export const createSupplierApiKeyFn = createServerFn({ method: "POST" })
 		const db = getDb(request).$client;
 		const account = await resolveStoreAccount(db, request, { required: true });
 		const userId = account?.user.id ?? "";
+		if (!account?.user.emailVerified)
+			throw new DomainError(
+				"email_verification_required",
+				403,
+				m.auth_error_email_not_verified(),
+			);
 		await verifySensitiveAdminAction(request, userId, data);
 		if (!(await supplierApiIsEnabled(db)))
 			throw new DomainError(

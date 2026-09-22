@@ -1992,5 +1992,6 @@
 	"ip_asn_abuse": "ASN 滥用比例（当前源未提供）",
 	"ip_shell_unix": "macOS / Linux：终端只读检查",
 	"ip_shell_windows": "Windows：PowerShell 只读检查",
-	"ip_article_score_title": "分数是怎么算出来的？"
+	"ip_article_score_title": "分数是怎么算出来的？",
+	"auth_error_rate_limited": "操作过于频繁，请稍后再试；注册次数过多时需等待一小时。"
 }

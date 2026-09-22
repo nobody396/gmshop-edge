@@ -20,6 +20,36 @@ function database(values: Record<string, string[] | string>) {
 }
 
 describe("request authority policy", () => {
+	it("blocks incident IPs on every configured hostname, ignoring spoofed forwarding", async () => {
+		const db = database({
+			"security.allowed_hosts": ["shop.example", "worker.example"],
+			"security.blocked_ips": ["198.51.100.9"],
+		});
+		for (const host of ["shop.example", "worker.example"]) {
+			expect(
+				(
+					await validateRequestAuthority(
+						new Request(`https://${host}/api/auth/sign-up/email`, {
+							headers: {
+								"cf-connecting-ip": "198.51.100.9",
+								"x-forwarded-for": "192.0.2.1",
+							},
+						}),
+						db,
+					)
+				)?.status,
+			).toBe(403);
+		}
+		expect(
+			await validateRequestAuthority(
+				new Request("https://shop.example/api/shop/payments/provider/webhook", {
+					method: "POST",
+					headers: { "cf-connecting-ip": "192.0.2.1" },
+				}),
+				db,
+			),
+		).toBeNull();
+	});
 	it("rejects hosts outside Security settings", async () => {
 		const response = await validateRequestAuthority(
 			new Request("https://unexpected.example/status"),

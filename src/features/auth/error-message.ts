@@ -7,6 +7,8 @@ function errorCode(error: unknown) {
 
 export function signInErrorMessage(error: unknown) {
 	switch (errorCode(error)) {
+		case "TOO_MANY_REQUESTS":
+			return m.auth_error_rate_limited();
 		case "INVALID_EMAIL_OR_PASSWORD":
 		case "INVALID_PASSWORD":
 		case "USER_NOT_FOUND":
