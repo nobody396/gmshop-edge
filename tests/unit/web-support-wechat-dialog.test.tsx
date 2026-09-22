@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -49,7 +50,18 @@ beforeEach(async () => {
 	container = document.createElement("div");
 	document.body.appendChild(container);
 	root = createRoot(container);
-	await act(async () => root.render(<WebSupportWidget />));
+	const queryClient = new QueryClient();
+	queryClient.setQueryData(["public", "turnstile"], {
+		enabled: false,
+		siteKey: "",
+	});
+	await act(async () =>
+		root.render(
+			<QueryClientProvider client={queryClient}>
+				<WebSupportWidget />
+			</QueryClientProvider>,
+		),
+	);
 	await act(async () => button("web_support_button").click());
 });
 
