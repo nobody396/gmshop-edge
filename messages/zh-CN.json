@@ -1112,7 +1112,7 @@
 	"auth_reset_password_failed": "无法重置密码",
 	"auth_reset_password_success": "密码重置成功",
 	"auth_verify_email_title": "检查你的邮箱",
-	"auth_verify_email_description": "验证链接已发送到 {email}，请打开链接激活账户",
+	"auth_verify_email_description": "请检查 {email} 的验证邮件并打开链接激活账户；没有收到或链接过期时，请点击重新发送",
 	"auth_verification_resend": "重新发送验证邮件",
 	"auth_verification_resent": "验证邮件已进入队列",
 	"auth_verification_resend_failed": "无法重新发送验证邮件",

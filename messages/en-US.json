@@ -1112,7 +1112,7 @@
 	"auth_reset_password_failed": "Unable to reset password",
 	"auth_reset_password_success": "Password reset successfully",
 	"auth_verify_email_title": "Check your email",
-	"auth_verify_email_description": "We sent a verification link to {email}. Open it to activate your account.",
+	"auth_verify_email_description": "Check {email} for a verification link. If it is missing or expired, request a new one below.",
 	"auth_verification_resend": "Resend verification email",
 	"auth_verification_resent": "Verification email queued",
 	"auth_verification_resend_failed": "Unable to resend verification email",

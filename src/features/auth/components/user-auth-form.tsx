@@ -132,6 +132,18 @@ export function UserAuthForm({
 				},
 				error: (error) => {
 					setIsLoading(false);
+					if (
+						error &&
+						typeof error === "object" &&
+						"code" in error &&
+						error.code === "EMAIL_NOT_VERIFIED"
+					) {
+						window.sessionStorage.setItem(
+							"gmshop.pending_verification_email",
+							data.email.trim(),
+						);
+						void navigate({ to: "/verify-email-sent" });
+					}
 					return signInErrorMessage(error);
 				},
 			},
