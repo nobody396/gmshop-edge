@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { authenticateGmshopMirror } from "#/server/middleware/gmshop-mirror";
+import { adaptCloudflareEnv } from "#/server/runtime/cloudflare";
 
 const secret = "a".repeat(64);
 function request(headers: Record<string, string> = {}) {
@@ -101,4 +102,10 @@ describe("authenticated GMShop mirrors", () => {
 			Request,
 		);
 	});
+});
+
+it("adapts the independent mirror proof binding without exposing it through public config", () => {
+	const env = adaptCloudflareEnv({ GMSHOP_EDGEONE_ORIGIN_VERIFY: secret });
+	expect(env.runtime).toBe("cloudflare");
+	expect(env.GMSHOP_EDGEONE_ORIGIN_VERIFY).toBe(secret);
 });

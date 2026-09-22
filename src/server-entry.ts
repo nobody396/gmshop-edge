@@ -28,13 +28,15 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 				{ name: "total", durationMs: performance.now() - startedAt },
 			]),
 		);
-	const mirrored = await authenticateGmshopMirror(
-		request,
-		env.GMSHOP_EDGEONE_ORIGIN_VERIFY,
-	);
-	if (mirrored instanceof Response)
-		return applySecurityHeaders(request, mirrored);
-	request = mirrored;
+	if (env.runtime === "cloudflare") {
+		const mirrored = await authenticateGmshopMirror(
+			request,
+			env.GMSHOP_EDGEONE_ORIGIN_VERIFY,
+		);
+		if (mirrored instanceof Response)
+			return applySecurityHeaders(request, mirrored);
+		request = mirrored;
+	}
 	const authorityStartedAt = performance.now();
 	const rejected = await validateRequestAuthority(
 		request,
