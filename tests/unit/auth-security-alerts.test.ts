@@ -48,7 +48,7 @@ describe("independent authentication security alerts", () => {
 			requireEnabled: false,
 		});
 		expect(sendFeishuText).toHaveBeenCalledTimes(1);
-		expect(vi.mocked(sendFeishuText).mock.calls[0][1]).toContain(
+		expect(vi.mocked(sendFeishuText).mock.calls[0]?.[1]).toContain(
 			"认证失败：10",
 		);
 	});
