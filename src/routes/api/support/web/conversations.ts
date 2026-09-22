@@ -15,7 +15,11 @@ export const Route = createFileRoute("/api/support/web/conversations")({
 	server: {
 		handlers: {
 			POST: async ({ request }) => {
-				const challenge = await verifyTurnstile(request, getRuntimeEnv());
+				const challenge = await verifyTurnstile(
+					request,
+					getRuntimeEnv(),
+					getEnv().DB,
+				);
 				if (challenge) return challenge;
 				try {
 					const input = await readWebSupportBody(

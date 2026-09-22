@@ -1,3 +1,5 @@
+import { claimFixedWindowRateLimit } from "./rate-limit";
+
 export type TurnstileConfig = {
 	TURNSTILE_SITE_KEY?: string;
 	TURNSTILE_SECRET_KEY?: string;
@@ -23,6 +25,7 @@ export function turnstileAction(request: Request): string | null {
 export async function verifyTurnstile(
 	request: Request,
 	config: TurnstileConfig,
+	db?: D1Database,
 ): Promise<Response | null> {
 	const action = turnstileAction(request);
 	if (!action || !publicTurnstileConfig(config).enabled) return null;
@@ -39,6 +42,24 @@ export async function verifyTurnstile(
 	const token = request.headers.get("cf-turnstile-response");
 	if (!token || token.length > 2048) return reject();
 	try {
+		// Budget Siteverify calls before crossing the network. One shared source
+		// bucket prevents rotating between register/login/support to multiply it.
+		if (!db) return reject(503);
+		const ip =
+			request.headers.get("cf-connecting-ip")?.slice(0, 45) || "unknown";
+		const budget = await claimFixedWindowRateLimit(db, {
+			bucketKey: `turnstile:verify:${ip}`,
+			limit: 20,
+			windowMs: 60_000,
+		});
+		if (!budget.allowed)
+			return Response.json(
+				{
+					code: "TOO_MANY_REQUESTS",
+					message: "Too many verification attempts",
+				},
+				{ status: 429, headers: { "retry-after": "60" } },
+			);
 		const response = await fetch(
 			"https://challenges.cloudflare.com/turnstile/v0/siteverify",
 			{

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getAuth } from "#/features/auth/server/auth";
-import { getRuntimeEnv } from "#/server/db.server";
+import { getEnv, getRuntimeEnv } from "#/server/db.server";
 import { publicTurnstileConfig, verifyTurnstile } from "#/server/turnstile";
 
 export const Route = createFileRoute("/api/auth/$")({
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/api/auth/$")({
 						})
 					: (await getAuth(request)).handler(request),
 			POST: async ({ request }) =>
-				(await verifyTurnstile(request, getRuntimeEnv())) ??
+				(await verifyTurnstile(request, getRuntimeEnv(), getEnv().DB)) ??
 				(await getAuth(request)).handler(request),
 		},
 	},
