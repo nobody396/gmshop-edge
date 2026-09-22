@@ -6,6 +6,7 @@ import { handleIpCheck } from "#/features/ip-check/server/lookup";
 import { handleLivenessRequest } from "#/features/status/server/health";
 import { applySecurityHeaders } from "#/server/http-security";
 import { validateRequestAuthority } from "#/server/middleware/authority";
+import { authenticateGmshopMirror } from "#/server/middleware/gmshop-mirror";
 import { handleI18nRequest } from "#/server/middleware/i18n";
 import { handleQueue } from "#/server/queue";
 import { drainPendingCommerceOutbox } from "#/server/queue/drain";
@@ -27,6 +28,13 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 				{ name: "total", durationMs: performance.now() - startedAt },
 			]),
 		);
+	const mirrored = await authenticateGmshopMirror(
+		request,
+		env.GMSHOP_EDGEONE_ORIGIN_VERIFY,
+	);
+	if (mirrored instanceof Response)
+		return applySecurityHeaders(request, mirrored);
+	request = mirrored;
 	const authorityStartedAt = performance.now();
 	const rejected = await validateRequestAuthority(
 		request,

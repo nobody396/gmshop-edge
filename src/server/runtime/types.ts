@@ -137,6 +137,7 @@ export type RuntimeEnv = {
 	EMAIL?: SendEmail;
 	RESTOCK_API_TOKEN?: string;
 	INVOICE_LOOKUP_TOKEN?: string;
+	GMSHOP_EDGEONE_ORIGIN_VERIFY?: string;
 	TURNSTILE_SITE_KEY?: string;
 	TURNSTILE_SECRET_KEY?: string;
 	waitUntil?: (promise: Promise<unknown>) => void;

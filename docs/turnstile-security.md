@@ -48,3 +48,20 @@ adapters, error mapping and query cache are reused. Removing hostname/action
 checks makes the regression suite fail; restoring them passes. Focused tests also
 cover optional configuration, partial configuration, token size, upstream
 outages, exact endpoint scope, browser expiry and token reset after attempts.
+
+## Authenticated mirror client IP
+
+The two EdgeOne mirrors share an independent `GMSHOP_EDGEONE_ORIGIN_VERIFY`
+secret sourced from Agent Switch and injected only at runtime. Existing EdgeOne
+markers alone are never authentication. The Worker verifies the dedicated header
+and a single valid EO client address before replacing its internal trusted client
+IP header; direct Cloudflare traffic ignores spoofed EO headers. The proof header
+is removed before application handling. This prevents treating shared EdgeOne
+nodes as individual users for durable limits. Current cn mirror deliberately
+shares the existing shop marker; its routing configuration is not rewritten.
+
+Mirror secret and code must ship atomically after both exact EdgeOne rules are
+prepared. Missing proof/config fails closed only for marked mirrors. Local
+regression covers body preservation, both mirrors, IPv6, wrong/missing proof,
+forged forwarding headers and direct traffic; removing the proof check causes the
+wrong-proof regression to fail. No payment/callback payload or protocol changes.
