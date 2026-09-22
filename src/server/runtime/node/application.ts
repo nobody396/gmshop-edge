@@ -52,8 +52,6 @@ export async function createNodeApplication(
 	const pendingTasks = new Set<Promise<unknown>>();
 	const env: RuntimeEnv = {
 		runtime: "bun",
-		TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY,
-		TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
 		DB: database,
 		CACHE: new NodeMemoryCache(),
 		FILES: new NodeObjectStorage(layout.objects),

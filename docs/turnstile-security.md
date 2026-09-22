@@ -26,8 +26,9 @@ Missing or failing D1 returns 503 without a Siteverify call. Client controls dis
    directly into `agent-switch secret set --stdin NAME`, never print it.
 3. Inject the Worker secret from an inherited non-TTY FD into Wrangler's stdin;
    never put it in a project environment file, arguments, D1 or deployment logs.
-   Set the public site key in Worker runtime configuration. Bun receives both
-   values through its launch environment, not a repository file.
+   Set the public site key in Worker runtime configuration. This release enables
+   Turnstile only on Cloudflare. Bun retains its existing limits; no new public
+   Bun environment variables are introduced and Bun Turnstile is not claimed.
 4. Deploy code and both bindings together. Verify the config endpoint, visible
    register/password-login/support widgets, real token success and rejection
    without a token. Verify Google/Telegram login and payment callbacks separately.
