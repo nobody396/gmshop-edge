@@ -21,6 +21,7 @@ import {
 } from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { authClient } from "#/features/auth/auth-client";
+import { useTurnstile } from "#/features/auth/components/turnstile";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
@@ -61,6 +62,7 @@ export function WebSupportWidget() {
 	const [email, setEmail] = useState("");
 	const [messages, setMessages] = useState<WebSupportLocalMessage[]>([]);
 	const [text, setText] = useState("");
+	const challenge = useTurnstile("support");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const lastSequence = useRef(0);
@@ -184,6 +186,7 @@ export function WebSupportWidget() {
 		event: SyntheticEvent<HTMLFormElement, SubmitEvent>,
 	) {
 		event.preventDefault();
+		if (!challenge.ready) return;
 		setBusy(true);
 		setError(null);
 		try {
@@ -201,7 +204,7 @@ export function WebSupportWidget() {
 			const response = await fetch("/api/support/web/conversations", {
 				method: "POST",
 				credentials: "include",
-				headers: { "content-type": "application/json" },
+				headers: { "content-type": "application/json", ...challenge.headers },
 				body: JSON.stringify({
 					email: sessionEmail || email,
 					visitorId: identity.visitorId,
@@ -220,6 +223,7 @@ export function WebSupportWidget() {
 		} catch {
 			setError(m.web_support_failed());
 		} finally {
+			challenge.reset();
 			setBusy(false);
 		}
 	}
@@ -355,7 +359,11 @@ export function WebSupportWidget() {
 										{error}
 									</p>
 								) : null}
-								<Button className="mt-auto w-full" disabled={busy}>
+								{challenge.widget}
+								<Button
+									className="mt-auto w-full"
+									disabled={busy || !challenge.ready}
+								>
 									{busy ? <LoaderCircle className="animate-spin" /> : null}
 									{busy ? m.web_support_connecting() : m.web_support_start()}
 								</Button>
@@ -406,7 +414,11 @@ export function WebSupportWidget() {
 							) : null}
 							{status === "closed" && supportEnabled ? (
 								<form className="border-t p-3" onSubmit={startConversation}>
-									<Button className="w-full" disabled={busy}>
+									{challenge.widget}
+									<Button
+										className="w-full"
+										disabled={busy || !challenge.ready}
+									>
 										{busy ? <LoaderCircle className="animate-spin" /> : null}
 										{busy ? m.web_support_reopening() : m.web_support_reopen()}
 									</Button>

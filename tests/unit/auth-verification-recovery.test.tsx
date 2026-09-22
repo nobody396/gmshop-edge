@@ -46,10 +46,12 @@ it("takes an existing unverified customer to resend without storing the password
 	const container = document.createElement("div");
 	document.body.appendChild(container);
 	const root = createRoot(container);
+	const client = new QueryClient();
+	client.setQueryData(["public", "turnstile"], { enabled: false, siteKey: "" });
 	try {
 		await act(async () => {
 			root.render(
-				<QueryClientProvider client={new QueryClient()}>
+				<QueryClientProvider client={client}>
 					<AuthAnimationProvider>
 						<UserAuthForm />
 					</AuthAnimationProvider>
