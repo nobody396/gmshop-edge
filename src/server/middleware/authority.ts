@@ -1,9 +1,11 @@
+import { z } from "zod";
 import { loadRequestSettings } from "#/server/request-settings";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 type AuthoritySettings = {
 	allowedHosts: string[];
+	blockedIps: string[];
 };
 
 const requestSettings = new WeakMap<Request, Promise<AuthoritySettings>>();
@@ -20,6 +22,12 @@ export async function validateRequestAuthority(
 		console.error(JSON.stringify({ event: "request_authority_unavailable" }));
 		return authorityUnavailable();
 	}
+	if (
+		settings.blockedIps.includes(
+			normalizeIp(request.headers.get("cf-connecting-ip") ?? ""),
+		)
+	)
+		return new Response("Forbidden", { status: 403 });
 	const url = new URL(request.url);
 	if (
 		settings.allowedHosts.length > 0 &&
@@ -67,6 +75,7 @@ async function loadAuthoritySettings(
 	const cached = requestSettings.get(request);
 	if (cached) return cached;
 	const pending = loadRequestSettings(request, db).then((values) => ({
+		blockedIps: parseBlockedIps(values.get("security.blocked_ips")),
 		allowedHosts: parseStringArray(values.get("security.allowed_hosts")).map(
 			(host) => host.toLowerCase(),
 		),
@@ -95,4 +104,20 @@ function parseStringArray(value: string | undefined): string[] {
 	} catch {
 		throw new Error("Invalid Allowed Hosts setting");
 	}
+}
+
+function parseBlockedIps(value: string | undefined): string[] {
+	if (!value) return [];
+	return z
+		.array(z.union([z.ipv4(), z.ipv6()]))
+		.max(100)
+		.parse(JSON.parse(value))
+		.map(normalizeIp);
+}
+
+// URL serialization gives validated IPv6 addresses one canonical representation.
+function normalizeIp(ip: string): string {
+	return z.ipv6().safeParse(ip).success
+		? new URL(`http://[${ip}]/`).hostname.slice(1, -1)
+		: ip;
 }

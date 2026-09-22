@@ -1,3 +1,4 @@
+import { publishAuthSecurityAlert } from "#/features/auth/server/security-alerts";
 import { publishPendingBuilds } from "#/features/builds/server/outbox";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import { publishPendingNotifications } from "#/features/notifications/server/delivery";
@@ -76,6 +77,10 @@ export async function runScheduledCommerceWork(
 	);
 	const telegram = await runTelegramMaintenance(env.DB, scheduledAt);
 	const maintenance = await runMaintenance(env, cron, undefined, scheduledAt);
+	const securityAlert = await publishAuthSecurityAlert(
+		env.DB,
+		scheduledAt,
+	).catch(() => ({ status: "failed" }));
 	return {
 		payments,
 		expired,
@@ -89,6 +94,7 @@ export async function runScheduledCommerceWork(
 		notifications,
 		telegram,
 		maintenance,
+		securityAlert,
 	};
 }
 

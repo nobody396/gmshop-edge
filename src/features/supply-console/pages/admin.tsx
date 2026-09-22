@@ -146,6 +146,15 @@ export function SupplyConsolePage() {
 						</span>
 						<span className="w-24" />
 					</div>
+					{supply.isError ? (
+						<p role="alert" className="p-4 text-destructive">
+							{m.errors_generalTitle()}
+						</p>
+					) : supply.isPending ? (
+						<output className="block p-4 text-muted-foreground">
+							{m.common_loading()}
+						</output>
+					) : null}
 					{rows.map((row) => (
 						<SupplyRow
 							key={row.componentId}

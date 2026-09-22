@@ -17,6 +17,7 @@ import {
 	isInternalIdentityEmail,
 	telegramIdentityEmail,
 } from "#/features/auth/identity-email";
+import { enforceDurableAuthRateLimit } from "#/features/auth/server/durable-rate-limit";
 import { assertAccountCanBeUnlinked } from "#/features/auth/server/provider-policy";
 import type { RuntimeAuthProvider } from "#/features/auth/server/provider-runtime";
 import {
@@ -45,7 +46,7 @@ export type AuthEnv = {
 };
 
 export const trustedAccountLinkingProviders = ["telegram", "google"] as const;
-export const requireLocalEmailVerificationForTrustedLinking = false;
+export const requireLocalEmailVerificationForTrustedLinking = true;
 
 export function createAuth(db: AppDb, env: AuthEnv) {
 	const authProviders = env.AUTH_PROVIDERS ?? [defaultCredentialProvider];
@@ -191,8 +192,7 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 			disableSignUp:
 				!emailProvider?.passwordLoginEnabled || !emailProvider.allowSignup,
 			minPasswordLength: 12,
-			requireEmailVerification:
-				emailDeliveryEnabled && env.REQUIRE_EMAIL_VERIFICATION === true,
+			requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION === true,
 			revokeSessionsOnPasswordReset: true,
 		},
 		emailVerification: emailDeliveryEnabled
@@ -234,6 +234,12 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 		},
 		hooks: {
 			before: createAuthMiddleware(async (ctx) => {
+				await enforceDurableAuthRateLimit(
+					db.$client,
+					ctx.path,
+					ctx.headers,
+					ctx.body,
+				);
 				if (
 					(ctx.path === "/sign-in/email-otp" ||
 						ctx.path === "/email-otp/send-verification-otp") &&

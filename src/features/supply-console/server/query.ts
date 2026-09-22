@@ -8,7 +8,7 @@ import {
 import { getAdminRuntimeServerContext } from "#/server/context";
 
 // One storefront SKU maps to at most one central credential pool. The map is
-// the only binding the console reads; stock notes are evidence, not routing.
+// central binding; raw PH stock additionally requires its live delivery route.
 export const supplyMapKey = "integration.supply_console_map";
 
 const warehouseSummarySchema = z.object({
@@ -34,6 +34,8 @@ type SkuRow = {
 	alipay_minor: string | null;
 	supply_minor: string | null;
 	available: number | null;
+	raw_available: number | null;
+	delivery_sku: string | null;
 	reserved: number | null;
 	last_restocked_at: number | null;
 	last_unit_cost_minor: string | null;
@@ -75,6 +77,11 @@ export async function listSupplyConsole(
 				 (SELECT COUNT(*) FROM stock_entries stock
 				  WHERE stock.sellable_item_id = item.id AND stock.status = 'available') AS available,
 				 (SELECT COUNT(*) FROM stock_entries stock
+				  WHERE stock.sellable_item_id = item.id AND stock.status = 'available'
+				   AND stock.redeem_sku IS NULL) AS raw_available,
+				 (SELECT json_extract(setting.value, '$') FROM system_settings setting
+				  WHERE setting.key = 'integration.redeem_delivery.' || item.id) AS delivery_sku,
+				 (SELECT COUNT(*) FROM stock_entries stock
 				  WHERE stock.sellable_item_id = item.id AND stock.status = 'reserved') AS reserved,
 				 (SELECT MAX(stock.created_at) FROM stock_entries stock
 				  WHERE stock.sellable_item_id = item.id) AS last_restocked_at,
@@ -104,9 +111,17 @@ export async function listSupplyConsole(
 		const centralSku = map[row.component_id] ?? null;
 		const pool = centralSku ? (pools.get(centralSku) ?? null) : null;
 		const available = Number(row.available ?? 0);
-		// What a paid order can actually hand over AND the customer can redeem.
+		// PH raw cards enter the central vault only during paid-order delivery.
+		// Count them once, only with an exact active conversion route; ordinary
+		// storefront codes still require independently stocked central keys.
+		const rawAvailable =
+			centralSku &&
+			row.delivery_sku === centralSku &&
+			["GPT_PLUS_PH", "GPT_5X_PH", "GPT_20X_PH"].includes(centralSku)
+				? Number(row.raw_available ?? 0)
+				: 0;
 		const deliverable = centralSku
-			? Math.min(available, pool?.available ?? 0)
+			? rawAvailable + Math.min(available - rawAvailable, pool?.available ?? 0)
 			: row.fulfillment_source === "supplier"
 				? Number(row.binding_stock ?? 0)
 				: available;
@@ -148,9 +163,11 @@ export async function loadSupplyMap(
 		.bind(supplyMapKey)
 		.first<{ value: string }>();
 	if (!row?.value) return {};
+	const value: unknown = JSON.parse(row.value);
+	// Accept normal JSON objects and legacy JSON-encoded strings.
 	const parsed = z
 		.record(z.string(), z.string())
-		.safeParse(JSON.parse(JSON.parse(row.value) || "{}"));
+		.safeParse(typeof value === "string" ? JSON.parse(value || "{}") : value);
 	return parsed.success ? parsed.data : {};
 }
 

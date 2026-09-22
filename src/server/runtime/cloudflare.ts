@@ -8,6 +8,9 @@ export type CloudflareBindings = {
 	EMAIL?: SendEmail;
 	RESTOCK_API_TOKEN?: string;
 	INVOICE_LOOKUP_TOKEN?: string;
+	GMSHOP_EDGEONE_ORIGIN_VERIFY?: string;
+	TURNSTILE_SITE_KEY?: string;
+	TURNSTILE_SECRET_KEY?: string;
 };
 
 export function adaptCloudflareEnv(
@@ -24,6 +27,9 @@ export function adaptCloudflareEnv(
 		EMAIL: bindings.EMAIL,
 		RESTOCK_API_TOKEN: bindings.RESTOCK_API_TOKEN,
 		INVOICE_LOOKUP_TOKEN: bindings.INVOICE_LOOKUP_TOKEN,
+		GMSHOP_EDGEONE_ORIGIN_VERIFY: bindings.GMSHOP_EDGEONE_ORIGIN_VERIFY,
+		TURNSTILE_SITE_KEY: bindings.TURNSTILE_SITE_KEY,
+		TURNSTILE_SECRET_KEY: bindings.TURNSTILE_SECRET_KEY,
 		waitUntil,
 	};
 }

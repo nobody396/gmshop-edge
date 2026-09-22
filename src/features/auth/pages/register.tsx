@@ -11,6 +11,7 @@ import { Input, Password } from "#/components/pro/base/fields/input";
 import { Button } from "#/components/ui/button";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/features/auth/auth-client";
+import { useTurnstile } from "#/features/auth/components/turnstile";
 import { signInErrorMessage } from "#/features/auth/error-message";
 import { listPublicAuthProvidersFn } from "#/features/auth/server/provider-admin";
 import { m } from "#/paraglide/messages";
@@ -18,6 +19,7 @@ import { getLocale } from "#/paraglide/runtime";
 
 export function RegisterPage() {
 	const navigate = useNavigate();
+	const challenge = useTurnstile("register");
 	const [pending, setPending] = useState(false);
 	const providers = useQuery({
 		queryKey: ["public", "auth-providers"],
@@ -42,6 +44,7 @@ export function RegisterPage() {
 		defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
 		validators: { onSubmit: schema },
 		onSubmit: async ({ value }) => {
+			if (!challenge.ready) return;
 			setPending(true);
 			const signUpInput: Parameters<typeof authClient.signUp.email>[0] & {
 				preferredLocale: "en-US" | "zh-CN";
@@ -52,8 +55,12 @@ export function RegisterPage() {
 				preferredLocale: getLocale(),
 				callbackURL: "/",
 			};
-			const result = await authClient.signUp.email(signUpInput);
-			setPending(false);
+			const result = await authClient.signUp
+				.email(signUpInput, { headers: challenge.headers })
+				.finally(() => {
+					challenge.reset();
+					setPending(false);
+				});
 			if (result.error) return toast.error(signInErrorMessage(result.error));
 			const session = await authClient.getSession();
 			if (session.data?.session) {
@@ -157,7 +164,12 @@ export function RegisterPage() {
 						/>
 					)}
 				</form.Field>
-				<Button className="mt-2" disabled={pending} type="submit">
+				{challenge.widget}
+				<Button
+					className="mt-2"
+					disabled={pending || !challenge.ready}
+					type="submit"
+				>
 					{pending ? <Loader2 className="animate-spin" /> : <UserPlus />}
 					{m.auth_register_submit()}
 				</Button>

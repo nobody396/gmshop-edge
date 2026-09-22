@@ -11,6 +11,7 @@ import { Button } from "#/components/ui/button";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/features/auth/auth-client";
 import { useAuthAnimation } from "#/features/auth/components/auth-animation-context";
+import { useTurnstile } from "#/features/auth/components/turnstile";
 import { signInErrorMessage } from "#/features/auth/error-message";
 import { listPublicAuthProvidersFn } from "#/features/auth/server/provider-admin";
 import { cn } from "#/lib/utils";
@@ -25,6 +26,7 @@ export function UserAuthForm({
 	redirectTo = "/",
 	...props
 }: UserAuthFormProps) {
+	const challenge = useTurnstile("login");
 	const [isLoading, setIsLoading] = useState(false);
 	const animation = useAuthAnimation();
 	const navigate = useNavigate();
@@ -92,6 +94,7 @@ export function UserAuthForm({
 	});
 
 	async function signIn(data: z.infer<typeof formSchema>) {
+		if (!showEmailOtp && !challenge.ready) return;
 		setIsLoading(true);
 		if (typeof window !== "undefined") {
 			window.sessionStorage.setItem("gmshop.post_auth_redirect", redirectTo);
@@ -117,11 +120,16 @@ export function UserAuthForm({
 		}
 
 		toast.promise(
-			authClient.signIn.email({
-				email: data.email,
-				password: data.password,
-				callbackURL: redirectTo,
-			}),
+			authClient.signIn
+				.email(
+					{
+						email: data.email,
+						password: data.password,
+						callbackURL: redirectTo,
+					},
+					{ headers: challenge.headers },
+				)
+				.finally(challenge.reset),
 			{
 				loading: m.auth_signingIn(),
 				success: (result) => {
@@ -132,6 +140,18 @@ export function UserAuthForm({
 				},
 				error: (error) => {
 					setIsLoading(false);
+					if (
+						error &&
+						typeof error === "object" &&
+						"code" in error &&
+						error.code === "EMAIL_NOT_VERIFIED"
+					) {
+						window.sessionStorage.setItem(
+							"gmshop.pending_verification_email",
+							data.email.trim(),
+						);
+						void navigate({ to: "/verify-email-sent" });
+					}
 					return signInErrorMessage(error);
 				},
 			},
@@ -309,7 +329,11 @@ export function UserAuthForm({
 							}}
 						</form.Field>
 					)}
-					<Button className="mt-2" disabled={isLoading}>
+					{!showEmailOtp ? challenge.widget : null}
+					<Button
+						className="mt-2"
+						disabled={isLoading || (!showEmailOtp && !challenge.ready)}
+					>
 						{isLoading ? <Loader2 className="animate-spin" /> : <LogIn />}
 						{m.auth_submit()}
 					</Button>

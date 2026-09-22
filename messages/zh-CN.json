@@ -1112,7 +1112,7 @@
 	"auth_reset_password_failed": "无法重置密码",
 	"auth_reset_password_success": "密码重置成功",
 	"auth_verify_email_title": "检查你的邮箱",
-	"auth_verify_email_description": "验证链接已发送到 {email}，请打开链接激活账户",
+	"auth_verify_email_description": "请检查 {email} 的验证邮件并打开链接激活账户；没有收到或链接过期时，请点击重新发送",
 	"auth_verification_resend": "重新发送验证邮件",
 	"auth_verification_resent": "验证邮件已进入队列",
 	"auth_verification_resend_failed": "无法重新发送验证邮件",
@@ -1992,5 +1992,7 @@
 	"ip_asn_abuse": "ASN 滥用比例（当前源未提供）",
 	"ip_shell_unix": "macOS / Linux：终端只读检查",
 	"ip_shell_windows": "Windows：PowerShell 只读检查",
-	"ip_article_score_title": "分数是怎么算出来的？"
+	"ip_article_score_title": "分数是怎么算出来的？",
+	"auth_error_rate_limited": "操作过于频繁，请稍后再试；注册次数过多时需等待一小时。",
+  "auth_human_verification_failed": "人机验证暂不可用，请刷新后重试。"
 }

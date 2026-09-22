@@ -8,12 +8,19 @@ import {
 	webSupportResponse,
 } from "#/features/telegram/server/web-support-route";
 import { webSupportConversationSchema } from "#/features/telegram/web-support-contract";
-import { getEnv } from "#/server/db.server";
+import { getEnv, getRuntimeEnv } from "#/server/db.server";
+import { verifyTurnstile } from "#/server/turnstile";
 
 export const Route = createFileRoute("/api/support/web/conversations")({
 	server: {
 		handlers: {
 			POST: async ({ request }) => {
+				const challenge = await verifyTurnstile(
+					request,
+					getRuntimeEnv(),
+					getEnv().DB,
+				);
+				if (challenge) return challenge;
 				try {
 					const input = await readWebSupportBody(
 						request,

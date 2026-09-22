@@ -41,6 +41,8 @@ const definitions = {
 		.array(hostSchema)
 		.max(100)
 		.transform((hosts) => [...new Set(hosts)]),
+	"security.blocked_ips": z.array(z.union([z.ipv4(), z.ipv6()])).max(100),
+	"security.feishu_alerts_enabled": z.boolean(),
 	"auth.registration_enabled": z.boolean(),
 	"auth.require_email_verification": z.boolean(),
 	"auth.session_max_age_seconds": z.number().int().min(3_600).max(31_536_000),
@@ -80,6 +82,8 @@ const defaults: Record<SettingKey, SettingValue> = {
 	"queue.publish_batch_size": 25,
 	"queue.retry_base_ms": 15_000,
 	"security.allowed_hosts": [],
+	"security.blocked_ips": [],
+	"security.feishu_alerts_enabled": false,
 	"auth.registration_enabled": true,
 	"auth.require_email_verification": false,
 	"auth.session_max_age_seconds": 2_592_000,

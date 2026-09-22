@@ -3,6 +3,7 @@ const requestSettingsKeys = [
 	"runtime.better_auth_url",
 	"runtime.data_encryption_secret",
 	"security.allowed_hosts",
+	"security.blocked_ips",
 ] as const;
 
 type RequestSettings = ReadonlyMap<string, string>;

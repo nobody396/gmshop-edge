@@ -99,6 +99,109 @@ describe("supply console", { timeout: 30_000 }, () => {
 		return call;
 	}
 
+	it("reads a single-encoded production supply map", async () => {
+		await db
+			.prepare("UPDATE system_settings SET value = ? WHERE key = ?")
+			.bind(JSON.stringify({ [CENTRAL_ITEM]: "GPT_20X_IOS" }), supplyMapKey)
+			.run();
+		try {
+			const rows = await listSupplyConsole(
+				db,
+				COMMERCE_SECRET,
+				requester(warehouse(1)),
+			);
+			expect(
+				rows.find((row) => row.componentId === CENTRAL_ITEM),
+			).toMatchObject({ centralSku: "GPT_20X_IOS", centralAvailable: 1 });
+		} finally {
+			await db
+				.prepare("UPDATE system_settings SET value = ? WHERE key = ?")
+				.bind(
+					JSON.stringify(JSON.stringify({ [CENTRAL_ITEM]: "GPT_20X_IOS" })),
+					supplyMapKey,
+				)
+				.run();
+		}
+	});
+
+	it("counts available raw PH cards only while their owned-delivery route is enabled", async () => {
+		const routeKey = `integration.redeem_delivery.${CENTRAL_ITEM}`;
+		await db
+			.prepare("UPDATE system_settings SET value = ? WHERE key = ?")
+			.bind(JSON.stringify({ [CENTRAL_ITEM]: "GPT_20X_PH" }), supplyMapKey)
+			.run();
+		const offline: typeof requestWarehouse = async () => {
+			throw new Error("offline");
+		};
+		try {
+			const before = await listSupplyConsole(db, COMMERCE_SECRET, offline);
+			expect(
+				before.find((row) => row.componentId === CENTRAL_ITEM)?.deliverable,
+			).toBe(0);
+			await db
+				.prepare(
+					"INSERT INTO system_settings (key,value,is_secret,created_at,updated_at) VALUES (?,?,0,1,1)",
+				)
+				.bind(routeKey, JSON.stringify("GPT_20X_PH"))
+				.run();
+			const rows = await listSupplyConsole(db, COMMERCE_SECRET, offline);
+			expect(
+				rows.find((row) => row.componentId === CENTRAL_ITEM),
+			).toMatchObject({ available: 3, deliverable: 3, gap: 0 });
+			const stocked: typeof requestWarehouse = async () => ({
+				success: true,
+				data: [
+					{
+						sku: "GPT_20X_PH",
+						display_name: "PH 20X",
+						available: 10,
+						consumed: 0,
+						quarantined: 0,
+					},
+				],
+			});
+			const noDoubleCount = await listSupplyConsole(
+				db,
+				COMMERCE_SECRET,
+				stocked,
+			);
+			expect(
+				noDoubleCount.find((row) => row.componentId === CENTRAL_ITEM)
+					?.deliverable,
+			).toBe(3);
+			await db
+				.prepare("UPDATE stock_entries SET status='reserved' WHERE id='s3'")
+				.run();
+			const reserved = await listSupplyConsole(db, COMMERCE_SECRET, offline);
+			expect(
+				reserved.find((row) => row.componentId === CENTRAL_ITEM),
+			).toMatchObject({ available: 2, deliverable: 2, reserved: 1 });
+			await db
+				.prepare("UPDATE system_settings SET value=? WHERE key=?")
+				.bind(JSON.stringify("GPT_5X_PH"), routeKey)
+				.run();
+			const mismatch = await listSupplyConsole(db, COMMERCE_SECRET, offline);
+			expect(
+				mismatch.find((row) => row.componentId === CENTRAL_ITEM)?.deliverable,
+			).toBe(0);
+		} finally {
+			await db
+				.prepare("DELETE FROM system_settings WHERE key=?")
+				.bind(routeKey)
+				.run();
+			await db
+				.prepare("UPDATE stock_entries SET status='available' WHERE id='s3'")
+				.run();
+			await db
+				.prepare("UPDATE system_settings SET value=? WHERE key=?")
+				.bind(
+					JSON.stringify(JSON.stringify({ [CENTRAL_ITEM]: "GPT_20X_IOS" })),
+					supplyMapKey,
+				)
+				.run();
+		}
+	});
+
 	it("reports what each SKU can actually deliver", async () => {
 		const rows = await listSupplyConsole(
 			db,

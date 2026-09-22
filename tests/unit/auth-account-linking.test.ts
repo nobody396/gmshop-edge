@@ -5,8 +5,8 @@ import {
 } from "#/features/auth/server/auth-factory";
 
 describe("authentication account-linking policy", () => {
-	it("automatically links verified Google identities and Telegram identities", () => {
+	it("requires local verification before linking trusted social identities", () => {
 		expect(trustedAccountLinkingProviders).toEqual(["telegram", "google"]);
-		expect(requireLocalEmailVerificationForTrustedLinking).toBe(false);
+		expect(requireLocalEmailVerificationForTrustedLinking).toBe(true);
 	});
 });
