@@ -44,7 +44,7 @@ vi.mock("sonner", () => ({
 ).IS_REACT_ACT_ENVIRONMENT = true;
 it("takes an existing unverified customer to resend without storing the password", async () => {
 	const container = document.createElement("div");
-	document.body.append(container);
+	document.body.appendChild(container);
 	const root = createRoot(container);
 	try {
 		await act(async () => {

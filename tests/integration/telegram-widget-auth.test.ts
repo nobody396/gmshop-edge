@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/d1";
 import { Miniflare } from "miniflare";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema";
 import { createAuth } from "#/features/auth/server/auth-factory";
 import type { RuntimeAuthProvider } from "#/features/auth/server/provider-runtime";
@@ -40,6 +40,10 @@ describe("Telegram Widget fallback login", { timeout: 30_000 }, () => {
 		});
 	});
 
+	beforeEach(async () => {
+		// Independent payload tests must not consume each other's durable request budget.
+		await database.prepare("DELETE FROM rate_limit_counters").run();
+	});
 	afterAll(async () => miniflare.dispose());
 
 	it("verifies the signed fragment payload, creates a session, and rejects replay", async () => {
