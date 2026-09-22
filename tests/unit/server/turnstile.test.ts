@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadRequestAllowedHosts } from "../../../src/server/middleware/authority";
 import {
 	publicTurnstileConfig,
 	turnstileAction,
@@ -9,9 +10,13 @@ const limiter = vi.hoisted(() => vi.fn());
 vi.mock("../../../src/server/rate-limit", () => ({
 	claimFixedWindowRateLimit: limiter,
 }));
+vi.mock("../../../src/server/middleware/authority", () => ({
+	loadRequestAllowedHosts: vi.fn(async () => [] as string[]),
+}));
 const db = {} as D1Database;
 beforeEach(() => {
 	limiter.mockReset().mockResolvedValue({ allowed: true });
+	vi.mocked(loadRequestAllowedHosts).mockReset().mockResolvedValue([]);
 });
 const verify = (
 	request: Request,
@@ -159,4 +164,33 @@ it("uses a single unknown-source bucket rather than trusting forwarded headers",
 		limit: 20,
 		windowMs: 60_000,
 	});
+});
+it("accepts configured storefront aliases behind a rewritten origin Host", async () => {
+	vi.mocked(loadRequestAllowedHosts).mockResolvedValue(["cn.shop.example.com"]);
+	vi.stubGlobal(
+		"fetch",
+		vi.fn().mockResolvedValue(
+			Response.json({
+				success: true,
+				hostname: "cn.shop.example.com",
+				action: "register",
+			}),
+		),
+	);
+	expect(await verify(request(), config)).toBeNull();
+});
+it("does not treat a spoofed forwarding header as a trusted widget hostname", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn().mockResolvedValue(
+			Response.json({
+				success: true,
+				hostname: "attacker.example.com",
+				action: "register",
+			}),
+		),
+	);
+	const req = request();
+	req.headers.set("x-forwarded-host", "attacker.example.com");
+	expect((await verify(req, config))?.status).toBe(403);
 });

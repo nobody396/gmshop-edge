@@ -1,3 +1,4 @@
+import { loadRequestAllowedHosts } from "./middleware/authority";
 import { claimFixedWindowRateLimit } from "./rate-limit";
 
 export type TurnstileConfig = {
@@ -77,9 +78,16 @@ export async function verifyTurnstile(
 			hostname?: string;
 			action?: string;
 		};
-		return result.success === true &&
-			result.hostname === new URL(request.url).hostname &&
-			result.action === action
+		if (result.success !== true || result.action !== action || !result.hostname)
+			return reject();
+		if (result.hostname === new URL(request.url).hostname) return null;
+		// EdgeOne aliases can rewrite the origin Host. Accept only an exact
+		// application-owned hostname from the existing validated authority list.
+		// Never derive trust from client-supplied forwarding headers.
+		const allowedHosts = await loadRequestAllowedHosts(request, db);
+		return allowedHosts.some(
+			(host) => new URL(`https://${host}`).hostname === result.hostname,
+		)
 			? null
 			: reject();
 	} catch {

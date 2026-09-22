@@ -11,7 +11,8 @@ payment callbacks, existing support messaging and supply APIs are unchanged;
 they retain their existing authentication and durable rate limits.
 
 The browser sends a fresh `cf-turnstile-response` header for each attempt. The
-server verifies with Cloudflare and checks success, exact hostname and action.
+server verifies with Cloudflare and checks success, exact application-owned hostname and action. Reverse-proxy aliases are checked
+against the existing validated allowed-hosts list, never forwarding headers.
 Missing, expired, replayed or wrong-context tokens are rejected; verifier outages
 fail closed. Before Siteverify, the existing D1 fixed-window counter allows at most
 20 verification attempts per source IP per minute across all three entry points.
