@@ -24,7 +24,7 @@ export async function validateRequestAuthority(
 	}
 	if (
 		settings.blockedIps.includes(
-			request.headers.get("cf-connecting-ip")?.toLowerCase() ?? "",
+			normalizeIp(request.headers.get("cf-connecting-ip") ?? ""),
 		)
 	)
 		return new Response("Forbidden", { status: 403 });
@@ -112,5 +112,12 @@ function parseBlockedIps(value: string | undefined): string[] {
 		.array(z.union([z.ipv4(), z.ipv6()]))
 		.max(100)
 		.parse(JSON.parse(value))
-		.map((ip) => ip.toLowerCase());
+		.map(normalizeIp);
+}
+
+// URL serialization gives validated IPv6 addresses one canonical representation.
+function normalizeIp(ip: string): string {
+	return z.ipv6().safeParse(ip).success
+		? new URL(`http://[${ip}]/`).hostname.slice(1, -1)
+		: ip;
 }
