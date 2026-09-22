@@ -19,7 +19,7 @@ export async function publishAuthSecurityAlert(
 	const end = Math.floor(now / 900_000) * 900_000;
 	const rows = await db
 		.prepare(
-			`SELECT action, COUNT(*) AS count FROM audit_logs INDEXED BY audit_logs_created_idx WHERE created_at >= ? AND created_at < ? AND action IN ('auth.sign_in_failed','security.auth_rate_limited','auth.telegram_widget_failed','auth.telegram_mini_app_failed') GROUP BY action`,
+			`SELECT action, COUNT(*) AS count FROM audit_logs INDEXED BY audit_logs_created_idx WHERE created_at >= ? AND created_at < ? AND action IN ('auth.sign_in_failed','auth.email_otp_sign_in_failed','auth.telegram_oidc_failed','security.auth_rate_limited','auth.telegram_widget_failed','auth.telegram_mini_app_failed') GROUP BY action`,
 		)
 		.bind(end - 900_000, end)
 		.all<{ action: string; count: number }>();
@@ -30,7 +30,9 @@ export async function publishAuthSecurityAlert(
 		.filter((r) => r.action !== "security.auth_rate_limited")
 		.reduce((sum, r) => sum + r.count, 0);
 	if (!blocked && failures < 10) return { status: "quiet" };
-	const credentials = deliver ? null : await resolveFeishuAlertCredentials(db);
+	const credentials = deliver
+		? null
+		: await resolveFeishuAlertCredentials(db, { requireEnabled: false });
 	if (!deliver && !credentials) return { status: "unconfigured" };
 	const claim = await claimFixedWindowRateLimit(db, {
 		bucketKey: `security:alert:${end}`,
