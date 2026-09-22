@@ -18,7 +18,6 @@ export function turnstileAction(request: Request): string | null {
 	if (request.method !== "POST") return null;
 	const path = new URL(request.url).pathname.replace(/\/$/, "");
 	if (path === "/api/auth/sign-up/email") return "register";
-	if (path === "/api/auth/sign-in/email") return "login";
 	if (path === "/api/support/web/conversations") return "support";
 	return null;
 }
@@ -44,7 +43,7 @@ export async function verifyTurnstile(
 	if (!token || token.length > 2048) return reject();
 	try {
 		// Budget Siteverify calls before crossing the network. One shared source
-		// bucket prevents rotating between register/login/support to multiply it.
+		// bucket prevents rotating between register/support to multiply it.
 		if (!db) return reject(503);
 		const ip =
 			request.headers.get("cf-connecting-ip")?.slice(0, 45) || "unknown";

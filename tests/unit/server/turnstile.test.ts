@@ -33,13 +33,14 @@ const request = (path = "/api/auth/sign-up/email", token = "test-token") =>
 	});
 afterEach(() => vi.unstubAllGlobals());
 describe("Turnstile exact entry point enforcement", () => {
-	it("only guards interactive password auth and new support conversations", () => {
+	it("only guards registration and new support conversations", () => {
 		expect(turnstileAction(request())).toBe("register");
-		expect(turnstileAction(request("/api/auth/sign-in/email/"))).toBe("login");
+		expect(turnstileAction(request("/api/auth/sign-in/email/"))).toBeNull();
 		expect(turnstileAction(request("/api/support/web/conversations"))).toBe(
 			"support",
 		);
 		for (const path of [
+			"/api/auth/sign-in/email",
 			"/api/auth/callback/google",
 			"/api/auth/telegram/callback",
 			"/api/payments/callback",
@@ -112,7 +113,6 @@ it("budgets remote verification across entry points before calling Siteverify", 
 	limiter.mockResolvedValue({ allowed: false });
 	for (const path of [
 		"/api/auth/sign-up/email",
-		"/api/auth/sign-in/email",
 		"/api/support/web/conversations",
 	]) {
 		const req = request(path);
@@ -145,6 +145,7 @@ it("does not spend D1/network budget for missing tokens, disabled protection or 
 	).toBe(403);
 	expect(await verifyTurnstile(request(), {}, db)).toBeNull();
 	for (const path of [
+		"/api/auth/sign-in/email",
 		"/api/auth/callback/google",
 		"/api/auth/telegram/callback",
 		"/api/payments/callback",

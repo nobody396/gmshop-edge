@@ -79,7 +79,7 @@ function Challenge({
 	);
 }
 
-export function useTurnstile(action: "register" | "login" | "support") {
+export function useTurnstile(action: "register" | "support") {
 	const [token, setToken] = useState("");
 	const [attempt, setAttempt] = useState(0);
 	const config = useQuery({

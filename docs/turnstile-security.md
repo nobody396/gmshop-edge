@@ -5,8 +5,10 @@ The runtime accepts `TURNSTILE_SITE_KEY` (public) and `TURNSTILE_SECRET_KEY`
 protected endpoints fail closed with HTTP 503. No secret is exposed through the
 public `/api/auth/turnstile-config` endpoint (no-store).
 
-Protected POST endpoints: `/api/auth/sign-up/email`, `/api/auth/sign-in/email`,
-and `/api/support/web/conversations`. OAuth/Telegram callbacks, email OTP,
+Protected POST endpoints: `/api/auth/sign-up/email` and
+`/api/support/web/conversations`. Password login keeps the durable D1 limits,
+but is deliberately not CAPTCHA-gated so the existing owner refund login tool
+continues to work without introducing an automation bypass or extra credential. OAuth/Telegram callbacks, email OTP,
 payment callbacks, existing support messaging and supply APIs are unchanged;
 they retain their existing authentication and durable rate limits.
 
@@ -31,7 +33,7 @@ Missing or failing D1 returns 503 without a Siteverify call. Client controls dis
    Turnstile only on Cloudflare. Bun retains its existing limits; no new public
    Bun environment variables are introduced and Bun Turnstile is not claimed.
 4. Deploy code and both bindings together. Verify the config endpoint, visible
-   register/password-login/support widgets, real token success and rejection
+   registration/support widgets, real token success and rejection
    without a token. Verify Google/Telegram login and payment callbacks separately.
 5. An emergency rollback must remove **both** bindings and explicitly record
    that protection is disabled; deleting one binding deliberately fails closed.
