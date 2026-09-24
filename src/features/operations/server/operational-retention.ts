@@ -16,7 +16,7 @@ export async function hasOperationalRetentionWork(
 			  WHERE delete_after <= ? AND artifact_object_key IS NOT NULL
 			  AND artifact_deleted_at IS NULL LIMIT 1)
 			 OR EXISTS(SELECT 1 FROM notification_deliveries
-			  WHERE status IN ('delivered', 'failed') AND updated_at < ? LIMIT 1)
+			  WHERE status IN ('accepted', 'delivered', 'failed', 'bounced', 'rejected', 'suppressed') AND updated_at < ? LIMIT 1)
 			 OR EXISTS(SELECT 1 FROM outbox_events
 			  WHERE status IN ('published', 'failed') AND updated_at < ? LIMIT 1)
 			 OR EXISTS(SELECT 1 FROM operation_task_runs
@@ -44,7 +44,8 @@ export async function runOperationalRetentionCleanup(input: {
 	for (const table of [
 		{
 			name: "notification_deliveries",
-			predicate: "status IN ('delivered', 'failed') AND updated_at < ?",
+			predicate:
+				"status IN ('accepted', 'delivered', 'failed', 'bounced', 'rejected', 'suppressed') AND updated_at < ?",
 		},
 		{
 			name: "outbox_events",

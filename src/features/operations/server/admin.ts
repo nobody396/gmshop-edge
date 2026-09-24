@@ -236,7 +236,7 @@ export const getQueueOverviewFn = createServerFn({ method: "GET" }).handler(
 						`SELECT MAX(updated_at) AS consumed_at FROM (
 					 SELECT updated_at FROM delivery_records WHERE status = 'delivered'
 					 UNION ALL SELECT updated_at FROM automation_jobs WHERE status IN ('running', 'succeeded')
-					 UNION ALL SELECT updated_at FROM notification_deliveries WHERE status = 'delivered'
+					 UNION ALL SELECT updated_at FROM notification_deliveries WHERE status IN ('accepted','delivered')
 					 UNION ALL SELECT updated_at FROM refunds WHERE status = 'succeeded'
 					)`,
 					)

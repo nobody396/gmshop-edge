@@ -1073,7 +1073,7 @@
 	"store_account_set_password_failed": "Unable to set a local password",
 	"store_account_connections_description": "Manage the accounts you can sign in with and keep at least one method.",
 	"notifications_email_description": "Configure encrypted email delivery providers, fallback priority, and connectivity.",
-	"notifications_records_description": "Review email delivery status, failures, and attempts, then retry recoverable deliveries.",
+	"notifications_records_description": "Provider acceptance is not delivery. Final status is synchronized from delivery logs; delivery does not prove inbox placement or reading",
 	"notifications_add_config": "Add configuration",
 	"notifications_edit_config": "Edit configuration",
 	"notifications_config_name": "Configuration name",
@@ -2002,5 +2002,16 @@
 	"store_ph20x_eligibility_enlarge": "Open the original image in a new tab to zoom",
 	"store_ph20x_eligibility_image_alt": "Philippines 20X Pro eligibility guide: select 20x and check whether Upgrade to Pro is clickable",
 	"store_ph20x_eligibility_note": "The Chinese illustration explains the checks only. Eligibility and the interface depend on your account’s current display. The price in the image is not our store price. Do not pay on the official site; passing the check does not mean activation is complete.",
-	"store_ph20x_eligibility_link": "Before ordering: see the 20X new-activation eligibility guide below"
+	"store_ph20x_eligibility_link": "Before ordering: see the 20X new-activation eligibility guide below",
+	"auth_error_undeliverable_email": "Enter an email address that can receive mail",
+	"notifications_status_accepted": "Provider accepted (delivery unconfirmed)",
+	"notifications_status_bounced": "Delivery failed (no automatic resend)",
+	"notifications_status_suppressed": "Sending suppressed",
+	"notifications_error_recipient_suppressed": "Recipient is undeliverable, suppressed, or disabled",
+	"notifications_error_provider_delivery": "Provider reported a delivery failure; see the error code",
+	"notifications_event_verification": "Email verification",
+	"notifications_event_password_reset": "Password reset",
+	"notifications_accepted_at": "Provider accepted at",
+	"notifications_delivered_at": "Recipient server accepted at",
+	"notifications_status_delivered": "Recipient server accepted"
 }

@@ -7,6 +7,8 @@ function errorCode(error: unknown) {
 
 export function signInErrorMessage(error: unknown) {
 	switch (errorCode(error)) {
+		case "EMAIL_ADDRESS_UNDELIVERABLE":
+			return m.auth_error_undeliverable_email();
 		case "HUMAN_VERIFICATION_REQUIRED":
 			return m.auth_human_verification_failed();
 		case "TOO_MANY_REQUESTS":

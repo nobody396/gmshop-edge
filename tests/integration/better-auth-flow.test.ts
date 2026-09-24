@@ -212,7 +212,7 @@ describe("Better Auth account security flow", () => {
 		const response = await auth.api.signUpEmail({
 			body: {
 				name: "Uninvited user",
-				email: "uninvited@example.com",
+				email: "uninvited@customer.com",
 				password: "uninvited-password-123",
 			},
 			asResponse: true,
@@ -223,7 +223,7 @@ describe("Better Auth account security flow", () => {
 			.first<{ count: number }>();
 		expect(after?.count).toBe(before?.count);
 		const uninvited = await database
-			.prepare("SELECT id FROM users WHERE email = 'uninvited@example.com'")
+			.prepare("SELECT id FROM users WHERE email = 'uninvited@customer.com'")
 			.first();
 		expect(uninvited).toBeNull();
 	});

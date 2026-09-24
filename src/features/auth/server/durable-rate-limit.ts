@@ -63,6 +63,21 @@ export async function enforceDurableAuthRateLimit(
 			),
 			(b) => b.toString(16).padStart(2, "0"),
 		).join("");
+		if (
+			[
+				"/sign-up/email",
+				"/send-verification-email",
+				"/email-otp/send-verification-otp",
+				"/email-otp/request-password-reset",
+				"/forget-password",
+				"/request-password-reset",
+			].includes(path)
+		)
+			limits.push({
+				bucketKey: `auth:mail:identity:${digest}`,
+				limit: 3,
+				windowMs: 600_000,
+			});
 		limits.push({
 			bucketKey: `auth:identity:${digest}`,
 			limit: 10,

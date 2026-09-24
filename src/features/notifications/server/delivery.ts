@@ -15,6 +15,8 @@ import type { SupportedLocale } from "#/lib/locales";
 import type { NotificationQueueMessage } from "#/server/queue/types";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 
+import { recipientSuppressionReason } from "./recipient-policy";
+
 type EmailMessage = z.output<typeof emailMessageSchema>;
 type NotificationAsset = {
 	entitlementId: string;
@@ -107,6 +109,11 @@ export async function enqueueEmailNotification(
 		);
 	const id = crypto.randomUUID();
 	const now = Date.now();
+	const suppression = await recipientSuppressionReason(
+		db,
+		message.to,
+		input.event,
+	);
 	const encrypted = await encryptNotificationMessage(
 		JSON.stringify(message),
 		runtime.commerceSecret,
@@ -118,8 +125,8 @@ export async function enqueueEmailNotification(
 				 (id, template_id, subscription_id, channel_config_id, event, channel, idempotency_key,
 				  entitlement_id, asset_type, asset_id, access_event_type,
 				  locale, message_encrypted, message_key_version, status, attempt_count,
-				  next_attempt_at, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, 'email', ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 0, ?, ?, ?)`,
+				  next_attempt_at, created_at, updated_at, error_code)
+				 VALUES (?, ?, ?, ?, ?, 'email', ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?, ?, ?)`,
 			)
 			.bind(
 				id,
@@ -134,28 +141,38 @@ export async function enqueueEmailNotification(
 				input.asset?.accessEventType ?? null,
 				input.locale ?? "en-US",
 				encrypted,
+				suppression ? "suppressed" : "pending",
+				suppression ? null : now,
 				now,
 				now,
-				now,
+				suppression,
 			),
-		db
-			.prepare(
-				`INSERT INTO outbox_events
+		...(suppression
+			? []
+			: [
+					db
+						.prepare(
+							`INSERT INTO outbox_events
 				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
 				  status, attempt_count, created_at, updated_at)
 				 VALUES (?, 'notification.requested', 'notification_delivery', ?, ?, ?,
 				  'pending', 0, ?, ?)`,
-			)
-			.bind(
-				crypto.randomUUID(),
-				id,
-				`notification-requested:${id}`,
-				JSON.stringify({ notificationDeliveryId: id }),
-				now,
-				now,
-			),
+						)
+						.bind(
+							crypto.randomUUID(),
+							id,
+							`notification-requested:${id}`,
+							JSON.stringify({ notificationDeliveryId: id }),
+							now,
+							now,
+						),
+				]),
 	]);
-	return { id, status: "pending", duplicate: false };
+	return {
+		id,
+		status: suppression ? "suppressed" : "pending",
+		duplicate: false,
+	};
 }
 
 export async function processNotificationDelivery(
@@ -221,7 +238,7 @@ export async function processEmailNotification(
 ) {
 	const row = await db
 		.prepare(
-			`SELECT nd.id, nd.status, nd.idempotency_key, nd.message_encrypted,
+			`SELECT nd.id, nd.status, nd.event, nd.idempotency_key, nd.message_encrypted,
 			 nd.attempt_count, nd.entitlement_id, nd.asset_type, nd.asset_id,
 			 nd.access_event_type, nd.channel_config_id
 			 FROM notification_deliveries nd
@@ -235,9 +252,14 @@ export async function processEmailNotification(
 			404,
 			"Notification delivery is unavailable",
 		);
-	if (row.status === "delivered") {
-		await recordDeliveredNotificationAccess(db, row);
-		return { duplicate: true, status: "delivered" };
+	if (
+		["accepted", "delivered", "bounced", "rejected", "suppressed"].includes(
+			row.status,
+		)
+	) {
+		if (["accepted", "delivered"].includes(row.status))
+			await recordDeliveredNotificationAccess(db, row);
+		return { duplicate: true, status: row.status };
 	}
 	const configs = await loadEmailDeliveryConfigs(db, row.channel_config_id);
 	if (!configs.length)
@@ -257,6 +279,26 @@ export async function processEmailNotification(
 		row.message_encrypted,
 		runtime.commerceSecret,
 	).then((value) => emailMessageSchema.parse(JSON.parse(value)));
+	const suppression = await recipientSuppressionReason(
+		db,
+		message.to,
+		row.event,
+	);
+	if (suppression) {
+		const changed = await db
+			.prepare(
+				"UPDATE notification_deliveries SET status = 'suppressed', error_code = ?, next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status IN ('pending','failed')",
+			)
+			.bind(suppression, Date.now(), row.id)
+			.run();
+		if (Number(changed.meta.changes ?? 0) !== 1)
+			throw new DomainError(
+				"notification_delivery_busy",
+				409,
+				"Notification delivery is already processing",
+			);
+		return { duplicate: false, status: "suppressed" };
+	}
 	const now = Date.now();
 	const claimed = await db
 		.prepare(
@@ -295,25 +337,25 @@ export async function processEmailNotification(
 			await updateEmailHealth(db, config.id, "unhealthy");
 			continue;
 		}
-		const deliveredAt = Date.now();
+		const acceptedAt = Date.now();
 		await db
 			.prepare(
-				`UPDATE notification_deliveries SET status = 'delivered',
-				 channel_config_id = ?, provider_message_id = ?, delivered_at = ?,
+				`UPDATE notification_deliveries SET status = 'accepted',
+				 channel_config_id = ?, provider_message_id = ?, accepted_at = ?, delivered_at = NULL,
 				 next_attempt_at = NULL, error_code = NULL, updated_at = ?
 				 WHERE id = ? AND status = 'sending'`,
 			)
 			.bind(
 				config.id,
 				result.data?.messageId?.slice(0, 200) ?? null,
-				deliveredAt,
-				deliveredAt,
+				acceptedAt,
+				acceptedAt,
 				row.id,
 			)
 			.run();
-		await recordDeliveredNotificationAccess(db, row, deliveredAt);
+		await recordDeliveredNotificationAccess(db, row, acceptedAt);
 		await updateEmailHealth(db, config.id, "healthy");
-		return { duplicate: false, status: "delivered" };
+		return { duplicate: false, status: "accepted" };
 	}
 	await recordFailure(
 		db,
@@ -451,6 +493,7 @@ function updateEmailHealth(
 
 type DeliveryRow = {
 	id: string;
+	event: string;
 	status: string;
 	idempotency_key: string;
 	message_encrypted: string;

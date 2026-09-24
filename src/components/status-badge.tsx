@@ -16,6 +16,8 @@ const destructive = new Set([
 	"expired",
 	"cancelled",
 	"rejected",
+	"bounced",
+	"suppressed",
 ]);
 
 export function StatusBadge({ value }: { value: string }) {
@@ -36,6 +38,9 @@ export function StatusBadge({ value }: { value: string }) {
 
 export function statusLabel(value: string) {
 	const labels: Record<string, string> = {
+		accepted: m.notifications_status_accepted(),
+		bounced: m.notifications_status_bounced(),
+		suppressed: m.notifications_status_suppressed(),
 		pending: m.status_pending(),
 		confirming: m.status_confirming(),
 		paid: m.status_paid(),

@@ -40,6 +40,53 @@ describe("durable authentication abuse protection", () => {
 		expect(JSON.stringify(events.results)).not.toContain("DO_NOT_RECORD");
 		expect(JSON.stringify(events.results)).not.toContain("test@example.com");
 	});
+	it("caps verification mail across rotating IPs over ten minutes", async () => {
+		for (let i = 0; i < 3; i++)
+			await enforceDurableAuthRateLimit(
+				db,
+				"/send-verification-email",
+				headers(`198.51.110.${i}`),
+				{ email: "Victim@customer.com" },
+				i * 60000,
+			);
+		await expect(
+			enforceDurableAuthRateLimit(
+				db,
+				"/send-verification-email",
+				headers("198.51.110.9"),
+				{ email: " victim@customer.com " },
+				180000,
+			),
+		).rejects.toMatchObject({ status: "TOO_MANY_REQUESTS" });
+		await expect(
+			enforceDurableAuthRateLimit(
+				db,
+				"/send-verification-email",
+				headers("198.51.110.9"),
+				{ email: "victim@customer.com" },
+				600000,
+			),
+		).resolves.toBeUndefined();
+	});
+	it("does not charge code consumption against the outbound mail budget", async () => {
+		for (let i = 0; i < 3; i++)
+			await enforceDurableAuthRateLimit(
+				db,
+				"/email-otp/send-verification-otp",
+				headers(`198.51.111.${i}`),
+				{ email: "reader@customer.com" },
+				i * 60000,
+			);
+		await expect(
+			enforceDurableAuthRateLimit(
+				db,
+				"/sign-in/email-otp",
+				headers("198.51.111.9"),
+				{ email: "reader@customer.com", otp: "123456" },
+				180000,
+			),
+		).resolves.toBeUndefined();
+	});
 	it("caps one identity across rotating IPs and normalizes email", async () => {
 		for (let i = 0; i < 10; i++)
 			await enforceDurableAuthRateLimit(

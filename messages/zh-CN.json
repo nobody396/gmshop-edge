@@ -1073,7 +1073,7 @@
 	"store_account_set_password_failed": "无法设置本地密码",
 	"store_account_connections_description": "管理可用于登录的账号，至少保留一种登录方式",
 	"notifications_email_description": "配置加密的邮件投递服务、故障转移优先级和连通性",
-	"notifications_records_description": "查看邮件发送状态、失败原因和尝试次数，并重试可恢复的失败",
+	"notifications_records_description": "服务商接受不等于送达；最终状态由投递日志同步，送达不证明进入收件箱或已读",
 	"notifications_add_config": "添加配置",
 	"notifications_edit_config": "编辑配置",
 	"notifications_config_name": "配置名称",
@@ -2002,5 +2002,16 @@
 	"store_ph20x_eligibility_enlarge": "点击查看原图（新窗口，可放大）",
 	"store_ph20x_eligibility_image_alt": "菲区 20X Pro 新开资格自查图：选择 20x 后检查升级按钮是否可点击",
 	"store_ph20x_eligibility_note": "配图仅用于说明自查步骤，界面和资格以账号当前显示为准；图中价格不是本店售价。只查看，无需在官网付款，自查通过不代表已经开通。",
-	"store_ph20x_eligibility_link": "下单前必看：先到下方查看 20X 新开资格（含自查图）"
+	"store_ph20x_eligibility_link": "下单前必看：先到下方查看 20X 新开资格（含自查图）",
+	"auth_error_undeliverable_email": "请填写能够接收邮件的真实邮箱",
+	"notifications_status_accepted": "服务商已接受（待确认送达）",
+	"notifications_status_bounced": "投递失败（不自动重发）",
+	"notifications_status_suppressed": "已阻止发送",
+	"notifications_error_recipient_suppressed": "收件地址不可投递、已退信或账号已禁用",
+	"notifications_error_provider_delivery": "服务商确认投递失败，查看投递错误码",
+	"notifications_event_verification": "邮箱验证",
+	"notifications_event_password_reset": "密码重置",
+	"notifications_accepted_at": "服务商接受时间",
+	"notifications_delivered_at": "收件服务器接收时间",
+	"notifications_status_delivered": "已送达收件服务器"
 }

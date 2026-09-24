@@ -44,9 +44,9 @@ export const getNotificationCenterFn = createServerFn({
 				`SELECT notification.id, notification.event, notification.channel,
 				 notification.status, notification.attempt_count,
 				 notification.provider_message_id, notification.next_attempt_at,
-				 notification.delivered_at, notification.error_code,
+				 notification.accepted_at, notification.delivered_at, notification.provider_event_at, notification.error_code,
 				 notification.created_at, notification.updated_at,
-				 (notification.status = 'delivered' AND notification.event = 'delivery_ready'
+				 (notification.status IN ('accepted', 'delivered') AND notification.event = 'delivery_ready'
 				  AND EXISTS (
 				  SELECT 1 FROM delivery_records delivery
 				  JOIN shop_order_items item ON item.id = delivery.order_item_id
@@ -95,6 +95,9 @@ export const getNotificationCenterFn = createServerFn({
 					: String(row.provider_message_id),
 			nextAttemptAt:
 				row.next_attempt_at == null ? null : Number(row.next_attempt_at),
+			acceptedAt: row.accepted_at == null ? null : Number(row.accepted_at),
+			providerEventAt:
+				row.provider_event_at == null ? null : Number(row.provider_event_at),
 			deliveredAt: row.delivered_at == null ? null : Number(row.delivered_at),
 			errorCode: row.error_code == null ? null : String(row.error_code),
 			manualResendAllowed: Boolean(row.manual_resend_allowed),
@@ -512,7 +515,7 @@ export const retryNotificationDeliveryFn = createServerFn({ method: "POST" })
 				"Notification delivery is not retryable",
 			);
 		const resend =
-			source.status === "delivered" &&
+			["accepted", "delivered"].includes(source.status) &&
 			source.event === "delivery_ready" &&
 			source.allow_resend === 1;
 		if (source.status !== "failed" && !resend)
@@ -533,7 +536,7 @@ export const retryNotificationDeliveryFn = createServerFn({ method: "POST" })
 						 SELECT ?, template_id, subscription_id, channel_config_id, event, channel,
 						  ?, entitlement_id, asset_type, asset_id, access_event_type,
 						  message_encrypted, message_key_version, 'pending', 0, ?, ?, ?
-						 FROM notification_deliveries WHERE id = ? AND status = 'delivered'`,
+						 FROM notification_deliveries WHERE id = ? AND status IN ('accepted', 'delivered')`,
 					)
 					.bind(
 						deliveryId,
