@@ -1994,5 +1994,13 @@
 	"ip_shell_windows": "Windows：PowerShell 只读检查",
 	"ip_article_score_title": "分数是怎么算出来的？",
 	"auth_error_rate_limited": "操作过于频繁，请稍后再试；注册次数过多时需等待一小时。",
-  "auth_human_verification_failed": "人机验证暂不可用，请刷新后重试。"
+  "auth_human_verification_failed": "人机验证暂不可用，请刷新后重试。",
+	"store_ph20x_eligibility_title": "菲区 20X 新开：下单前先查开通资格",
+	"store_ph20x_eligibility_requirement": "本商品仅限有 20X Pro 新开资格的账号购买。请先完成以下自查，确认有资格后再下单。",
+	"store_ph20x_eligibility_steps": "网页版 ChatGPT → 左下角头像 → 升级套餐 → ChatGPT Pro → 选择 20x。重点看“升级至 Pro”按钮是否为黑色且可点击，不是只看有没有 20x 选项。",
+	"store_ph20x_eligibility_stop": "按钮灰色、不可点击，或无法确认资格：请勿下单，先联系客服。当前订阅也必须已到期；此说明不适用于 20X 菲区续费商品。",
+	"store_ph20x_eligibility_enlarge": "点击查看原图（新窗口，可放大）",
+	"store_ph20x_eligibility_image_alt": "菲区 20X Pro 新开资格自查图：选择 20x 后检查升级按钮是否可点击",
+	"store_ph20x_eligibility_note": "配图仅用于说明自查步骤，界面和资格以账号当前显示为准；图中价格不是本店售价。只查看，无需在官网付款，自查通过不代表已经开通。",
+	"store_ph20x_eligibility_link": "下单前必看：先到下方查看 20X 新开资格（含自查图）"
 }

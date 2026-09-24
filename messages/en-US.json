@@ -1994,5 +1994,13 @@
 	"ip_shell_windows": "Windows: read-only PowerShell checks",
 	"ip_article_score_title": "How is the score calculated?",
 	"auth_error_rate_limited": "Too many attempts. Try again later; registration limits may take an hour to reset.",
-  "auth_human_verification_failed": "Human verification is unavailable. Please reload and try again."
+  "auth_human_verification_failed": "Human verification is unavailable. Please reload and try again.",
+	"store_ph20x_eligibility_title": "Philippines 20X new activation: check eligibility before ordering",
+	"store_ph20x_eligibility_requirement": "Only order this plan if your account is eligible for a new 20X Pro activation. Complete the checks below first.",
+	"store_ph20x_eligibility_steps": "ChatGPT web → profile at the bottom left → Upgrade plan → ChatGPT Pro → select 20x. Check that Upgrade to Pro is black and clickable; seeing the 20x option alone is not enough.",
+	"store_ph20x_eligibility_stop": "If the button is gray, disabled, or eligibility is unclear, do not order; contact support first. Any current subscription must also have expired. This guide does not apply to Philippines 20X renewals.",
+	"store_ph20x_eligibility_enlarge": "Open the original image in a new tab to zoom",
+	"store_ph20x_eligibility_image_alt": "Philippines 20X Pro eligibility guide: select 20x and check whether Upgrade to Pro is clickable",
+	"store_ph20x_eligibility_note": "The Chinese illustration explains the checks only. Eligibility and the interface depend on your account’s current display. The price in the image is not our store price. Do not pay on the official site; passing the check does not mean activation is complete.",
+	"store_ph20x_eligibility_link": "Before ordering: see the 20X new-activation eligibility guide below"
 }
