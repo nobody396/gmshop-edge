@@ -150,7 +150,14 @@ export async function handleRedeemCutover(
 			)
 			.bind(data.componentId)
 			.first<{ name: string }>();
-		if (item?.name !== expectedNames[data.sku])
+		if (
+			item?.name !== expectedNames[data.sku] &&
+			!(
+				data.sku === "GPT_20X_PH" &&
+				data.componentId === "0829de43-da22-420c-9866-38c83dd420f0" &&
+				item?.name === "ChatGPT Pro 20X 菲区新开 1个月（先查资格再下单）"
+			)
+		)
 			throw new DomainError(
 				"cutover_sku_mismatch",
 				409,

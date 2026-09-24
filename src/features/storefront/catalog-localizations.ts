@@ -119,8 +119,13 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: chatGptIosPolicy,
 	},
 	"0829de43-da22-420c-9866-38c83dd420f0": {
-		name: "ChatGPT Pro 20X Philippines — 1 month",
-		policy: chatGptPhilippinesPolicy,
+		name: "ChatGPT Pro 20X Philippines new activation — 1 month (check eligibility first)",
+		policy: {
+			...chatGptPhilippinesPolicy,
+			restrictions:
+				"Check new-activation eligibility before ordering: on ChatGPT web, select Upgrade plan, then Pro 20x. Upgrade to Pro must be enabled and clickable. If disabled or uncertain, do not order; contact support. " +
+				chatGptPhilippinesPolicy.restrictions,
+		},
 	},
 	"208c2e9c-3594-4be9-9c71-22ac8b09aad4": {
 		name: "ChatGPT Pro 20X iOS — 1 month",

@@ -86,6 +86,34 @@ describe("no-pause owned redemption delivery", { timeout: 30000 }, () => {
 		vi.unstubAllGlobals();
 		await mf.dispose();
 	});
+	it.each([
+		["0829de43-da22-420c-9866-38c83dd420f0", 200],
+		["cccccccc-cccc-4ccc-8ccc-cccccccccccc", 409],
+	])("accepts the renamed PH20X label only for its exact SKU (%s)", async (id, status) => {
+		await db
+			.prepare(
+				"INSERT INTO product_sellable_items (id,product_id,name,fulfillment_source,price_minor) VALUES (?,'p',?,'local','108000')",
+			)
+			.bind(id, "ChatGPT Pro 20X 菲区新开 1个月（先查资格再下单）")
+			.run();
+		const result = await handleRedeemCutover(
+			new Request("https://shop.example/api/ops/redeem-cutover", {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer fixture-restock",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					componentId: id,
+					sku: "GPT_20X_PH",
+					enabled: false,
+					requestRef: "eligibility-rename-fixture",
+				}),
+			}),
+			{ DB: db, RESTOCK_API_TOKEN: "fixture-restock" } as CloudflareBindings,
+		);
+		expect(result.status).toBe(status);
+	});
 	const getEntry = async () => {
 		const row = await db
 			.prepare(
