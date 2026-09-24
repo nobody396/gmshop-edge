@@ -59,6 +59,62 @@ describe("owner sale alerts", { timeout: 30_000 }, () => {
 		expect(messages).toHaveLength(1);
 	});
 
+	it("sends once when three publishers race for the same event", async () => {
+		const messages: string[] = [];
+		const results = await Promise.all(
+			Array.from({ length: 3 }, () =>
+				publishPendingOwnerSaleAlerts({
+					db,
+					now: 100_000,
+					readBalance: async () => null,
+					deliver: async (text) => {
+						messages.push(text);
+					},
+				}),
+			),
+		);
+		expect(messages).toHaveLength(1);
+		expect(results.reduce((sum, result) => sum + result.sent, 0)).toBe(1);
+	});
+
+	it("reclaims an expired lease but not an active lease", async () => {
+		await db.prepare("UPDATE outbox_events SET next_attempt_at = 120000").run();
+		const messages: string[] = [];
+		const publish = (now: number) =>
+			publishPendingOwnerSaleAlerts({
+				db,
+				now,
+				readBalance: async () => null,
+				deliver: async (text) => {
+					messages.push(text);
+				},
+			});
+		expect((await publish(119999)).scanned).toBe(0);
+		expect((await publish(120000)).sent).toBe(1);
+		expect(messages).toHaveLength(1);
+	});
+
+	it("releases a failed send for a bounded retry", async () => {
+		const result = await publishPendingOwnerSaleAlerts({
+			db,
+			now: 100000,
+			readBalance: async () => null,
+			deliver: async () => {
+				throw new Error("transport failed");
+			},
+		});
+		expect(result.failed).toBe(1);
+		const publish = (now: number) =>
+			publishPendingOwnerSaleAlerts({
+				db,
+				now,
+				readBalance: async () => null,
+				deliver: async () => {},
+			});
+		expect((await publish(114999)).scanned).toBe(0);
+		expect((await publish(115000)).sent).toBe(1);
+	});
+
 	it("waits for automatic supply before reading the post-purchase balance", async () => {
 		await seedPendingSupplierOrder(db);
 		const balances: string[] = [];

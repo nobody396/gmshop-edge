@@ -193,8 +193,25 @@ export async function publishPendingOwnerSaleAlerts(input: {
 	let deferred = 0;
 	let failed = 0;
 	for (const row of rows.results) {
+		// Claim before any external I/O. An expired lease is reclaimable after a crash.
+		const leaseUntil = Date.now() + 120_000;
+		const claim = await input.db
+			.prepare(
+				`UPDATE outbox_events SET next_attempt_at = ?, updated_at = ?
+			 WHERE id = ? AND status = 'pending'
+			 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)`,
+			)
+			.bind(leaseUntil, now, row.id, now)
+			.run();
+		if (Number(claim.meta.changes ?? 0) !== 1) continue;
 		if (row.supplier_pending_count > 0) {
-			await defer(input.db, row.id, now, "owner_sale_waiting_for_supplier");
+			await defer(
+				input.db,
+				row.id,
+				now,
+				"owner_sale_waiting_for_supplier",
+				leaseUntil,
+			);
 			deferred += 1;
 			continue;
 		}
@@ -209,16 +226,16 @@ export async function publishPendingOwnerSaleAlerts(input: {
 					requireEnabled: false,
 				});
 				if (!credentials) throw new Error("feishu_configuration_unavailable");
-				await sendFeishuText(credentials, text, input.fetcher ?? fetch);
+				await sendFeishuText(credentials, text, input.fetcher ?? fetch, row.id);
 				await recordFeishuAlertResult(input.db, { sent: true });
 			}
 			await input.db
 				.prepare(
 					`UPDATE outbox_events SET status = 'published', published_at = ?,
 					 next_attempt_at = NULL, last_error_code = NULL, updated_at = ?
-					 WHERE id = ? AND status = 'pending'`,
+					 WHERE id = ? AND status = 'pending' AND next_attempt_at = ?`,
 				)
-				.bind(now, now, row.id)
+				.bind(now, now, row.id, leaseUntil)
 				.run();
 			sent += 1;
 		} catch (error) {
@@ -228,7 +245,7 @@ export async function publishPendingOwnerSaleAlerts(input: {
 					sent: false,
 					errorCode: code,
 				});
-			await retryOrFail(input.db, row, now, code);
+			await retryOrFail(input.db, row, now, code, leaseUntil);
 			failed += 1;
 		}
 	}
@@ -444,14 +461,20 @@ async function readAisouBalance(
 	}
 }
 
-async function defer(db: D1Database, id: string, now: number, code: string) {
+async function defer(
+	db: D1Database,
+	id: string,
+	now: number,
+	code: string,
+	leaseUntil: number,
+) {
 	await db
 		.prepare(
 			`UPDATE outbox_events SET attempt_count = attempt_count + 1,
 			 next_attempt_at = ?, last_error_code = ?, updated_at = ?
-			 WHERE id = ? AND status = 'pending'`,
+			 WHERE id = ? AND status = 'pending' AND next_attempt_at = ?`,
 		)
-		.bind(now + 15_000, code, now, id)
+		.bind(now + 15_000, code, now, id, leaseUntil)
 		.run();
 }
 
@@ -460,6 +483,7 @@ async function retryOrFail(
 	row: Pick<SaleAlertRow, "id" | "attempt_count">,
 	now: number,
 	code: string,
+	leaseUntil: number,
 ) {
 	const attempts = row.attempt_count + 1;
 	const terminal = attempts >= 10;
@@ -467,7 +491,7 @@ async function retryOrFail(
 		.prepare(
 			`UPDATE outbox_events SET status = ?, attempt_count = ?,
 			 next_attempt_at = ?, last_error_code = ?, updated_at = ?
-			 WHERE id = ? AND status = 'pending'`,
+			 WHERE id = ? AND status = 'pending' AND next_attempt_at = ?`,
 		)
 		.bind(
 			terminal ? "failed" : "pending",
@@ -476,6 +500,7 @@ async function retryOrFail(
 			code,
 			now,
 			row.id,
+			leaseUntil,
 		)
 		.run();
 }
