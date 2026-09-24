@@ -29,6 +29,7 @@ import {
 	verifyTelegramWidgetAuthData,
 } from "#/features/auth/telegram-widget";
 import { enqueueConfiguredEmailNotification } from "#/features/notifications/server/delivery";
+import { isReservedEmailRecipient } from "#/features/notifications/server/recipient-policy";
 import { DomainError } from "#/lib/domain-error";
 import { m } from "#/paraglide/messages";
 import type { AppDb } from "#/server/db.server";
@@ -240,6 +241,18 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 					ctx.headers,
 					ctx.body,
 				);
+				if (ctx.path === "/sign-up/email" || ctx.path === "/change-email") {
+					const body = ctx.body as
+						| { email?: unknown; newEmail?: unknown }
+						| undefined;
+					const address =
+						ctx.path === "/change-email" ? body?.newEmail : body?.email;
+					if (typeof address === "string" && isReservedEmailRecipient(address))
+						throw APIError.from("BAD_REQUEST", {
+							code: "EMAIL_ADDRESS_UNDELIVERABLE",
+							message: "Use a deliverable email address",
+						});
+				}
 				if (
 					(ctx.path === "/sign-in/email-otp" ||
 						ctx.path === "/email-otp/send-verification-otp") &&

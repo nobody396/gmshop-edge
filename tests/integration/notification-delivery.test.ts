@@ -31,12 +31,70 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 		await miniflare.dispose();
 	});
 
+	it("suppresses a reserved recipient without queuing or sending", async () => {
+		const created = await enqueueEmailNotification(database, {
+			event: "auth.email_verification",
+			idempotencyKey: "reserved-recipient",
+			message: {
+				to: "probe@example.invalid",
+				from: "mail@shop.com",
+				replyTo: "",
+				subject: "Verify",
+				text: "private link",
+				html: "",
+			},
+		});
+		expect(created.status).toBe("suppressed");
+		const send = vi.fn();
+		expect(
+			await processEmailNotification(database, created.id, {
+				cloudflareEmail: { send } as unknown as SendEmail,
+			}),
+		).toEqual({ duplicate: true, status: "suppressed" });
+		expect(send).not.toHaveBeenCalled();
+		expect(
+			await database
+				.prepare(
+					"SELECT count(*) AS n FROM outbox_events WHERE aggregate_id = ?",
+				)
+				.bind(created.id)
+				.first("n"),
+		).toBe(0);
+	});
+
+	it("rechecks disabled auth recipients at dequeue, not only enqueue", async () => {
+		const created = await enqueueEmailNotification(database, {
+			event: "auth.email_verification",
+			idempotencyKey: "disabled-after-queue",
+			message: {
+				to: "blocked@customer.com",
+				from: "mail@shop.com",
+				replyTo: "",
+				subject: "Verify",
+				text: "private",
+				html: "",
+			},
+		});
+		await database
+			.prepare(
+				"INSERT INTO users (id,name,email,email_verified,enabled) VALUES ('blocked','Disabled','blocked@customer.com',0,0)",
+			)
+			.run();
+		const send = vi.fn();
+		expect(
+			await processEmailNotification(database, created.id, {
+				cloudflareEmail: { send } as unknown as SendEmail,
+			}),
+		).toMatchObject({ status: "suppressed" });
+		expect(send).not.toHaveBeenCalled();
+	});
+
 	it("keeps message secrets out of D1 plaintext and Queue payloads", async () => {
 		const created = await enqueueEmailNotification(database, {
 			event: "auth.email_verification",
 			idempotencyKey: "verify:user-1:token-digest",
 			message: {
-				to: "buyer@example.com",
+				to: "buyer@customer.com",
 				from: "GMShop <mail@example.com>",
 				replyTo: "",
 				subject: "Verify your email",
@@ -50,7 +108,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			)
 			.bind(created.id)
 			.first<{ message_encrypted: string }>();
-		expect(stored?.message_encrypted).not.toContain("buyer@example.com");
+		expect(stored?.message_encrypted).not.toContain("buyer@customer.com");
 		expect(stored?.message_encrypted).not.toContain("private-token");
 		const sent: NotificationQueueMessage[] = [];
 		const queue = {
@@ -80,7 +138,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			event: "auth.password_reset",
 			idempotencyKey: "reset:user-1:token-digest",
 			message: {
-				to: "buyer@example.com",
+				to: "buyer@customer.com",
 				from: "GMShop <mail@example.com>",
 				replyTo: "support@example.com",
 				subject: "Reset password",
@@ -94,7 +152,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 				const headers = new Headers(init?.headers);
 				expect(headers.get("Authorization")).toBe("Bearer re_test_key");
 				expect(JSON.parse(String(init?.body))).toMatchObject({
-					to: ["buyer@example.com"],
+					to: ["buyer@customer.com"],
 					subject: "Reset password",
 					headers: {
 						"Idempotency-Key": "reset:user-1:token-digest:email-config",
@@ -106,22 +164,24 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 		vi.stubGlobal("fetch", fetcher);
 		await expect(
 			processEmailNotification(database, created.id),
-		).resolves.toEqual({ duplicate: false, status: "delivered" });
+		).resolves.toEqual({ duplicate: false, status: "accepted" });
 		await expect(
 			processEmailNotification(database, created.id),
-		).resolves.toEqual({ duplicate: true, status: "delivered" });
+		).resolves.toEqual({ duplicate: true, status: "accepted" });
 		expect(fetcher).toHaveBeenCalledTimes(1);
 		const state = await database
 			.prepare(
-				`SELECT status, attempt_count, provider_message_id
+				`SELECT status, attempt_count, provider_message_id, accepted_at, delivered_at
 				 FROM notification_deliveries WHERE id = ?`,
 			)
 			.bind(created.id)
 			.first<Record<string, unknown>>();
 		expect(state).toMatchObject({
-			status: "delivered",
+			status: "accepted",
 			attempt_count: 1,
 			provider_message_id: "provider-message-1",
+			delivered_at: null,
+			accepted_at: expect.any(Number),
 		});
 	});
 
@@ -133,7 +193,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			event: "notification.test",
 			idempotencyKey: "cloudflare-email-test",
 			message: {
-				to: "buyer@example.com",
+				to: "buyer@customer.com",
 				from: "ignored@example.com",
 				replyTo: "support@example.com",
 				subject: "Cloudflare binding",
@@ -145,10 +205,10 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			processEmailNotification(database, created.id, {
 				cloudflareEmail: binding,
 			}),
-		).resolves.toEqual({ duplicate: false, status: "delivered" });
+		).resolves.toEqual({ duplicate: false, status: "accepted" });
 		expect(send).toHaveBeenCalledWith({
 			from: { email: "mail@example.com", name: "GMShop" },
-			to: "buyer@example.com",
+			to: "buyer@customer.com",
 			replyTo: "support@example.com",
 			subject: "Cloudflare binding",
 			text: "Structured text",
@@ -162,7 +222,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			event: "notification.test",
 			idempotencyKey: "cloudflare-email-unbound",
 			message: {
-				to: "buyer@example.com",
+				to: "buyer@customer.com",
 				from: "ignored@example.com",
 				replyTo: "",
 				subject: "Cloudflare binding",
@@ -207,7 +267,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			event: "notification.test",
 			idempotencyKey: "overall-email-test",
 			message: {
-				to: "buyer@example.com",
+				to: "buyer@customer.com",
 				from: "ignored@example.com",
 				replyTo: "",
 				subject: "Fallback test",
@@ -230,7 +290,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 
 		await expect(
 			processEmailNotification(database, created.id),
-		).resolves.toEqual({ duplicate: false, status: "delivered" });
+		).resolves.toEqual({ duplicate: false, status: "accepted" });
 		expect(credentials).toEqual(["Bearer re_test_key", "Bearer re_backup_key"]);
 		const delivery = await database
 			.prepare(
@@ -242,7 +302,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 		expect(delivery).toMatchObject({
 			channel_config_id: "email-backup",
 			provider_message_id: "backup-message",
-			status: "delivered",
+			status: "accepted",
 		});
 		const health = await database
 			.prepare(
@@ -267,7 +327,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			idempotencyKey: "individual-email-test",
 			configId: "email-config",
 			message: {
-				to: "buyer@example.com",
+				to: "buyer@customer.com",
 				from: "mail@example.com",
 				replyTo: "",
 				subject: "Individual test",
@@ -281,7 +341,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 		);
 		await expect(
 			processEmailNotification(database, created.id),
-		).resolves.toEqual({ duplicate: false, status: "delivered" });
+		).resolves.toEqual({ duplicate: false, status: "accepted" });
 	});
 
 	it("fans commerce outbox events into localized encrypted deliveries", async () => {
@@ -300,7 +360,9 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			event: "order_paid",
 			source_status: "published",
 		});
-		expect(String(state?.message_encrypted)).not.toContain("buyer@example.com");
+		expect(String(state?.message_encrypted)).not.toContain(
+			"buyer@customer.com",
+		);
 		expect(String(state?.message_encrypted)).not.toContain("ORDER-1001");
 	});
 
@@ -352,7 +414,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			database.prepare(
 				`INSERT INTO users
 				 (id, name, email, email_verified, preferred_locale, enabled, created_at, updated_at)
-				 VALUES ('buyer-user', 'Buyer', 'buyer@example.com', 1, 'zh-CN', 1, 1, 1)`,
+				 VALUES ('buyer-user', 'Buyer', 'buyer@customer.com', 1, 'zh-CN', 1, 1, 1)`,
 			),
 			database.prepare(
 				"UPDATE shop_orders SET user_id = 'buyer-user', locale = 'en-US' WHERE id = 'order-1001'",
@@ -476,8 +538,8 @@ async function seedPaidOrder(database: D1Database) {
 			 (id, order_number, contact_email, normalized_contact_email,
 			  status, currency, currency_decimals, subtotal_minor, discount_minor,
 			  total_minor, paid_minor, version, expires_at, created_at, updated_at)
-			 VALUES ('order-1001', 'ORDER-1001', 'buyer@example.com',
-			  'buyer@example.com', 'paid', 'USD', 2, '1299', '0', '1299', '1299',
+			 VALUES ('order-1001', 'ORDER-1001', 'buyer@customer.com',
+			  'buyer@customer.com', 'paid', 'USD', 2, '1299', '0', '1299', '1299',
 			  2, 999999, 1, 1)`,
 		),
 		database.prepare(

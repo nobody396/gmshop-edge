@@ -28,12 +28,36 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 
 	afterEach(async () => miniflare.dispose());
 
+	it("rejects reserved signup before creating an identity or mail", async () => {
+		const auth = createEmailAuth(database);
+		const response = await auth.handler(
+			jsonRequest("/api/auth/sign-up/email", {
+				name: "Probe",
+				email: "probe@example.com",
+				password: "very-secure-password",
+			}),
+		);
+		expect(response.status).toBe(400);
+		expect(
+			await database
+				.prepare(
+					"SELECT count(*) AS n FROM users WHERE email = 'probe@example.com'",
+				)
+				.first("n"),
+		).toBe(0);
+		expect(
+			await database
+				.prepare("SELECT count(*) AS n FROM notification_deliveries")
+				.first("n"),
+		).toBe(0);
+	});
+
 	it("queues encrypted verification and reset messages without exposing tokens", async () => {
 		const auth = createEmailAuth(database);
 		const signup = await auth.handler(
 			jsonRequest("/api/auth/sign-up/email", {
 				name: "Buyer",
-				email: "buyer@example.com",
+				email: "buyer@customer.com",
 				password: "very-secure-password",
 				preferredLocale: "zh-CN",
 				callbackURL: "/account",
@@ -46,7 +70,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 				 FROM users u
 				 JOIN json_each(u.role_ids) assigned
 				 JOIN roles r ON r.id = assigned.value
-				 WHERE u.email = 'buyer@example.com'`,
+				 WHERE u.email = 'buyer@customer.com'`,
 			)
 			.first<{
 				role_ids: string;
@@ -62,7 +86,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		expect(JSON.parse(registered?.role_ids ?? "[]")).toHaveLength(1);
 		const reset = await auth.handler(
 			jsonRequest("/api/auth/email-otp/request-password-reset", {
-				email: "buyer@example.com",
+				email: "buyer@customer.com",
 			}),
 		);
 		expect(reset.status).toBe(200);
@@ -81,7 +105,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		);
 		for (const delivery of deliveries.results) {
 			expect(String(delivery.message_encrypted)).not.toContain(
-				"buyer@example.com",
+				"buyer@customer.com",
 			);
 			expect(String(delivery.idempotency_key)).not.toContain("reset-password");
 			expect(String(delivery.idempotency_key)).toMatch(/[a-f0-9]{64}$/);
@@ -100,7 +124,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		expect(otp).toMatch(/^\d{6}$/);
 		const completed = await auth.handler(
 			jsonRequest("/api/auth/email-otp/reset-password", {
-				email: "buyer@example.com",
+				email: "buyer@customer.com",
 				otp,
 				password: "new-very-secure-password",
 			}),
@@ -108,7 +132,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		expect(completed.status).toBe(200);
 		const signIn = await auth.handler(
 			jsonRequest("/api/auth/sign-in/email", {
-				email: "buyer@example.com",
+				email: "buyer@customer.com",
 				password: "new-very-secure-password",
 			}),
 		);
@@ -117,7 +141,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 
 	it("binds an unverified identity email only after new-email verification", async () => {
 		const auth = createEmailAuth(database);
-		const signup = await signUp(auth, "temporary@example.com");
+		const signup = await signUp(auth, "temporary@customer.com");
 		const initialVerification = await latestEmail(database);
 		await auth.handler(
 			new Request(emailUrl(initialVerification.text), {
@@ -126,7 +150,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		);
 		const signedIn = await auth.handler(
 			jsonRequest("/api/auth/sign-in/email", {
-				email: "temporary@example.com",
+				email: "temporary@customer.com",
 				password: "very-secure-password",
 			}),
 		);
@@ -134,7 +158,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		await database
 			.prepare(
 				`UPDATE users SET email = '42@telegram.invalid',
-				 email_verified = 1 WHERE email = 'temporary@example.com'`,
+				 email_verified = 1 WHERE email = 'temporary@customer.com'`,
 			)
 			.run();
 		await clearDeliveries(database);
@@ -156,7 +180,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 			jsonRequest(
 				"/api/auth/change-email",
 				{
-					newEmail: "bound@example.com",
+					newEmail: "bound@customer.com",
 					callbackURL: "/account/settings",
 				},
 				cookie,
@@ -169,15 +193,15 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		});
 
 		const verification = await latestEmail(database);
-		expect(verification.to).toBe("bound@example.com");
+		expect(verification.to).toBe("bound@customer.com");
 		expect(verification.subject).toContain("Verify your Test Shop email");
 		const verified = await auth.handler(
 			new Request(emailUrl(verification.text), { headers: { cookie } }),
 		);
 		expect(verified.status).toBe(302);
 		expect(verified.headers.get("location")).toContain("/account/settings");
-		expect(await userEmail(database, "bound@example.com")).toEqual({
-			email: "bound@example.com",
+		expect(await userEmail(database, "bound@customer.com")).toEqual({
+			email: "bound@customer.com",
 			email_verified: 1,
 		});
 	});
@@ -187,13 +211,13 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		await verifySignup(
 			passwordAuth,
 			database,
-			await signUp(passwordAuth, "otp@example.com"),
+			await signUp(passwordAuth, "otp@customer.com"),
 		);
 		await clearDeliveries(database);
 		const otpAuth = createEmailAuth(database, true, true);
 		const sent = await otpAuth.handler(
 			jsonRequest("/api/auth/email-otp/send-verification-otp", {
-				email: "otp@example.com",
+				email: "otp@customer.com",
 				type: "sign-in",
 			}),
 		);
@@ -204,7 +228,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		expect(otp).toMatch(/^\d{6}$/);
 		const signedIn = await otpAuth.handler(
 			jsonRequest("/api/auth/sign-in/email-otp", {
-				email: "otp@example.com",
+				email: "otp@customer.com",
 				otp,
 			}),
 		);
@@ -214,7 +238,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 
 	it("confirms a verified email change with the old address before the new one", async () => {
 		const auth = createEmailAuth(database);
-		const signup = await signUp(auth, "current@example.com");
+		const signup = await signUp(auth, "current@customer.com");
 		const initialVerification = await latestEmail(database);
 		await auth.handler(
 			new Request(emailUrl(initialVerification.text), {
@@ -224,7 +248,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		await clearDeliveries(database);
 		const signedIn = await auth.handler(
 			jsonRequest("/api/auth/sign-in/email", {
-				email: "current@example.com",
+				email: "current@customer.com",
 				password: "very-secure-password",
 			}),
 		);
@@ -234,7 +258,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 			jsonRequest(
 				"/api/auth/change-email",
 				{
-					newEmail: "changed@example.com",
+					newEmail: "changed@customer.com",
 					callbackURL: "/account/settings",
 				},
 				cookie,
@@ -242,12 +266,12 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		);
 		expect(requested.status).toBe(200);
 		const confirmation = await latestEmail(database);
-		expect(confirmation.to).toBe("current@example.com");
+		expect(confirmation.to).toBe("current@customer.com");
 		expect(confirmation.subject).toContain(
 			"Confirm your Test Shop email change",
 		);
-		expect(await userEmail(database, "current@example.com")).toMatchObject({
-			email: "current@example.com",
+		expect(await userEmail(database, "current@customer.com")).toMatchObject({
+			email: "current@customer.com",
 			email_verified: 1,
 		});
 
@@ -255,20 +279,20 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 			new Request(emailUrl(confirmation.text), { headers: { cookie } }),
 		);
 		expect(confirmed.status).toBe(302);
-		expect(await userEmail(database, "current@example.com")).toMatchObject({
-			email: "current@example.com",
+		expect(await userEmail(database, "current@customer.com")).toMatchObject({
+			email: "current@customer.com",
 			email_verified: 1,
 		});
 		const verification = await latestEmail(database);
-		expect(verification.to).toBe("changed@example.com");
+		expect(verification.to).toBe("changed@customer.com");
 		expect(verification.subject).toContain("Verify your Test Shop email");
 
 		const verified = await auth.handler(
 			new Request(emailUrl(verification.text), { headers: { cookie } }),
 		);
 		expect(verified.status).toBe(302);
-		expect(await userEmail(database, "changed@example.com")).toEqual({
-			email: "changed@example.com",
+		expect(await userEmail(database, "changed@customer.com")).toEqual({
+			email: "changed@customer.com",
 			email_verified: 1,
 		});
 		const audit = await database
@@ -285,17 +309,17 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		await verifySignup(
 			auth,
 			database,
-			await signUp(auth, "primary@example.com"),
+			await signUp(auth, "primary@customer.com"),
 		);
 		await verifySignup(
 			auth,
 			database,
-			await signUp(auth, "occupied@example.com"),
+			await signUp(auth, "occupied@customer.com"),
 		);
 		await clearDeliveries(database);
 		const signedIn = await auth.handler(
 			jsonRequest("/api/auth/sign-in/email", {
-				email: "primary@example.com",
+				email: "primary@customer.com",
 				password: "very-secure-password",
 			}),
 		);
@@ -304,7 +328,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 			jsonRequest(
 				"/api/auth/change-email",
 				{
-					newEmail: "occupied@example.com",
+					newEmail: "occupied@customer.com",
 					callbackURL: "/account/settings",
 				},
 				cookie,
@@ -323,7 +347,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 			jsonRequest(
 				"/api/auth/change-email",
 				{
-					newEmail: "another@example.com",
+					newEmail: "another@customer.com",
 					callbackURL: "/account/settings",
 				},
 				cookie,
@@ -337,12 +361,12 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 		await verifySignup(
 			auth,
 			database,
-			await signUp(auth, "limited@example.com"),
+			await signUp(auth, "limited@customer.com"),
 		);
 		await clearDeliveries(database);
 		const signedIn = await auth.handler(
 			jsonRequest("/api/auth/sign-in/email", {
-				email: "limited@example.com",
+				email: "limited@customer.com",
 				password: "very-secure-password",
 			}),
 		);
@@ -353,7 +377,7 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 				jsonRequest(
 					"/api/auth/change-email",
 					{
-						newEmail: `limited-${index}@example.com`,
+						newEmail: `limited-${index}@customer.com`,
 						callbackURL: "/account/settings",
 					},
 					cookie,
@@ -502,7 +526,7 @@ async function seed(database: D1Database) {
 				 (id, channel, name, provider, api_key_encrypted, api_key_version,
 				  from_address, sort_order, enabled, created_at, updated_at)
 				 VALUES ('email-config', 'email', 'Primary', 'resend', ?, 1,
-				  'Test Shop <mail@example.com>', 100, 1, 1, 1)`,
+				  'Test Shop <mail@customer.com>', 100, 1, 1, 1)`,
 			)
 			.bind(apiKeyEncrypted),
 	]);

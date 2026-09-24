@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ProButton } from "#/components/pro/base/button";
 import { ProTable } from "#/components/pro/table";
 import { StatusBadge } from "#/components/status-badge";
+import { Badge } from "#/components/ui/badge";
 import {
 	notificationDeliveryErrorLabel,
 	notificationEventLabel,
@@ -57,7 +58,28 @@ export function EmailRecordsPage() {
 		{
 			accessorKey: "status",
 			header: m.common_status(),
-			cell: ({ row }) => <StatusBadge value={row.original.status} />,
+			cell: ({ row }) =>
+				row.original.status === "delivered" ? (
+					<Badge>{m.notifications_status_delivered()}</Badge>
+				) : (
+					<StatusBadge value={row.original.status} />
+				),
+		},
+		{
+			accessorKey: "acceptedAt",
+			header: m.notifications_accepted_at(),
+			cell: ({ row }) =>
+				row.original.acceptedAt == null
+					? "—"
+					: formatDateTime(row.original.acceptedAt),
+		},
+		{
+			accessorKey: "deliveredAt",
+			header: m.notifications_delivered_at(),
+			cell: ({ row }) =>
+				row.original.deliveredAt == null
+					? "—"
+					: formatDateTime(row.original.deliveredAt),
 		},
 		{ accessorKey: "attemptCount", header: m.notifications_attempts() },
 		{
@@ -68,7 +90,11 @@ export function EmailRecordsPage() {
 		{
 			accessorKey: "errorCode",
 			header: m.common_last_error(),
-			cell: ({ row }) => notificationDeliveryErrorLabel(row.original.errorCode),
+			cell: ({ row }) => (
+				<span title={row.original.errorCode ?? undefined}>
+					{notificationDeliveryErrorLabel(row.original.errorCode)}
+				</span>
+			),
 		},
 		{
 			id: "actions",

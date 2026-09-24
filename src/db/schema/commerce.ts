@@ -2301,6 +2301,8 @@ export const notificationDeliveries = sqliteTable(
 		messageEncrypted: text("message_encrypted").notNull(),
 		messageKeyVersion: integer("message_key_version").notNull(),
 		providerMessageId: text("provider_message_id"),
+		acceptedAt: integer("accepted_at", { mode: "timestamp_ms" }),
+		providerEventAt: integer("provider_event_at", { mode: "timestamp_ms" }),
 		entitlementId: text("entitlement_id").references(
 			() => customerEntitlements.id,
 		),
@@ -2312,7 +2314,16 @@ export const notificationDeliveries = sqliteTable(
 			enum: ["email_content_sent", "link_sent"],
 		}),
 		status: text("status", {
-			enum: ["pending", "sending", "delivered", "failed"],
+			enum: [
+				"pending",
+				"sending",
+				"accepted",
+				"delivered",
+				"failed",
+				"bounced",
+				"rejected",
+				"suppressed",
+			],
 		})
 			.notNull()
 			.default("pending"),
@@ -2323,6 +2334,9 @@ export const notificationDeliveries = sqliteTable(
 		...timestamps,
 	},
 	(table) => [
+		index("notification_deliveries_provider_message_idx").on(
+			table.providerMessageId,
+		),
 		uniqueIndex("notification_deliveries_idempotency_uidx").on(
 			table.idempotencyKey,
 		),
@@ -2387,4 +2401,14 @@ export const outboxEvents = sqliteTable(
 		),
 		check("outbox_events_attempt_count_check", sql`${table.attemptCount} >= 0`),
 	],
+);
+
+export const emailRecipientSuppressions = sqliteTable(
+	"email_recipient_suppressions",
+	{
+		recipientHash: text("recipient_hash").primaryKey(),
+		reason: text("reason").notNull(),
+		sourceDeliveryId: text("source_delivery_id").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+	},
 );

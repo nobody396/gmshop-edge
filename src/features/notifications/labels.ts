@@ -2,6 +2,8 @@ import { m } from "#/paraglide/messages";
 
 export function notificationEventLabel(event: string) {
 	const labels: Record<string, () => string> = {
+		"auth.email_verification": m.notifications_event_verification,
+		"auth.password_reset": m.notifications_event_password_reset,
 		order_paid: m.store_account_notification_order_paid,
 		delivery_ready: m.store_account_notification_delivery_ready,
 		automation_ready: m.store_account_notification_automation_ready,
@@ -22,6 +24,10 @@ export function notificationHealthStatusLabel(status: string) {
 
 export function notificationDeliveryErrorLabel(code: string | null) {
 	if (!code) return "—";
+	if (code.startsWith("recipient_"))
+		return m.notifications_error_recipient_suppressed();
+	if (code.startsWith("provider_"))
+		return m.notifications_error_provider_delivery();
 	if (code === "cloudflare_email_unavailable")
 		return m.notifications_error_email_unavailable();
 	if (code === "providers_unavailable")
