@@ -119,12 +119,14 @@ describe("Telegram web support", () => {
 			},
 			"网页客服新消息",
 			request,
+			"owner-event-id",
 		);
 		expect(calls).toHaveLength(2);
 		expect(calls[0]?.url).toContain("tenant_access_token/internal");
 		expect(calls[1]?.url).toContain("receive_id_type=chat_id");
 		expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({
 			receive_id: "oc_1234567890abcdef",
+			uuid: "owner-event-id",
 			msg_type: "text",
 			content: JSON.stringify({ text: "网页客服新消息" }),
 		});

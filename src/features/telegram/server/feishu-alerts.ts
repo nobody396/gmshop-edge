@@ -146,6 +146,7 @@ export async function sendFeishuText(
 	credentials: FeishuCredentials,
 	text: string,
 	request: Fetcher = fetch,
+	uuid?: string,
 ) {
 	const token = await tenantAccessToken(credentials, request, true);
 	const response = await request(messagesUrl, {
@@ -156,6 +157,7 @@ export async function sendFeishuText(
 		},
 		body: JSON.stringify({
 			receive_id: credentials.chatId,
+			uuid,
 			msg_type: "text",
 			content: JSON.stringify({ text: text.slice(0, 30_000) }),
 		}),
