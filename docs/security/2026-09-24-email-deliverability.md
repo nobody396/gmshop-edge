@@ -19,7 +19,7 @@ Based on production `ca2d935`. Keep email verification, commerce delivery, payme
 
 ## Provider reconciliation / 服务商回填
 
-`bun scripts/reconcile-email-delivery.ts --account ACCOUNT_ID --database DATABASE_ID --zone ZONE_ID --since 2026-09-17T08:00:00Z --until 2026-09-24T08:00:00Z`
+`node --import tsx scripts/reconcile-email-delivery.ts --account ACCOUNT_ID --database DATABASE_ID --zone ZONE_ID --since 2026-09-17T08:00:00Z --until 2026-09-24T08:00:00Z`
 
 - Dry-run by default. Add `--execute` only after explicit production data-update authorization and deployment/migration verification. Window must be UTC and at most seven days. For first recovery, use the desired recent provider-event window even when the original send was older.
 - Account/zone and configured Cloudflare sender domain must match. Reads `CLOUDFLARE_API_TOKEN` only from Agent Switch FD 3. Required permissions are D1 read (edit for execute), zone read and zone analytics read. Never copy credentials into project files or Worker bindings for this job.
@@ -49,3 +49,5 @@ Browser validation used an isolated local D1 and mock terminal email records, no
 Production read-only check: Turnstile public/secret bindings are present; no live registration probe was sent. No pending/sending/failed `auth.*` notification backlog was found. These observations do not prove real inbox delivery or deployment of this patch.
 
 Final verification (2026-09-24 16:44 Beijing): typecheck passed; Vitest 1,236 passed with 2 existing TODOs; Bun runtime 23 passed; Biome checked 910 files without fixes/warnings; both Workers and Bun builds passed. Final source changes were frozen for this complete run. The empty local D1 migration, historical-state conversion, query-plan checks and browser scenarios above passed. Build chunk-size notices and jsdom's unsupported `scrollTo` notice are non-failing tooling warnings. No production migration/deployment/reconciliation or real email test was performed.
+
+Operator runtime: use native Node with the existing tsx loader. Live preview verified that Bun 1.4.2 does not return Agent Switch FD 3 output on this host; do not work around that by printing the secret or storing it in a file. The CLI rejects Bun with the supported command. This tooling correction does not change the deployed Worker.
