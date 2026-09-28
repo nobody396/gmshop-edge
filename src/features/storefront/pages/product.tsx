@@ -37,6 +37,7 @@ import {
 	ChatGptRegionGuide,
 	chatGptRechargeProductId,
 } from "#/features/storefront/components/chatgpt-region-guide";
+import { ClaudeProductDescription } from "#/features/storefront/components/claude-product-description";
 import {
 	ClaudePurchaseGuide,
 	claudeRechargeProductId,
@@ -264,7 +265,9 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 					<h1 className="mt-3 text-balance font-semibold text-4xl tracking-[-0.035em] sm:text-5xl">
 						{data.name}
 					</h1>
-					{data.description ? (
+					{data.description && data.id === claudeRechargeProductId ? (
+						<ClaudeProductDescription description={data.description} />
+					) : data.description ? (
 						<p className="mt-4 max-w-2xl whitespace-pre-wrap text-muted-foreground leading-7">
 							{data.description}
 						</p>
