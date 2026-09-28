@@ -1,18 +1,22 @@
-import type { SupportAttachment } from "./web-support-attachments";
+import {
+	type SupportAttachment,
+	supportFileRetentionMs,
+} from "./web-support-attachments";
 export type WebSupportLocalMessage = {
 	id: string;
 	role: "customer" | "support";
 	text: string;
 	createdAt: number;
 	sequence?: number;
+	conversationId?: string;
 	attachment?: SupportAttachment;
 };
 
 type WebSupportIdentity = {
 	id: "identity";
 	visitorId: string;
-	privateKey: CryptoKey;
-	publicKeyJwk: JsonWebKey;
+	privateKey?: CryptoKey;
+	publicKeyJwk?: JsonWebKey;
 	conversationId?: string;
 };
 
@@ -33,24 +37,16 @@ export async function getWebSupportIdentity() {
 	const existing = await request<WebSupportIdentity | undefined>(
 		database.transaction("state").objectStore("state").get("identity"),
 	);
-	if (existing) return existing;
-	const pair = (await crypto.subtle.generateKey(
-		{
-			name: "RSA-OAEP",
-			modulusLength: 2048,
-			publicExponent: new Uint8Array([1, 0, 1]),
-			hash: "SHA-256",
-		},
-		false,
-		["encrypt", "decrypt"],
-	)) as CryptoKeyPair;
+	if (existing) {
+		database.close();
+		return existing;
+	}
 	const identity: WebSupportIdentity = {
 		id: "identity",
 		visitorId: crypto.randomUUID(),
-		privateKey: pair.privateKey,
-		publicKeyJwk: await crypto.subtle.exportKey("jwk", pair.publicKey),
 	};
 	await transaction(database, "state", (store) => store.put(identity));
+	database.close();
 	return identity;
 }
 
@@ -58,21 +54,44 @@ export async function setWebSupportConversationId(conversationId: string) {
 	const identity = await getWebSupportIdentity();
 	identity.conversationId = conversationId;
 	const database = await openDatabase();
-	await transaction(database, "state", (store) => store.put(identity));
+	try {
+		await transaction(database, "state", (store) => store.put(identity));
+	} finally {
+		database.close();
+	}
 }
 
 export async function loadWebSupportMessages() {
 	const database = await openDatabase();
-	return request<WebSupportLocalMessage[]>(
-		database.transaction("messages").objectStore("messages").getAll(),
-	).then((messages) =>
-		messages.sort((left, right) => left.createdAt - right.createdAt),
-	);
+	try {
+		const messages = await request<WebSupportLocalMessage[]>(
+			database.transaction("messages").objectStore("messages").getAll(),
+		);
+		const cutoff = Date.now() - supportFileRetentionMs;
+		const expired = messages.filter((message) => message.createdAt <= cutoff);
+		if (expired.length)
+			await new Promise<void>((resolve, reject) => {
+				const tx = database.transaction("messages", "readwrite");
+				for (const message of expired)
+					tx.objectStore("messages").delete(message.id);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error);
+			});
+		return messages
+			.filter((message) => message.createdAt > cutoff)
+			.sort((a, b) => a.createdAt - b.createdAt);
+	} finally {
+		database.close();
+	}
 }
 
 export async function saveWebSupportMessage(message: WebSupportLocalMessage) {
 	const database = await openDatabase();
-	await transaction(database, "messages", (store) => store.put(message));
+	try {
+		await transaction(database, "messages", (store) => store.put(message));
+	} finally {
+		database.close();
+	}
 }
 
 export async function decryptWebSupportReply(
@@ -80,7 +99,7 @@ export async function decryptWebSupportReply(
 	conversationId: string,
 	reply: EncryptedReply,
 ) {
-	if (reply.algorithm !== "RSA-OAEP-256+A256GCM")
+	if (!identity.privateKey || reply.algorithm !== "RSA-OAEP-256+A256GCM")
 		throw new Error("Unsupported reply envelope");
 	const rawKey = await crypto.subtle.decrypt(
 		{ name: "RSA-OAEP" },

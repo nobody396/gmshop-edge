@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const supportFileMaxBytes = 10 * 1024 * 1024;
-export const supportFileRetentionMs = 7 * 86_400_000;
+export const supportFileRetentionMs = 2 * 86_400_000;
 export const supportFileAccept =
 	".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.log,.csv,.json,.zip,.docx,.xlsx";
 export const supportAttachmentSchema = z.object({

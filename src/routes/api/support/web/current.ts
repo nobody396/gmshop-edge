@@ -12,6 +12,7 @@ export const Route = createFileRoute("/api/support/web/current")({
 					const after = /^\d{1,12}$/.test(raw) ? Number(raw) : 0;
 					return Response.json(
 						await currentWebSupportConversation(getEnv().DB, request, after),
+						{ headers: { "cache-control": "private, no-store" } },
 					);
 				} catch (error) {
 					return webSupportResponse(error);

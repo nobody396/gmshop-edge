@@ -45,6 +45,7 @@ import { NodeObjectStorage } from "../../src/server/runtime/node/object-storage"
 mock.module("../../src/features/telegram/server/sync", () => ({
 	telegramRuntime: async () => ({
 		provider: { telegramBotToken: "test-only-token" },
+		runtime: { dataEncryptionSecret: "test-only-support-encryption-secret" },
 	}),
 }));
 const {
@@ -59,7 +60,7 @@ let bucket: NodeObjectStorage;
 let directory: string;
 let sendCount: number;
 let uncertain: boolean;
-let privateKey: CryptoKey;
+
 const cid = "00000000-0000-4000-8000-000000000001";
 const token = "local-test-session";
 const originalFetch = globalThis.fetch;
@@ -81,7 +82,6 @@ beforeEach(async () => {
 		true,
 		["encrypt", "decrypt"],
 	);
-	privateKey = pair.privateKey;
 	const publicKey = JSON.stringify(
 		await crypto.subtle.exportKey("jwk", pair.publicKey),
 	);
@@ -295,25 +295,14 @@ describe("Web support attachments with SQLite + private object storage", () => {
 		const reply = replies.results[0];
 		if (!reply) throw new Error("Missing encrypted reply");
 		expect(String(reply.ciphertext)).not.toContain("staff reply");
-		const wrapped = Buffer.from(String(reply.wrapped_key), "base64url");
-		const rawKey = await crypto.subtle.decrypt(
-			{ name: "RSA-OAEP" },
-			privateKey,
-			wrapped,
+		const { decryptSecret } = await import("../../src/lib/secrets");
+		expect(reply.algorithm).toBe("server-v1");
+		const plaintext = await decryptSecret(
+			String(reply.ciphertext),
+			"test-only-support-encryption-secret",
+			`web-support:${cid}:${reply.sequence}`,
 		);
-		const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, [
-			"decrypt",
-		]);
-		const plaintext = await crypto.subtle.decrypt(
-			{
-				name: "AES-GCM",
-				iv: Buffer.from(String(reply.iv), "base64url"),
-				additionalData: new TextEncoder().encode(`${cid}:${reply.sequence}`),
-			},
-			key,
-			Buffer.from(String(reply.ciphertext), "base64url"),
-		);
-		const decoded = JSON.parse(new TextDecoder().decode(plaintext));
+		const decoded = JSON.parse(plaintext);
 		expect(decoded.text).toBe("staff reply");
 		expect(decoded.attachment.name).toBe("reply.txt");
 		const attachment = await db
@@ -332,4 +321,102 @@ describe("Web support attachments with SQLite + private object storage", () => {
 			).text(),
 		).toBe("attachment integration test");
 	});
+});
+
+test("reopened session with missing browser key still receives new replies via v2", async () => {
+	const server = await import("../../src/features/telegram/server/web-support");
+	await db
+		.prepare(
+			"UPDATE telegram_web_support_conversations SET public_key_jwk='{}' WHERE id=?",
+		)
+		.bind(cid)
+		.run();
+	const conversation = await db
+		.prepare("SELECT * FROM telegram_web_support_conversations WHERE id=?")
+		.bind(cid)
+		.first();
+	if (!conversation) throw new Error("Missing test conversation");
+	await run(() =>
+		server.storeWebAdministratorReply(
+			db,
+			conversation as unknown as Parameters<
+				typeof server.storeWebAdministratorReply
+			>[1],
+			"reopened reply",
+		),
+	);
+	const request = new Request(
+		"https://shop.test/api/support/web/current?version=2",
+		{ headers: { cookie: `gmshop_web_support=${token}` } },
+	);
+	const result = await run(() =>
+		server.currentWebSupportConversation(db, request, 0),
+	);
+	expect(result.replies[0]).toMatchObject({ text: "reopened reply" });
+	const id = String(result.replies[0]?.id);
+	await run(() => server.acknowledgeWebSupportReplies(db, request, [id]));
+	expect(
+		(await run(() => server.currentWebSupportConversation(db, request, 0)))
+			.replies,
+	).toHaveLength(1);
+});
+
+test("reply text expires after 48 hours even if the row has a later expiry", async () => {
+	const server = await import("../../src/features/telegram/server/web-support");
+	const conversation = await db
+		.prepare("SELECT * FROM telegram_web_support_conversations WHERE id=?")
+		.bind(cid)
+		.first();
+	if (!conversation) throw new Error("Missing conversation");
+	await run(() =>
+		server.storeWebAdministratorReply(
+			db,
+			conversation as unknown as Parameters<
+				typeof server.storeWebAdministratorReply
+			>[1],
+			"short-lived reply",
+		),
+	);
+	await db
+		.prepare(
+			"UPDATE telegram_web_support_replies SET created_at=?,expires_at=?",
+		)
+		.bind(
+			Date.now() - supportFileRetentionMs - 1,
+			Date.now() + supportFileRetentionMs,
+		)
+		.run();
+	const req = new Request(
+		"https://shop.test/api/support/web/current?version=2",
+		{ headers: { cookie: `gmshop_web_support=${token}` } },
+	);
+	expect(
+		(await run(() => server.currentWebSupportConversation(db, req, 0))).replies,
+	).toHaveLength(0);
+});
+
+test("legacy clients retain RSA envelopes while v2 reads the same encrypted-at-rest reply", async () => {
+	const server = await import("../../src/features/telegram/server/web-support");
+	const conversation = await db
+		.prepare("SELECT * FROM telegram_web_support_conversations WHERE id=?")
+		.bind(cid)
+		.first();
+	if (!conversation) throw new Error("Missing conversation");
+	await run(() =>
+		server.storeWebAdministratorReply(
+			db,
+			conversation as unknown as Parameters<
+				typeof server.storeWebAdministratorReply
+			>[1],
+			"compatible reply",
+		),
+	);
+	const request = new Request("https://shop.test/api/support/web/current", {
+		headers: { cookie: `gmshop_web_support=${token}` },
+	});
+	const old = await run(() =>
+		server.currentWebSupportConversation(db, request, 0),
+	);
+	expect(old.replies[0]).toMatchObject({ algorithm: "RSA-OAEP-256+A256GCM" });
+	expect(JSON.stringify(old)).not.toContain("compatible reply");
 });
