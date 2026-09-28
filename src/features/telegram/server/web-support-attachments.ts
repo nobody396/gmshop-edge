@@ -259,7 +259,7 @@ export async function storeWebAdministratorAttachment(
 	try {
 		const response = await fetch(
 			`https://api.telegram.org/file/bot${provider.telegramBotToken}/${file.file_path}`,
-			{ redirect: "error", signal: AbortSignal.timeout(30_000) },
+			{ redirect: "manual", signal: AbortSignal.timeout(30_000) },
 		);
 		if (!response.ok)
 			throw new WebSupportError(`telegram_file_http_${response.status}`, 502);

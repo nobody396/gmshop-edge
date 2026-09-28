@@ -96,11 +96,16 @@ beforeEach(async () => {
 		.run();
 	sendCount = 0;
 	uncertain = false;
-	globalThis.fetch = mock(async (input: RequestInfo | URL) => {
-		const url = String(input);
-		if (url.includes("/file/bot")) return new Response(textBytes);
-		throw new Error("Unexpected transport");
-	}) as typeof fetch;
+	globalThis.fetch = mock(
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url.includes("/file/bot")) {
+				expect(init?.redirect).toBe("manual");
+				return new Response(textBytes);
+			}
+			throw new Error("Unexpected transport");
+		},
+	) as typeof fetch;
 });
 afterEach(async () => {
 	globalThis.fetch = originalFetch;
