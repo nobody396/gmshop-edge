@@ -1,6 +1,6 @@
 "use client";
 
-import { Headphones, LoaderCircle, QrCode, Send, X } from "lucide-react";
+import { Headphones, LoaderCircle, Paperclip, Send, X } from "lucide-react";
 import {
 	type KeyboardEvent,
 	type SyntheticEvent,
@@ -11,20 +11,19 @@ import {
 } from "react";
 import { Textarea } from "#/components/pro/base/fields/input";
 import { Button } from "#/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { authClient } from "#/features/auth/auth-client";
 import { useTurnstile } from "#/features/auth/components/turnstile";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
+import {
+	decodeSupportReply,
+	supportAttachmentSchema,
+	supportAttachmentUrl,
+	supportFileAccept,
+	supportFileMaxBytes,
+} from "../web-support-attachments";
 import {
 	webSupportOpenEvent,
 	webSupportPollIntervalMs,
@@ -44,8 +43,6 @@ type SupportStatus = {
 	status: string | null;
 };
 
-const wechatQrUrl = "/support/wechat-jerrys.png";
-
 function formatMessageTime(timestamp: number) {
 	return new Intl.DateTimeFormat(getLocale(), {
 		hour: "2-digit",
@@ -62,6 +59,11 @@ export function WebSupportWidget() {
 	const [email, setEmail] = useState("");
 	const [messages, setMessages] = useState<WebSupportLocalMessage[]>([]);
 	const [text, setText] = useState("");
+	const [attachment, setAttachment] = useState<{
+		file: File;
+		id: string;
+	} | null>(null);
+	const fileInput = useRef<HTMLInputElement>(null);
 	const challenge = useTurnstile("support");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -127,10 +129,12 @@ export function WebSupportWidget() {
 			const message: WebSupportLocalMessage = {
 				id: reply.id,
 				role: "support",
-				text: await decryptWebSupportReply(
-					identity,
-					identity.conversationId,
-					reply,
+				...decodeSupportReply(
+					await decryptWebSupportReply(
+						identity,
+						identity.conversationId,
+						reply,
+					),
 				),
 				createdAt: reply.created_at,
 				sequence: reply.sequence,
@@ -233,7 +237,11 @@ export function WebSupportWidget() {
 	) {
 		event.preventDefault();
 		const value = text.trim();
-		if (!value || busy) return;
+		if ((!value && !attachment) || busy) return;
+		if (attachment && value.length > 1000) {
+			setError(m.web_support_attachment_caption_limit());
+			return;
+		}
 		setBusy(true);
 		setError(null);
 		const message: WebSupportLocalMessage = {
@@ -243,21 +251,70 @@ export function WebSupportWidget() {
 			createdAt: Date.now(),
 		};
 		try {
-			const response = await fetch("/api/support/web/messages", {
-				method: "POST",
-				credentials: "include",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ clientMessageId: message.id, text: value }),
-			});
-			if (!response.ok) throw new Error("send_failed");
+			let response: Response;
+			if (attachment) {
+				const form = new FormData();
+				form.set("file", attachment.file);
+				form.set("clientMessageId", attachment.id);
+				form.set("text", value);
+				response = await fetch("/api/support/web/attachments/", {
+					method: "POST",
+					credentials: "include",
+					body: form,
+				});
+			} else {
+				response = await fetch("/api/support/web/messages", {
+					method: "POST",
+					credentials: "include",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ clientMessageId: message.id, text: value }),
+				});
+			}
+			const result = (await response.json()) as {
+				code?: string;
+				attachment?: unknown;
+			};
+			if (!response.ok) {
+				setError(
+					result.code === "attachment_pending"
+						? m.web_support_attachment_pending()
+						: attachment
+							? m.web_support_attachment_failed()
+							: m.web_support_failed(),
+				);
+				return;
+			}
+			if (attachment)
+				message.attachment = supportAttachmentSchema.parse(result.attachment);
 			await saveWebSupportMessage(message);
 			setMessages((current) => [...current, message]);
 			setText("");
+			setAttachment(null);
 		} catch {
-			setError(m.web_support_failed());
+			setError(
+				attachment
+					? m.web_support_attachment_pending()
+					: m.web_support_failed(),
+			);
 		} finally {
 			setBusy(false);
 		}
+	}
+
+	function chooseAttachment(file: File) {
+		if (busy) return;
+		if (
+			!file.size ||
+			file.size > supportFileMaxBytes ||
+			!supportFileAccept
+				.split(",")
+				.some((extension) => file.name.toLowerCase().endsWith(extension))
+		) {
+			setError(m.web_support_attachment_failed());
+			return;
+		}
+		setError(null);
+		setAttachment({ file, id: crypto.randomUUID() });
 	}
 
 	function handleMessageKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -302,36 +359,9 @@ export function WebSupportWidget() {
 							<X />
 						</Button>
 					</header>
-					<div className="border-b border-primary/20 bg-primary/5 px-4 py-3 text-sm">
-						<Dialog>
-							<DialogTrigger asChild>
-								<button
-									type="button"
-									className="inline-flex items-center gap-1 rounded-sm text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-								>
-									<QrCode className="size-4 shrink-0" aria-hidden="true" />
-									{m.web_support_wechat_fallback()}
-								</button>
-							</DialogTrigger>
-							<DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-sm">
-								<DialogHeader>
-									<DialogTitle>{m.store_support_wechat()}</DialogTitle>
-									<DialogDescription>
-										{m.store_support_wechat_description()}
-									</DialogDescription>
-								</DialogHeader>
-								<div className="rounded-xl bg-white p-3">
-									<img
-										src={wechatQrUrl}
-										alt={m.store_support_wechat_qr_alt()}
-										width={613}
-										height={620}
-										className="mx-auto h-auto w-full max-w-72"
-									/>
-								</div>
-							</DialogContent>
-						</Dialog>
-					</div>
+					<p className="border-b bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+						{m.web_support_attachment_hint()}
+					</p>
 					{!["active", "closing", "closed"].includes(status ?? "") ? (
 						session.isPending ? (
 							<div className="flex flex-1 items-center justify-center">
@@ -396,6 +426,35 @@ export function WebSupportWidget() {
 												{formatMessageTime(message.createdAt)}
 											</time>
 										</span>
+										{message.attachment ? (
+											<div className="space-y-2">
+												{message.attachment.mime.startsWith("image/") ? (
+													<a
+														href={supportAttachmentUrl(message.attachment.id)}
+														target="_blank"
+														rel="noopener noreferrer"
+													>
+														<img
+															src={supportAttachmentUrl(message.attachment.id)}
+															alt={message.attachment.name}
+															className="max-h-52 max-w-full rounded-lg object-contain"
+															loading="lazy"
+														/>
+													</a>
+												) : null}
+												<a
+													className="block break-all font-medium underline"
+													href={supportAttachmentUrl(
+														message.attachment.id,
+														true,
+													)}
+												>
+													{message.attachment.name} ·{" "}
+													{Math.ceil(message.attachment.size / 1024)} KB ·{" "}
+													{m.web_support_attachment_download()}
+												</a>
+											</div>
+										) : null}
 										<p className="whitespace-pre-wrap break-words">
 											{message.text}
 										</p>
@@ -428,10 +487,61 @@ export function WebSupportWidget() {
 									className="border-t pb-[env(safe-area-inset-bottom)]"
 									onSubmit={sendMessage}
 								>
+									<div className="flex items-center gap-2 px-3 pt-2">
+										<input
+											ref={fileInput}
+											type="file"
+											accept={supportFileAccept}
+											className="hidden"
+											aria-label={m.web_support_attach()}
+											onChange={(event) => {
+												const file = event.target.files?.[0];
+												if (file) chooseAttachment(file);
+												event.target.value = "";
+											}}
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											disabled={busy}
+											onClick={() => fileInput.current?.click()}
+										>
+											<Paperclip className="size-4" />
+											{m.web_support_attach()}
+										</Button>
+										{attachment ? (
+											<>
+												<span className="min-w-0 flex-1 truncate text-xs">
+													{attachment.file.name}
+												</span>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon-sm"
+													disabled={busy}
+													aria-label={m.web_support_attachment_remove()}
+													onClick={() => setAttachment(null)}
+												>
+													<X />
+												</Button>
+											</>
+										) : null}
+									</div>
 									<Textarea
+										disabled={busy}
 										allowClear={false}
 										className="min-h-20 max-h-32 resize-none rounded-none border-0 bg-transparent px-4 py-3 pr-14 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
-										maxLength={3500}
+										maxLength={attachment ? 1000 : 3500}
+										onPaste={(event) => {
+											const file = Array.from(event.clipboardData.files).find(
+												(file) => file.type.startsWith("image/"),
+											);
+											if (file) {
+												event.preventDefault();
+												chooseAttachment(file);
+											}
+										}}
 										value={text}
 										onChange={(event) => setText(event.target.value)}
 										onKeyDown={handleMessageKeyDown}
@@ -441,7 +551,7 @@ export function WebSupportWidget() {
 											<Button
 												className="rounded-full"
 												size="icon-sm"
-												disabled={busy || !text.trim()}
+												disabled={busy || (!text.trim() && !attachment)}
 												aria-label={m.web_support_send()}
 											>
 												<Send />
