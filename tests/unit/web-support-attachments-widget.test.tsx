@@ -160,3 +160,27 @@ it("rejects unsupported extensions before sending", async () => {
 	expect(document.body.textContent).toContain("web_support_attachment_failed");
 	expect(button("web_support_send").disabled).toBe(true);
 });
+
+it("pastes a screenshot into the composer without auto-sending", async () => {
+	const composer = document.querySelector("textarea");
+	if (!composer) throw new Error("Missing composer");
+	const event = new Event("paste", { bubbles: true, cancelable: true });
+	Object.defineProperty(event, "clipboardData", {
+		value: {
+			files: [
+				new File(
+					[new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
+					"pasted-screenshot.png",
+					{ type: "image/png" },
+				),
+			],
+		},
+	});
+	await act(async () => composer.dispatchEvent(event));
+	expect(event.defaultPrevented).toBe(true);
+	expect(document.body.textContent).toContain("pasted-screenshot.png");
+	expect(button("web_support_send").disabled).toBe(false);
+	expect(
+		fetchMock.mock.calls.filter((call) => call[1]?.method === "POST"),
+	).toHaveLength(0);
+});
