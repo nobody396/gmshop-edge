@@ -24,6 +24,7 @@ import {
 	closeWebConversationFromTopic,
 	findWebConversationByTopic,
 	storeWebAdministratorReply,
+	WebSupportError,
 } from "./web-support";
 import { storeWebAdministratorAttachment } from "./web-support-attachments";
 
@@ -617,7 +618,9 @@ async function relayAdministratorMessage(db: D1Database, ctx: Context) {
 						messageId: message.message_id,
 						caption: message.caption,
 					});
-				} catch {
+				} catch (error) {
+					const code =
+						error instanceof WebSupportError ? error.code : "attachment_failed";
 					await ctx.api.sendMessage(
 						settings.supportChatId,
 						m.telegram_web_support_attachment_failed(
@@ -627,7 +630,7 @@ async function relayAdministratorMessage(db: D1Database, ctx: Context) {
 									? "zh-CN"
 									: "en-US",
 							},
-						),
+						) + ` (${code})`,
 						{ message_thread_id: message.message_thread_id },
 					);
 				}

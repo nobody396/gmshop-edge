@@ -240,7 +240,9 @@ export async function storeWebAdministratorAttachment(
 		.first<{ id: string; status: string }>();
 	if (existing?.status === "sent") return;
 	if (existing) throw new WebSupportError("attachment_pending", 409);
-	const file = await api.getFile(input.fileId);
+	const file = await api.getFile(input.fileId).catch(() => {
+		throw new WebSupportError("telegram_get_file_failed", 502);
+	});
 	if (
 		!file.file_path ||
 		file.file_path.includes("..") ||
@@ -259,10 +261,17 @@ export async function storeWebAdministratorAttachment(
 			`https://api.telegram.org/file/bot${provider.telegramBotToken}/${file.file_path}`,
 			{ redirect: "error", signal: AbortSignal.timeout(30_000) },
 		);
-		if (!response.ok) throw new Error("download_failed");
+		if (!response.ok)
+			throw new WebSupportError(`telegram_file_http_${response.status}`, 502);
 		bytes = await readBoundedResponseBytes(response, supportFileMaxBytes);
-	} catch {
-		throw new WebSupportError("attachment_failed", 502);
+	} catch (error) {
+		if (error instanceof WebSupportError) throw error;
+		throw new WebSupportError(
+			error instanceof BodyLimitExceededError
+				? "file_size"
+				: "telegram_file_download_failed",
+			502,
+		);
 	}
 	const attachment = {
 		id: crypto.randomUUID(),
@@ -271,8 +280,10 @@ export async function storeWebAdministratorAttachment(
 	const bucket = files();
 	const claim = await reserve(db, conversation, source, attachment);
 	if (Number(claim.meta.changes) !== 1) return;
+	let stage = "file_storage_failed";
 	try {
 		await bucket.put(objectKey(attachment.id), bytes);
+		stage = "reply_storage_failed";
 		await storeWebAdministratorReply(
 			db,
 			conversation,
@@ -289,7 +300,7 @@ export async function storeWebAdministratorAttachment(
 			.prepare("DELETE FROM telegram_web_support_attachments WHERE id=?")
 			.bind(attachment.id)
 			.run();
-		throw new WebSupportError("attachment_failed", 502);
+		throw new WebSupportError(stage, 502);
 	}
 }
 
