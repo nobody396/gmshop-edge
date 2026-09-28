@@ -2011,12 +2011,16 @@
 	"notifications_delivered_at": "收件服务器接收时间",
 	"notifications_status_delivered": "已送达收件服务器",
 	"web_support_attach": "图片 / 文件",
-	"web_support_attachment_hint": "可发送图片和文件，也可粘贴截图。单个附件不超过 10 MB，保存 7 天。请在这里留言，无需添加微信。",
+	"web_support_attachment_hint": "可发送图片和文件，也可粘贴截图。单个附件不超过 10 MB，消息与附件保存 2 天，超时自动清空。",
 	"web_support_attachment_download": "下载",
 	"web_support_attachment_remove": "移除附件",
 	"web_support_attachment_failed": "附件未发送。支持 10 MB 内的 PNG/JPG/WebP/GIF、PDF、TXT/LOG/CSV/JSON、ZIP、DOCX/XLSX，请检查文件或稍后重试。",
 	"web_support_attachment_pending": "附件发送结果尚未确认。请保留当前附件稍后重试确认，不要重新选择发送，以免重复。",
 	"telegram_web_support_attachment_failed": "附件未送达网页。请使用 10 MB 以内的 PNG/JPG/WebP/GIF、PDF、TXT/LOG/CSV/JSON、ZIP、DOCX/XLSX 文件，再确认会话仍然有效。",
 	"telegram_web_support_attachment_unsupported": "网页客服支持文字、图片和文件；暂不支持语音、视频或贴纸。",
-	"web_support_attachment_caption_limit": "附件说明最多 1000 字，长消息请单独发送。原文已保留。"
+	"web_support_attachment_caption_limit": "附件说明最多 1000 字，长消息请单独发送。原文已保留。",
+	"web_support_receive_failed": "接收暂时中断，正在自动重连；请勿重复发送。",
+	"web_support_legacy_unreadable": "部分旧回复无法读取，请客服重发；新回复不受影响。",
+	"web_support_sending_status": "正在发送，等待客服通道确认",
+	"web_support_local_history_failed": "消息已发送，但浏览器本地记录保存失败，请勿重复发送。"
 }

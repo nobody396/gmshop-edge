@@ -16,7 +16,7 @@ const publicKeySchema = z.looseObject({
 export const webSupportConversationSchema = z.object({
 	email: z.string().trim().pipe(z.email().max(254)).optional(),
 	visitorId: z.uuid(),
-	publicKeyJwk: publicKeySchema,
+	publicKeyJwk: publicKeySchema.optional(),
 	fingerprint: z
 		.object({
 			visitorId: z.string().regex(/^[a-f0-9]{16,128}$/i),

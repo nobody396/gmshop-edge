@@ -27,6 +27,7 @@ type AttachmentRow = SupportAttachment & {
 	conversation_id: string;
 	status: string;
 	expires_at: number;
+	created_at: number;
 };
 const objectKey = (id: string) => `web-support/attachments/${id}`;
 function files() {
@@ -197,7 +198,10 @@ export async function downloadWebSupportAttachment(
 		.bind(id, conversation.id)
 		.first<AttachmentRow>();
 	if (!row) throw new WebSupportError("attachment_not_found", 404);
-	if (row.expires_at <= Date.now())
+	if (
+		row.expires_at <= Date.now() ||
+		row.created_at <= Date.now() - supportFileRetentionMs
+	)
 		throw new WebSupportError("attachment_expired", 410);
 	const object = await files().get(objectKey(id));
 	if (!object || !("body" in object))

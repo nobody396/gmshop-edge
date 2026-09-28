@@ -2011,12 +2011,16 @@
 	"notifications_delivered_at": "Recipient server accepted at",
 	"notifications_status_delivered": "Recipient server accepted",
 	"web_support_attach": "Image / file",
-	"web_support_attachment_hint": "Send images or files, or paste a screenshot. Up to 10 MB each, retained for 7 days. Leave your message here; no WeChat required.",
+	"web_support_attachment_hint": "Send images or files, or paste a screenshot. Up to 10 MB each. Messages and attachments expire automatically after 2 days.",
 	"web_support_attachment_download": "Download",
 	"web_support_attachment_remove": "Remove attachment",
 	"web_support_attachment_failed": "Attachment not sent. Use PNG/JPG/WebP/GIF, PDF, TXT/LOG/CSV/JSON, ZIP or DOCX/XLSX up to 10 MB. Check the file or retry later.",
 	"web_support_attachment_pending": "Attachment delivery is unconfirmed. Keep this attachment and retry to check its status; do not reselect and send another copy.",
 	"telegram_web_support_attachment_failed": "Attachment was not delivered to the website. Use PNG/JPG/WebP/GIF, PDF, TXT/LOG/CSV/JSON, ZIP or DOCX/XLSX up to 10 MB, and check that the conversation is active.",
 	"telegram_web_support_attachment_unsupported": "Web support accepts text, images and files. Voice messages, video and stickers are not supported.",
-	"web_support_attachment_caption_limit": "Attachment captions are limited to 1,000 characters. Send longer messages separately. Your draft is preserved."
+	"web_support_attachment_caption_limit": "Attachment captions are limited to 1,000 characters. Send longer messages separately. Your draft is preserved.",
+	"web_support_receive_failed": "Receiving interrupted. Reconnecting automatically; do not resend.",
+	"web_support_legacy_unreadable": "Some older replies could not be read. Ask support to resend them; new replies are unaffected.",
+	"web_support_sending_status": "Sending; waiting for support delivery confirmation",
+	"web_support_local_history_failed": "Message sent, but browser history could not be saved. Do not resend."
 }

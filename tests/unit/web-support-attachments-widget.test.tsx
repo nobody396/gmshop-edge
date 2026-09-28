@@ -19,7 +19,7 @@ vi.mock("#/features/telegram/web-support-storage", () => ({
 	],
 	getWebSupportIdentity: vi.fn(),
 	decryptWebSupportReply: vi.fn(),
-	saveWebSupportMessage: vi.fn(),
+	saveWebSupportMessage: vi.fn(async () => {}),
 	setWebSupportConversationId: vi.fn(),
 }));
 vi.mock("#/paraglide/messages", () => ({
@@ -183,4 +183,113 @@ it("pastes a screenshot into the composer without auto-sending", async () => {
 	expect(
 		fetchMock.mock.calls.filter((call) => call[1]?.method === "POST"),
 	).toHaveLength(0);
+});
+
+it("does not let an undecryptable legacy reply block the next reply", async () => {
+	const { decryptWebSupportReply } = await import(
+		"#/features/telegram/web-support-storage"
+	);
+	vi.mocked(decryptWebSupportReply).mockRejectedValueOnce(
+		new DOMException("stale key", "OperationError"),
+	);
+	fetchMock.mockImplementation(async () => ({
+		ok: true,
+		json: async () => ({
+			conversationId: "session-v2",
+			status: "active",
+			replies: [
+				{
+					id: "old-reply",
+					sequence: 1,
+					algorithm: "RSA-OAEP-256+A256GCM",
+					created_at: Date.now(),
+				},
+				{
+					id: "new-reply",
+					sequence: 2,
+					text: "new reply is visible",
+					created_at: Date.now(),
+				},
+			],
+		}),
+	}));
+	await act(async () => window.dispatchEvent(new Event("focus")));
+	expect(document.body.textContent).toContain("new reply is visible");
+	expect(document.body.textContent).toContain("web_support_legacy_unreadable");
+	expect(
+		fetchMock.mock.calls.filter((call) =>
+			String(call[0]).includes("replies/ack"),
+		),
+	).toHaveLength(0);
+	await act(async () => window.dispatchEvent(new Event("focus")));
+	expect(
+		document.body.textContent?.match(/new reply is visible/g),
+	).toHaveLength(1);
+});
+
+it("shows sending feedback immediately and permits drafting without clearing the new draft", async () => {
+	let finish: () => void = () => {};
+	fetchMock.mockImplementation((_url: string, init?: RequestInit) =>
+		init?.method === "POST"
+			? new Promise((resolve) => {
+					finish = () =>
+						resolve({ ok: true, json: async () => ({ sent: true }) });
+				})
+			: Promise.resolve({
+					ok: true,
+					json: async () => ({
+						conversationId: "session-v2",
+						status: "active",
+						replies: [],
+					}),
+				}),
+	);
+	const composer = document.querySelector("textarea");
+	const setter = Object.getOwnPropertyDescriptor(
+		HTMLTextAreaElement.prototype,
+		"value",
+	)?.set;
+	if (!composer || !setter) throw new Error("Missing composer");
+	await act(async () => {
+		setter.call(composer, "first message");
+		composer.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	await act(async () => button("web_support_send").click());
+	expect(document.body.textContent).toContain("web_support_sending_status");
+	expect(composer.disabled).toBe(false);
+	await act(async () => {
+		setter.call(composer, "next draft");
+		composer.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	await act(async () => finish());
+	expect(composer.value).toBe("next draft");
+	expect(button("web_support_send").disabled).toBe(false);
+	expect(document.body.textContent).not.toContain("web_support_sending_status");
+});
+
+it("does not keep Send disabled while browser history persistence is slow", async () => {
+	const { saveWebSupportMessage } = await import(
+		"#/features/telegram/web-support-storage"
+	);
+	vi.mocked(saveWebSupportMessage).mockImplementationOnce(
+		() => new Promise<void>(() => {}),
+	);
+	const composer = document.querySelector("textarea");
+	const setter = Object.getOwnPropertyDescriptor(
+		HTMLTextAreaElement.prototype,
+		"value",
+	)?.set;
+	if (!composer || !setter) throw new Error("Missing composer");
+	await act(async () => {
+		setter.call(composer, "cache should not block");
+		composer.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	await act(async () => button("web_support_send").click());
+	expect(document.body.textContent).toContain("cache should not block");
+	expect(document.body.textContent).not.toContain("web_support_sending_status");
+	await act(async () => {
+		setter.call(composer, "next message");
+		composer.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	expect(button("web_support_send").disabled).toBe(false);
 });

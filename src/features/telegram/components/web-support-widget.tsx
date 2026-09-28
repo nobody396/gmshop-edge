@@ -23,6 +23,7 @@ import {
 	supportAttachmentUrl,
 	supportFileAccept,
 	supportFileMaxBytes,
+	supportFileRetentionMs,
 } from "../web-support-attachments";
 import {
 	webSupportOpenEvent,
@@ -40,6 +41,7 @@ import {
 type SupportStatus = {
 	enabled: boolean;
 	hasConversation: boolean;
+	conversationId?: string | null;
 	status: string | null;
 };
 
@@ -68,6 +70,17 @@ export function WebSupportWidget() {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const lastSequence = useRef(0);
+	const conversationId = useRef<string | null>(null);
+	const polling = useRef(false);
+	const pendingTextId = useRef<{ text: string; id: string } | null>(null);
+	const [receiveError, setReceiveError] = useState<string | null>(null);
+	const [sendingPreview, setSendingPreview] = useState<{
+		text: string;
+		name?: string;
+		url?: string;
+		startedAt: number;
+	} | null>(null);
+	const [sendingSeconds, setSendingSeconds] = useState(0);
 	const messagesViewportRef = useRef<HTMLDivElement>(null);
 	const sessionEmail = session.data?.user?.email ?? "";
 
@@ -82,11 +95,15 @@ export function WebSupportWidget() {
 				setAvailable(result.enabled || result.hasConversation);
 				setSupportEnabled(result.enabled);
 				setStatus(result.status);
-				setMessages(localMessages);
-				lastSequence.current = Math.max(
-					0,
-					...localMessages.map((message) => message.sequence ?? 0),
+				conversationId.current = result.conversationId ?? null;
+				setMessages(
+					localMessages.filter(
+						(message) =>
+							!message.conversationId ||
+							message.conversationId === result.conversationId,
+					),
 				);
+				lastSequence.current = 0;
 			})
 			.catch(() => undefined);
 	}, []);
@@ -102,55 +119,128 @@ export function WebSupportWidget() {
 	}, []);
 
 	const poll = useCallback(async () => {
-		if (!open || !["active", "closing"].includes(status ?? "")) return;
-		const response = await fetch(
-			`/api/support/web/current?after=${lastSequence.current}`,
-			{ credentials: "include" },
-		);
-		if (!response.ok) return;
-		const result = (await response.json()) as {
-			status: string;
-			replies: Array<{
-				id: string;
-				sequence: number;
-				algorithm: string;
-				wrapped_key: string;
-				iv: string;
-				ciphertext: string;
-				created_at: number;
-			}>;
-		};
-		setStatus(result.status);
-		if (result.replies.length === 0) return;
-		const identity = await getWebSupportIdentity();
-		if (!identity.conversationId) return;
-		const received: WebSupportLocalMessage[] = [];
-		for (const reply of result.replies) {
-			const message: WebSupportLocalMessage = {
-				id: reply.id,
-				role: "support",
-				...decodeSupportReply(
-					await decryptWebSupportReply(
-						identity,
-						identity.conversationId,
-						reply,
-					),
-				),
-				createdAt: reply.created_at,
-				sequence: reply.sequence,
+		if (
+			!open ||
+			polling.current ||
+			!["active", "closing"].includes(status ?? "")
+		)
+			return;
+		polling.current = true;
+		try {
+			const response = await fetch(
+				`/api/support/web/current?version=2&after=${lastSequence.current}`,
+				{ credentials: "include", signal: AbortSignal.timeout(15_000) },
+			);
+			if (!response.ok) throw new Error("receive_failed");
+			const result = (await response.json()) as {
+				conversationId: string;
+				status: string;
+				replies: Array<{
+					id: string;
+					sequence: number;
+					text?: string;
+					algorithm: string;
+					wrapped_key: string;
+					iv: string;
+					ciphertext: string;
+					created_at: number;
+				}>;
 			};
-			await saveWebSupportMessage(message);
-			received.push(message);
-			lastSequence.current = Math.max(lastSequence.current, reply.sequence);
+			if (
+				conversationId.current &&
+				conversationId.current !== result.conversationId
+			) {
+				lastSequence.current = 0;
+				conversationId.current = result.conversationId;
+				return;
+			}
+			conversationId.current = result.conversationId;
+			setStatus(result.status);
+			const received: WebSupportLocalMessage[] = [];
+			let skipped = false;
+			for (const reply of result.replies) {
+				let text = reply.text;
+				if (typeof text !== "string") {
+					try {
+						text = await decryptWebSupportReply(
+							await getWebSupportIdentity(),
+							result.conversationId,
+							reply,
+						);
+					} catch {
+						skipped = true;
+						lastSequence.current = Math.max(
+							lastSequence.current,
+							reply.sequence,
+						);
+						continue;
+					}
+				}
+				const message: WebSupportLocalMessage = {
+					id: reply.id,
+					role: "support",
+					...decodeSupportReply(text),
+					createdAt: reply.created_at,
+					sequence: reply.sequence,
+					conversationId: result.conversationId,
+				};
+				void saveWebSupportMessage(message).catch(() => undefined);
+				received.push(message);
+				lastSequence.current = Math.max(lastSequence.current, reply.sequence);
+			}
+			if (received.length)
+				setMessages((current) => {
+					const merged = new Map(
+						current
+							.filter(
+								(message) =>
+									message.createdAt > Date.now() - supportFileRetentionMs &&
+									(!message.conversationId ||
+										message.conversationId === result.conversationId),
+							)
+							.map((message) => [message.id, message]),
+					);
+					for (const message of received) merged.set(message.id, message);
+					return [...merged.values()].sort((a, b) => a.createdAt - b.createdAt);
+				});
+			if (skipped) setReceiveError(m.web_support_legacy_unreadable());
+			else
+				setReceiveError((current) =>
+					current === m.web_support_receive_failed() ? null : current,
+				);
+		} catch {
+			setReceiveError(m.web_support_receive_failed());
+		} finally {
+			polling.current = false;
 		}
-		setMessages((current) => [...current, ...received]);
-		await fetch("/api/support/web/replies/ack", {
-			method: "POST",
-			credentials: "include",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ ids: result.replies.map((reply) => reply.id) }),
-		});
 	}, [open, status]);
+
+	useEffect(() => {
+		const timer = window.setInterval(() => {
+			void loadWebSupportMessages();
+			setMessages((current) =>
+				current.filter(
+					(message) => message.createdAt > Date.now() - supportFileRetentionMs,
+				),
+			);
+		}, 60_000);
+		return () => window.clearInterval(timer);
+	}, []);
+	useEffect(() => {
+		if (!sendingPreview) return;
+		setSendingSeconds(0);
+		const timer = window.setInterval(
+			() =>
+				setSendingSeconds(
+					Math.floor((Date.now() - sendingPreview.startedAt) / 1000),
+				),
+			1000,
+		);
+		return () => {
+			window.clearInterval(timer);
+			if (sendingPreview.url) URL.revokeObjectURL(sendingPreview.url);
+		};
+	}, [sendingPreview]);
 
 	useEffect(() => {
 		void poll();
@@ -175,14 +265,18 @@ export function WebSupportWidget() {
 	}, [open, poll]);
 
 	useEffect(() => {
-		if (!open || (messages.length === 0 && status !== "closed")) return;
+		if (
+			!open ||
+			(messages.length === 0 && status !== "closed" && !sendingPreview)
+		)
+			return;
 		const frame = window.requestAnimationFrame(() => {
 			const viewport = messagesViewportRef.current;
 			if (!viewport) return;
 			viewport.scrollTop = viewport.scrollHeight;
 		});
 		return () => window.cancelAnimationFrame(frame);
-	}, [messages.length, open, status]);
+	}, [messages.length, open, status, sendingPreview]);
 
 	if (!available) return null;
 
@@ -223,6 +317,8 @@ export function WebSupportWidget() {
 			if (!response.ok) throw new Error("start_failed");
 			const result = (await response.json()) as { id: string; status: string };
 			await setWebSupportConversationId(result.id);
+			conversationId.current = result.id;
+			lastSequence.current = 0;
 			setStatus(result.status);
 		} catch {
 			setError(m.web_support_failed());
@@ -244,8 +340,19 @@ export function WebSupportWidget() {
 		}
 		setBusy(true);
 		setError(null);
+		if (!attachment && pendingTextId.current?.text !== value)
+			pendingTextId.current = { text: value, id: crypto.randomUUID() };
+		setSendingPreview({
+			text: value,
+			name: attachment?.file.name,
+			url: attachment?.file.type.startsWith("image/")
+				? URL.createObjectURL(attachment.file)
+				: undefined,
+			startedAt: Date.now(),
+		});
 		const message: WebSupportLocalMessage = {
-			id: crypto.randomUUID(),
+			id: attachment?.id ?? pendingTextId.current?.id ?? crypto.randomUUID(),
+			conversationId: conversationId.current ?? undefined,
 			role: "customer",
 			text: value,
 			createdAt: Date.now(),
@@ -261,6 +368,7 @@ export function WebSupportWidget() {
 					method: "POST",
 					credentials: "include",
 					body: form,
+					signal: AbortSignal.timeout(65_000),
 				});
 			} else {
 				response = await fetch("/api/support/web/messages", {
@@ -268,6 +376,7 @@ export function WebSupportWidget() {
 					credentials: "include",
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify({ clientMessageId: message.id, text: value }),
+					signal: AbortSignal.timeout(35_000),
 				});
 			}
 			const result = (await response.json()) as {
@@ -286,10 +395,15 @@ export function WebSupportWidget() {
 			}
 			if (attachment)
 				message.attachment = supportAttachmentSchema.parse(result.attachment);
-			await saveWebSupportMessage(message);
+			void saveWebSupportMessage(message).catch(() =>
+				setError(m.web_support_local_history_failed()),
+			);
 			setMessages((current) => [...current, message]);
-			setText("");
-			setAttachment(null);
+			setText((current) => (current.trim() === value ? "" : current));
+			setAttachment((current) =>
+				current?.id === attachment?.id ? null : current,
+			);
+			pendingTextId.current = null;
 		} catch {
 			setError(
 				attachment
@@ -298,6 +412,7 @@ export function WebSupportWidget() {
 			);
 		} finally {
 			setBusy(false);
+			setSendingPreview(null);
 		}
 	}
 
@@ -384,6 +499,11 @@ export function WebSupportWidget() {
 										aria-label={m.web_support_email()}
 									/>
 								) : null}
+								{receiveError ? (
+									<p className="px-4 text-xs text-amber-600" aria-live="polite">
+										{receiveError}
+									</p>
+								) : null}
 								{error ? (
 									<p className="text-sm text-destructive" role="alert">
 										{error}
@@ -460,12 +580,43 @@ export function WebSupportWidget() {
 										</p>
 									</div>
 								))}
+								{sendingPreview ? (
+									<div
+										className="ml-auto w-fit max-w-[85%] space-y-2 rounded-2xl bg-primary/10 p-3 text-sm"
+										aria-live="polite"
+									>
+										{sendingPreview.url ? (
+											<img
+												src={sendingPreview.url}
+												alt={sendingPreview.name ?? ""}
+												className="max-h-32 max-w-full rounded-lg object-contain"
+											/>
+										) : null}
+										{sendingPreview.name ? (
+											<p className="break-all">{sendingPreview.name}</p>
+										) : null}
+										{sendingPreview.text ? (
+											<p className="whitespace-pre-wrap break-words">
+												{sendingPreview.text}
+											</p>
+										) : null}
+										<p className="flex items-center gap-2 text-xs">
+											<LoaderCircle className="size-4 animate-spin" />
+											{m.web_support_sending_status()} · {sendingSeconds}s
+										</p>
+									</div>
+								) : null}
 								{status === "closed" ? (
 									<p className="text-center text-sm text-muted-foreground">
 										{m.web_support_closed()}
 									</p>
 								) : null}
 							</div>
+							{receiveError ? (
+								<p className="px-4 text-xs text-amber-600" aria-live="polite">
+									{receiveError}
+								</p>
+							) : null}
 							{error ? (
 								<p className="px-4 text-sm text-destructive" role="alert">
 									{error}
@@ -529,7 +680,6 @@ export function WebSupportWidget() {
 										) : null}
 									</div>
 									<Textarea
-										disabled={busy}
 										allowClear={false}
 										className="min-h-20 max-h-32 resize-none rounded-none border-0 bg-transparent px-4 py-3 pr-14 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
 										maxLength={attachment ? 1000 : 3500}
@@ -554,7 +704,11 @@ export function WebSupportWidget() {
 												disabled={busy || (!text.trim() && !attachment)}
 												aria-label={m.web_support_send()}
 											>
-												<Send />
+												{busy ? (
+													<LoaderCircle className="animate-spin" />
+												) : (
+													<Send />
+												)}
 											</Button>
 										}
 									/>
