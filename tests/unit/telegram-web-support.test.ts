@@ -13,7 +13,7 @@ import {
 } from "#/features/telegram/web-support-contract";
 
 describe("Telegram web support", () => {
-	it("shows the one-minute WeChat fallback without a universal order-CDK handoff", () => {
+	it("keeps customer communication in web support with attachments", () => {
 		const source = readFileSync(
 			new URL(
 				"../../src/features/telegram/components/web-support-widget.tsx",
@@ -21,11 +21,10 @@ describe("Telegram web support", () => {
 			),
 			"utf8",
 		);
-		expect(source).not.toContain("m.web_support_order_notice()");
-		expect(source).toContain("m.web_support_wechat_fallback()");
-		expect(source).toContain("<DialogTrigger asChild>");
-		expect(source).toContain("src={wechatQrUrl}");
-		expect(source).not.toContain("href={wechatQrUrl}");
+		expect(source).not.toContain("web_support_wechat_fallback");
+		expect(source).not.toContain("wechatQrUrl");
+		expect(source).toContain("m.web_support_attach()");
+		expect(source).toContain("onPaste=");
 	});
 
 	it("checks for administrator replies within one second", () => {

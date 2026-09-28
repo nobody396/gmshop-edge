@@ -25,6 +25,7 @@ import {
 	findWebConversationByTopic,
 	storeWebAdministratorReply,
 } from "./web-support";
+import { storeWebAdministratorAttachment } from "./web-support-attachments";
 
 type TelegramUser = {
 	id: number;
@@ -604,11 +605,46 @@ async function relayAdministratorMessage(db: D1Database, ctx: Context) {
 		});
 		if (!limit.allowed) return;
 		if (!message.text) {
-			await ctx.api.sendMessage(
-				settings.supportChatId,
-				"Web support currently supports text replies only.",
-				{ message_thread_id: message.message_thread_id },
-			);
+			const photo = message.photo?.at(-1);
+			const document = message.document;
+			const attachment = photo ?? document;
+			if (attachment) {
+				try {
+					await storeWebAdministratorAttachment(db, ctx.api, webConversation, {
+						fileId: attachment.file_id,
+						name: document?.file_name ?? `photo-${message.message_id}.jpg`,
+						size: attachment.file_size,
+						messageId: message.message_id,
+						caption: message.caption,
+					});
+				} catch {
+					await ctx.api.sendMessage(
+						settings.supportChatId,
+						m.telegram_web_support_attachment_failed(
+							{},
+							{
+								locale: ctx.from.language_code?.startsWith("zh")
+									? "zh-CN"
+									: "en-US",
+							},
+						),
+						{ message_thread_id: message.message_thread_id },
+					);
+				}
+			} else {
+				await ctx.api.sendMessage(
+					settings.supportChatId,
+					m.telegram_web_support_attachment_unsupported(
+						{},
+						{
+							locale: ctx.from.language_code?.startsWith("zh")
+								? "zh-CN"
+								: "en-US",
+						},
+					),
+					{ message_thread_id: message.message_thread_id },
+				);
+			}
 			return;
 		}
 		await storeWebAdministratorReply(db, webConversation, message.text);

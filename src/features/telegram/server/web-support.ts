@@ -35,7 +35,7 @@ export class WebSupportError extends Error {
 	}
 }
 
-type WebConversation = {
+export type WebConversation = {
 	id: string;
 	support_chat_id: string;
 	message_thread_id: number | null;
@@ -346,6 +346,7 @@ export async function storeWebAdministratorReply(
 	db: D1Database,
 	conversation: WebConversation,
 	message: string,
+	attachmentId?: string,
 ) {
 	const reserved = await db
 		.prepare(
@@ -364,6 +365,15 @@ export async function storeWebAdministratorReply(
 	);
 	const now = Date.now();
 	await db.batch([
+		...(attachmentId
+			? [
+					db
+						.prepare(
+							"UPDATE telegram_web_support_attachments SET status='sent' WHERE id=? AND conversation_id=?",
+						)
+						.bind(attachmentId, conversation.id),
+				]
+			: []),
 		db
 			.prepare(
 				`INSERT INTO telegram_web_support_replies
@@ -432,7 +442,7 @@ async function authenticatedConversation(db: D1Database, request: Request) {
 		.first<WebConversation>();
 }
 
-async function requireConversation(db: D1Database, request: Request) {
+export async function requireConversation(db: D1Database, request: Request) {
 	const conversation = await authenticatedConversation(db, request);
 	if (!conversation) throw new WebSupportError("conversation_not_found", 401);
 	return conversation;

@@ -1,9 +1,11 @@
+import type { SupportAttachment } from "./web-support-attachments";
 export type WebSupportLocalMessage = {
 	id: string;
 	role: "customer" | "support";
 	text: string;
 	createdAt: number;
 	sequence?: number;
+	attachment?: SupportAttachment;
 };
 
 type WebSupportIdentity = {
