@@ -51,6 +51,8 @@ describe("homepage self-service recharge", () => {
 		expect(home).not.toContain('href="#self-service-recharge"');
 		expect(home).not.toContain("store_self_service_hero_action");
 		expect(home).not.toContain("store-recharge-breathe");
-		expect(home).toContain("{hasFilters ? null : <SelfServiceRecharge />}");
+		expect(home).toMatch(
+			/hasFilters \? null : \(\s*<>\s*<BuyingGuide \/>\s*<SelfServiceRecharge \/>/,
+		);
 	});
 });

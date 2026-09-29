@@ -24,6 +24,7 @@ import {
 import type { storefrontListSchema } from "#/features/storefront/schema";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
+import { BuyingGuide } from "./buying-guide";
 import { storefrontCatalogQueryOptions } from "./catalog-query";
 import { SelfServiceRecharge } from "./self-service-recharge";
 
@@ -152,7 +153,12 @@ export function HomePage({
 					</Select>
 				</div>
 			</section>
-			{hasFilters ? null : <SelfServiceRecharge />}
+			{hasFilters ? null : (
+				<>
+					<BuyingGuide />
+					<SelfServiceRecharge />
+				</>
+			)}
 			<section className="container px-4 pb-16">
 				<div className="mb-6 flex min-h-[3.25rem] items-center justify-between gap-4">
 					<div>
