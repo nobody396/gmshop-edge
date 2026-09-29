@@ -20,6 +20,7 @@ import {
 	resolveFeishuAlertCredentials,
 	sendFeishuText,
 } from "./feishu-alerts";
+import { supportEmailKeyboard } from "./manual-support-email";
 import { telegramDataKeyId } from "./secret";
 import { telegramRuntime } from "./sync";
 
@@ -164,7 +165,10 @@ export async function createWebSupportConversation(
 		await api.sendMessage(
 			settings.supportChatId,
 			formatDiagnostics(request, email, input, repeated),
-			{ message_thread_id: topic.message_thread_id },
+			{
+				message_thread_id: topic.message_thread_id,
+				reply_markup: supportEmailKeyboard(id, input.diagnostics.locale),
+			},
 		);
 		return { id, status: "active" as const, sessionToken };
 	} catch (error) {
@@ -284,6 +288,7 @@ export async function sendWebSupportMessage(
 	try {
 		await api.sendMessage(conversation.support_chat_id, `💬 ${input.text}`, {
 			message_thread_id: conversation.message_thread_id,
+			reply_markup: supportEmailKeyboard(conversation.id),
 		});
 		await touchWebConversation(db, conversation.id);
 		scheduleFeishuWebSupportAlert(db, conversation.topic_name, input.text);

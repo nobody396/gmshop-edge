@@ -114,8 +114,16 @@ export function WebSupportWidget() {
 
 	useEffect(() => {
 		const openSupport = () => setOpen(true);
+		const openFromEmail = () => {
+			if (window.location.hash === "#support") setOpen(true);
+		};
+		openFromEmail();
+		window.addEventListener("hashchange", openFromEmail);
 		window.addEventListener(webSupportOpenEvent, openSupport);
-		return () => window.removeEventListener(webSupportOpenEvent, openSupport);
+		return () => {
+			window.removeEventListener(webSupportOpenEvent, openSupport);
+			window.removeEventListener("hashchange", openFromEmail);
+		};
 	}, []);
 
 	const poll = useCallback(async () => {
@@ -475,6 +483,8 @@ export function WebSupportWidget() {
 						</Button>
 					</header>
 					<p className="border-b bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+						{m.web_support_reply_notice()}
+						<br />
 						{m.web_support_attachment_hint()}
 					</p>
 					{!["active", "closing", "closed"].includes(status ?? "") ? (

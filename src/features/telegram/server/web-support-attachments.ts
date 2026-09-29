@@ -15,6 +15,7 @@ import {
 	supportFileRetentionMs,
 	validateSupportFile,
 } from "../web-support-attachments";
+import { supportEmailKeyboard } from "./manual-support-email";
 import { telegramRuntime } from "./sync";
 import {
 	requireConversation,
@@ -155,7 +156,11 @@ export async function uploadWebSupportAttachment(
 		}).sendDocument(
 			conversation.support_chat_id,
 			new InputFile(bytes, attachment.name),
-			{ message_thread_id: conversation.message_thread_id, caption },
+			{
+				message_thread_id: conversation.message_thread_id,
+				caption,
+				reply_markup: supportEmailKeyboard(conversation.id),
+			},
 		);
 		await db.batch([
 			db
