@@ -369,6 +369,7 @@ export function WebSupportWidget() {
 			let response: Response;
 			if (attachment) {
 				const form = new FormData();
+				form.set("locale", getLocale());
 				form.set("file", attachment.file);
 				form.set("clientMessageId", attachment.id);
 				form.set("text", value);
@@ -383,7 +384,11 @@ export function WebSupportWidget() {
 					method: "POST",
 					credentials: "include",
 					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ clientMessageId: message.id, text: value }),
+					body: JSON.stringify({
+						clientMessageId: message.id,
+						text: value,
+						locale: getLocale(),
+					}),
 					signal: AbortSignal.timeout(35_000),
 				});
 			}

@@ -52,13 +52,14 @@ export async function authorizeSupportEmailTopic(
 		throw new DomainError("forbidden", 403, "Support administrator required");
 	const conversation = await db
 		.prepare(
-			`SELECT c.id,c.email_encrypted,u.preferred_locale FROM telegram_web_support_conversations c LEFT JOIN users u ON u.id=c.user_id WHERE c.support_chat_id=? AND c.message_thread_id=? LIMIT 1`,
+			`SELECT c.id,c.email_encrypted,c.locale,u.preferred_locale FROM telegram_web_support_conversations c LEFT JOIN users u ON u.id=c.user_id WHERE c.support_chat_id=? AND c.message_thread_id=? LIMIT 1`,
 		)
 		.bind(input.chatId, input.threadId)
 		.first<{
 			id: string;
 			email_encrypted: string;
 			preferred_locale: string | null;
+			locale: "zh-CN" | "en-US" | null;
 		}>();
 	if (
 		!conversation ||
@@ -116,7 +117,9 @@ export async function requestManualSupportEmail(
 		runtime.dataEncryptionSecret,
 		"telegram-web-support-email",
 	);
-	const locale = conversation.preferred_locale === "en-US" ? "en-US" : "zh-CN";
+	const locale =
+		conversation.locale ??
+		(conversation.preferred_locale === "en-US" ? "en-US" : "zh-CN");
 	const idempotencyKey = `support-manual-email:${conversation.id}:${reply.sequence}`;
 	const subject =
 		locale === "zh-CN"

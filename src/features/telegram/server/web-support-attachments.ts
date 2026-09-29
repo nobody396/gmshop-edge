@@ -20,6 +20,7 @@ import { telegramRuntime } from "./sync";
 import {
 	requireConversation,
 	storeWebAdministratorReply,
+	updateWebSupportLocale,
 	type WebConversation,
 	WebSupportError,
 } from "./web-support";
@@ -102,6 +103,11 @@ export async function uploadWebSupportAttachment(
 		);
 	}
 	const clientId = z.uuid().parse(form.get("clientMessageId"));
+	const locale = z
+		.enum(["zh-CN", "en-US"])
+		.optional()
+		.parse(form.get("locale") ?? undefined);
+	await updateWebSupportLocale(db, conversation.id, locale);
 	const caption = z
 		.string()
 		.trim()

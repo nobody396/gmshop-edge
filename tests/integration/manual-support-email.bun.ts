@@ -365,3 +365,54 @@ test("real bot reply does not email; notify only shows button; callback enqueues
 	expect(await count("notification_deliveries")).toBe(1);
 	expect(botMessages.at(-1)?.text).toContain("已加入邮件发送队列");
 });
+
+test("customer website language overrides account default and staff language", async () => {
+	await db
+		.prepare(
+			"INSERT INTO users (id,name,email,preferred_locale) VALUES ('locale-user','Test','locale-test@example.com','en-US')",
+		)
+		.run();
+	await db
+		.prepare(
+			"UPDATE telegram_web_support_conversations SET user_id='locale-user' WHERE id=?",
+		)
+		.bind(cid)
+		.run();
+	const { updateWebSupportLocale } = await import(
+		"../../src/features/telegram/server/web-support"
+	);
+	for (const [index, locale] of (["zh-CN", "en-US"] as const).entries()) {
+		await updateWebSupportLocale(db, cid, locale);
+		await reply(index + 1);
+		const result = await requestManualSupportEmail(db, api, input);
+		const row = await db
+			.prepare(
+				"SELECT locale,message_encrypted FROM notification_deliveries WHERE id=?",
+			)
+			.bind(result.id)
+			.first<{ locale: string; message_encrypted: string }>();
+		expect(row?.locale).toBe(locale);
+		const message = JSON.parse(
+			await decryptNotificationMessage(row?.message_encrypted ?? "", secret),
+		);
+		expect(message.subject).toBe(
+			locale === "zh-CN"
+				? "老实人AI VIP：客服已回复你的咨询"
+				: "LaoshirenAI VIP: support has replied",
+		);
+		expect(message.text).toContain(
+			locale === "zh-CN" ? "请返回网页继续沟通" : "Return to the website",
+		);
+	}
+	await updateWebSupportLocale(db, cid, undefined);
+	expect(
+		(
+			await db
+				.prepare(
+					"SELECT locale FROM telegram_web_support_conversations WHERE id=?",
+				)
+				.bind(cid)
+				.first<{ locale: string }>()
+		)?.locale,
+	).toBe("en-US");
+});
