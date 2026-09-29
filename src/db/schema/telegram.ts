@@ -98,6 +98,7 @@ export const telegramWebSupportConversations = sqliteTable(
 		fingerprintVersion: text("fingerprint_version"),
 		fingerprintKeyId: text("fingerprint_key_id"),
 		publicKeyJwk: text("public_key_jwk").notNull(),
+		locale: text("locale", { enum: ["zh-CN", "en-US"] }),
 		messageThreadId: integer("message_thread_id"),
 		topicName: text("topic_name"),
 		status: text("status", {

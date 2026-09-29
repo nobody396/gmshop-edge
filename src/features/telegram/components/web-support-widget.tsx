@@ -114,8 +114,16 @@ export function WebSupportWidget() {
 
 	useEffect(() => {
 		const openSupport = () => setOpen(true);
+		const openFromEmail = () => {
+			if (window.location.hash === "#support") setOpen(true);
+		};
+		openFromEmail();
+		window.addEventListener("hashchange", openFromEmail);
 		window.addEventListener(webSupportOpenEvent, openSupport);
-		return () => window.removeEventListener(webSupportOpenEvent, openSupport);
+		return () => {
+			window.removeEventListener(webSupportOpenEvent, openSupport);
+			window.removeEventListener("hashchange", openFromEmail);
+		};
 	}, []);
 
 	const poll = useCallback(async () => {
@@ -361,6 +369,7 @@ export function WebSupportWidget() {
 			let response: Response;
 			if (attachment) {
 				const form = new FormData();
+				form.set("locale", getLocale());
 				form.set("file", attachment.file);
 				form.set("clientMessageId", attachment.id);
 				form.set("text", value);
@@ -375,7 +384,11 @@ export function WebSupportWidget() {
 					method: "POST",
 					credentials: "include",
 					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ clientMessageId: message.id, text: value }),
+					body: JSON.stringify({
+						clientMessageId: message.id,
+						text: value,
+						locale: getLocale(),
+					}),
 					signal: AbortSignal.timeout(35_000),
 				});
 			}
@@ -475,6 +488,8 @@ export function WebSupportWidget() {
 						</Button>
 					</header>
 					<p className="border-b bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+						{m.web_support_reply_notice()}
+						<br />
 						{m.web_support_attachment_hint()}
 					</p>
 					{!["active", "closing", "closed"].includes(status ?? "") ? (

@@ -738,7 +738,7 @@
 	"store_payment_price_fee_included": "Final price",
 	"store_support": "Support",
 	"store_support_title": "Contact LaoshirenAI",
-	"store_support_description": "Choose web chat, Telegram group/private chat, or WeChat.",
+	"store_support_description": "Choose web chat, the Telegram group, or private Telegram support.",
 	"store_support_online": "Contact support online",
 	"store_support_online_description": "Start a live web conversation and receive replies here",
 	"store_delivery_ticker": "24/7 automatic top-up and delivery — order directly｜If a product is out of stock, join the group and ask us｜For all after-sales questions, use the customer support button on this page. If there is no reply, we are probably asleep and will respond as soon as we wake up. Thank you for understanding",
@@ -2022,5 +2022,13 @@
 	"web_support_receive_failed": "Receiving interrupted. Reconnecting automatically; do not resend.",
 	"web_support_legacy_unreadable": "Some older replies could not be read. Ask support to resend them; new replies are unaffected.",
 	"web_support_sending_status": "Sending; waiting for support delivery confirmation",
-	"web_support_local_history_failed": "Message sent, but browser history could not be saved. Do not resend."
+	"web_support_local_history_failed": "Message sent, but browser history could not be saved. Do not resend.",
+	"web_support_reply_notice": "Support will reply when they see your message. If a reply is delayed, check your contact email for a reminder to return to the website after support replies.",
+	"telegram_web_support_email_button": "Notify customer by email (manual)",
+	"telegram_web_support_email_prompt": "After replying, use the button below to email a reminder. Each latest reply can be notified once. Replies alone never send email.",
+	"telegram_web_support_email_queued": "Email reminder queued. Provider acceptance does not confirm inbox delivery.",
+	"telegram_web_support_email_duplicate": "This reply already has a notification record. No duplicate was sent.",
+	"telegram_web_support_email_failed": "No email reminder was created. Check administrator access, a recent reply in this topic, and the approved email channel.",
+	"telegram_web_support_email_suppressed": "This recipient cannot receive this notification. The email was suppressed, not sent.",
+	"notifications_event_support_reply_manual": "Support reply reminder (manual)"
 }

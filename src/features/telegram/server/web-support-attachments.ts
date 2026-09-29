@@ -15,10 +15,12 @@ import {
 	supportFileRetentionMs,
 	validateSupportFile,
 } from "../web-support-attachments";
+import { supportEmailKeyboard } from "./manual-support-email";
 import { telegramRuntime } from "./sync";
 import {
 	requireConversation,
 	storeWebAdministratorReply,
+	updateWebSupportLocale,
 	type WebConversation,
 	WebSupportError,
 } from "./web-support";
@@ -101,6 +103,11 @@ export async function uploadWebSupportAttachment(
 		);
 	}
 	const clientId = z.uuid().parse(form.get("clientMessageId"));
+	const locale = z
+		.enum(["zh-CN", "en-US"])
+		.optional()
+		.parse(form.get("locale") ?? undefined);
+	await updateWebSupportLocale(db, conversation.id, locale);
 	const caption = z
 		.string()
 		.trim()
@@ -155,7 +162,11 @@ export async function uploadWebSupportAttachment(
 		}).sendDocument(
 			conversation.support_chat_id,
 			new InputFile(bytes, attachment.name),
-			{ message_thread_id: conversation.message_thread_id, caption },
+			{
+				message_thread_id: conversation.message_thread_id,
+				caption,
+				reply_markup: supportEmailKeyboard(conversation.id),
+			},
 		);
 		await db.batch([
 			db

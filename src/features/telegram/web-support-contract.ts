@@ -33,6 +33,7 @@ export const webSupportConversationSchema = z.object({
 });
 
 export const webSupportMessageSchema = z.object({
+	locale: z.enum(["zh-CN", "en-US"]).optional(),
 	clientMessageId: z.uuid(),
 	text: z.string().trim().min(1).max(3500),
 });

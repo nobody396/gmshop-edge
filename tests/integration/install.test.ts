@@ -53,6 +53,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0016_email_delivery_evidence.sql",
 			"0017_web_support_attachments.sql",
 			"0018_support_retention_48h.sql",
+			"0019_support_conversation_locale.sql",
 		]);
 		const legacyTables = await database
 			.prepare(

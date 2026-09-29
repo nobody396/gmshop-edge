@@ -16,6 +16,11 @@ import {
 	upsertTelegramSetting,
 } from "../settings";
 import {
+	authorizeSupportEmailTopic,
+	requestManualSupportEmail,
+	supportEmailKeyboard,
+} from "./manual-support-email";
+import {
 	authorizeSupportAdministrator,
 	updateSupportAdministratorMirror,
 } from "./support-admins";
@@ -110,6 +115,78 @@ function buildBot(
 	bot.callbackQuery("support:open", async (ctx) => {
 		await ctx.answerCallbackQuery();
 		await beginSupport(ctx, db, options.allowSignup);
+	});
+	bot.command("notify", async (ctx) => {
+		const msg = ctx.message;
+		if (
+			!msg?.message_thread_id ||
+			!ctx.from ||
+			ctx.from.is_bot ||
+			msg.sender_chat
+		)
+			return;
+		const locale = ctx.from.language_code?.startsWith("zh") ? "zh-CN" : "en-US";
+		try {
+			const conversation = await authorizeSupportEmailTopic(db, ctx.api, {
+				chatId: String(msg.chat.id),
+				threadId: msg.message_thread_id,
+				userId: String(ctx.from.id),
+			});
+			await ctx.api.sendMessage(
+				msg.chat.id,
+				m.telegram_web_support_email_prompt({}, { locale }),
+				{
+					message_thread_id: msg.message_thread_id,
+					reply_markup: supportEmailKeyboard(conversation.id, locale),
+				},
+			);
+		} catch {
+			await ctx.api.sendMessage(
+				msg.chat.id,
+				m.telegram_web_support_email_failed({}, { locale }),
+				{ message_thread_id: msg.message_thread_id },
+			);
+		}
+	});
+	bot.callbackQuery(/^webmail:([0-9a-f-]{36})$/, async (ctx) => {
+		const msg = ctx.callbackQuery.message;
+		const locale = ctx.from.language_code?.startsWith("zh") ? "zh-CN" : "en-US";
+		if (
+			!msg ||
+			!("message_thread_id" in msg) ||
+			!msg.message_thread_id ||
+			ctx.from.is_bot
+		) {
+			await ctx.answerCallbackQuery({
+				text: m.telegram_web_support_email_failed({}, { locale }),
+				show_alert: true,
+			});
+			return;
+		}
+		await ctx.answerCallbackQuery();
+		try {
+			const result = await requestManualSupportEmail(db, ctx.api, {
+				chatId: String(msg.chat.id),
+				threadId: msg.message_thread_id,
+				userId: String(ctx.from.id),
+				conversationId: ctx.match[1],
+			});
+			const label =
+				result.status === "suppressed"
+					? m.telegram_web_support_email_suppressed
+					: result.duplicate
+						? m.telegram_web_support_email_duplicate
+						: m.telegram_web_support_email_queued;
+			await ctx.api.sendMessage(msg.chat.id, label({}, { locale }), {
+				message_thread_id: msg.message_thread_id,
+			});
+		} catch {
+			await ctx.api.sendMessage(
+				msg.chat.id,
+				m.telegram_web_support_email_failed({}, { locale }),
+				{ message_thread_id: msg.message_thread_id },
+			);
+		}
 	});
 	bot.command("close", async (ctx) => {
 		const account = await privateAccount(ctx, db, options.allowSignup);

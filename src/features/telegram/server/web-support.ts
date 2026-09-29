@@ -20,6 +20,7 @@ import {
 	resolveFeishuAlertCredentials,
 	sendFeishuText,
 } from "./feishu-alerts";
+import { supportEmailKeyboard } from "./manual-support-email";
 import { telegramDataKeyId } from "./secret";
 import { telegramRuntime } from "./sync";
 
@@ -72,8 +73,14 @@ export async function createWebSupportConversation(
 		throw new WebSupportError("support_unavailable", 409);
 
 	const existingSession = await authenticatedConversation(db, request);
-	if (existingSession)
+	if (existingSession) {
+		await updateWebSupportLocale(
+			db,
+			existingSession.id,
+			input.diagnostics.locale,
+		);
 		return reopenExisting(db, provider.telegramBotToken, existingSession);
+	}
 
 	const sessionUser = await getStoreSessionUser(request).catch(() => null);
 	const accountEmail =
@@ -125,8 +132,8 @@ export async function createWebSupportConversation(
 			 (id, support_chat_id, visitor_id, user_id, email_encrypted, email_hash,
 			  session_token_hash, fingerprint_hash, fingerprint_version, fingerprint_key_id,
 			  public_key_jwk, topic_name, status, creation_lease_expires_at,
-			  next_reply_sequence, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, 1, ?, ?)`,
+			  next_reply_sequence, created_at, updated_at, locale)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, 1, ?, ?, ?)`,
 		)
 		.bind(
 			id,
@@ -148,6 +155,7 @@ export async function createWebSupportConversation(
 			now + 30_000,
 			now,
 			now,
+			input.diagnostics.locale,
 		)
 		.run();
 	const api = new Api(provider.telegramBotToken);
@@ -164,7 +172,10 @@ export async function createWebSupportConversation(
 		await api.sendMessage(
 			settings.supportChatId,
 			formatDiagnostics(request, email, input, repeated),
-			{ message_thread_id: topic.message_thread_id },
+			{
+				message_thread_id: topic.message_thread_id,
+				reply_markup: supportEmailKeyboard(id, input.diagnostics.locale),
+			},
 		);
 		return { id, status: "active" as const, sessionToken };
 	} catch (error) {
@@ -263,6 +274,7 @@ export async function sendWebSupportMessage(
 		windowMs: 60_000,
 	});
 	if (!limit.allowed) throw new WebSupportError("rate_limited", 429);
+	await updateWebSupportLocale(db, conversation.id, input.locale);
 	const receipt = await db
 		.prepare(
 			`INSERT INTO telegram_web_support_sends (id, conversation_id, client_message_id, created_at)
@@ -284,6 +296,7 @@ export async function sendWebSupportMessage(
 	try {
 		await api.sendMessage(conversation.support_chat_id, `💬 ${input.text}`, {
 			message_thread_id: conversation.message_thread_id,
+			reply_markup: supportEmailKeyboard(conversation.id),
 		});
 		await touchWebConversation(db, conversation.id);
 		scheduleFeishuWebSupportAlert(db, conversation.topic_name, input.text);
@@ -717,4 +730,19 @@ function cookieValue(request: Request, name: string) {
 
 export function webSupportCookie(token: string) {
 	return `${webSupportCookieName}=${token}; Path=/api/support/web; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`;
+}
+
+/** Explicit website locale, never guessed from message contents or staff language. */
+export async function updateWebSupportLocale(
+	db: D1Database,
+	conversationId: string,
+	locale?: "zh-CN" | "en-US",
+) {
+	if (!locale) return;
+	await db
+		.prepare(
+			"UPDATE telegram_web_support_conversations SET locale=? WHERE id=?",
+		)
+		.bind(locale, conversationId)
+		.run();
 }

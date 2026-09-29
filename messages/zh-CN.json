@@ -738,7 +738,7 @@
 	"store_payment_price_fee_included": "到手价",
 	"store_support": "客服",
 	"store_support_title": "联系老实人AI",
-	"store_support_description": "请选择在线客服、Telegram 群聊/私聊或微信。",
+	"store_support_description": "请选择在线客服、Telegram 群聊或私聊客服。",
 	"store_support_online": "在线联系客服",
 	"store_support_online_description": "网页即时咨询，客服回复会回到当前会话",
 	"store_delivery_ticker": "24 小时自动充值交付，直接下单即可｜没货的产品，进群发消息问就完了｜所有售后问题请通过页面客服按钮联系即可；没回复就是在睡觉，醒来会尽快处理，感谢理解",
@@ -2022,5 +2022,13 @@
 	"web_support_receive_failed": "接收暂时中断，正在自动重连；请勿重复发送。",
 	"web_support_legacy_unreadable": "部分旧回复无法读取，请客服重发；新回复不受影响。",
 	"web_support_sending_status": "正在发送，等待客服通道确认",
-	"web_support_local_history_failed": "消息已发送，但浏览器本地记录保存失败，请勿重复发送。"
+	"web_support_local_history_failed": "消息已发送，但浏览器本地记录保存失败，请勿重复发送。",
+	"web_support_reply_notice": "客服看到后会回复。如未及时回复，请留意联系邮箱，客服回复了会通过邮件提醒你返回网页继续沟通。",
+	"telegram_web_support_email_button": "邮件通知客户（手动）",
+	"telegram_web_support_email_prompt": "你回复客户后，可点击下方按钮发邮件提醒。同一条最新回复只通知一次；回复本身不会自动发邮件。",
+	"telegram_web_support_email_queued": "已加入邮件发送队列。邮件服务接收不代表客户已收件。",
+	"telegram_web_support_email_duplicate": "这条回复已有邮件通知记录，未重复发送。",
+	"telegram_web_support_email_failed": "未创建邮件通知，请确认管理员权限、当前话题已有有效回复，以及官方邮件通道可用。",
+	"telegram_web_support_email_suppressed": "该邮箱无法接收通知，邮件已被拦截，未发送。",
+	"notifications_event_support_reply_manual": "客服回复提醒（手动）"
 }

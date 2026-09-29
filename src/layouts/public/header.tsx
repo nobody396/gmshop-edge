@@ -69,19 +69,22 @@ export function PublicHeader() {
 	return (
 		<header
 			className={cn(
-				"sticky inset-x-0 top-0 z-50 hidden border-transparent border-b bg-background/90 pt-safe transition-[border-color,backdrop-filter] lg:block",
+				"sticky inset-x-0 top-0 z-50 border-transparent border-b bg-background/90 pt-safe transition-[border-color,backdrop-filter]",
 				stuck && "border-border/70 backdrop-blur-xl",
 			)}
 		>
-			<div className="container flex h-18 items-center px-4">
-				<Link className="min-w-0 shrink-0" to="/">
+			<div className="container flex h-14 items-center px-3 lg:h-18 lg:px-4">
+				<Link className="min-w-0 max-w-[40%] lg:max-w-none" to="/">
 					<AppTitle />
 				</Link>
-				<div className="ms-auto flex items-center">
-					<nav className="me-6 flex items-center gap-6 text-muted-foreground text-sm">
+				<div className="ms-auto flex shrink-0 items-center">
+					<nav className="me-1 flex items-center gap-2 text-muted-foreground text-sm lg:me-6 lg:gap-6">
 						{navigation.map(([label, href]) => (
 							<a
-								className="py-2 transition-colors hover:text-foreground"
+								className={cn(
+									"whitespace-nowrap py-2 transition-colors hover:text-foreground",
+									href !== "/invoice" && "hidden lg:block",
+								)}
 								href={href}
 								key={href}
 							>
@@ -91,13 +94,15 @@ export function PublicHeader() {
 					</nav>
 					<div className="flex items-center gap-1 ps-1">
 						<CustomerSupport />
-						<CartAction />
-						<DesktopSettings
-							currencySelection={currencySelection}
-							root={adminEntry.data?.root}
-							user={headerUser}
-						/>
-						{user ? null : <SignInAction />}
+						<div className="hidden items-center gap-1 lg:flex">
+							<CartAction />
+							<DesktopSettings
+								currencySelection={currencySelection}
+								root={adminEntry.data?.root}
+								user={headerUser}
+							/>
+							{user ? null : <SignInAction />}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -139,7 +144,7 @@ function CustomerSupport() {
 					{m.store_support()}
 				</Button>
 			</PopoverTrigger>
-			<PopoverContent align="end" className="w-80 p-2">
+			<PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] p-2">
 				<div className="px-3 pt-2 pb-3">
 					<p className="font-medium">{m.store_support_title()}</p>
 					<p className="mt-1 text-muted-foreground text-sm leading-5">

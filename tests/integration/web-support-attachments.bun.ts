@@ -124,6 +124,7 @@ function request(
 	const form = new FormData();
 	form.set("clientMessageId", id);
 	form.set("text", "caption");
+	form.set("locale", "zh-CN");
 	form.set("file", new File([new Uint8Array(bytes)], name));
 	return new Request("https://shop.test/api/support/web/attachments/", {
 		method: "POST",
@@ -141,6 +142,16 @@ describe("Web support attachments with SQLite + private object storage", () => {
 	test("migrates an empty database and round-trips a file only for its owner", async () => {
 		const id = crypto.randomUUID();
 		const sent = await run(() => uploadWebSupportAttachment(db, request(id)));
+		expect(
+			(
+				await db
+					.prepare(
+						"SELECT locale FROM telegram_web_support_conversations WHERE id=?",
+					)
+					.bind(cid)
+					.first<{ locale: string }>()
+			)?.locale,
+		).toBe("zh-CN");
 		const response = await run(() =>
 			downloadWebSupportAttachment(
 				db,

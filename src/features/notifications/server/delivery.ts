@@ -17,6 +17,10 @@ import { loadRuntimeConfig } from "#/server/runtime-config";
 
 import { recipientSuppressionReason } from "./recipient-policy";
 
+export const supportReplyEmailEvent = "support_reply_manual";
+export const supportReplyEmailSender =
+	"老实人AI VIP <no-reply@laoshirenvip.com>";
+
 type EmailMessage = z.output<typeof emailMessageSchema>;
 type NotificationAsset = {
 	entitlementId: string;
@@ -262,6 +266,21 @@ export async function processEmailNotification(
 		return { duplicate: true, status: row.status };
 	}
 	const configs = await loadEmailDeliveryConfigs(db, row.channel_config_id);
+	if (row.event === supportReplyEmailEvent) {
+		const approved = await db
+			.prepare(
+				"SELECT id FROM notification_channel_configs WHERE id=? AND enabled=1 AND channel='email' AND provider='cloudflare_email' AND from_address=?",
+			)
+			.bind(row.channel_config_id, supportReplyEmailSender)
+			.first();
+		if (!approved || configs.length !== 1 || !options.cloudflareEmail)
+			throw new DomainError(
+				"support_email_sender_unavailable",
+				503,
+				"Approved support email sender is unavailable",
+			);
+	}
+
 	if (!configs.length)
 		throw new DomainError(
 			"notification_delivery_unavailable",
