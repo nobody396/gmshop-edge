@@ -2022,5 +2022,6 @@
 	"telegram_web_support_email_duplicate": "这条回复已有邮件通知记录，未重复发送。",
 	"telegram_web_support_email_failed": "未创建邮件通知，请确认管理员权限、当前话题已有有效回复，以及官方邮件通道可用。",
 	"telegram_web_support_email_suppressed": "该邮箱无法接收通知，邮件已被拦截，未发送。",
-	"notifications_event_support_reply_manual": "客服回复提醒（手动）"
+	"notifications_event_support_reply_manual": "客服回复提醒（手动）",
+	"supply_console_owned_pool": "客户兑换码池 {codes} 个（不是库存） · 已售未兑待保障 {outstanding} 份"
 }

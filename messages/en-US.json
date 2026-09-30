@@ -2022,5 +2022,6 @@
 	"telegram_web_support_email_duplicate": "This reply already has a notification record. No duplicate was sent.",
 	"telegram_web_support_email_failed": "No email reminder was created. Check administrator access, a recent reply in this topic, and the approved email channel.",
 	"telegram_web_support_email_suppressed": "This recipient cannot receive this notification. The email was suppressed, not sent.",
-	"notifications_event_support_reply_manual": "Support reply reminder (manual)"
+	"notifications_event_support_reply_manual": "Support reply reminder (manual)",
+	"supply_console_owned_pool": "Owned-code pool: {codes} (not stock) · Unleased sold obligations: {outstanding}"
 }
