@@ -684,6 +684,104 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("records an accepted legacy payment even when the central sale budget cannot allocate stock", async () => {
+		await database
+			.prepare(
+				"INSERT INTO redeem_sale_capacity (component_id,free_budget,generation,updated_at) VALUES ('sellableItem-card',0,0,?)",
+			)
+			.bind(Date.now())
+			.run();
+		await expect(
+			processShopPaymentEvent(
+				database,
+				channelId,
+				succeededEvent("evt-legacy-capacity"),
+			),
+		).resolves.toMatchObject({ status: "succeeded" });
+		await expect(paymentState(database)).resolves.toMatchObject({
+			order_status: "paid",
+			payment_status: "succeeded",
+			receipts: 1,
+			deliveries: 1,
+		});
+		expect(
+			await database
+				.prepare(
+					"SELECT status,error_code FROM delivery_records WHERE order_item_id=?",
+				)
+				.bind(orderItemId)
+				.first(),
+		).toEqual({ status: "failed", error_code: "inventory_unavailable" });
+	});
+
+	it("completes scoped delivery despite D1 counting its capacity-trigger updates", async () => {
+		await database
+			.prepare(
+				"INSERT INTO redeem_sale_capacity (component_id,free_budget,generation,updated_at) VALUES ('sellableItem-card',1,0,?)",
+			)
+			.bind(Date.now())
+			.run();
+		await processShopPaymentEvent(
+			database,
+			channelId,
+			succeededEvent("evt-scoped-delivery"),
+		);
+		const delivery = await database
+			.prepare("SELECT id FROM delivery_records WHERE order_item_id=?")
+			.bind(orderItemId)
+			.first<{ id: string }>();
+		expect(delivery).not.toBeNull();
+		if (!delivery) throw new Error("Delivery missing");
+		await expect(processDelivery(database, delivery.id)).resolves.toMatchObject(
+			{ status: "delivered", duplicate: false },
+		);
+		expect(
+			await database
+				.prepare("SELECT status FROM delivery_records WHERE id=?")
+				.bind(delivery.id)
+				.first(),
+		).toEqual({ status: "delivered" });
+	});
+
+	it("allocates a whole funded legacy batch before invalidating its cached budget", async () => {
+		await database
+			.prepare(
+				"UPDATE shop_order_items SET quantity=2,unit_price_minor='500' WHERE id=?",
+			)
+			.bind(orderItemId)
+			.run();
+		await database
+			.prepare(
+				"INSERT INTO stock_entries (id,sellable_item_id,content_encrypted,key_version,content_fingerprint,content_mask,status,created_at,updated_at) SELECT 'second-card',sellable_item_id,content_encrypted,key_version,'second-fingerprint','mask','available',1,1 FROM stock_entries LIMIT 1",
+			)
+			.run();
+		await database
+			.prepare(
+				"INSERT INTO redeem_sale_capacity (component_id,free_budget,generation,updated_at) VALUES ('sellableItem-card',3,0,?)",
+			)
+			.bind(Date.now())
+			.run();
+		await processShopPaymentEvent(
+			database,
+			channelId,
+			succeededEvent("evt-legacy-batch"),
+		);
+		expect(
+			await database
+				.prepare(
+					"SELECT COUNT(*) AS quantity FROM stock_entries WHERE order_item_id=? AND status='reserved'",
+				)
+				.bind(orderItemId)
+				.first(),
+		).toEqual({ quantity: 2 });
+		expect(
+			await database
+				.prepare("SELECT status FROM delivery_records WHERE order_item_id=?")
+				.bind(orderItemId)
+				.first(),
+		).toEqual({ status: "pending" });
+	});
+
 	it("never allocates the final card to two concurrent payments", async () => {
 		const secondOrderId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 		const secondItemId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";

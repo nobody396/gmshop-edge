@@ -78,6 +78,12 @@ export async function refreshClaudeSaleCapacity(
      UNION ALL SELECT d.content_encrypted,'delivery-content' AS purpose FROM delivery_records d JOIN shop_order_items i ON i.id=d.order_item_id WHERE i.sellable_item_id=? AND d.content_encrypted IS NOT NULL`)
 				.bind(component, component)
 				.all<{ content_encrypted: string; purpose: string }>();
+			const missingPaid = await db
+				.prepare(`SELECT COALESCE(SUM(MAX(0,i.quantity-(SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=i.id AND s.status IN ('reserved','delivered')))),0) AS quantity
+                FROM shop_order_items i JOIN shop_orders o ON o.id=i.order_id WHERE i.delivery_component_id=? AND (o.status IN ('paid','fulfilling','completed','refunding') OR (o.status='failed' AND o.paid_minor<>'0'))
+                AND NOT EXISTS (SELECT 1 FROM delivery_records d WHERE d.order_item_id=i.id AND d.status='delivered')`)
+				.bind(component)
+				.first<{ quantity: number }>();
 			const hashes = new Set<string>();
 			for (const row of rows.results) {
 				const content = await decryptSecret(
@@ -96,6 +102,10 @@ export async function refreshClaudeSaleCapacity(
 			);
 			if (data.sellable !== Math.max(0, data.available - data.outstanding))
 				throw new Error("Invalid capacity arithmetic");
+			// An already-paid legacy order remains an obligation even before a
+			// customer code could be allocated. A failed delivery is not a refund.
+			data.outstanding += Number(missingPaid?.quantity ?? 0);
+			data.sellable = Math.max(0, data.available - data.outstanding);
 			// A checkout changes generation in the same D1 transaction as its stock
 			// reservation. Never overwrite that reservation with an older read.
 			const saved = await db
@@ -235,6 +245,22 @@ export async function refreshUnheldClaudeOrder(
 		.bind(orderId, component)
 		.first();
 	if (unheld) await refreshClaudeSaleCapacity(db);
+}
+
+// Keep payment statement row counts unchanged: D1 reports trigger updates in
+// meta.changes, so unallocated cash obligations bump the read version explicitly
+// at the end of the same financial transaction, not in a shop_orders trigger.
+export function unallocatedClaudePaymentStatement(
+	db: D1Database,
+	orderId: string,
+) {
+	return db
+		.prepare(`UPDATE redeem_sale_capacity SET generation=generation+1 WHERE component_id IN
+   (SELECT i.delivery_component_id FROM shop_order_items i JOIN shop_orders o ON o.id=i.order_id WHERE o.id=?
+    AND (o.status IN ('paid','fulfilling','completed','refunding') OR (o.status='failed' AND o.paid_minor<>'0'))
+    AND i.quantity>(SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=i.id AND s.status IN ('reserved','delivered'))
+    AND NOT EXISTS (SELECT 1 FROM delivery_records d WHERE d.order_item_id=i.id AND d.status='delivered'))`)
+		.bind(orderId);
 }
 
 // Used inside the order-creation D1 transaction, never as a separate preflight.

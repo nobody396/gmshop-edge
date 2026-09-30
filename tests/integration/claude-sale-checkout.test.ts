@@ -263,6 +263,29 @@ describe("Claude checkout uses actual uncommitted upstream capacity", {
 		).toBe("9900");
 		expect(await stock()).toBe(0);
 	});
+	it("keeps paid-but-unallocated legacy orders in sale obligations", async () => {
+		const first = await checkout(2);
+		await db
+			.prepare(
+				"UPDATE stock_entries SET status='available',order_item_id=NULL,reserved_at=NULL WHERE order_item_id IN (SELECT id FROM shop_order_items WHERE order_id=?)",
+			)
+			.bind(first.id)
+			.run();
+		await db
+			.prepare(
+				"UPDATE shop_orders SET status='paid',paid_minor=total_minor WHERE id=?",
+			)
+			.bind(first.id)
+			.run();
+		const capacity = await refreshClaudeSaleCapacity(db);
+		expect(capacity).toMatchObject({
+			available: 5,
+			outstanding: 2,
+			sellable: 3,
+		});
+		expect(await stock()).toBe(3);
+	});
+
 	it("warehouse failure closes sales instead of falling back to the virtual code pool", async () => {
 		fetcher.mockRejectedValue(new Error("offline"));
 		await expect(checkout(1)).rejects.toMatchObject({
