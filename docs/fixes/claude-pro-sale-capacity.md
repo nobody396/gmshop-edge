@@ -46,3 +46,11 @@ Reuse the existing stock entries, code issuance and payment allocation flow. The
 - Empty-D1 migration/install checks passed after updating the explicit migration list and table count for the one new budget table.
 - Live read-only replay of the exact warehouse capacity SQL matched 24 actually sold/held code roots, with six free keys and two unleased outstanding obligations: four additional sales. No production write was used to calculate this.
 - Both new worktrees are retained for the un-deployed repair. The prior main-checkout App/styles and AGENTS changes remain untouched; temporary browser/test servers are stopped.
+
+## Release compatibility guard
+
+Rebased onto exact live source 558925f and preserved the main-only Node credential-pipe CLI fix. Migration was renumbered to 0020 after live migrations 0017–0019. Existing support/KYC/PH policy changes are not rolled back.
+
+Final release inspection adds a narrow legacy-payment guard: an already accepted external payment is recorded even when capacity cannot allocate customer codes; paid-but-unallocated (including paid/failed) orders remain obligations. Version invalidation is explicit at the end of financial transactions instead of an order trigger, because D1 includes trigger writes in meta.changes. Funded/manual handoffs invalidate the budget rather than spending new-sale capacity again. Single-primary-key delivery/reconciliation checks accept positive affected counts including trigger writes; payment CAS counts remain unchanged.
+
+Additional regressions cover accepted legacy payment with insufficient capacity, whole multi-code legacy allocation, trigger-aware delivery and paid-but-unallocated obligations. No production money, email or recharge is used in these tests.

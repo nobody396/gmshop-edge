@@ -1,4 +1,7 @@
-import { releaseClaudeSaleStatements } from "#/features/redeem-warehouse/server/sale-capacity";
+import {
+	releaseClaudeSaleStatements,
+	unallocatedClaudePaymentStatement,
+} from "#/features/redeem-warehouse/server/sale-capacity";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { assertShopOrderTransition } from "#/features/shop-orders/status";
 import { DomainError } from "#/lib/domain-error";
@@ -109,6 +112,7 @@ export async function transitionShopOrder(
 			now,
 		}),
 		...releaseClaudeSaleStatements(db, input.id, now),
+		unallocatedClaudePaymentStatement(db, input.id),
 	]);
 	if (Number(results[0]?.meta.changes ?? 0) !== 1)
 		throw new DomainError(
