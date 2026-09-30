@@ -306,6 +306,14 @@ function SupplyRow({
 			{expanded ? (
 				<div className="grid gap-2 bg-muted/20 px-10 py-3 text-xs sm:grid-cols-2">
 					<Detail label={m.supply_console_source()} value={sourceText(row)} />
+					{row.centralSku === "CLAUDE_PRO_IOS" ? (
+						<p>
+							{m.supply_console_owned_pool({
+								codes: row.ownedCodePool,
+								outstanding: row.outstanding ?? "—",
+							})}
+						</p>
+					) : null}
 					<Detail
 						label={m.supply_console_cost()}
 						value={`${money(row.costMinor)}${

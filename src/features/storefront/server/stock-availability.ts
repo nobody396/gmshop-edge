@@ -1,3 +1,5 @@
+import { SALE_CAPACITY_MAX_AGE_MS } from "#/features/redeem-warehouse/server/sale-capacity";
+
 const SUPPLIER_SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
 
 // Explicit per-SKU opt-in: local-only items must never spend supplier balance.
@@ -21,6 +23,8 @@ export function storefrontStockExpression(
 	return `CASE
 		WHEN ${productAlias}.product_type <> 'stock' THEN -1
 		WHEN ${itemAlias}.fulfillment_source = 'manual' THEN -1
+		WHEN EXISTS (SELECT 1 FROM redeem_sale_capacity capacity WHERE capacity.component_id=${itemAlias}.id)
+       THEN COALESCE((SELECT capacity.free_budget FROM redeem_sale_capacity capacity WHERE capacity.component_id=${itemAlias}.id AND capacity.updated_at >= (unixepoch()*1000-${SALE_CAPACITY_MAX_AGE_MS})),0)
 		WHEN ${itemAlias}.fulfillment_source = 'supplier' THEN ${syncedSupplierStock}
 		WHEN ${supplierFallbackEnabledExpression(itemAlias)}
 		 THEN ${localStock} + ${syncedSupplierStock}

@@ -2412,3 +2412,20 @@ export const emailRecipientSuppressions = sqliteTable(
 		createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 	},
 );
+
+// Versioned read budget; upstream keys and delivered-code obligations remain
+// authoritative. Reservations decrement it atomically with checkout.
+export const redeemSaleCapacity = sqliteTable(
+	"redeem_sale_capacity",
+	{
+		componentId: text("component_id")
+			.primaryKey()
+			.references(() => productSellableItems.id),
+		freeBudget: integer("free_budget").notNull().default(0),
+		generation: integer("generation").notNull().default(0),
+		updatedAt: integer("updated_at").notNull().default(0),
+	},
+	(table) => [
+		check("redeem_sale_capacity_budget_check", sql`${table.freeBudget} >= 0`),
+	],
+);

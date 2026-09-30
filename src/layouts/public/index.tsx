@@ -12,7 +12,7 @@ export function PublicLayout() {
 	const { customHtml } = useSiteBrand();
 	return (
 		<CurrencyProvider>
-			<div className="flex min-h-svh flex-col bg-background pt-safe text-foreground lg:pt-0">
+			<div className="flex min-h-svh flex-col bg-background text-foreground">
 				<SkipToMain />
 				<PublicHeader />
 				<DeliveryTicker />

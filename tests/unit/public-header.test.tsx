@@ -159,13 +159,7 @@ describe("public header settings", () => {
 		const wechat = Array.from(document.querySelectorAll("button")).find(
 			(button) => button.textContent?.includes("store_support_wechat"),
 		);
-		expect(wechat).toBeDefined();
-		act(() => wechat?.click());
-		expect(
-			document.querySelector(
-				'img[src="/support/wechat-jerrys.png"][alt="store_support_wechat_qr_alt"]',
-			),
-		).not.toBeNull();
+		expect(wechat).toBeUndefined();
 	});
 
 	it("shows the delivery notice as an accessible ticker", () => {

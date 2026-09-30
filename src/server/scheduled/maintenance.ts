@@ -1,6 +1,7 @@
 import { syncExchangeRatesIfDue } from "#/features/exchange-rates/server/sync";
 import { runOperationalRetentionCleanup } from "#/features/operations/server/operational-retention";
 import { runSupplierMaintenance } from "#/features/suppliers/server/maintenance";
+import { cleanupSupportAttachments } from "#/features/telegram/server/web-support-attachments";
 import { loadOperationalSettings } from "#/server/operational-settings";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import { progressivelyReencryptSecrets } from "#/server/scheduled/secret-rotation";
@@ -93,6 +94,11 @@ export async function runMaintenance(
 			 WHERE expires_at <= ? ORDER BY expires_at, id LIMIT 500)`,
 		).bind(now),
 	]);
+	const supportAttachmentsDeleted = await cleanupSupportAttachments(
+		env.DB,
+		env.FILES,
+		now,
+	);
 	const artifacts = await cleanupExpiredArtifacts(env.DB, env.FILES, now);
 	const runtime = await loadRuntimeConfig(env.DB);
 	const exchangeRates = await syncExchangeRatesIfDue(
@@ -133,6 +139,7 @@ export async function runMaintenance(
 		authVerificationsDeleted: changes(authVerifications),
 		rateLimitsDeleted: changes(expiredRateLimits),
 		artifactsDeleted: artifacts,
+		supportAttachmentsDeleted,
 		exchangeRatesSynced: exchangeRates?.updated ?? 0,
 		exchangeRatesSyncFailed: exchangeRates?.failed ?? 0,
 		supplierBalancesUpdated: suppliers.balancesUpdated,

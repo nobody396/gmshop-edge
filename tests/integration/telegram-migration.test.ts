@@ -29,6 +29,7 @@ describe("Telegram incremental migration", () => {
 			.run();
 		await applyMigration(database, "0001_telegram_bot_support.sql");
 		await applyMigration(database, "0002_glamorous_pete_wisdom.sql");
+		await applyMigration(database, "0017_web_support_attachments.sql");
 		const existing = await database
 			.prepare("SELECT value FROM system_settings WHERE key = 'test.existing'")
 			.first<{ value: string }>();
@@ -50,6 +51,7 @@ describe("Telegram incremental migration", () => {
 			)
 			.all<{ name: string }>();
 		expect(webTables.results.map((row) => row.name)).toEqual([
+			"telegram_web_support_attachments",
 			"telegram_web_support_conversations",
 			"telegram_web_support_replies",
 			"telegram_web_support_sends",

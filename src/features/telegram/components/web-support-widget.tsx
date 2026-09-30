@@ -1,6 +1,6 @@
 "use client";
 
-import { Headphones, LoaderCircle, QrCode, Send, X } from "lucide-react";
+import { Headphones, LoaderCircle, Paperclip, Send, X } from "lucide-react";
 import {
 	type KeyboardEvent,
 	type SyntheticEvent,
@@ -11,20 +11,20 @@ import {
 } from "react";
 import { Textarea } from "#/components/pro/base/fields/input";
 import { Button } from "#/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { authClient } from "#/features/auth/auth-client";
 import { useTurnstile } from "#/features/auth/components/turnstile";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
+import {
+	decodeSupportReply,
+	supportAttachmentSchema,
+	supportAttachmentUrl,
+	supportFileAccept,
+	supportFileMaxBytes,
+	supportFileRetentionMs,
+} from "../web-support-attachments";
 import {
 	webSupportOpenEvent,
 	webSupportPollIntervalMs,
@@ -41,10 +41,9 @@ import {
 type SupportStatus = {
 	enabled: boolean;
 	hasConversation: boolean;
+	conversationId?: string | null;
 	status: string | null;
 };
-
-const wechatQrUrl = "/support/wechat-jerrys.png";
 
 function formatMessageTime(timestamp: number) {
 	return new Intl.DateTimeFormat(getLocale(), {
@@ -62,10 +61,26 @@ export function WebSupportWidget() {
 	const [email, setEmail] = useState("");
 	const [messages, setMessages] = useState<WebSupportLocalMessage[]>([]);
 	const [text, setText] = useState("");
+	const [attachment, setAttachment] = useState<{
+		file: File;
+		id: string;
+	} | null>(null);
+	const fileInput = useRef<HTMLInputElement>(null);
 	const challenge = useTurnstile("support");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const lastSequence = useRef(0);
+	const conversationId = useRef<string | null>(null);
+	const polling = useRef(false);
+	const pendingTextId = useRef<{ text: string; id: string } | null>(null);
+	const [receiveError, setReceiveError] = useState<string | null>(null);
+	const [sendingPreview, setSendingPreview] = useState<{
+		text: string;
+		name?: string;
+		url?: string;
+		startedAt: number;
+	} | null>(null);
+	const [sendingSeconds, setSendingSeconds] = useState(0);
 	const messagesViewportRef = useRef<HTMLDivElement>(null);
 	const sessionEmail = session.data?.user?.email ?? "";
 
@@ -80,11 +95,15 @@ export function WebSupportWidget() {
 				setAvailable(result.enabled || result.hasConversation);
 				setSupportEnabled(result.enabled);
 				setStatus(result.status);
-				setMessages(localMessages);
-				lastSequence.current = Math.max(
-					0,
-					...localMessages.map((message) => message.sequence ?? 0),
+				conversationId.current = result.conversationId ?? null;
+				setMessages(
+					localMessages.filter(
+						(message) =>
+							!message.conversationId ||
+							message.conversationId === result.conversationId,
+					),
 				);
+				lastSequence.current = 0;
 			})
 			.catch(() => undefined);
 	}, []);
@@ -95,58 +114,141 @@ export function WebSupportWidget() {
 
 	useEffect(() => {
 		const openSupport = () => setOpen(true);
+		const openFromEmail = () => {
+			if (window.location.hash === "#support") setOpen(true);
+		};
+		openFromEmail();
+		window.addEventListener("hashchange", openFromEmail);
 		window.addEventListener(webSupportOpenEvent, openSupport);
-		return () => window.removeEventListener(webSupportOpenEvent, openSupport);
+		return () => {
+			window.removeEventListener(webSupportOpenEvent, openSupport);
+			window.removeEventListener("hashchange", openFromEmail);
+		};
 	}, []);
 
 	const poll = useCallback(async () => {
-		if (!open || !["active", "closing"].includes(status ?? "")) return;
-		const response = await fetch(
-			`/api/support/web/current?after=${lastSequence.current}`,
-			{ credentials: "include" },
-		);
-		if (!response.ok) return;
-		const result = (await response.json()) as {
-			status: string;
-			replies: Array<{
-				id: string;
-				sequence: number;
-				algorithm: string;
-				wrapped_key: string;
-				iv: string;
-				ciphertext: string;
-				created_at: number;
-			}>;
-		};
-		setStatus(result.status);
-		if (result.replies.length === 0) return;
-		const identity = await getWebSupportIdentity();
-		if (!identity.conversationId) return;
-		const received: WebSupportLocalMessage[] = [];
-		for (const reply of result.replies) {
-			const message: WebSupportLocalMessage = {
-				id: reply.id,
-				role: "support",
-				text: await decryptWebSupportReply(
-					identity,
-					identity.conversationId,
-					reply,
-				),
-				createdAt: reply.created_at,
-				sequence: reply.sequence,
+		if (
+			!open ||
+			polling.current ||
+			!["active", "closing"].includes(status ?? "")
+		)
+			return;
+		polling.current = true;
+		try {
+			const response = await fetch(
+				`/api/support/web/current?version=2&after=${lastSequence.current}`,
+				{ credentials: "include", signal: AbortSignal.timeout(15_000) },
+			);
+			if (!response.ok) throw new Error("receive_failed");
+			const result = (await response.json()) as {
+				conversationId: string;
+				status: string;
+				replies: Array<{
+					id: string;
+					sequence: number;
+					text?: string;
+					algorithm: string;
+					wrapped_key: string;
+					iv: string;
+					ciphertext: string;
+					created_at: number;
+				}>;
 			};
-			await saveWebSupportMessage(message);
-			received.push(message);
-			lastSequence.current = Math.max(lastSequence.current, reply.sequence);
+			if (
+				conversationId.current &&
+				conversationId.current !== result.conversationId
+			) {
+				lastSequence.current = 0;
+				conversationId.current = result.conversationId;
+				return;
+			}
+			conversationId.current = result.conversationId;
+			setStatus(result.status);
+			const received: WebSupportLocalMessage[] = [];
+			let skipped = false;
+			for (const reply of result.replies) {
+				let text = reply.text;
+				if (typeof text !== "string") {
+					try {
+						text = await decryptWebSupportReply(
+							await getWebSupportIdentity(),
+							result.conversationId,
+							reply,
+						);
+					} catch {
+						skipped = true;
+						lastSequence.current = Math.max(
+							lastSequence.current,
+							reply.sequence,
+						);
+						continue;
+					}
+				}
+				const message: WebSupportLocalMessage = {
+					id: reply.id,
+					role: "support",
+					...decodeSupportReply(text),
+					createdAt: reply.created_at,
+					sequence: reply.sequence,
+					conversationId: result.conversationId,
+				};
+				void saveWebSupportMessage(message).catch(() => undefined);
+				received.push(message);
+				lastSequence.current = Math.max(lastSequence.current, reply.sequence);
+			}
+			if (received.length)
+				setMessages((current) => {
+					const merged = new Map(
+						current
+							.filter(
+								(message) =>
+									message.createdAt > Date.now() - supportFileRetentionMs &&
+									(!message.conversationId ||
+										message.conversationId === result.conversationId),
+							)
+							.map((message) => [message.id, message]),
+					);
+					for (const message of received) merged.set(message.id, message);
+					return [...merged.values()].sort((a, b) => a.createdAt - b.createdAt);
+				});
+			if (skipped) setReceiveError(m.web_support_legacy_unreadable());
+			else
+				setReceiveError((current) =>
+					current === m.web_support_receive_failed() ? null : current,
+				);
+		} catch {
+			setReceiveError(m.web_support_receive_failed());
+		} finally {
+			polling.current = false;
 		}
-		setMessages((current) => [...current, ...received]);
-		await fetch("/api/support/web/replies/ack", {
-			method: "POST",
-			credentials: "include",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ ids: result.replies.map((reply) => reply.id) }),
-		});
 	}, [open, status]);
+
+	useEffect(() => {
+		const timer = window.setInterval(() => {
+			void loadWebSupportMessages();
+			setMessages((current) =>
+				current.filter(
+					(message) => message.createdAt > Date.now() - supportFileRetentionMs,
+				),
+			);
+		}, 60_000);
+		return () => window.clearInterval(timer);
+	}, []);
+	useEffect(() => {
+		if (!sendingPreview) return;
+		setSendingSeconds(0);
+		const timer = window.setInterval(
+			() =>
+				setSendingSeconds(
+					Math.floor((Date.now() - sendingPreview.startedAt) / 1000),
+				),
+			1000,
+		);
+		return () => {
+			window.clearInterval(timer);
+			if (sendingPreview.url) URL.revokeObjectURL(sendingPreview.url);
+		};
+	}, [sendingPreview]);
 
 	useEffect(() => {
 		void poll();
@@ -171,14 +273,18 @@ export function WebSupportWidget() {
 	}, [open, poll]);
 
 	useEffect(() => {
-		if (!open || (messages.length === 0 && status !== "closed")) return;
+		if (
+			!open ||
+			(messages.length === 0 && status !== "closed" && !sendingPreview)
+		)
+			return;
 		const frame = window.requestAnimationFrame(() => {
 			const viewport = messagesViewportRef.current;
 			if (!viewport) return;
 			viewport.scrollTop = viewport.scrollHeight;
 		});
 		return () => window.cancelAnimationFrame(frame);
-	}, [messages.length, open, status]);
+	}, [messages.length, open, status, sendingPreview]);
 
 	if (!available) return null;
 
@@ -219,6 +325,8 @@ export function WebSupportWidget() {
 			if (!response.ok) throw new Error("start_failed");
 			const result = (await response.json()) as { id: string; status: string };
 			await setWebSupportConversationId(result.id);
+			conversationId.current = result.id;
+			lastSequence.current = 0;
 			setStatus(result.status);
 		} catch {
 			setError(m.web_support_failed());
@@ -233,31 +341,108 @@ export function WebSupportWidget() {
 	) {
 		event.preventDefault();
 		const value = text.trim();
-		if (!value || busy) return;
+		if ((!value && !attachment) || busy) return;
+		if (attachment && value.length > 1000) {
+			setError(m.web_support_attachment_caption_limit());
+			return;
+		}
 		setBusy(true);
 		setError(null);
+		if (!attachment && pendingTextId.current?.text !== value)
+			pendingTextId.current = { text: value, id: crypto.randomUUID() };
+		setSendingPreview({
+			text: value,
+			name: attachment?.file.name,
+			url: attachment?.file.type.startsWith("image/")
+				? URL.createObjectURL(attachment.file)
+				: undefined,
+			startedAt: Date.now(),
+		});
 		const message: WebSupportLocalMessage = {
-			id: crypto.randomUUID(),
+			id: attachment?.id ?? pendingTextId.current?.id ?? crypto.randomUUID(),
+			conversationId: conversationId.current ?? undefined,
 			role: "customer",
 			text: value,
 			createdAt: Date.now(),
 		};
 		try {
-			const response = await fetch("/api/support/web/messages", {
-				method: "POST",
-				credentials: "include",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ clientMessageId: message.id, text: value }),
-			});
-			if (!response.ok) throw new Error("send_failed");
-			await saveWebSupportMessage(message);
+			let response: Response;
+			if (attachment) {
+				const form = new FormData();
+				form.set("locale", getLocale());
+				form.set("file", attachment.file);
+				form.set("clientMessageId", attachment.id);
+				form.set("text", value);
+				response = await fetch("/api/support/web/attachments/", {
+					method: "POST",
+					credentials: "include",
+					body: form,
+					signal: AbortSignal.timeout(65_000),
+				});
+			} else {
+				response = await fetch("/api/support/web/messages", {
+					method: "POST",
+					credentials: "include",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({
+						clientMessageId: message.id,
+						text: value,
+						locale: getLocale(),
+					}),
+					signal: AbortSignal.timeout(35_000),
+				});
+			}
+			const result = (await response.json()) as {
+				code?: string;
+				attachment?: unknown;
+			};
+			if (!response.ok) {
+				setError(
+					result.code === "attachment_pending"
+						? m.web_support_attachment_pending()
+						: attachment
+							? m.web_support_attachment_failed()
+							: m.web_support_failed(),
+				);
+				return;
+			}
+			if (attachment)
+				message.attachment = supportAttachmentSchema.parse(result.attachment);
+			void saveWebSupportMessage(message).catch(() =>
+				setError(m.web_support_local_history_failed()),
+			);
 			setMessages((current) => [...current, message]);
-			setText("");
+			setText((current) => (current.trim() === value ? "" : current));
+			setAttachment((current) =>
+				current?.id === attachment?.id ? null : current,
+			);
+			pendingTextId.current = null;
 		} catch {
-			setError(m.web_support_failed());
+			setError(
+				attachment
+					? m.web_support_attachment_pending()
+					: m.web_support_failed(),
+			);
 		} finally {
 			setBusy(false);
+			setSendingPreview(null);
 		}
+	}
+
+	function chooseAttachment(file: File) {
+		if (busy) return;
+		if (
+			!file.size ||
+			file.size > supportFileMaxBytes ||
+			!supportFileAccept
+				.split(",")
+				.some((extension) => file.name.toLowerCase().endsWith(extension))
+		) {
+			setError(m.web_support_attachment_failed());
+			return;
+		}
+		setError(null);
+		setAttachment({ file, id: crypto.randomUUID() });
 	}
 
 	function handleMessageKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -302,36 +487,11 @@ export function WebSupportWidget() {
 							<X />
 						</Button>
 					</header>
-					<div className="border-b border-primary/20 bg-primary/5 px-4 py-3 text-sm">
-						<Dialog>
-							<DialogTrigger asChild>
-								<button
-									type="button"
-									className="inline-flex items-center gap-1 rounded-sm text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-								>
-									<QrCode className="size-4 shrink-0" aria-hidden="true" />
-									{m.web_support_wechat_fallback()}
-								</button>
-							</DialogTrigger>
-							<DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-sm">
-								<DialogHeader>
-									<DialogTitle>{m.store_support_wechat()}</DialogTitle>
-									<DialogDescription>
-										{m.store_support_wechat_description()}
-									</DialogDescription>
-								</DialogHeader>
-								<div className="rounded-xl bg-white p-3">
-									<img
-										src={wechatQrUrl}
-										alt={m.store_support_wechat_qr_alt()}
-										width={613}
-										height={620}
-										className="mx-auto h-auto w-full max-w-72"
-									/>
-								</div>
-							</DialogContent>
-						</Dialog>
-					</div>
+					<p className="border-b bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+						{m.web_support_reply_notice()}
+						<br />
+						{m.web_support_attachment_hint()}
+					</p>
 					{!["active", "closing", "closed"].includes(status ?? "") ? (
 						session.isPending ? (
 							<div className="flex flex-1 items-center justify-center">
@@ -353,6 +513,11 @@ export function WebSupportWidget() {
 										placeholder={m.web_support_email()}
 										aria-label={m.web_support_email()}
 									/>
+								) : null}
+								{receiveError ? (
+									<p className="px-4 text-xs text-amber-600" aria-live="polite">
+										{receiveError}
+									</p>
 								) : null}
 								{error ? (
 									<p className="text-sm text-destructive" role="alert">
@@ -396,17 +561,77 @@ export function WebSupportWidget() {
 												{formatMessageTime(message.createdAt)}
 											</time>
 										</span>
+										{message.attachment ? (
+											<div className="space-y-2">
+												{message.attachment.mime.startsWith("image/") ? (
+													<a
+														href={supportAttachmentUrl(message.attachment.id)}
+														target="_blank"
+														rel="noopener noreferrer"
+													>
+														<img
+															src={supportAttachmentUrl(message.attachment.id)}
+															alt={message.attachment.name}
+															className="max-h-52 max-w-full rounded-lg object-contain"
+															loading="lazy"
+														/>
+													</a>
+												) : null}
+												<a
+													className="block break-all font-medium underline"
+													href={supportAttachmentUrl(
+														message.attachment.id,
+														true,
+													)}
+												>
+													{message.attachment.name} ·{" "}
+													{Math.ceil(message.attachment.size / 1024)} KB ·{" "}
+													{m.web_support_attachment_download()}
+												</a>
+											</div>
+										) : null}
 										<p className="whitespace-pre-wrap break-words">
 											{message.text}
 										</p>
 									</div>
 								))}
+								{sendingPreview ? (
+									<div
+										className="ml-auto w-fit max-w-[85%] space-y-2 rounded-2xl bg-primary/10 p-3 text-sm"
+										aria-live="polite"
+									>
+										{sendingPreview.url ? (
+											<img
+												src={sendingPreview.url}
+												alt={sendingPreview.name ?? ""}
+												className="max-h-32 max-w-full rounded-lg object-contain"
+											/>
+										) : null}
+										{sendingPreview.name ? (
+											<p className="break-all">{sendingPreview.name}</p>
+										) : null}
+										{sendingPreview.text ? (
+											<p className="whitespace-pre-wrap break-words">
+												{sendingPreview.text}
+											</p>
+										) : null}
+										<p className="flex items-center gap-2 text-xs">
+											<LoaderCircle className="size-4 animate-spin" />
+											{m.web_support_sending_status()} · {sendingSeconds}s
+										</p>
+									</div>
+								) : null}
 								{status === "closed" ? (
 									<p className="text-center text-sm text-muted-foreground">
 										{m.web_support_closed()}
 									</p>
 								) : null}
 							</div>
+							{receiveError ? (
+								<p className="px-4 text-xs text-amber-600" aria-live="polite">
+									{receiveError}
+								</p>
+							) : null}
 							{error ? (
 								<p className="px-4 text-sm text-destructive" role="alert">
 									{error}
@@ -428,10 +653,60 @@ export function WebSupportWidget() {
 									className="border-t pb-[env(safe-area-inset-bottom)]"
 									onSubmit={sendMessage}
 								>
+									<div className="flex items-center gap-2 px-3 pt-2">
+										<input
+											ref={fileInput}
+											type="file"
+											accept={supportFileAccept}
+											className="hidden"
+											aria-label={m.web_support_attach()}
+											onChange={(event) => {
+												const file = event.target.files?.[0];
+												if (file) chooseAttachment(file);
+												event.target.value = "";
+											}}
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											disabled={busy}
+											onClick={() => fileInput.current?.click()}
+										>
+											<Paperclip className="size-4" />
+											{m.web_support_attach()}
+										</Button>
+										{attachment ? (
+											<>
+												<span className="min-w-0 flex-1 truncate text-xs">
+													{attachment.file.name}
+												</span>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon-sm"
+													disabled={busy}
+													aria-label={m.web_support_attachment_remove()}
+													onClick={() => setAttachment(null)}
+												>
+													<X />
+												</Button>
+											</>
+										) : null}
+									</div>
 									<Textarea
 										allowClear={false}
 										className="min-h-20 max-h-32 resize-none rounded-none border-0 bg-transparent px-4 py-3 pr-14 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
-										maxLength={3500}
+										maxLength={attachment ? 1000 : 3500}
+										onPaste={(event) => {
+											const file = Array.from(event.clipboardData.files).find(
+												(file) => file.type.startsWith("image/"),
+											);
+											if (file) {
+												event.preventDefault();
+												chooseAttachment(file);
+											}
+										}}
 										value={text}
 										onChange={(event) => setText(event.target.value)}
 										onKeyDown={handleMessageKeyDown}
@@ -441,10 +716,14 @@ export function WebSupportWidget() {
 											<Button
 												className="rounded-full"
 												size="icon-sm"
-												disabled={busy || !text.trim()}
+												disabled={busy || (!text.trim() && !attachment)}
 												aria-label={m.web_support_send()}
 											>
-												<Send />
+												{busy ? (
+													<LoaderCircle className="animate-spin" />
+												) : (
+													<Send />
+												)}
 											</Button>
 										}
 									/>

@@ -37,14 +37,11 @@ import {
 	ChatGptRegionGuide,
 	chatGptRechargeProductId,
 } from "#/features/storefront/components/chatgpt-region-guide";
+import { ClaudeProductDescription } from "#/features/storefront/components/claude-product-description";
 import {
 	ClaudePurchaseGuide,
 	claudeRechargeProductId,
 } from "#/features/storefront/components/claude-purchase-guide";
-import {
-	Ph20xEligibilityGuide,
-	ph20xNewSkuId,
-} from "#/features/storefront/components/ph20x-eligibility-guide";
 import {
 	StorefrontProductCard,
 	StorefrontProductCardSkeleton,
@@ -264,7 +261,9 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 					<h1 className="mt-3 text-balance font-semibold text-4xl tracking-[-0.035em] sm:text-5xl">
 						{data.name}
 					</h1>
-					{data.description ? (
+					{data.description && data.id === claudeRechargeProductId ? (
+						<ClaudeProductDescription description={data.description} />
+					) : data.description ? (
 						<p className="mt-4 max-w-2xl whitespace-pre-wrap text-muted-foreground leading-7">
 							{data.description}
 						</p>
@@ -276,14 +275,6 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 						>
 							<Globe2 aria-hidden="true" className="size-4 shrink-0" />
 							<p>{m.store_chatgpt_region_notice()}</p>
-						</a>
-					) : null}
-					{selectedItem?.id === ph20xNewSkuId ? (
-						<a
-							href="#ph20x-eligibility"
-							className="mt-5 block rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 font-semibold text-sm underline underline-offset-4"
-						>
-							{m.store_ph20x_eligibility_link()}
 						</a>
 					) : null}
 					{data.id === claudeRechargeProductId ? (
@@ -533,7 +524,6 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 					</div>
 				</div>
 			</div>
-			{selectedItem?.id === ph20xNewSkuId ? <Ph20xEligibilityGuide /> : null}
 			{data.id === chatGptRechargeProductId ? <ChatGptRegionGuide /> : null}
 			{data.id === claudeRechargeProductId ? <ClaudePurchaseGuide /> : null}
 			{relatedProducts.isLoading ? (

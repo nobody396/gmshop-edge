@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { systemPermission } from "#/features/access/system-rbac";
+import { refreshClaudeSaleCapacity } from "#/features/redeem-warehouse/server/sale-capacity";
 import {
 	loadDeliveryWarehouseToken,
 	requestWarehouse,
@@ -59,6 +60,11 @@ export async function listSupplyConsole(
 	commerceSecret: string,
 	requester: typeof requestWarehouse = requestWarehouse,
 ) {
+	const claudeCapacity = await refreshClaudeSaleCapacity(
+		db,
+		commerceSecret,
+		requester,
+	).catch(() => null);
 	const [rows, map] = await Promise.all([
 		db
 			.prepare(
@@ -120,11 +126,15 @@ export async function listSupplyConsole(
 			["GPT_PLUS_PH", "GPT_5X_PH", "GPT_20X_PH"].includes(centralSku)
 				? Number(row.raw_available ?? 0)
 				: 0;
-		const deliverable = centralSku
-			? rawAvailable + Math.min(available - rawAvailable, pool?.available ?? 0)
-			: row.fulfillment_source === "supplier"
-				? Number(row.binding_stock ?? 0)
-				: available;
+		const deliverable =
+			centralSku === "CLAUDE_PRO_IOS"
+				? (claudeCapacity?.sellable ?? 0)
+				: centralSku
+					? rawAvailable +
+						Math.min(available - rawAvailable, pool?.available ?? 0)
+					: row.fulfillment_source === "supplier"
+						? Number(row.binding_stock ?? 0)
+						: available;
 		return {
 			componentId: row.component_id,
 			productName: row.product_name,
@@ -135,13 +145,24 @@ export async function listSupplyConsole(
 			supplyMinor: row.supply_minor,
 			costMinor: row.cost_minor,
 			lastUnitCostMinor: row.last_unit_cost_minor,
-			available,
+			available:
+				centralSku === "CLAUDE_PRO_IOS"
+					? (claudeCapacity?.sellable ?? 0)
+					: available,
+			ownedCodePool: available,
 			reserved: Number(row.reserved ?? 0),
 			deliverable,
-			gap: Math.max(0, available - deliverable),
+			gap:
+				centralSku === "CLAUDE_PRO_IOS"
+					? 0
+					: Math.max(0, available - deliverable),
 			lastRestockedAt: row.last_restocked_at,
 			centralSku,
 			centralAvailable: pool?.available ?? null,
+			outstanding:
+				centralSku === "CLAUDE_PRO_IOS"
+					? (claudeCapacity?.outstanding ?? null)
+					: null,
 			centralName: pool?.displayName ?? null,
 			binding: row.binding_provider
 				? {

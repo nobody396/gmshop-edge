@@ -1,36 +1,28 @@
-// @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import {
-	Ph20xEligibilityGuide,
-	ph20xNewSkuId,
-} from "#/features/storefront/components/ph20x-eligibility-guide";
 
-describe("PH 20X new-activation eligibility guide", () => {
-	it("requires clickable upgrade, not merely the visible 20x option", () => {
-		const html = renderToStaticMarkup(<Ph20xEligibilityGuide />);
-		expect(html).toContain("black and clickable");
-		expect(html).toContain("seeing the 20x option alone is not enough");
-		expect(html).toContain("do not order");
-		expect(html).toContain("does not apply to Philippines 20X renewals");
-		expect(html).toContain("Do not pay on the official site");
-		expect(html).toContain('target="_blank"');
-		expect(html).toContain('class="h-auto w-full rounded-xl"');
-		expect(html).not.toContain("object-cover");
-	});
-	it("only attaches to the exact selected new-activation SKU", () => {
-		expect(ph20xNewSkuId).toBe("0829de43-da22-420c-9866-38c83dd420f0");
+describe("retired PH Pro eligibility gate", () => {
+	it("does not render an eligibility link, guide, or upgrade-button check", () => {
 		const source = readFileSync(
 			"src/features/storefront/pages/product.tsx",
 			"utf8",
 		);
-		expect(source).toContain('href="#ph20x-eligibility"');
-		expect(source).toMatch(
-			/selectedItem\?\.id === ph20xNewSkuId \?\s*<Ph20xEligibilityGuide/,
-		);
-		const image = readFileSync("public/guides/chatgpt/ph20x-eligibility.png");
-		expect(image.readUInt32BE(16)).toBe(1464);
-		expect(image.readUInt32BE(20)).toBe(1844);
+		expect(source).not.toContain("ph20x-eligibility");
+		expect(source).not.toContain("Ph20xEligibilityGuide");
+		expect(source).not.toContain("store_ph20x_eligibility");
+		expect(source).toContain("ChatGptRegionGuide");
+		expect(source).toContain("selectedItem");
+	});
+	it("removes the retired requirement in both locales", () => {
+		for (const locale of ["en-US", "zh-CN"]) {
+			const messages = JSON.parse(
+				readFileSync(`messages/${locale}.json`, "utf8"),
+			);
+			expect(
+				Object.keys(messages).filter((key) =>
+					key.startsWith("store_ph20x_eligibility_"),
+				),
+			).toEqual([]);
+		}
 	});
 });

@@ -230,6 +230,44 @@ describe("supply console", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("subtracts sold unredeemed Claude orders instead of treating the code pool as stock", async () => {
+		await db
+			.prepare("UPDATE system_settings SET value=? WHERE key=?")
+			.bind(JSON.stringify({ [CENTRAL_ITEM]: "CLAUDE_PRO_IOS" }), supplyMapKey)
+			.run();
+		try {
+			const warehouse: typeof requestWarehouse = async (_token, path) =>
+				path.endsWith("sale-capacity")
+					? {
+							success: true,
+							data: { available: 3, outstanding: 2, sellable: 1 },
+						}
+					: {
+							success: true,
+							data: [
+								{
+									sku: "CLAUDE_PRO_IOS",
+									display_name: "Claude Pro",
+									available: 3,
+									consumed: 22,
+									quarantined: 0,
+								},
+							],
+						};
+			const rows = await listSupplyConsole(db, COMMERCE_SECRET, warehouse);
+			expect(rows.find((r) => r.componentId === CENTRAL_ITEM)).toMatchObject({
+				available: 1,
+				ownedCodePool: 3,
+				deliverable: 1,
+			});
+		} finally {
+			await db
+				.prepare("UPDATE system_settings SET value=? WHERE key=?")
+				.bind(JSON.stringify({ [CENTRAL_ITEM]: "GPT_20X_IOS" }), supplyMapKey)
+				.run();
+		}
+	});
+
 	it("keeps the console readable when the warehouse is unreachable", async () => {
 		const failing: typeof requestWarehouse = async () => {
 			throw new Error("warehouse down");

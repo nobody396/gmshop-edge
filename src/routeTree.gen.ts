@@ -110,7 +110,9 @@ import { Route as ApiOpsRestockReconcileRouteImport } from './routes/api/ops/res
 import { Route as ApiConfigurationLogoScopeIdRouteImport } from './routes/api/configuration-logo/$scope/$id'
 import { Route as AdminProductsProductIdEditRouteImport } from './routes/admin/products/$productId/edit'
 import { Route as publicAccountOrdersOrderNumberRouteImport } from './routes/(public)/account/orders/$orderNumber'
+import { Route as ApiSupportWebAttachmentsIndexRouteImport } from './routes/api/support/web/attachments/index'
 import { Route as ApiSupportWebRepliesAckRouteImport } from './routes/api/support/web/replies/ack'
+import { Route as ApiSupportWebAttachmentsAttachmentIdRouteImport } from './routes/api/support/web/attachments/$attachmentId'
 import { Route as ApiSuppliersDujiaoNextCallbackAccountIdRouteImport } from './routes/api/suppliers/dujiao-next/callback/$accountId'
 import { Route as ApiShopProductsProductIdCoverRouteImport } from './routes/api/shop/products/$productId/cover'
 import { Route as ApiShopPaymentsChannelIdWebhookRouteImport } from './routes/api/shop/payments/$channelId/webhook'
@@ -644,11 +646,23 @@ const publicAccountOrdersOrderNumberRoute =
     path: '/orders/$orderNumber',
     getParentRoute: () => publicAccountRouteRoute,
   } as any)
+const ApiSupportWebAttachmentsIndexRoute =
+  ApiSupportWebAttachmentsIndexRouteImport.update({
+    id: '/api/support/web/attachments/',
+    path: '/api/support/web/attachments/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSupportWebRepliesAckRoute = ApiSupportWebRepliesAckRouteImport.update({
   id: '/api/support/web/replies/ack',
   path: '/api/support/web/replies/ack',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSupportWebAttachmentsAttachmentIdRoute =
+  ApiSupportWebAttachmentsAttachmentIdRouteImport.update({
+    id: '/api/support/web/attachments/$attachmentId',
+    path: '/api/support/web/attachments/$attachmentId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSuppliersDujiaoNextCallbackAccountIdRoute =
   ApiSuppliersDujiaoNextCallbackAccountIdRouteImport.update({
     id: '/api/suppliers/dujiao-next/callback/$accountId',
@@ -820,7 +834,9 @@ export interface FileRoutesByFullPath {
   '/api/shop/payments/$channelId/webhook': typeof ApiShopPaymentsChannelIdWebhookRoute
   '/api/shop/products/$productId/cover': typeof ApiShopProductsProductIdCoverRoute
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
+  '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/support/web/attachments/': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   '/api/shop/orders/$orderNumber/downloads/$assetId': typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
   '/api/shop/products/$productId/media/$mediaId': typeof ApiShopProductsProductIdMediaMediaIdRoute
@@ -924,7 +940,9 @@ export interface FileRoutesByTo {
   '/api/shop/payments/$channelId/webhook': typeof ApiShopPaymentsChannelIdWebhookRoute
   '/api/shop/products/$productId/cover': typeof ApiShopProductsProductIdCoverRoute
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
+  '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/support/web/attachments': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   '/api/shop/orders/$orderNumber/downloads/$assetId': typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
   '/api/shop/products/$productId/media/$mediaId': typeof ApiShopProductsProductIdMediaMediaIdRoute
@@ -1040,7 +1058,9 @@ export interface FileRoutesById {
   '/api/shop/payments/$channelId/webhook': typeof ApiShopPaymentsChannelIdWebhookRoute
   '/api/shop/products/$productId/cover': typeof ApiShopProductsProductIdCoverRoute
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
+  '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/support/web/attachments/': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   '/api/shop/orders/$orderNumber/downloads/$assetId': typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
   '/api/shop/products/$productId/media/$mediaId': typeof ApiShopProductsProductIdMediaMediaIdRoute
@@ -1155,7 +1175,9 @@ export interface FileRouteTypes {
     | '/api/shop/payments/$channelId/webhook'
     | '/api/shop/products/$productId/cover'
     | '/api/suppliers/dujiao-next/callback/$accountId'
+    | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/support/web/attachments/'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
     | '/api/shop/orders/$orderNumber/downloads/$assetId'
     | '/api/shop/products/$productId/media/$mediaId'
@@ -1259,7 +1281,9 @@ export interface FileRouteTypes {
     | '/api/shop/payments/$channelId/webhook'
     | '/api/shop/products/$productId/cover'
     | '/api/suppliers/dujiao-next/callback/$accountId'
+    | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/support/web/attachments'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
     | '/api/shop/orders/$orderNumber/downloads/$assetId'
     | '/api/shop/products/$productId/media/$mediaId'
@@ -1374,7 +1398,9 @@ export interface FileRouteTypes {
     | '/api/shop/payments/$channelId/webhook'
     | '/api/shop/products/$productId/cover'
     | '/api/suppliers/dujiao-next/callback/$accountId'
+    | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/support/web/attachments/'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
     | '/api/shop/orders/$orderNumber/downloads/$assetId'
     | '/api/shop/products/$productId/media/$mediaId'
@@ -1415,7 +1441,9 @@ export interface RootRouteChildren {
   ApiShopPaymentsChannelIdWebhookRoute: typeof ApiShopPaymentsChannelIdWebhookRoute
   ApiShopProductsProductIdCoverRoute: typeof ApiShopProductsProductIdCoverRoute
   ApiSuppliersDujiaoNextCallbackAccountIdRoute: typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
+  ApiSupportWebAttachmentsAttachmentIdRoute: typeof ApiSupportWebAttachmentsAttachmentIdRoute
   ApiSupportWebRepliesAckRoute: typeof ApiSupportWebRepliesAckRoute
+  ApiSupportWebAttachmentsIndexRoute: typeof ApiSupportWebAttachmentsIndexRoute
   ApiShopAutomationJobIdArtifactsFileNameRoute: typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   ApiShopOrdersOrderNumberDownloadsAssetIdRoute: typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
   ApiShopProductsProductIdMediaMediaIdRoute: typeof ApiShopProductsProductIdMediaMediaIdRoute
@@ -2131,11 +2159,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof publicAccountOrdersOrderNumberRouteImport
       parentRoute: typeof publicAccountRouteRoute
     }
+    '/api/support/web/attachments/': {
+      id: '/api/support/web/attachments/'
+      path: '/api/support/web/attachments'
+      fullPath: '/api/support/web/attachments/'
+      preLoaderRoute: typeof ApiSupportWebAttachmentsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/support/web/replies/ack': {
       id: '/api/support/web/replies/ack'
       path: '/api/support/web/replies/ack'
       fullPath: '/api/support/web/replies/ack'
       preLoaderRoute: typeof ApiSupportWebRepliesAckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/support/web/attachments/$attachmentId': {
+      id: '/api/support/web/attachments/$attachmentId'
+      path: '/api/support/web/attachments/$attachmentId'
+      fullPath: '/api/support/web/attachments/$attachmentId'
+      preLoaderRoute: typeof ApiSupportWebAttachmentsAttachmentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/suppliers/dujiao-next/callback/$accountId': {
@@ -2549,7 +2591,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiShopProductsProductIdCoverRoute: ApiShopProductsProductIdCoverRoute,
   ApiSuppliersDujiaoNextCallbackAccountIdRoute:
     ApiSuppliersDujiaoNextCallbackAccountIdRoute,
+  ApiSupportWebAttachmentsAttachmentIdRoute:
+    ApiSupportWebAttachmentsAttachmentIdRoute,
   ApiSupportWebRepliesAckRoute: ApiSupportWebRepliesAckRoute,
+  ApiSupportWebAttachmentsIndexRoute: ApiSupportWebAttachmentsIndexRoute,
   ApiShopAutomationJobIdArtifactsFileNameRoute:
     ApiShopAutomationJobIdArtifactsFileNameRoute,
   ApiShopOrdersOrderNumberDownloadsAssetIdRoute:

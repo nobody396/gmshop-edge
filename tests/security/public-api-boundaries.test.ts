@@ -90,6 +90,7 @@ describe("signed and customer API boundaries", () => {
 		for (const path of [
 			"/api/support/web/status",
 			"/api/support/web/current",
+			`/api/support/web/attachments/${id}`,
 		]) {
 			expect(publicRequest(path, "GET"), path).toBe(true);
 			expect(publicRequest(path, "POST"), path).toBe(false);
@@ -99,10 +100,23 @@ describe("signed and customer API boundaries", () => {
 			"/api/support/web/messages",
 			"/api/support/web/replies/ack",
 			"/api/support/web/close",
+			"/api/support/web/attachments",
+			"/api/support/web/attachments/",
 		]) {
 			expect(publicRequest(path, "POST"), path).toBe(true);
 			expect(publicRequest(path, "GET"), path).toBe(false);
 		}
+		for (const path of [
+			"/api/support/web/attachments/not-a-uuid",
+			`/api/support/web/attachments/${id}/extra`,
+			"/api/support/web/attachments/admin",
+		]) {
+			expect(publicRequest(path, "GET")).toBe(false);
+			expect(publicRequest(path, "POST")).toBe(false);
+		}
+		expect(publicRequest(`/api/support/web/attachments/${id}`, "DELETE")).toBe(
+			false,
+		);
 		expect(publicRequest("/api/support/web/current/extra", "GET")).toBe(false);
 		expect(publicRequest("/api/support/web/messages/extra", "POST")).toBe(
 			false,

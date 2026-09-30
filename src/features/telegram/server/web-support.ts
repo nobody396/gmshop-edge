@@ -2,11 +2,12 @@ import { Api, GrammyError } from "grammy";
 import { z } from "zod";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { getStoreSessionUser } from "#/features/storefront/server/account";
-import { encryptSecret } from "#/lib/secrets";
+import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import { m } from "#/paraglide/messages";
 import { getRuntimeEnv } from "#/server/db.server";
 import { claimFixedWindowRateLimit } from "#/server/rate-limit";
 import { loadTelegramSettings } from "../settings";
+import { supportFileRetentionMs } from "../web-support-attachments";
 import {
 	parseDevice,
 	type webSupportConversationSchema,
@@ -19,11 +20,11 @@ import {
 	resolveFeishuAlertCredentials,
 	sendFeishuText,
 } from "./feishu-alerts";
+import { supportEmailKeyboard } from "./manual-support-email";
 import { telegramDataKeyId } from "./secret";
 import { telegramRuntime } from "./sync";
 
 const encoder = new TextEncoder();
-const replyRetentionMs = 86_400_000;
 export const webSupportCookieName = "gmshop_web_support";
 
 export class WebSupportError extends Error {
@@ -35,7 +36,7 @@ export class WebSupportError extends Error {
 	}
 }
 
-type WebConversation = {
+export type WebConversation = {
 	id: string;
 	support_chat_id: string;
 	message_thread_id: number | null;
@@ -51,6 +52,7 @@ export async function webSupportStatus(db: D1Database, request: Request) {
 	return {
 		enabled: settings.webSupportEnabled,
 		hasConversation: Boolean(conversation),
+		conversationId: conversation?.id ?? null,
 		status: conversation?.status ?? null,
 	};
 }
@@ -71,8 +73,14 @@ export async function createWebSupportConversation(
 		throw new WebSupportError("support_unavailable", 409);
 
 	const existingSession = await authenticatedConversation(db, request);
-	if (existingSession)
+	if (existingSession) {
+		await updateWebSupportLocale(
+			db,
+			existingSession.id,
+			input.diagnostics.locale,
+		);
 		return reopenExisting(db, provider.telegramBotToken, existingSession);
+	}
 
 	const sessionUser = await getStoreSessionUser(request).catch(() => null);
 	const accountEmail =
@@ -124,8 +132,8 @@ export async function createWebSupportConversation(
 			 (id, support_chat_id, visitor_id, user_id, email_encrypted, email_hash,
 			  session_token_hash, fingerprint_hash, fingerprint_version, fingerprint_key_id,
 			  public_key_jwk, topic_name, status, creation_lease_expires_at,
-			  next_reply_sequence, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, 1, ?, ?)`,
+			  next_reply_sequence, created_at, updated_at, locale)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, 1, ?, ?, ?)`,
 		)
 		.bind(
 			id,
@@ -142,11 +150,12 @@ export async function createWebSupportConversation(
 			fingerprint,
 			input.fingerprint?.version ?? null,
 			await telegramDataKeyId(runtime.dataEncryptionSecret),
-			JSON.stringify(input.publicKeyJwk),
+			JSON.stringify(input.publicKeyJwk ?? {}),
 			topicName,
 			now + 30_000,
 			now,
 			now,
+			input.diagnostics.locale,
 		)
 		.run();
 	const api = new Api(provider.telegramBotToken);
@@ -163,7 +172,10 @@ export async function createWebSupportConversation(
 		await api.sendMessage(
 			settings.supportChatId,
 			formatDiagnostics(request, email, input, repeated),
-			{ message_thread_id: topic.message_thread_id },
+			{
+				message_thread_id: topic.message_thread_id,
+				reply_markup: supportEmailKeyboard(id, input.diagnostics.locale),
+			},
 		);
 		return { id, status: "active" as const, sessionToken };
 	} catch (error) {
@@ -181,15 +193,68 @@ export async function currentWebSupportConversation(
 	after: number,
 ) {
 	const conversation = await requireConversation(db, request);
-	const replies = await db
-		.prepare(
-			`SELECT id, sequence, algorithm, wrapped_key, iv, ciphertext, created_at
-			 FROM telegram_web_support_replies WHERE conversation_id = ? AND sequence > ?
-			 AND expires_at > ? ORDER BY sequence LIMIT 100`,
+	const rows = await db
+		.prepare(`SELECT id,sequence,algorithm,wrapped_key,iv,ciphertext,created_at
+ FROM telegram_web_support_replies WHERE conversation_id=? AND sequence>? AND expires_at>? AND created_at>? ORDER BY sequence LIMIT 100`)
+		.bind(
+			conversation.id,
+			after,
+			Date.now(),
+			Date.now() - supportFileRetentionMs,
 		)
-		.bind(conversation.id, after, Date.now())
-		.all();
-	return { status: conversation.status, replies: replies.results };
+		.all<{
+			id: string;
+			sequence: number;
+			algorithm: string;
+			wrapped_key: string;
+			iv: string;
+			ciphertext: string;
+			created_at: number;
+		}>();
+	const v2 = new URL(request.url).searchParams.get("version") === "2";
+	const replies = [];
+	const runtime = rows.results.some((row) => row.algorithm === "server-v1")
+		? (await telegramRuntime(db)).runtime
+		: null;
+	for (const row of rows.results) {
+		if (row.algorithm !== "server-v1") {
+			replies.push(row);
+			continue;
+		}
+		const text = await decryptSecret(
+			row.ciphertext,
+			runtime?.dataEncryptionSecret ?? "",
+			`web-support:${conversation.id}:${row.sequence}`,
+		);
+		if (v2) {
+			replies.push({
+				id: row.id,
+				sequence: row.sequence,
+				text,
+				created_at: row.created_at,
+			});
+			continue;
+		}
+		// Keep already-open legacy clients working until they reload.
+		const envelope = await encryptForBrowser(
+			JSON.parse(conversation.public_key_jwk) as JsonWebKey,
+			conversation.id,
+			row.sequence,
+			text,
+		);
+		replies.push({
+			...row,
+			algorithm: envelope.algorithm,
+			wrapped_key: envelope.wrappedKey,
+			iv: envelope.iv,
+			ciphertext: envelope.ciphertext,
+		});
+	}
+	return {
+		conversationId: conversation.id,
+		status: conversation.status,
+		replies,
+	};
 }
 
 export async function sendWebSupportMessage(
@@ -209,6 +274,7 @@ export async function sendWebSupportMessage(
 		windowMs: 60_000,
 	});
 	if (!limit.allowed) throw new WebSupportError("rate_limited", 429);
+	await updateWebSupportLocale(db, conversation.id, input.locale);
 	const receipt = await db
 		.prepare(
 			`INSERT INTO telegram_web_support_sends (id, conversation_id, client_message_id, created_at)
@@ -230,6 +296,7 @@ export async function sendWebSupportMessage(
 	try {
 		await api.sendMessage(conversation.support_chat_id, `💬 ${input.text}`, {
 			message_thread_id: conversation.message_thread_id,
+			reply_markup: supportEmailKeyboard(conversation.id),
 		});
 		await touchWebConversation(db, conversation.id);
 		scheduleFeishuWebSupportAlert(db, conversation.topic_name, input.text);
@@ -295,14 +362,8 @@ export async function acknowledgeWebSupportReplies(
 	request: Request,
 	ids: string[],
 ) {
-	const conversation = await requireConversation(db, request);
-	const placeholders = ids.map(() => "?").join(",");
-	await db
-		.prepare(
-			`DELETE FROM telegram_web_support_replies WHERE conversation_id = ? AND id IN (${placeholders})`,
-		)
-		.bind(conversation.id, ...ids)
-		.run();
+	await requireConversation(db, request);
+	// Replies expire on the server after 48 hours, not on the first tab's read.
 	return { acknowledged: ids.length };
 }
 
@@ -346,6 +407,7 @@ export async function storeWebAdministratorReply(
 	db: D1Database,
 	conversation: WebConversation,
 	message: string,
+	attachmentId?: string,
 ) {
 	const reserved = await db
 		.prepare(
@@ -356,14 +418,23 @@ export async function storeWebAdministratorReply(
 		.first<{ next_reply_sequence: number }>();
 	if (!reserved) throw new WebSupportError("conversation_closed", 409);
 	const sequence = reserved.next_reply_sequence - 1;
-	const envelope = await encryptForBrowser(
-		JSON.parse(conversation.public_key_jwk) as JsonWebKey,
-		conversation.id,
-		sequence,
+	const { runtime } = await telegramRuntime(db);
+	const ciphertext = await encryptSecret(
 		message,
+		runtime.dataEncryptionSecret,
+		`web-support:${conversation.id}:${sequence}`,
 	);
 	const now = Date.now();
 	await db.batch([
+		...(attachmentId
+			? [
+					db
+						.prepare(
+							"UPDATE telegram_web_support_attachments SET status='sent' WHERE id=? AND conversation_id=?",
+						)
+						.bind(attachmentId, conversation.id),
+				]
+			: []),
 		db
 			.prepare(
 				`INSERT INTO telegram_web_support_replies
@@ -374,11 +445,11 @@ export async function storeWebAdministratorReply(
 				crypto.randomUUID(),
 				conversation.id,
 				sequence,
-				envelope.algorithm,
-				envelope.wrappedKey,
-				envelope.iv,
-				envelope.ciphertext,
-				now + replyRetentionMs,
+				"server-v1",
+				"",
+				"",
+				ciphertext,
+				now + supportFileRetentionMs,
 				now,
 			),
 		db
@@ -432,7 +503,7 @@ async function authenticatedConversation(db: D1Database, request: Request) {
 		.first<WebConversation>();
 }
 
-async function requireConversation(db: D1Database, request: Request) {
+export async function requireConversation(db: D1Database, request: Request) {
 	const conversation = await authenticatedConversation(db, request);
 	if (!conversation) throw new WebSupportError("conversation_not_found", 401);
 	return conversation;
@@ -659,4 +730,19 @@ function cookieValue(request: Request, name: string) {
 
 export function webSupportCookie(token: string) {
 	return `${webSupportCookieName}=${token}; Path=/api/support/web; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`;
+}
+
+/** Explicit website locale, never guessed from message contents or staff language. */
+export async function updateWebSupportLocale(
+	db: D1Database,
+	conversationId: string,
+	locale?: "zh-CN" | "en-US",
+) {
+	if (!locale) return;
+	await db
+		.prepare(
+			"UPDATE telegram_web_support_conversations SET locale=? WHERE id=?",
+		)
+		.bind(locale, conversationId)
+		.run();
 }

@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { systemPermission } from "#/features/access/system-rbac";
+import { refreshClaudeSaleCapacity } from "#/features/redeem-warehouse/server/sale-capacity";
+import { storefrontStockExpression } from "#/features/storefront/server/stock-availability";
 import { DomainError } from "#/lib/domain-error";
 import { decimalToMinor, minorToDecimal } from "#/lib/units";
 import { getAdminServerContext } from "#/server/context";
@@ -48,12 +50,13 @@ export const listSupplierExportListingsFn = createServerFn({
 	const { db } = await getAdminServerContext(
 		systemPermission("suppliers", "read"),
 	);
+	await refreshClaudeSaleCapacity(db.$client).catch(() => null);
 	const rows = await db.$client
 		.prepare(
 			`SELECT item.id, product.name AS product_name, item.name AS item_name,
 		 item.price_minor, item.currency, item.currency_decimals,
 		 listing.price_minor AS export_price_minor, COALESCE(listing.enabled, 0) AS export_enabled,
-		 (SELECT COUNT(*) FROM stock_entries stock WHERE stock.sellable_item_id = item.id AND stock.status = 'available') AS stock_quantity
+		 ${storefrontStockExpression("product", "item")} AS stock_quantity
 		 FROM product_sellable_items item JOIN products product ON product.id = item.product_id
 		 LEFT JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
 		 WHERE product.status = 'active' AND product.product_type = 'stock'

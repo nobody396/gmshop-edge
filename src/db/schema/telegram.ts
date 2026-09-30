@@ -98,6 +98,7 @@ export const telegramWebSupportConversations = sqliteTable(
 		fingerprintVersion: text("fingerprint_version"),
 		fingerprintKeyId: text("fingerprint_key_id"),
 		publicKeyJwk: text("public_key_jwk").notNull(),
+		locale: text("locale", { enum: ["zh-CN", "en-US"] }),
 		messageThreadId: integer("message_thread_id"),
 		topicName: text("topic_name"),
 		status: text("status", {
@@ -195,6 +196,37 @@ export const telegramWebSupportSends = sqliteTable(
 		index("telegram_web_support_sends_created_idx").on(
 			table.createdAt,
 			table.id,
+		),
+	],
+);
+
+export const telegramWebSupportAttachments = sqliteTable(
+	"telegram_web_support_attachments",
+	{
+		id: text("id").primaryKey(),
+		conversationId: text("conversation_id")
+			.notNull()
+			.references(() => telegramWebSupportConversations.id),
+		sourceKey: text("source_key").notNull(),
+		name: text("name").notNull(),
+		mime: text("mime").notNull(),
+		size: integer("size").notNull(),
+		status: text("status", { enum: ["pending", "sent"] }).notNull(),
+		createdAt: integer("created_at").notNull(),
+		expiresAt: integer("expires_at").notNull(),
+	},
+	(table) => [
+		uniqueIndex("telegram_web_support_attachments_source_uidx").on(
+			table.conversationId,
+			table.sourceKey,
+		),
+		index("telegram_web_support_attachments_expiry_idx").on(
+			table.expiresAt,
+			table.id,
+		),
+		check(
+			"telegram_web_support_attachments_status_check",
+			sql`${table.status} IN ('pending','sent')`,
 		),
 	],
 );

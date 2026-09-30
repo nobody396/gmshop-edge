@@ -3,12 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-	ChevronDown,
 	ChevronRight,
 	ExternalLink,
 	Headphones,
 	MessageCircle,
-	QrCode,
 	Send,
 	Settings,
 	ShoppingCart,
@@ -18,11 +16,6 @@ import {
 import { type ComponentProps, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import { Button } from "#/components/ui/button";
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "#/components/ui/collapsible";
 import {
 	Popover,
 	PopoverContent,
@@ -76,19 +69,22 @@ export function PublicHeader() {
 	return (
 		<header
 			className={cn(
-				"sticky inset-x-0 top-0 z-50 hidden border-transparent border-b bg-background/90 pt-safe transition-[border-color,backdrop-filter] lg:block",
+				"sticky inset-x-0 top-0 z-50 border-transparent border-b bg-background/90 pt-safe transition-[border-color,backdrop-filter]",
 				stuck && "border-border/70 backdrop-blur-xl",
 			)}
 		>
-			<div className="container flex h-18 items-center px-4">
-				<Link className="min-w-0 shrink-0" to="/">
+			<div className="container flex h-14 items-center px-3 lg:h-18 lg:px-4">
+				<Link className="min-w-0 max-w-[40%] lg:max-w-none" to="/">
 					<AppTitle />
 				</Link>
-				<div className="ms-auto flex items-center">
-					<nav className="me-6 flex items-center gap-6 text-muted-foreground text-sm">
+				<div className="ms-auto flex shrink-0 items-center">
+					<nav className="me-1 flex items-center gap-2 text-muted-foreground text-sm lg:me-6 lg:gap-6">
 						{navigation.map(([label, href]) => (
 							<a
-								className="py-2 transition-colors hover:text-foreground"
+								className={cn(
+									"whitespace-nowrap py-2 transition-colors hover:text-foreground",
+									href !== "/invoice" && "hidden lg:block",
+								)}
 								href={href}
 								key={href}
 							>
@@ -98,13 +94,15 @@ export function PublicHeader() {
 					</nav>
 					<div className="flex items-center gap-1 ps-1">
 						<CustomerSupport />
-						<CartAction />
-						<DesktopSettings
-							currencySelection={currencySelection}
-							root={adminEntry.data?.root}
-							user={headerUser}
-						/>
-						{user ? null : <SignInAction />}
+						<div className="hidden items-center gap-1 lg:flex">
+							<CartAction />
+							<DesktopSettings
+								currencySelection={currencySelection}
+								root={adminEntry.data?.root}
+								user={headerUser}
+							/>
+							{user ? null : <SignInAction />}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -135,7 +133,6 @@ export function DeliveryTicker() {
 
 const telegramSupportUrl = "https://t.me/laoshirenai_support_bot";
 const telegramGroupUrl = "https://t.me/laoshirengroup";
-const wechatQrUrl = "/support/wechat-jerrys.png";
 
 function CustomerSupport() {
 	const [open, setOpen] = useState(false);
@@ -147,7 +144,7 @@ function CustomerSupport() {
 					{m.store_support()}
 				</Button>
 			</PopoverTrigger>
-			<PopoverContent align="end" className="w-80 p-2">
+			<PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] p-2">
 				<div className="px-3 pt-2 pb-3">
 					<p className="font-medium">{m.store_support_title()}</p>
 					<p className="mt-1 text-muted-foreground text-sm leading-5">
@@ -175,38 +172,6 @@ function CustomerSupport() {
 					icon={Send}
 					label={m.store_support_private()}
 				/>
-				<Collapsible className="group/wechat mx-1 my-1 rounded-2xl border bg-muted/30">
-					<CollapsibleTrigger className="flex w-full items-center gap-3 rounded-2xl p-3 text-start transition-colors hover:bg-muted">
-						<span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
-							<QrCode className="size-4" />
-						</span>
-						<span className="min-w-0 flex-1">
-							<span className="block font-medium text-sm">
-								{m.store_support_wechat()}
-							</span>
-							<span className="block text-muted-foreground text-xs">
-								{m.store_support_wechat_description()}
-							</span>
-						</span>
-						<ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]/wechat:rotate-180" />
-					</CollapsibleTrigger>
-					<CollapsibleContent className="px-3 pb-3">
-						<a
-							className="block rounded-xl bg-white p-2 shadow-sm ring-1 ring-black/5 transition-transform hover:scale-[1.01]"
-							href={wechatQrUrl}
-							rel="noreferrer"
-							target="_blank"
-						>
-							<img
-								alt={m.store_support_wechat_qr_alt()}
-								className="mx-auto h-auto w-44 max-w-full"
-								height={620}
-								src={wechatQrUrl}
-								width={613}
-							/>
-						</a>
-					</CollapsibleContent>
-				</Collapsible>
 			</PopoverContent>
 		</Popover>
 	);
