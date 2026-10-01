@@ -3,6 +3,7 @@
 import { Headphones, LoaderCircle, Paperclip, Send, X } from "lucide-react";
 import {
 	type KeyboardEvent,
+	type ReactNode,
 	type SyntheticEvent,
 	useCallback,
 	useEffect,
@@ -50,6 +51,45 @@ function formatMessageTime(timestamp: number) {
 		hour: "2-digit",
 		minute: "2-digit",
 	}).format(timestamp);
+}
+
+function supportReplyText(text: string) {
+	if (!text) return text;
+	const parts: ReactNode[] = [];
+	let end = 0;
+	for (const match of text.matchAll(/https:\/\/[^\s]+/gi)) {
+		try {
+			const url = new URL(match[0]);
+			if (
+				url.username ||
+				url.password ||
+				url.port ||
+				![
+					"laoshirenvip.com",
+					"cn.laoshirenvip.com",
+					"shop.laoshirenai.com",
+				].includes(url.hostname)
+			)
+				continue;
+			parts.push(text.slice(end, match.index));
+			parts.push(
+				<a
+					key={match.index}
+					href={match[0]}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="underline underline-offset-2"
+				>
+					{match[0]}
+				</a>,
+			);
+			end = match.index + match[0].length;
+		} catch {
+			/* Keep malformed URLs as escaped plain text. */
+		}
+	}
+	parts.push(text.slice(end));
+	return parts;
 }
 
 export function WebSupportWidget() {
@@ -591,7 +631,9 @@ export function WebSupportWidget() {
 											</div>
 										) : null}
 										<p className="whitespace-pre-wrap break-words">
-											{message.text}
+											{message.role === "support"
+												? supportReplyText(message.text)
+												: message.text}
 										</p>
 									</div>
 								))}

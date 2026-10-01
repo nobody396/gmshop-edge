@@ -2153,5 +2153,12 @@
 	"guide_renew_bill_mismatch_body": "专用续费卡仅适用于当前 Pro 200美元档、账单 PHP 8,919.64 的菲区订阅。你选择的账单不匹配，暂不推荐购买，也不会自动改成 iOS 或普通菲区新开。",
 	"guide_rule_pending_body": "这个账号与目标套餐组合的充值规则尚未确认，暂不推荐购买。",
 	"guide_pro100": "Pro 100美元档",
-	"guide_current_ph_hint": "当前订阅账单显示 PHP（菲律宾比索）"
+	"guide_current_ph_hint": "当前订阅账单显示 PHP（菲律宾比索）",
+	"telegram_away_enabled_status": "离开回复：已开启\n选购指南：{guideUrl}",
+	"telegram_away_disabled_status": "离开回复：已关闭\n选购指南：{guideUrl}",
+	"telegram_away_guide_required": "还未开启：请先设置已上线的选购指南链接，使用 /away guide 加上 HTTPS 链接",
+	"telegram_away_invalid_guide": "指南链接未保存：请提供我们商城网站上的 HTTPS 链接",
+	"telegram_away_usage": "用法：/away status 查看，/away guide 加指南链接，/away on 开启，/away off 关闭",
+	"telegram_away_customer_message": "老板，我这会儿不在，有问题先留言哈\n不知道怎么选购的，打开下面的首页，点「开始选择」看选购指南\n{guideUrl}\n消息看到了都会回复",
+	"telegram_away_email_notice": "，回复后也会发邮件提醒你"
 }

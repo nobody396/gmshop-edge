@@ -89,7 +89,7 @@ export async function requestManualSupportEmail(
 		throw new DomainError("rate_limited", 429, "Too many requests");
 	const reply = await db
 		.prepare(
-			"SELECT sequence FROM telegram_web_support_replies WHERE conversation_id=? AND expires_at>? AND created_at>? ORDER BY sequence DESC LIMIT 1",
+			"SELECT sequence FROM telegram_web_support_replies WHERE conversation_id=? AND is_away_reply=0 AND expires_at>? AND created_at>? ORDER BY sequence DESC LIMIT 1",
 		)
 		.bind(conversation.id, Date.now(), Date.now() - supportFileRetentionMs)
 		.first<{ sequence: number }>();

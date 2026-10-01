@@ -18,6 +18,7 @@ import {
 import { supportEmailKeyboard } from "./manual-support-email";
 import { telegramRuntime } from "./sync";
 import {
+	maybeReplyWebSupportAway,
 	requireConversation,
 	storeWebAdministratorReply,
 	updateWebSupportLocale,
@@ -157,9 +158,10 @@ export async function uploadWebSupportAttachment(
 		await bucket.put(objectKey(attachment.id), bytes);
 		attempted = true;
 		// Send as document to preserve original screenshot/file bytes in Telegram.
-		await new Api(provider.telegramBotToken, {
+		const api = new Api(provider.telegramBotToken, {
 			timeoutSeconds: 60,
-		}).sendDocument(
+		});
+		await api.sendDocument(
 			conversation.support_chat_id,
 			new InputFile(bytes, attachment.name),
 			{
@@ -180,6 +182,7 @@ export async function uploadWebSupportAttachment(
 				)
 				.bind(Date.now(), Date.now(), conversation.id),
 		]);
+		await maybeReplyWebSupportAway(db, api, conversation);
 		return { attachment };
 	} catch (error) {
 		// Network timeouts may have delivered: retain the claim and never auto-resend.

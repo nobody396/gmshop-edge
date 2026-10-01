@@ -22,6 +22,10 @@ import {
 } from "./feishu-alerts";
 import { supportEmailKeyboard } from "./manual-support-email";
 import { telegramDataKeyId } from "./secret";
+import {
+	completeSupportAwayReply,
+	reserveSupportAwayReply,
+} from "./support-away";
 import { telegramRuntime } from "./sync";
 
 const encoder = new TextEncoder();
@@ -300,6 +304,7 @@ export async function sendWebSupportMessage(
 		});
 		await touchWebConversation(db, conversation.id);
 		scheduleFeishuWebSupportAlert(db, conversation.topic_name, input.text);
+		await maybeReplyWebSupportAway(db, api, conversation);
 		return { sent: true };
 	} catch (error) {
 		if (isMissingTopicError(error)) {
@@ -319,6 +324,7 @@ export async function sendWebSupportMessage(
 			});
 			await touchWebConversation(db, conversation.id);
 			scheduleFeishuWebSupportAlert(db, conversation.topic_name, input.text);
+			await maybeReplyWebSupportAway(db, api, conversation);
 			return { sent: true };
 		}
 		await db
@@ -328,6 +334,45 @@ export async function sendWebSupportMessage(
 			.bind(conversation.id, input.clientMessageId)
 			.run();
 		throw error;
+	}
+}
+
+export async function maybeReplyWebSupportAway(
+	db: D1Database,
+	api: Pick<Api, "sendMessage">,
+	conversation: WebConversation,
+) {
+	let reply: Awaited<ReturnType<typeof reserveSupportAwayReply>> = null;
+	try {
+		reply = await reserveSupportAwayReply(db, {
+			chatId: conversation.support_chat_id,
+			conversationId: conversation.id,
+			kind: "web",
+			locale: "zh-CN",
+		});
+		if (!reply) return;
+		await storeWebAdministratorReply(
+			db,
+			conversation,
+			reply.message,
+			undefined,
+			true,
+		);
+		await api.sendMessage(conversation.support_chat_id, reply.message, {
+			message_thread_id: reply.threadId,
+		});
+		await completeSupportAwayReply(db, reply.receiptId, true);
+	} catch {
+		if (reply)
+			await completeSupportAwayReply(db, reply.receiptId, false).catch(
+				() => undefined,
+			);
+		console.error(
+			JSON.stringify({
+				event: "support_away_delivery_failed",
+				conversationId: conversation.id,
+			}),
+		);
 	}
 }
 
@@ -408,6 +453,7 @@ export async function storeWebAdministratorReply(
 	conversation: WebConversation,
 	message: string,
 	attachmentId?: string,
+	isAwayReply = false,
 ) {
 	const reserved = await db
 		.prepare(
@@ -438,8 +484,8 @@ export async function storeWebAdministratorReply(
 		db
 			.prepare(
 				`INSERT INTO telegram_web_support_replies
-			 (id, conversation_id, sequence, algorithm, wrapped_key, iv, ciphertext, expires_at, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (id, conversation_id, sequence, algorithm, wrapped_key, iv, ciphertext, expires_at, created_at, is_away_reply)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				crypto.randomUUID(),
@@ -451,6 +497,7 @@ export async function storeWebAdministratorReply(
 				ciphertext,
 				now + supportFileRetentionMs,
 				now,
+				isAwayReply ? 1 : 0,
 			),
 		db
 			.prepare(

@@ -81,6 +81,11 @@ export async function runMaintenance(
 			`DELETE FROM replay_receipts WHERE id IN (
 			 SELECT id FROM replay_receipts INDEXED BY replay_receipts_status_created_idx
 			 WHERE status IN ('processed', 'rejected', 'failed') AND created_at <= ?
+			 AND NOT (namespace='telegram_support_away' AND scope_id=COALESCE((
+			  SELECT json_extract(CASE WHEN json_valid(value) THEN value ELSE '{}' END,'$.roundId')
+			  FROM system_settings WHERE key='telegram.support.away_mode'
+			  AND json_extract(CASE WHEN json_valid(value) THEN value ELSE '{}' END,'$.enabled')=1
+			 ),''))
 			 ORDER BY status, created_at, id LIMIT 500)`,
 		).bind(now - 90 * 86_400_000),
 		env.DB.prepare(
