@@ -308,8 +308,8 @@ async function reconcileDeliveredOrder(
 			),
 	]);
 	if (
-		Number(results[1]?.meta.changes ?? 0) !== 1 ||
-		Number(results[2]?.meta.changes ?? 0) !== 1
+		Number(results[1]?.meta.changes ?? 0) < 1 ||
+		Number(results[2]?.meta.changes ?? 0) < 1
 	)
 		throw new DomainError(
 			"restock_reconcile_conflict",

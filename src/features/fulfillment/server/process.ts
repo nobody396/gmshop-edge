@@ -233,7 +233,7 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 		throw error;
 	}
 
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		return { id: delivery.id, status: "delivered", duplicate: true };
 	return {
 		id: delivery.id,
@@ -512,7 +512,7 @@ export async function completeManualDelivery(
 		...activateEntitlementGrantStatements(db, delivery.order_item_id, now),
 	];
 	const results = await db.batch(statements);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		return { id: delivery.id, status: "delivered", duplicate: true };
 	return {
 		id: delivery.id,

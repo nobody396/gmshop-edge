@@ -5,6 +5,10 @@ import {
 	serializeInputValue,
 } from "#/features/catalog/input-values";
 import { couponScopeSchema } from "#/features/coupons/schema";
+import {
+	prepareClaudeSale,
+	reserveClaudeSaleStatements,
+} from "#/features/redeem-warehouse/server/sale-capacity";
 import { multiStoreOrderSchema } from "#/features/storefront/schema";
 import { DomainError } from "#/lib/domain-error";
 import { loadRuntimeConfig } from "#/server/runtime-config";
@@ -150,6 +154,7 @@ export async function createMultiStoreOrder(
 	}
 
 	const lines: Line[] = [];
+	const claudeComponents = new Set<string>();
 	for (const item of input.items) {
 		const sellableItem = await loadSellableItem(
 			db,
@@ -169,8 +174,17 @@ export async function createMultiStoreOrder(
 			sellableItem,
 			item.quantity,
 		);
-		if (sellableItem.delivery_component_type === "stock")
+		if (sellableItem.delivery_component_type === "stock") {
+			if (
+				await prepareClaudeSale(
+					db,
+					sellableItem.delivery_component_id,
+					item.quantity,
+				)
+			)
+				claudeComponents.add(sellableItem.delivery_component_id);
 			await assertStockAvailability(db, sellableItem, item.quantity);
+		}
 		if (item.renewedFromEntitlementId)
 			await assertRenewal(
 				db,
@@ -366,6 +380,16 @@ export async function createMultiStoreOrder(
 					now,
 				),
 		);
+		if (claudeComponents.has(line.sellableItem.delivery_component_id))
+			statements.push(
+				...reserveClaudeSaleStatements(
+					db,
+					line.sellableItem.delivery_component_id,
+					line.orderItemId,
+					line.input.quantity,
+					now,
+				),
+			);
 		if (line.sellableItem.delivery_component_type === "download")
 			statements.push(
 				db
@@ -441,6 +465,15 @@ export async function createMultiStoreOrder(
 	try {
 		await db.batch(statements);
 	} catch (error) {
+		if (
+			error instanceof Error &&
+			/free_budget|redeem_sale_capacity_budget_check/.test(error.message)
+		)
+			throw new DomainError(
+				"inventory_unavailable",
+				409,
+				"Insufficient uncommitted upstream capacity",
+			);
 		if (coupon)
 			throw new DomainError("coupon_unavailable", 409, "Coupon is unavailable");
 		throw error;

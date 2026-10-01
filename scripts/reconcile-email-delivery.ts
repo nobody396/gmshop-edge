@@ -1,5 +1,7 @@
 /** Owner-local provider readback. Dry-run by default; never sends any email. */
 import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { decryptNotificationMessage } from "../src/features/notifications/secrets";
@@ -25,7 +27,7 @@ export async function reconcileEmailDelivery(args = process.argv.slice(2)) {
 	const { account, database, zone, since, until } = values;
 	if (!account || !database || !zone || !since || !until)
 		throw new Error(
-			"Usage: bun scripts/reconcile-email-delivery.ts --account ID --database ID --zone ID --since ISO_UTC --until ISO_UTC [--execute]",
+			"Usage: node --import tsx scripts/reconcile-email-delivery.ts --account ID --database ID --zone ID --since ISO_UTC --until ISO_UTC [--execute]",
 		);
 	const start = Date.parse(z.iso.datetime().parse(since));
 	const end = Date.parse(z.iso.datetime().parse(until));
@@ -214,10 +216,22 @@ export async function reconcileEmailDelivery(args = process.argv.slice(2)) {
 		}),
 	);
 }
-if (import.meta.main)
-	reconcileEmailDelivery().catch(() => {
+if (
+	process.argv[1] &&
+	pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+) {
+	// Bun's spawnSync does not return the extra inherited pipe on this host.
+	// Keep credentials on FD 3 by running the operator CLI with native Node.
+	if (process.versions.bun) {
 		console.error(
-			"Email evidence reconciliation stopped; no mail was sent. Check arguments, access, migration and provider evidence. Do not resend.",
+			"Use Node for Agent Switch FD access: node --import tsx scripts/reconcile-email-delivery.ts ...",
 		);
-		process.exitCode = 1;
-	});
+		process.exitCode = 2;
+	} else
+		reconcileEmailDelivery().catch(() => {
+			console.error(
+				"Email evidence reconciliation stopped; no mail was sent. Check arguments, access, migration and provider evidence. Do not resend.",
+			);
+			process.exitCode = 1;
+		});
+}

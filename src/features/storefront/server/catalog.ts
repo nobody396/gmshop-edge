@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { buildDefinitionListSchema } from "#/features/builds/schema";
+import { refreshClaudeSaleCapacity } from "#/features/redeem-warehouse/server/sale-capacity";
 import {
 	productIdSchema,
 	storefrontCatalogSchema,
@@ -37,6 +38,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 	.handler(async ({ data }) => {
 		const request = getRequest();
 		const db = getDb(request).$client;
+		await refreshClaudeSaleCapacity(db).catch(() => null);
 		const mainlandChina = requestIsFromMainlandChina(request);
 		const search = data.search ? `%${data.search}%` : null;
 		const filters = ["p.status = 'active'"];
@@ -204,6 +206,7 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 	.handler(async ({ data }) => {
 		const request = getRequest();
 		const db = getDb(request).$client;
+		await refreshClaudeSaleCapacity(db).catch(() => null);
 		const product = await selectStorefrontProductRow(db, data.productId);
 		if (!product)
 			throw new DomainError("product_not_found", 404, "Product not found");
