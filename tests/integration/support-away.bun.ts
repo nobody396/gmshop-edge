@@ -205,16 +205,18 @@ test("enabling requires a real buying-guide link, not a placeholder", async () =
 });
 
 test("owner configures a guide, enables and disables replies through the support command", async () => {
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	expect(sent.at(-1)?.text).toContain("已开启");
-	expect(sent.at(-1)?.text).toContain("https://laoshirenvip.com/guide");
+	expect(sent.at(-1)?.text).toContain(
+		"https://laoshirenvip.com/#self-service-recharge",
+	);
 	await command("/away off");
 	expect(sent.at(-1)?.text).toContain("已关闭");
 });
 
 test("web customer receives the approved away text and guide in their own conversation", async () => {
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	await run(() =>
 		sendWebSupportMessage(db, customerRequest(), {
@@ -228,7 +230,7 @@ test("web customer receives the approved away text and guide in their own conver
 	);
 	expect(response.replies).toHaveLength(1);
 	expect(response.replies[0]).toMatchObject({
-		text: "老板，我这会儿不在，有问题先留言哈\n不知道怎么选购的，请看我们的选购指南\nhttps://laoshirenvip.com/guide\n消息看到了都会回复，回复后也会发邮件提醒你",
+		text: "老板，我这会儿不在，有问题先留言哈\n不知道怎么选购的，打开下面的首页，点「开始选择」看选购指南\nhttps://laoshirenvip.com/#self-service-recharge\n消息看到了都会回复，回复后也会发邮件提醒你",
 	});
 	expect(
 		sent.some(
@@ -260,7 +262,7 @@ async function seedTelegramCustomer() {
 
 test("Telegram support customer receives the same guide without an email promise", async () => {
 	await seedTelegramCustomer();
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	await run(() =>
 		handleTelegramUpdate(db, {
@@ -283,7 +285,7 @@ test("Telegram support customer receives the same guide without an email promise
 		(item) => String(item.chat_id) === "54321" && item.method === "sendMessage",
 	);
 	expect(reply?.text).toBe(
-		"老板，我这会儿不在，有问题先留言哈\n不知道怎么选购的，请看我们的选购指南\nhttps://laoshirenvip.com/guide\n消息看到了都会回复",
+		"老板，我这会儿不在，有问题先留言哈\n不知道怎么选购的，打开下面的首页，点「开始选择」看选购指南\nhttps://laoshirenvip.com/#self-service-recharge\n消息看到了都会回复",
 	);
 	expect(
 		sent.some(
@@ -295,7 +297,7 @@ test("Telegram support customer receives the same guide without an email promise
 });
 
 test("away acknowledgement does not qualify as a human reply for manual email", async () => {
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	await run(() =>
 		sendWebSupportMessage(db, customerRequest(), {
@@ -322,7 +324,9 @@ test("away acknowledgement does not qualify as a human reply for manual email", 
 test("a customer's first file also receives exactly one away reply", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "support-away-"));
 	try {
-		await command("/away guide https://laoshirenvip.com/guide");
+		await command(
+			"/away guide https://laoshirenvip.com/#self-service-recharge",
+		);
 		await command("/away on");
 		const body = new FormData();
 		body.set("clientMessageId", crypto.randomUUID());
@@ -359,7 +363,7 @@ test("a customer's first file also receives exactly one away reply", async () =>
 });
 
 test("concurrent customer messages get one acknowledgement per activation, off stops new replies", async () => {
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	const send = () =>
 		run(() =>
@@ -405,10 +409,13 @@ test("disabled mode preserves normal customer delivery without an away reply", a
 });
 
 test("wrong groups, personal chats and non-admins cannot change away mode", async () => {
-	await command("/away guide https://laoshirenvip.com/guide", "-1009999999999");
+	await command(
+		"/away guide https://laoshirenvip.com/#self-service-recharge",
+		"-1009999999999",
+	);
 	await command("/away on", "42");
 	admin = false;
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	expect(sent).toHaveLength(0);
 });
 
@@ -428,7 +435,7 @@ test("external, credential-bearing, HTTP and malformed guide URLs cannot enable 
 });
 
 test("uncertain mirror delivery neither fails the customer send nor repeats the away reply", async () => {
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	uncertainAway = true;
 	const send = () =>
@@ -450,7 +457,7 @@ test("uncertain mirror delivery neither fails the customer send nor repeats the 
 });
 
 test("website language chooses the away text rather than the staff's language", async () => {
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	await run(() =>
 		sendWebSupportMessage(db, customerRequest(), {
@@ -469,7 +476,7 @@ test("website language chooses the away text rather than the staff's language", 
 
 test("delayed Telegram updates from before activation are not auto-acknowledged", async () => {
 	await seedTelegramCustomer();
-	await command("/away guide https://laoshirenvip.com/guide");
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
 	await command("/away on");
 	await run(() =>
 		handleTelegramUpdate(db, {

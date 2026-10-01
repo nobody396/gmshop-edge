@@ -59,7 +59,6 @@ Run `bun run test:support-away`. The integration suite uses temporary SQLite,
 actual customer/Telegram public interfaces and mocked Telegram SDK network
 boundaries. It does not send real customer messages or emails.
 
-Local implementation is not deployment or activation. Wait for the published
-guide URL before releasing and activating the feature.
+The approved guide URL is `https://laoshirenvip.com/#self-service-recharge`. Open the homepage and click “Get started”; no standalone guide page is needed. Publishing is separate from activation; setting the guide never enables away replies.
 
 Storefront HTTPS guide links are clickable and open in a new tab without losing the support conversation. External URLs and untrusted HTML remain escaped plain text.

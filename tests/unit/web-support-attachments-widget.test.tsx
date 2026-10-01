@@ -13,7 +13,7 @@ vi.mock("#/features/telegram/web-support-storage", () => ({
 		{
 			id: "local-message",
 			role: "support",
-			text: "Existing support reply\nhttps://laoshirenvip.com/guide\nhttps://evil.example/guide\n<script>never run</script>",
+			text: "Existing support reply\nhttps://laoshirenvip.com/#self-service-recharge\nhttps://evil.example/guide\n<script>never run</script>",
 			createdAt: 1,
 		},
 	],
@@ -95,7 +95,7 @@ it("replaces WeChat fallback with file selection without transmitting anything",
 
 it("the buying guide is keyboard-accessible and opens without losing the support dialog", () => {
 	const guide = document.querySelector<HTMLAnchorElement>(
-		'a[href="https://laoshirenvip.com/guide"]',
+		'a[href="https://laoshirenvip.com/#self-service-recharge"]',
 	);
 	expect(guide).not.toBeNull();
 	expect(guide?.target).toBe("_blank");

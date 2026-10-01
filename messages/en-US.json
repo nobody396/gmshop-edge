@@ -2159,6 +2159,6 @@
 	"telegram_away_guide_required": "Not enabled: set the published buying-guide URL first with /away guide followed by an HTTPS URL",
 	"telegram_away_invalid_guide": "Guide not saved: use an HTTPS URL on our storefront",
 	"telegram_away_usage": "Use /away status, /away guide <URL>, /away on or /away off",
-	"telegram_away_customer_message": "I’m away right now, but feel free to leave your question here\nIf you need help choosing, take a look at our buying guide\n{guideUrl}\nI’ll get back to you when I see your message",
+	"telegram_away_customer_message": "I’m away right now, but feel free to leave your question here\nIf you need help choosing, open the homepage below and click “Get started” for our buying guide\n{guideUrl}\nI’ll get back to you when I see your message",
 	"telegram_away_email_notice": " — I’ll also send you an email reminder after replying"
 }
