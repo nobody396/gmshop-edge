@@ -12,8 +12,8 @@ vi.mock("#/features/telegram/web-support-storage", () => ({
 	loadWebSupportMessages: async () => [
 		{
 			id: "local-message",
-			role: "agent",
-			text: "Existing support reply",
+			role: "support",
+			text: "Existing support reply\nhttps://laoshirenvip.com/guide\nhttps://evil.example/guide\n<script>never run</script>",
 			createdAt: 1,
 		},
 	],
@@ -91,6 +91,22 @@ it("replaces WeChat fallback with file selection without transmitting anything",
 	expect(
 		fetchMock.mock.calls.every((call) => !call[1] || call[1].method !== "POST"),
 	).toBe(true);
+});
+
+it("the buying guide is keyboard-accessible and opens without losing the support dialog", () => {
+	const guide = document.querySelector<HTMLAnchorElement>(
+		'a[href="https://laoshirenvip.com/guide"]',
+	);
+	expect(guide).not.toBeNull();
+	expect(guide?.target).toBe("_blank");
+	expect(guide?.rel).toContain("noopener");
+	guide?.focus();
+	expect(document.activeElement).toBe(guide);
+	expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+	expect(
+		document.querySelector('a[href="https://evil.example/guide"]'),
+	).toBeNull();
+	expect(document.querySelector("script")).toBeNull();
 });
 it("previews and removes the selected file without sending", async () => {
 	const input = document.querySelector('input[type="file"]');

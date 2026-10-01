@@ -24,6 +24,11 @@ import {
 	authorizeSupportAdministrator,
 	updateSupportAdministratorMirror,
 } from "./support-admins";
+import {
+	completeSupportAwayReply,
+	reserveSupportAwayReply,
+	supportAwayCommand,
+} from "./support-away";
 import { miniAppUrl, telegramRuntime } from "./sync";
 import {
 	closeWebConversationFromTopic,
@@ -72,6 +77,22 @@ function buildBot(
 	options: { origin: string; allowSignup: boolean },
 ) {
 	const bot = new Bot(token);
+	bot.command("away", async (ctx) => {
+		if (
+			!ctx.from ||
+			ctx.from.is_bot ||
+			ctx.message?.sender_chat ||
+			ctx.message?.forward_origin
+		)
+			return;
+		const response = await supportAwayCommand(db, ctx.api, {
+			chatId: String(ctx.chat.id),
+			userId: String(ctx.from.id),
+			argument: ctx.match,
+			locale: telegramUserLocale(ctx.from),
+		});
+		if (response) await ctx.reply(response);
+	});
 	bot.command("start", async (ctx) => {
 		const locale = await privateCommandLocale(ctx, db);
 		if (!locale) return;
@@ -596,6 +617,7 @@ async function forwardCustomerMessage(
 	ctx: Context,
 	allowSignup: boolean,
 ) {
+	if (ctx.from?.is_bot) return;
 	const account = await privateAccount(ctx, db, allowSignup);
 	if (!account || !ctx.message || !ctx.from) return;
 	const settings = await loadTelegramSettings(db);
@@ -645,6 +667,33 @@ async function forwardCustomerMessage(
 		);
 	}
 	await touchConversation(db, conversation.id);
+	let away: Awaited<ReturnType<typeof reserveSupportAwayReply>> = null;
+	try {
+		away = await reserveSupportAwayReply(db, {
+			chatId: conversation.support_chat_id,
+			conversationId: conversation.id,
+			kind: "telegram",
+			locale: account.locale,
+			messageTimeMs: ctx.message.date * 1000,
+		});
+		if (!away?.customerChatId) return;
+		await ctx.api.sendMessage(away.customerChatId, away.message);
+		await ctx.api.sendMessage(conversation.support_chat_id, away.message, {
+			message_thread_id: away.threadId,
+		});
+		await completeSupportAwayReply(db, away.receiptId, true);
+	} catch {
+		if (away)
+			await completeSupportAwayReply(db, away.receiptId, false).catch(
+				() => undefined,
+			);
+		console.error(
+			JSON.stringify({
+				event: "support_away_delivery_failed",
+				conversationId: conversation.id,
+			}),
+		);
+	}
 }
 
 async function relayAdministratorMessage(db: D1Database, ctx: Context) {

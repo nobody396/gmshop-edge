@@ -157,6 +157,9 @@ export const telegramWebSupportReplies = sqliteTable(
 				onDelete: "cascade",
 			}),
 		sequence: integer("sequence").notNull(),
+		isAwayReply: integer("is_away_reply", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		algorithm: text("algorithm").notNull(),
 		wrappedKey: text("wrapped_key").notNull(),
 		iv: text("iv").notNull(),
