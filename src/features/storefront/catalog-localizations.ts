@@ -115,20 +115,39 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: chatGptIosPolicy,
 	},
 	"f8c7ee24-239c-43a1-abe7-9dd40c53de21": {
-		name: "ChatGPT Pro 5X iOS — 1 month",
+		name: "ChatGPT Pro $100 tier iOS — 1 month",
 		policy: chatGptIosPolicy,
 	},
+	"bf88dfff-914a-4413-b4a9-19d56d30feca": {
+		name: "ChatGPT Pro $100 tier Philippines — 1 month",
+		policy: chatGptPhilippinesPolicy,
+	},
+	"624bf652-debb-48f4-ab98-6b9daab2a6ea": {
+		name: "ChatGPT Pro $200 tier Philippines renewal — 1 month",
+		policy: policy(
+			automatic,
+			"Follow the recharge page instructions. Renewal is confirmed by the actual account state, not code delivery.",
+			"Only for a current Pro account with a PHP 8,919.64 bill. No upgrades.",
+			"",
+			"For Philippines Pro renewals only. Do not share the delivered code.",
+		),
+	},
 	"0829de43-da22-420c-9866-38c83dd420f0": {
-		name: "ChatGPT Pro 20X Philippines new activation — 1 month (check eligibility first)",
-		policy: {
-			...chatGptPhilippinesPolicy,
-			restrictions:
-				"Check new-activation eligibility before ordering: on ChatGPT web, select Upgrade plan, then Pro 20x. Upgrade to Pro must be enabled and clickable. If disabled or uncertain, do not order; contact support. " +
-				chatGptPhilippinesPolicy.restrictions,
-		},
+		name: "ChatGPT Pro $200 tier Philippines — 1 month",
+		policy: chatGptPhilippinesPolicy,
+	},
+	"030582df-98c1-5b87-914d-28ddc606e163": {
+		name: "ChatGPT Pro $500 tier Chile — 1 month",
+		policy: policy(
+			manual,
+			standardDeliveryTime,
+			"No active Go, Plus, or Pro subscription. Wait 2–3 days after a mobile-channel subscription expires.",
+			"Verified early cancellation is refunded pro rata by remaining days. Account bans and disabled accounts are excluded.",
+			"$500 describes the plan tier, not the store price. Redeem the delivered code at its corresponding recharge address.",
+		),
 	},
 	"208c2e9c-3594-4be9-9c71-22ac8b09aad4": {
-		name: "ChatGPT Pro 20X iOS — 1 month",
+		name: "ChatGPT Pro $200 tier iOS — 1 month",
 		policy: chatGptIosPolicy,
 	},
 	"7f76a172-d963-43a4-8297-d4d7550f4670": {

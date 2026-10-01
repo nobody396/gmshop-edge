@@ -58,7 +58,13 @@ import { getLocale } from "#/paraglide/runtime";
 type Product = Awaited<ReturnType<typeof getStorefrontProductFn>>;
 type SellableItem = Product["sellableItems"][number];
 
-export function StorefrontProductPage({ productId }: { productId: string }) {
+export function StorefrontProductPage({
+	productId,
+	preferredItemId,
+}: {
+	productId: string;
+	preferredItemId?: string;
+}) {
 	const locale = getLocale();
 	const session = authClient.useSession();
 	const product = useQuery({
@@ -97,15 +103,22 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 			});
 	}, [product.data?.id]);
 	useEffect(() => {
-		const first =
-			product.data?.sellableItems.find(
-				(item) => isAvailable(item) && !item.saleDisabled,
-			) ?? product.data?.sellableItems.find(isAvailable);
+		const first = preferredItemId
+			? product.data?.sellableItems.find((item) => item.id === preferredItemId)
+			: (product.data?.sellableItems.find(
+					(item) => isAvailable(item) && !item.saleDisabled,
+				) ?? product.data?.sellableItems.find(isAvailable));
 		if (!selectedItemId && first) {
 			setSelectedItemId(first.id);
 			setQuantity(first.minimumQuantity);
 		}
-	}, [product.data, selectedItemId]);
+	}, [product.data, selectedItemId, preferredItemId]);
+	useEffect(() => {
+		if (product.data && preferredItemId)
+			document
+				.getElementById("purchase-options")
+				?.scrollIntoView?.({ block: "start" });
+	}, [product.data, preferredItemId]);
 	if (product.isLoading) return <ProductLoadingSkeleton />;
 	if (!product.data) return null;
 	const data = product.data;
@@ -128,7 +141,9 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 		: -1;
 	const selectedItem =
 		data.sellableItems.find((item) => item.id === selectedItemId) ??
-		data.sellableItems[0];
+		(preferredItemId
+			? data.sellableItems.find((item) => item.id === preferredItemId)
+			: data.sellableItems[0]);
 	const requiresSignIn =
 		selectedItem?.deliveryType === "automation" &&
 		!session.isPending &&
@@ -154,6 +169,7 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 		? purchaseLimitSummary(selectedItem)
 		: null;
 	const showPurchaseOptions =
+		Boolean(preferredItemId) ||
 		data.sellableItems.length > 1 ||
 		data.id === "a48aeca2-90bf-4adf-8cfa-f18204373435";
 	const recommendations =
@@ -294,10 +310,15 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 						</div>
 					) : null}
 					{showPurchaseOptions ? (
-						<fieldset className="mt-7">
+						<fieldset id="purchase-options" className="mt-7 scroll-mt-24">
 							<legend className="mb-3 font-medium">
 								{m.store_select_plan()}
 							</legend>
+							{preferredItemId && !selectedItem ? (
+								<p role="alert" className="mb-3 text-destructive">
+									{m.guide_unavailable()}
+								</p>
+							) : null}
 							<div className="grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-2">
 								{data.sellableItems.map((item) => {
 									const selected = item.id === selectedItem?.id;

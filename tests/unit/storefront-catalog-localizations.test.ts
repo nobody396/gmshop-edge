@@ -37,3 +37,27 @@ describe("storefront catalog localizations", () => {
 		expect(item.policy.coverage).toContain("Renewal is supported");
 	});
 });
+
+it("uses dollar-tier names without retired qualification and matches standard $500 delivery", () => {
+	const ph = localizeSellableItem(
+		"0829de43-da22-420c-9866-38c83dd420f0",
+		"en-US",
+		fallback,
+	);
+	const cl = localizeSellableItem(
+		"030582df-98c1-5b87-914d-28ddc606e163",
+		"en-US",
+		fallback,
+	);
+	expect(ph.name).toContain("$200");
+	expect(ph.policy.restrictions).not.toMatch(
+		/eligibility|Upgrade to Pro|clickable/i,
+	);
+	expect(cl.name).toContain("$500");
+	expect(cl.policy.delivery).toBe(
+		"Processed online after payment confirmation",
+	);
+	expect(cl.policy.deliveryTime).toBe(ph.policy.deliveryTime);
+	expect(cl.policy.deliveryTime).toContain("1–30 minutes");
+	expect(cl.policy.coverage).toContain("No active Go, Plus, or Pro");
+});

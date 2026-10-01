@@ -280,6 +280,23 @@
 	}
 }
 
+@keyframes buying-guide-breathe {
+	0%, 100% {
+		transform: scale(1);
+		box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 32%, transparent);
+	}
+	50% {
+		transform: scale(1.04);
+		box-shadow: 0 0 0 7px color-mix(in oklab, var(--primary) 18%, transparent);
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.buying-guide-breathe:not(:hover):not(:focus-visible):not([data-state="open"]) {
+		animation: buying-guide-breathe 2.8s ease-in-out infinite;
+	}
+}
+
 @keyframes store-delivery-ticker {
 	to {
 		transform: translate3d(-50%, 0, 0);

@@ -1,5 +1,6 @@
 import { KeyRound, Link2, ShieldCheck, Timer } from "lucide-react";
 import { m } from "#/paraglide/messages";
+import { BuyingGuide } from "./buying-guide";
 
 const steps = [
 	{
@@ -39,6 +40,10 @@ export function SelfServiceRecharge() {
 						>
 							{m.store_self_service_title()}
 						</h2>
+						<div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+							<p className="font-medium text-sm">{m.guide_entry()}</p>
+							<BuyingGuide />
+						</div>
 						<p className="mt-3 max-w-xl text-muted-foreground text-sm leading-6">
 							{m.store_self_service_description()}
 						</p>
