@@ -41,6 +41,16 @@ describe("homepage self-service recharge", () => {
 			"self-service-recharge",
 		);
 		expect(container.querySelector("a")).toBeNull();
+		expect(text).not.toContain("passwords");
+		expect(text).toContain("Tell us about your account");
+		expect(container.querySelectorAll("section")).toHaveLength(1);
+		expect(container.textContent).toContain("Get started");
+		expect(container.querySelectorAll("button")).toHaveLength(1);
+		expect(
+			container
+				.querySelector("button")
+				?.classList.contains("buying-guide-breathe"),
+		).toBe(true);
 	});
 
 	it("keeps the full guide inline without a separate hero jump button", () => {
@@ -51,8 +61,18 @@ describe("homepage self-service recharge", () => {
 		expect(home).not.toContain('href="#self-service-recharge"');
 		expect(home).not.toContain("store_self_service_hero_action");
 		expect(home).not.toContain("store-recharge-breathe");
-		expect(home).toMatch(
-			/hasFilters \? null : \(\s*<>\s*<BuyingGuide \/>\s*<SelfServiceRecharge \/>/,
-		);
+		expect(home).toContain("{hasFilters ? null : <SelfServiceRecharge />}");
+		expect(home).not.toContain("<BuyingGuide");
 	});
+});
+
+it("uses a motion-preference gated CSS breath without changing guide behavior", () => {
+	const css = readFileSync("src/styles/global.css", "utf8");
+	expect(css).toContain("@keyframes buying-guide-breathe");
+	expect(css).toMatch(
+		/@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.buying-guide-breathe:not\(:hover\):not\(:focus-visible\):not\(\[data-state="open"\]\)/,
+	);
+	expect(css).toContain(
+		"animation: buying-guide-breathe 2.8s ease-in-out infinite",
+	);
 });

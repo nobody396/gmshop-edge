@@ -29,6 +29,7 @@ vi.mock("#/features/storefront/server/catalog", () => ({
 						minimumQuantity: 1,
 						saleDisabled: mock.disabled,
 						policy: {
+							deliveryTime: "Delivery timing",
 							coverage: "Coverage",
 							warranty: "Warranty",
 							restrictions: "Restrictions",
@@ -99,6 +100,7 @@ it("shows only the six retail families and no unknown answer", () => {
 	expect(document.body.textContent).not.toMatch(/unknown|unsure|guide_api/);
 	expect(mock.calls).not.toHaveBeenCalled();
 });
+
 it("preserves the user's two annotated images and safe external checking links", async () => {
 	await click("guide_gpt");
 	expect(
@@ -110,7 +112,7 @@ it("preserves the user's two annotated images and safe external checking links",
 		document.querySelector('img[src="/guides/buying/current-plan.png"]'),
 	).not.toBeNull();
 	await click("guide_plus");
-	await click("guide_five");
+	expect(document.body.textContent).toContain("guide_current_channel");
 	expect(
 		document.querySelector('img[src="/guides/buying/billing.png"]'),
 	).not.toBeNull();
@@ -121,13 +123,15 @@ it("preserves the user's two annotated images and safe external checking links",
 it("never exposes a purchase link for the unlisted upgrade and clears it on back", async () => {
 	await click("guide_gpt");
 	await click("guide_plus");
+	await click("guide_current_ph");
 	await click("guide_five");
-	await click("guide_yes_php");
+	await click("guide_recharge_now");
+	await click("guide_ph_upgrade");
 	expect(document.body.textContent).toContain("guide_upgrade_pending");
 	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
 	expect(mock.calls).not.toHaveBeenCalled();
 	await click("guide_back");
-	await click("guide_no_php");
+	await click("guide_ios");
 	await settle();
 	expect(document.body.textContent).not.toContain("guide_upgrade_pending");
 	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
@@ -140,7 +144,7 @@ it("never exposes a purchase link for the unlisted upgrade and clears it on back
 		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
 	).toContain(`item=${guideProducts.fiveios.itemId}`);
 	await click("guide_back");
-	await click("guide_no_php");
+	await click("guide_ios");
 	await settle();
 	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
 });
@@ -200,11 +204,137 @@ it("enlarges both examples in a nested dialog and preserves the guide step", asy
 		expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
 	};
 	await openImage();
-	expect(document.body.textContent).toContain("guide_current");
+	expect(document.body.textContent).toContain("guide_gpt_current");
 	await click("guide_plus");
-	await click("guide_five");
 	await openImage();
-	expect(document.body.textContent).toContain("guide_plus_php");
-	await click("guide_yes_php");
+	expect(document.body.textContent).toContain("guide_current_channel");
+	await click("guide_current_ph");
+	await click("guide_five");
+	await click("guide_recharge_now");
+	await click("guide_ph_upgrade");
 	expect(document.body.textContent).toContain("guide_upgrade_pending");
+});
+
+it("opens $200 without qualification and uses the exact free-account SKU", async () => {
+	await click("guide_gpt");
+	await click("guide_free");
+	await click("guide_twenty");
+	expect(document.body.textContent).toContain("guide_channel");
+	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
+	await click("guide_ph");
+	await settle();
+	expect(document.body.textContent).not.toMatch(
+		/guide_new20|guide_eligib|guide_ineligible/,
+	);
+	expect(
+		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
+	).toContain(`item=${guideProducts.twentynew.itemId}`);
+});
+it("offers the opened $500 tier with delivery timing and an exact SKU link", async () => {
+	await click("guide_gpt");
+	await click("guide_free");
+	await click("guide_fivehundred");
+	await settle();
+	expect(document.body.textContent).toContain("Delivery timing");
+	expect(
+		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
+	).toContain(`item=${guideProducts.gpt500.itemId}`);
+});
+it("does not recommend $500 to an active subscriber", async () => {
+	await click("guide_gpt");
+	await click("guide_plus");
+	await click("guide_current_ph");
+	await click("guide_fivehundred");
+	await click("guide_recharge_now");
+	expect(document.body.textContent).toContain("guide_fivehundred_active");
+	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
+	expect(mock.calls).not.toHaveBeenCalled();
+});
+
+it("does not turn Plus renewal into iOS until the user explicitly chooses now", async () => {
+	await click("guide_gpt");
+	await click("guide_plus");
+	await click("guide_current_ph");
+	await click("guide_plus");
+	expect(document.body.textContent).toContain("guide_timing");
+	expect(mock.calls).not.toHaveBeenCalled();
+	await click("guide_after_expiry");
+	expect(document.body.textContent).toContain("guide_wait_for_expiry");
+	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
+	expect(mock.calls).not.toHaveBeenCalled();
+	await click("guide_back");
+	await click("guide_recharge_now");
+	await settle();
+	expect(document.body.textContent).toContain("plusios");
+	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
+	await act(async () => {
+		(
+			document.querySelector('input[type="checkbox"]') as HTMLInputElement
+		).click();
+	});
+	expect(
+		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
+	).toContain(`item=${guideProducts.plusios.itemId}`);
+});
+it("lets a Free account switch Plus channels without default selection", async () => {
+	await click("guide_gpt");
+	await click("guide_free");
+	await click("guide_plus");
+	expect(mock.calls).not.toHaveBeenCalled();
+	await click("guide_ph");
+	await settle();
+	expect(
+		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
+	).toContain(`item=${guideProducts.plusph.itemId}`);
+	await click("guide_back");
+	await click("guide_ios");
+	await settle();
+	expect(
+		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
+	).toContain(`item=${guideProducts.plusios.itemId}`);
+});
+
+it("routes a current PH Pro $200 account to dedicated renewal, not iOS", async () => {
+	await click("guide_gpt");
+	await click("guide_pro200");
+	expect(document.body.textContent).toContain("guide_current_channel");
+	expect(mock.calls).not.toHaveBeenCalled();
+	await click("guide_current_ph");
+	await click("guide_twenty");
+	await click("guide_recharge_now");
+	expect(document.body.textContent).toContain("guide_pro_php");
+	await click("guide_yes_8919");
+	await click("guide_ph_renew");
+	await settle();
+	expect(
+		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
+	).toContain(`item=${guideProducts.twentyrenew.itemId}`);
+	expect(document.querySelector('input[type="checkbox"]')).toBeNull();
+	expect(document.body.textContent).not.toContain("gpt20ios");
+	await click("guide_back");
+	await click("guide_back");
+	await click("guide_no_8919");
+	expect(document.body.textContent).toContain("guide_renew_bill_mismatch");
+	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
+});
+it("routes a current iOS Pro $200 account to iOS only", async () => {
+	await click("guide_gpt");
+	await click("guide_pro200");
+	await click("guide_current_ios");
+	await click("guide_twenty");
+	await click("guide_recharge_now");
+	await settle();
+	expect(document.body.textContent).toContain("gpt20ios");
+	expect(document.body.textContent).not.toMatch(
+		/guide_pro_php|twentyrenew|guide_renew_channel/,
+	);
+	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
+	await act(async () => {
+		(
+			document.querySelector('input[type="checkbox"]') as HTMLInputElement
+		).click();
+	});
+	expect(
+		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
+	).toContain(`item=${guideProducts.gpt20ios.itemId}`);
 });

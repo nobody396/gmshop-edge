@@ -1,8 +1,12 @@
 // Explicit VIP product mapping. Never infer eligibility from names or prices.
 export const guideProducts = {
+	gpt500: {
+		productId: "2a794b89-3bb9-49d4-8691-0d13a1606869",
+		itemId: "030582df-98c1-5b87-914d-28ddc606e163",
+	},
 	gpt20ios: {
-		productId: "02334569-a5e0-42d9-8615-69980273a6cc",
-		itemId: "4af92545-aa49-4e1a-8381-f459fc76bed5",
+		productId: "2a794b89-3bb9-49d4-8691-0d13a1606869",
+		itemId: "208c2e9c-3594-4be9-9c71-22ac8b09aad4",
 	},
 	go: {
 		productId: "2a794b89-3bb9-49d4-8691-0d13a1606869",
@@ -91,9 +95,13 @@ export type GuideStep =
 			kind: "question";
 			id: string;
 			options: string[];
-			help?: "plan" | "billing" | "eligibility" | "claude";
+			help?: "plan" | "billing" | "claude";
 	  }
-	| { kind: "result"; product: GuideProduct; warning?: "overwrite" | "kyc" }
+	| {
+			kind: "result";
+			product: GuideProduct;
+			warning?: "overwrite" | "overwrite30" | "kyc";
+	  }
 	| {
 			kind: "stop";
 			reason:
@@ -101,69 +109,135 @@ export type GuideStep =
 				| "free_points"
 				| "claude_active"
 				| "rule_pending"
-				| "payment_issue";
+				| "fivehundred_active"
+				| "wait_for_expiry"
+				| "renew_bill_mismatch";
 	  };
 const question = (
 	id: string,
 	options: string[],
-	help?: "plan" | "billing" | "eligibility" | "claude",
+	help?: "plan" | "billing" | "claude",
 ): GuideStep => ({ kind: "question", id, options, help });
 const result = (
 	product: GuideProduct,
-	warning?: "overwrite" | "kyc",
+	warning?: "overwrite" | "overwrite30" | "kyc",
 ): GuideStep => ({ kind: "result", product, warning });
 
 /** Small fixed decision tree. No state is inferred from an expiry date. */
 export function guideStep(a: readonly string[]): GuideStep {
-	const [family, current, target, billing, issue] = a;
+	const [family, current, target] = a;
 	if (!family)
 		return question("family", ["gpt", "claude", "points", "sms", "x", "grok"]);
 	if (family === "gpt") {
 		if (!current)
-			return question("current", ["free", "go", "plus", "pro"], "plan");
-		if (!target) return question("target", ["go", "plus", "five", "twenty"]);
-		if (target === "go")
-			return current === "free" || current === "go"
-				? result("go", current === "go" ? "overwrite" : undefined)
-				: { kind: "stop", reason: "rule_pending" };
-		if (target === "plus")
-			return current === "free"
-				? result("plusph")
-				: current === "pro"
-					? { kind: "stop", reason: "rule_pending" }
-					: result("plusios", "overwrite");
-		if (target === "five") {
-			if (current === "free") return result("fiveph");
-			if (current === "plus") {
-				if (!billing)
-					return question("plus_php", ["yes_php", "no_php"], "billing");
-				return billing === "yes_php"
-					? { kind: "stop", reason: "upgrade_pending" }
-					: result("fiveios", "overwrite");
-			}
-			return current === "go"
-				? result("fiveios", "overwrite")
-				: { kind: "stop", reason: "rule_pending" };
+			return question(
+				"gpt_current",
+				["free", "go", "plus", "pro100", "pro200", "pro500"],
+				"plan",
+			);
+		if (!["free", "go", "plus", "pro100", "pro200", "pro500"].includes(current))
+			return { kind: "stop", reason: "rule_pending" };
+		const hasPairedChannel = ["plus", "pro100", "pro200"].includes(current);
+		const currentChannel = hasPairedChannel ? a[2] : undefined;
+		if (hasPairedChannel && !currentChannel)
+			return question(
+				"current_channel",
+				["current_ph", "current_ios", "current_other"],
+				"billing",
+			);
+		if (
+			hasPairedChannel &&
+			currentChannel !== "current_ph" &&
+			currentChannel !== "current_ios"
+		)
+			return { kind: "stop", reason: "rule_pending" };
+		const [target, choice, detail, renewalChannel] = a.slice(
+			hasPairedChannel ? 3 : 2,
+		);
+		if (!target)
+			return question("target", [
+				"go",
+				"plus",
+				"five",
+				"twenty",
+				"fivehundred",
+			]);
+		if (!["go", "plus", "five", "twenty", "fivehundred"].includes(target))
+			return { kind: "stop", reason: "rule_pending" };
+		if (current === "free") {
+			if (target === "go") return result("go");
+			if (target === "fivehundred") return result("gpt500");
+			if (!choice) return question("channel", ["ph", "ios"]);
+			if (choice !== "ph" && choice !== "ios")
+				return { kind: "stop", reason: "rule_pending" };
+			return result(
+				target === "plus"
+					? choice === "ph"
+						? "plusph"
+						: "plusios"
+					: target === "five"
+						? choice === "ph"
+							? "fiveph"
+							: "fiveios"
+						: choice === "ph"
+							? "twentynew"
+							: "gpt20ios",
+			);
 		}
-		if (target === "twenty") {
-			if (current === "free") {
-				if (!billing)
-					return question("new20", ["eligible", "ineligible"], "eligibility");
-				return result(billing === "eligible" ? "twentynew" : "gpt20ios");
-			}
-			if (current === "pro") {
-				if (!billing)
-					return question("pro_php", ["yes_8919", "no_8919"], "billing");
-				if (billing === "yes_8919") {
-					if (!issue)
-						return question("payment", ["payment_clear", "payment_problem"]);
-					return issue === "payment_clear"
-						? result("twentyrenew")
-						: { kind: "stop", reason: "payment_issue" };
-				}
-			}
-			return result("gpt20ios", "overwrite");
+		if (!choice) return question("timing", ["recharge_now", "after_expiry"]);
+		if (choice === "after_expiry")
+			return {
+				kind: "stop",
+				reason:
+					target === "fivehundred" ? "fivehundred_active" : "wait_for_expiry",
+			};
+		if (choice !== "recharge_now")
+			return { kind: "stop", reason: "rule_pending" };
+		if (target === "fivehundred")
+			return { kind: "stop", reason: "fivehundred_active" };
+		if (
+			(target === "go" && current !== "go") ||
+			(target === "plus" && current !== "go" && current !== "plus") ||
+			(target === "five" && (current === "pro200" || current === "pro500")) ||
+			(target === "twenty" && current === "pro500")
+		)
+			return { kind: "stop", reason: "rule_pending" };
+		if (target === "go") return result("go", "overwrite30");
+		if (
+			current === "plus" &&
+			currentChannel === "current_ph" &&
+			target === "five"
+		) {
+			if (!detail) return question("upgrade_channel", ["ph_upgrade", "ios"]);
+			if (detail === "ph_upgrade")
+				return { kind: "stop", reason: "upgrade_pending" };
+			if (detail !== "ios") return { kind: "stop", reason: "rule_pending" };
 		}
+		if (
+			current === "pro200" &&
+			currentChannel === "current_ph" &&
+			target === "twenty"
+		) {
+			if (!detail)
+				return question("pro_php", ["yes_8919", "no_8919"], "billing");
+			if (detail !== "yes_8919")
+				return { kind: "stop", reason: "renew_bill_mismatch" };
+			if (!renewalChannel)
+				return question("renew_channel", ["ph_renew", "ios"]);
+			return renewalChannel === "ph_renew"
+				? result("twentyrenew")
+				: renewalChannel === "ios"
+					? result("gpt20ios", "overwrite30")
+					: { kind: "stop", reason: "rule_pending" };
+		}
+		return result(
+			target === "plus"
+				? "plusios"
+				: target === "five"
+					? "fiveios"
+					: "gpt20ios",
+			"overwrite30",
+		);
 	}
 	if (family === "claude") {
 		if (!current)

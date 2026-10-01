@@ -7,7 +7,6 @@ import {
 	Check,
 	ChevronRight,
 	ExternalLink,
-	ShoppingBag,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
@@ -40,101 +39,95 @@ export function BuyingGuide() {
 		if (open && path) focus.current?.focus();
 	}, [open, path]);
 	return (
-		<section className="container px-4 pb-5" aria-label={copy.entry}>
-			<div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-primary/10 p-5 sm:px-8">
-				<div className="flex items-center gap-3">
-					<ShoppingBag className="size-5 text-primary" />
-					<h2 className="font-semibold text-lg sm:text-xl">{copy.entry}</h2>
+		<Dialog
+			open={open}
+			onOpenChange={(value) => {
+				setOpen(value);
+				if (!value) setAnswers([]);
+			}}
+		>
+			<DialogTrigger asChild>
+				<Button className="buying-guide-breathe rounded-full">
+					{copy.start}
+					<ArrowRight className="size-4" />
+				</Button>
+			</DialogTrigger>
+			<DialogContent className="max-h-[90dvh] overflow-y-auto rounded-2xl p-5 sm:max-w-xl sm:p-7">
+				<div className="pr-7">
+					<DialogTitle
+						ref={focus}
+						tabIndex={-1}
+						className="text-xl outline-none"
+					>
+						{step.kind === "question"
+							? copy[step.id]
+							: step.kind === "stop"
+								? copy[step.reason]
+								: copy.result}
+					</DialogTitle>
+					<DialogDescription
+						className={
+							step.kind === "question" && step.id === "family"
+								? "sr-only"
+								: "mt-2"
+						}
+					>
+						{step.kind === "stop"
+							? copy[`${step.reason}_body`]
+							: step.kind === "result"
+								? step.warning === "overwrite30"
+									? copy.overwrite_result_help
+									: copy.result_help
+								: (copy[`${step.id}_help`] ?? copy.flow_help)}
+					</DialogDescription>
 				</div>
-				<Dialog
-					open={open}
-					onOpenChange={(value) => {
-						setOpen(value);
-						if (!value) setAnswers([]);
-					}}
-				>
-					<DialogTrigger asChild>
-						<Button className="rounded-full">
-							{copy.start}
-							<ArrowRight className="size-4" />
-						</Button>
-					</DialogTrigger>
-					<DialogContent className="max-h-[90dvh] overflow-y-auto rounded-2xl p-5 sm:max-w-xl sm:p-7">
-						<div className="pr-7">
-							<DialogTitle
-								ref={focus}
-								tabIndex={-1}
-								className="text-xl outline-none"
-							>
-								{step.kind === "question"
-									? copy[step.id]
-									: step.kind === "stop"
-										? copy[step.reason]
-										: copy.result}
-							</DialogTitle>
-							<DialogDescription
-								className={
-									step.kind === "question" && step.id === "family"
-										? "sr-only"
-										: "mt-2"
-								}
-							>
-								{step.kind === "stop"
-									? copy[`${step.reason}_body`]
-									: step.kind === "result"
-										? copy.result_help
-										: copy.flow_help}
-							</DialogDescription>
-						</div>
-						{step.kind === "question" ? (
-							<>
-								{step.help ? <GuideHelp help={step.help} copy={copy} /> : null}
-								<div
-									className={`grid gap-2 sm:grid-cols-2 ${step.id === "family" ? "grid-cols-2" : ""}`}
+				{step.kind === "question" ? (
+					<>
+						{step.help ? <GuideHelp help={step.help} copy={copy} /> : null}
+						<div
+							className={`grid gap-2 sm:grid-cols-2 ${step.id === "family" ? "grid-cols-2" : ""}`}
+						>
+							{step.options.map((option) => (
+								<button
+									type="button"
+									key={option}
+									onClick={() => setAnswers([...answers, option])}
+									className="flex min-h-16 items-center justify-between gap-2 rounded-xl border bg-background p-3 text-left sm:gap-3 sm:p-4 transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary"
 								>
-									{step.options.map((option) => (
-										<button
-											type="button"
-											key={option}
-											onClick={() => setAnswers([...answers, option])}
-											className="flex min-h-16 items-center justify-between gap-2 rounded-xl border bg-background p-3 text-left sm:gap-3 sm:p-4 transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary"
-										>
-											<span>
-												<span className="block font-semibold text-sm sm:text-base">
-													{copy[option]}
-												</span>
-												{step.id === "family" ? (
-													<span className="mt-1 block text-muted-foreground text-xs">
-														{copy[`${option}_hint`]}
-													</span>
-												) : null}
+									<span>
+										<span className="block font-semibold text-sm sm:text-base">
+											{copy[option]}
+										</span>
+										{copy[`${option}_hint`] ? (
+											<span className="mt-1 block text-muted-foreground text-xs">
+												{copy[`${option}_hint`]}
 											</span>
-											<ChevronRight className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
-										</button>
-									))}
-								</div>
-							</>
-						) : step.kind === "result" ? (
-							<GuideResult key={path} step={step} copy={copy} />
-						) : null}
-						{answers.length ? (
-							<div className="flex items-center justify-between border-t pt-3">
-								<Button
-									variant="ghost"
-									onClick={() => setAnswers(answers.slice(0, -1))}
-								>
-									<ArrowLeft className="size-4" />
-									{copy.back}
-								</Button>
-								<Button variant="ghost" onClick={() => setAnswers([])}>
-									{copy.restart}
-								</Button>
-							</div>
-						) : null}
-					</DialogContent>
-				</Dialog>
-			</div>
-		</section>
+										) : null}
+									</span>
+									<ChevronRight className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
+								</button>
+							))}
+						</div>
+					</>
+				) : step.kind === "result" ? (
+					<GuideResult key={path} step={step} copy={copy} />
+				) : null}
+				{answers.length ? (
+					<div className="flex items-center justify-between border-t pt-3">
+						<Button
+							variant="ghost"
+							onClick={() => setAnswers(answers.slice(0, -1))}
+						>
+							<ArrowLeft className="size-4" />
+							{copy.back}
+						</Button>
+						<Button variant="ghost" onClick={() => setAnswers([])}>
+							{copy.restart}
+						</Button>
+					</div>
+				) : null}
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -142,7 +135,7 @@ function GuideHelp({
 	help,
 	copy,
 }: {
-	help: "plan" | "billing" | "eligibility" | "claude";
+	help: "plan" | "billing" | "claude";
 	copy: Record<string, string>;
 }) {
 	const billing = help === "billing";
@@ -156,9 +149,7 @@ function GuideHelp({
 			? "/guides/buying/current-plan.png"
 			: billing
 				? "/guides/buying/billing.png"
-				: help === "eligibility"
-					? "/guides/chatgpt/ph20x-eligibility.png"
-					: null;
+				: null;
 	return (
 		<div className="space-y-3 rounded-xl bg-muted/50 p-4 text-sm leading-6">
 			<p>{copy[`${help}_help`]}</p>
@@ -189,11 +180,7 @@ function GuideHelp({
 					</summary>
 					<GuideImage
 						image={image}
-						alt={
-							help === "eligibility"
-								? m.store_ph20x_eligibility_image_alt()
-								: (copy[billing ? "billing_alt" : "plan_alt"] ?? "")
-						}
+						alt={copy[billing ? "billing_alt" : "plan_alt"] ?? ""}
 						copy={copy}
 					/>
 
@@ -334,6 +321,7 @@ function GuideResult({
 				{[
 					...new Set(
 						[
+							item.policy.deliveryTime,
 							item.policy.coverage,
 							item.policy.warranty,
 							item.policy.restrictions,
@@ -378,7 +366,6 @@ function GuideResult({
 
 function guideCopy(): Record<string, string> {
 	return {
-		entry: m.guide_entry(),
 		start: m.guide_start(),
 		family: m.guide_family(),
 		gpt: m.guide_gpt(),
@@ -394,6 +381,46 @@ function guideCopy(): Record<string, string> {
 		grok: m.guide_grok(),
 		grok_hint: m.guide_grok_hint(),
 		current: m.guide_current(),
+		renew_channel: m.guide_renew_channel(),
+		renew_channel_help: m.guide_renew_channel_help(),
+		ph_renew: m.guide_ph_renew(),
+		ph_renew_hint: m.guide_ph_renew_hint(),
+
+		current_channel: m.guide_current_channel(),
+		current_channel_help: m.guide_current_channel_help(),
+		current_ph: m.guide_current_ph(),
+		current_ph_hint: m.guide_current_ph_hint(),
+		current_ios: m.guide_current_ios(),
+		current_ios_hint: m.guide_current_ios_hint(),
+		current_other: m.guide_current_other(),
+		current_other_hint: m.guide_current_other_hint(),
+		renew_bill_mismatch: m.guide_renew_bill_mismatch(),
+		renew_bill_mismatch_body: m.guide_renew_bill_mismatch_body(),
+
+		gpt_current: m.guide_gpt_current(),
+		gpt_current_help: m.guide_gpt_current_help(),
+		pro100: m.guide_pro100(),
+		pro200: m.guide_pro200(),
+		pro500: m.guide_pro500(),
+		timing: m.guide_timing(),
+		timing_help: m.guide_timing_help(),
+		recharge_now: m.guide_recharge_now(),
+		recharge_now_hint: m.guide_recharge_now_hint(),
+		after_expiry: m.guide_after_expiry(),
+		after_expiry_hint: m.guide_after_expiry_hint(),
+		channel: m.guide_channel(),
+		channel_help: m.guide_channel_help(),
+		ph: m.guide_ph(),
+		ph_hint: m.guide_ph_hint(),
+		ios: m.guide_ios(),
+		ios_hint: m.guide_ios_hint(),
+		upgrade_channel: m.guide_upgrade_channel(),
+		upgrade_channel_help: m.guide_upgrade_channel_help(),
+		ph_upgrade: m.guide_ph_upgrade(),
+		ph_upgrade_hint: m.guide_ph_upgrade_hint(),
+		wait_for_expiry: m.guide_wait_for_expiry(),
+		wait_for_expiry_body: m.guide_wait_for_expiry_body(),
+
 		target: m.guide_target(),
 		free: m.guide_free(),
 		go: m.guide_go(),
@@ -401,6 +428,9 @@ function guideCopy(): Record<string, string> {
 		pro: m.guide_pro(),
 		five: m.guide_five(),
 		twenty: m.guide_twenty(),
+		fivehundred: m.guide_fivehundred(),
+		fivehundred_active: m.guide_fivehundred_active(),
+		fivehundred_active_body: m.guide_fivehundred_active_body(),
 		plan_help: m.guide_plan_help(),
 		grace: m.guide_grace(),
 		open_plan: m.guide_open_plan(),
@@ -412,19 +442,9 @@ function guideCopy(): Record<string, string> {
 		billing_path: m.guide_billing_path(),
 		billing_alt: m.guide_billing_alt(),
 		billing_note: m.guide_billing_note(),
-		plus_php: m.guide_plus_php(),
-		yes_php: m.guide_yes_php(),
-		no_php: m.guide_no_php(),
 		pro_php: m.guide_pro_php(),
 		yes_8919: m.guide_yes_8919(),
 		no_8919: m.guide_no_8919(),
-		payment: m.guide_payment(),
-		payment_clear: m.guide_payment_clear(),
-		payment_problem: m.guide_payment_problem(),
-		new20: m.guide_new20(),
-		eligible: m.guide_eligible(),
-		ineligible: m.guide_ineligible(),
-		eligibility_help: m.guide_eligibility_help(),
 		claude_current: m.guide_claude_current(),
 		claude_free: m.guide_claude_free(),
 		claude_paid: m.guide_claude_paid(),
@@ -448,6 +468,7 @@ function guideCopy(): Record<string, string> {
 		xplusyear: m.guide_xplusyear(),
 		result: m.guide_result(),
 		result_help: m.guide_result_help(),
+		overwrite_result_help: m.guide_overwrite_result_help(),
 		view: m.guide_view(),
 		back: m.guide_back(),
 		restart: m.guide_restart(),
@@ -460,6 +481,8 @@ function guideCopy(): Record<string, string> {
 		live_note: m.guide_live_note(),
 		policy: m.guide_policy(),
 		overwrite: m.guide_overwrite(),
+		overwrite30: m.guide_overwrite30(),
+		overwrite30_accept: m.guide_overwrite30_accept(),
 		overwrite_accept: m.guide_overwrite_accept(),
 		kyc: m.guide_kyc(),
 		kyc_accept: m.guide_kyc_accept(),
@@ -471,8 +494,6 @@ function guideCopy(): Record<string, string> {
 		claude_active_body: m.guide_claude_active_body(),
 		rule_pending: m.guide_rule_pending(),
 		rule_pending_body: m.guide_rule_pending_body(),
-		payment_issue: m.guide_payment_issue(),
-		payment_issue_body: m.guide_payment_issue_body(),
 		preview_image: m.guide_preview_image(),
 		flow_help: m.guide_flow_help(),
 	};
