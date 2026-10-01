@@ -58,7 +58,13 @@ import { getLocale } from "#/paraglide/runtime";
 type Product = Awaited<ReturnType<typeof getStorefrontProductFn>>;
 type SellableItem = Product["sellableItems"][number];
 
-export function StorefrontProductPage({ productId }: { productId: string }) {
+export function StorefrontProductPage({
+	productId,
+	preferredItemId,
+}: {
+	productId: string;
+	preferredItemId?: string;
+}) {
 	const locale = getLocale();
 	const session = authClient.useSession();
 	const product = useQuery({
@@ -97,15 +103,16 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 			});
 	}, [product.data?.id]);
 	useEffect(() => {
-		const first =
-			product.data?.sellableItems.find(
-				(item) => isAvailable(item) && !item.saleDisabled,
-			) ?? product.data?.sellableItems.find(isAvailable);
+		const first = preferredItemId
+			? product.data?.sellableItems.find((item) => item.id === preferredItemId)
+			: (product.data?.sellableItems.find(
+					(item) => isAvailable(item) && !item.saleDisabled,
+				) ?? product.data?.sellableItems.find(isAvailable));
 		if (!selectedItemId && first) {
 			setSelectedItemId(first.id);
 			setQuantity(first.minimumQuantity);
 		}
-	}, [product.data, selectedItemId]);
+	}, [product.data, selectedItemId, preferredItemId]);
 	if (product.isLoading) return <ProductLoadingSkeleton />;
 	if (!product.data) return null;
 	const data = product.data;
@@ -128,7 +135,9 @@ export function StorefrontProductPage({ productId }: { productId: string }) {
 		: -1;
 	const selectedItem =
 		data.sellableItems.find((item) => item.id === selectedItemId) ??
-		data.sellableItems[0];
+		(preferredItemId
+			? data.sellableItems.find((item) => item.id === preferredItemId)
+			: data.sellableItems[0]);
 	const requiresSignIn =
 		selectedItem?.deliveryType === "automation" &&
 		!session.isPending &&
