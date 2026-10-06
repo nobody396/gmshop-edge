@@ -15,3 +15,7 @@ rendering. Stored text is escaped by React, not rendered as raw HTML.
 Validation: component tests cover verbatim text, emphasis, ordinary/English
 fallback, malformed-prefix fallback, and HTML escaping. Check desktop/mobile,
 light/dark appearance, and Max plan selection on the customer-visible page.
+
+Account-age restrictions highlight the new-account prohibition, registration for at least one month, possible missing credit, and inability to detect the issue in advance. Stored copy has no standalone numbered marker. Existing KYC emphasis remains.
+
+账号限制突出新账号禁止充值、注册至少一个月、可能不到账及无法事先检测；删除孤立序号，保留既有 KYC 强调与原文内容。

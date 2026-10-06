@@ -19,6 +19,24 @@ describe("Claude KYC description", () => {
 		expect(html.replace(/<[^>]+>/g, "")).toBe(`${title}${notice}原商品介绍`);
 		expect(html).toContain("dark:bg-amber-950");
 	});
+	it("emphasizes account-age limits and risks without adding a numbered marker", () => {
+		const ageNotice =
+			"新账号禁止充值 5X / 20X 订阅，提交的账号必须已注册至少一个月，否则可能存在不到账的情况。由于该情况无法事先检测，请确认无误后充值。";
+		const html = render(`${title}\n${ageNotice}\n${notice}\n\n原商品介绍`);
+		expect(html.match(/<mark /g)).toHaveLength(7);
+		for (const phrase of [
+			"新账号禁止充值",
+			"已注册至少一个月",
+			"可能存在不到账",
+			"无法事先检测",
+		]) {
+			expect(html).toContain(`>${phrase}</mark>`);
+		}
+		expect(html).not.toContain("⑤");
+		expect(html.replace(/<[^>]+>/g, "")).toBe(
+			`${title}${ageNotice}\n${notice}原商品介绍`,
+		);
+	});
 	it("preserves descriptions without the exact notice header, including English", () => {
 		for (const description of [
 			"Claude membership recharge",
