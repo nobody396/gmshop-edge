@@ -230,7 +230,7 @@ test("web customer receives the approved away text and guide in their own conver
 	);
 	expect(response.replies).toHaveLength(1);
 	expect(response.replies[0]).toMatchObject({
-		text: "老板，我这会儿不在，有问题先留言哈\n不知道怎么选购的，打开下面的首页，点「开始选择」看选购指南\nhttps://laoshirenvip.com/#self-service-recharge\n消息看到了都会回复，回复后也会发邮件提醒你",
+		text: "老板，我这会儿不在，有问题先留言哈\n下单前请打开下面的首页，点「下单必看」完成选购确认\nhttps://laoshirenvip.com/#self-service-recharge\n消息看到了都会回复，回复后也会发邮件提醒你",
 	});
 	expect(
 		sent.some(
@@ -285,7 +285,7 @@ test("Telegram support customer receives the same guide without an email promise
 		(item) => String(item.chat_id) === "54321" && item.method === "sendMessage",
 	);
 	expect(reply?.text).toBe(
-		"老板，我这会儿不在，有问题先留言哈\n不知道怎么选购的，打开下面的首页，点「开始选择」看选购指南\nhttps://laoshirenvip.com/#self-service-recharge\n消息看到了都会回复",
+		"老板，我这会儿不在，有问题先留言哈\n下单前请打开下面的首页，点「下单必看」完成选购确认\nhttps://laoshirenvip.com/#self-service-recharge\n消息看到了都会回复",
 	);
 	expect(
 		sent.some(

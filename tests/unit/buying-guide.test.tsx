@@ -95,6 +95,12 @@ afterEach(async () => {
 	container.remove();
 	client.clear();
 });
+it("shows the pre-order instructions on the first guide step", () => {
+	const description = document.querySelector('[role="dialog"] p');
+	expect(description?.textContent).toContain("guide_flow_help");
+	expect(description?.classList.contains("sr-only")).toBe(false);
+});
+
 it("shows only the six retail families and no unknown answer", () => {
 	expect(document.body.textContent).toContain("guide_sms");
 	expect(document.body.textContent).not.toMatch(/unknown|unsure|guide_api/);

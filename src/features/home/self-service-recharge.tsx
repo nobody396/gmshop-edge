@@ -40,7 +40,7 @@ export function SelfServiceRecharge() {
 						>
 							{m.store_self_service_title()}
 						</h2>
-						<div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+						<div className="mt-4 flex flex-col items-start gap-3 rounded-2xl border border-primary/20 bg-background/80 p-4">
 							<p className="font-medium text-sm">{m.guide_entry()}</p>
 							<BuyingGuide />
 						</div>
