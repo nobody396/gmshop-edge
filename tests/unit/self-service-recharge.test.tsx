@@ -22,15 +22,15 @@ describe("homepage self-service recharge", () => {
 		container = undefined;
 	});
 
-	it("sets the honest expectation without adding a second jump action", async () => {
+	it("presents pre-order checks without adding a second jump action", async () => {
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
 		await act(async () => root?.render(<SelfServiceRecharge />));
 
 		const text = container.textContent ?? "";
-		expect(text).toContain("Automatic delivery, 24/7");
-		expect(text).toContain("in as little as about 3 minutes");
+		expect(text).toContain("Check before ordering");
+		expect(text).toContain("Read before ordering");
 		expect(text).toContain("recharge code and the matching recharge website");
 		expect(text).toContain("30-day subscription warranty");
 		expect(text).toContain("Contact support directly");
@@ -42,9 +42,14 @@ describe("homepage self-service recharge", () => {
 		);
 		expect(container.querySelector("a")).toBeNull();
 		expect(text).not.toContain("passwords");
-		expect(text).toContain("Tell us about your account");
+		expect(text).toContain(
+			"Confirm your account status, recharge channel, and product restrictions",
+		);
 		expect(container.querySelectorAll("section")).toHaveLength(1);
-		expect(container.textContent).toContain("Get started");
+		expect(container.querySelector("button")?.textContent).toContain(
+			"Read before ordering",
+		);
+		expect(text).not.toContain("Tell us about your account");
 		expect(container.querySelectorAll("button")).toHaveLength(1);
 		expect(
 			container

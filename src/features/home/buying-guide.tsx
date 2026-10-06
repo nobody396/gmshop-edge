@@ -47,7 +47,7 @@ export function BuyingGuide() {
 			}}
 		>
 			<DialogTrigger asChild>
-				<Button className="buying-guide-breathe rounded-full">
+				<Button className="buying-guide-breathe w-full rounded-full sm:w-auto">
 					{copy.start}
 					<ArrowRight className="size-4" />
 				</Button>
@@ -65,13 +65,7 @@ export function BuyingGuide() {
 								? copy[step.reason]
 								: copy.result}
 					</DialogTitle>
-					<DialogDescription
-						className={
-							step.kind === "question" && step.id === "family"
-								? "sr-only"
-								: "mt-2"
-						}
-					>
+					<DialogDescription className="mt-2 leading-6">
 						{step.kind === "stop"
 							? copy[`${step.reason}_body`]
 							: step.kind === "result"
