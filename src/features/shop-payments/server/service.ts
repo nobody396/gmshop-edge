@@ -5,11 +5,7 @@ import {
 	type EntitlementOrderItem,
 } from "#/features/entitlements/server/ledger";
 import { quotePaymentCurrency } from "#/features/exchange-rates/server/quote";
-import {
-	refreshUnheldOrder,
-	SALE_CAPACITY_MAX_AGE_MS,
-	unallocatedPaymentStatement,
-} from "#/features/redeem-warehouse/server/sale-capacity";
+import { unallocatedPaymentStatement } from "#/features/redeem-warehouse/server/sale-capacity";
 import { grossUpPaymentAmount } from "#/features/shop-payments/fees";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
@@ -621,8 +617,6 @@ export async function processShopPaymentEvent(
 		event.merchantOrderId ?? null,
 	);
 	validateEventMoney(context, event);
-	if (event.type === "payment_succeeded" && context.order_id)
-		await refreshUnheldOrder(db, context.order_id).catch(() => null);
 	if (context.attempt_status === "succeeded") {
 		const result = await runPaymentEventBatch(db, channelId, event, [
 			paymentEventStatement(
@@ -856,7 +850,6 @@ export async function processShopPaymentEvent(
 }
 
 export async function completeFreeStoreOrder(db: D1Database, orderId: string) {
-	await refreshUnheldOrder(db, orderId).catch(() => null);
 	const order = await db
 		.prepare(
 			`SELECT id, status, version, total_minor FROM shop_orders
@@ -959,7 +952,6 @@ export async function completeWalletStoreOrder(
 	db: D1Database,
 	input: { orderId: string; userId: string },
 ) {
-	await refreshUnheldOrder(db, input.orderId).catch(() => null);
 	const order = await db
 		.prepare(
 			`SELECT orders.id, orders.status, orders.version, orders.total_minor,
@@ -1325,10 +1317,7 @@ function fulfillmentStatements(
 					`UPDATE stock_entries SET status = 'reserved', order_item_id = ?, reserved_at = ?, updated_at = ?
 					 WHERE id IN (SELECT id FROM stock_entries WHERE sellable_item_id = ? AND status = 'available'
 					 ORDER BY created_at, id LIMIT MAX(0,?-(SELECT COUNT(*) FROM stock_entries WHERE order_item_id=? AND status='reserved')))
-					 AND (? = 1 OR (SELECT COUNT(*) FROM stock_entries WHERE sellable_item_id = ? AND status = 'available') + (SELECT COUNT(*) FROM stock_entries WHERE order_item_id=? AND status='reserved') >= ?)
-                     AND (NOT EXISTS (SELECT 1 FROM redeem_sale_capacity WHERE component_id=?) OR EXISTS
-                       (SELECT 1 FROM redeem_sale_capacity WHERE component_id=? AND updated_at>=?
-                        AND free_budget>=MAX(0,?-(SELECT COUNT(*) FROM stock_entries WHERE order_item_id=? AND status='reserved'))))`,
+					 AND (? = 1 OR (SELECT COUNT(*) FROM stock_entries WHERE sellable_item_id = ? AND status = 'available') + (SELECT COUNT(*) FROM stock_entries WHERE order_item_id=? AND status='reserved') >= ?)`,
 				)
 				.bind(
 					item.id,
@@ -1341,11 +1330,6 @@ function fulfillmentStatements(
 					item.delivery_component_id,
 					item.id,
 					item.quantity,
-					item.delivery_component_id,
-					item.delivery_component_id,
-					now - SALE_CAPACITY_MAX_AGE_MS,
-					item.quantity,
-					item.id,
 				),
 		);
 	}

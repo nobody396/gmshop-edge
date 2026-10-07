@@ -1,5 +1,6 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { processDelivery } from "#/features/fulfillment/server/process";
 import { refreshSaleCapacity } from "#/features/redeem-warehouse/server/sale-capacity";
 import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
 import { transitionShopOrder } from "#/features/shop-orders/server/transition";
@@ -8,7 +9,7 @@ import { createMultiStoreOrder } from "#/features/storefront/server/multi-order"
 import { storefrontStockExpression } from "#/features/storefront/server/stock-availability";
 import { listSupplierCatalog } from "#/features/supplier-api/server/catalog";
 import { createSupplierApiOrder } from "#/features/supplier-api/server/orders";
-import { encryptSecret } from "#/lib/secrets";
+import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import { applyMigrations } from "./migrations";
 
 const item = "33333333-3333-4333-8333-333333333333",
@@ -25,7 +26,8 @@ describe.each([
 	"CLAUDE_PRO_IOS",
 	"GPT_20X_PH",
 	"GPT_20X_IOS",
-])("%s checkout uses actual uncommitted upstream capacity", {
+	"GPT_5X_IOS",
+])("%s checkout reserves owned codes independently of upstream capacity", {
 	timeout: 30_000,
 }, (sku) => {
 	let mf: Miniflare, db: D1Database;
@@ -171,7 +173,7 @@ describe.each([
 		const catalog = await listSupplierCatalog(db, { page: 1, pageSize: 10 });
 		expect(catalog.items[0]?.skus[0]?.stock_quantity).toBe(96);
 	});
-	it("50 owned codes / 2 keys / 27 supplier entries shows 50 and permits only two purchases", async () => {
+	it("50 owned codes remain sellable with only 2 keys and 27 unpurchased supplier entries", async () => {
 		keys = 2;
 		await db
 			.prepare(
@@ -194,10 +196,9 @@ describe.each([
 		const catalogue = await listSupplierCatalog(db, { page: 1, pageSize: 10 });
 		expect(catalogue.items[0]?.skus[0]?.stock_quantity).toBe(50);
 		await checkout(2);
-		await expect(checkout(1)).rejects.toMatchObject({
-			code: "inventory_unavailable",
-		});
-		expect(await stock()).toBe(48);
+		await checkout(1);
+		expect(await stock()).toBe(47);
+		expect(fetcher).not.toHaveBeenCalled();
 	});
 	it("payment and replay do not reserve a second set of codes or decrement again", async () => {
 		const first = await checkout(2, "same-order-key");
@@ -216,7 +217,12 @@ describe.each([
 		).toBe(2);
 	});
 	it("concurrent checkouts cannot oversell a shared pool", async () => {
-		keys = 3;
+		keys = 0;
+		await db
+			.prepare(
+				"DELETE FROM stock_entries WHERE CAST(substr(id,7) AS INTEGER)>=3",
+			)
+			.run();
 		const results = await Promise.allSettled([checkout(2), checkout(2)]);
 		expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
 		expect(
@@ -235,6 +241,44 @@ describe.each([
 					.first<{ n: number }>()
 			)?.n,
 		).toBe(2);
+	});
+	it("double-encoded legacy mappings preserve the atomic owned-code guard", async () => {
+		await db
+			.prepare(
+				"UPDATE system_settings SET value=? WHERE key='integration.supply_console_map'",
+			)
+			.bind(JSON.stringify(JSON.stringify({ [item]: sku })))
+			.run();
+		await db.prepare("DELETE FROM stock_entries WHERE id!='stock-0'").run();
+		const identity = {
+			userId: user,
+			keyId: "test-key",
+			keyRowId: "key-row",
+			allowedCallbackOrigin: null,
+		};
+		const results = await Promise.allSettled([
+			createSupplierApiOrder(db, identity, {
+				skuId: item,
+				quantity: 1,
+				downstreamOrderNo: "concurrent-one",
+			}),
+			createSupplierApiOrder(db, identity, {
+				skuId: item,
+				quantity: 1,
+				downstreamOrderNo: "concurrent-two",
+			}),
+		]);
+		expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+		expect(
+			await db.prepare("SELECT COUNT(*) AS n FROM supplier_api_orders").first(),
+		).toMatchObject({ n: 1 });
+		expect(
+			await db
+				.prepare("SELECT balance_minor FROM users WHERE id=?")
+				.bind(user)
+				.first(),
+		).toMatchObject({ balance_minor: "9900" });
+		expect(fetcher).not.toHaveBeenCalled();
 	});
 	it("never creates more codes as a checkout side effect", async () => {
 		await db.prepare("DELETE FROM stock_entries WHERE id!='stock-0'").run();
@@ -262,7 +306,13 @@ describe.each([
 		await refreshSaleCapacity(db, item);
 		expect(await stock()).toBe(100);
 	});
-	it("the agent API shares capacity with the main storefront and fails before charging", async () => {
+	it("the agent API shares owned codes with the main storefront and fails before charging", async () => {
+		keys = 0;
+		await db
+			.prepare(
+				"DELETE FROM stock_entries WHERE CAST(substr(id,7) AS INTEGER)>=5",
+			)
+			.run();
 		await checkout(4);
 		const identity = {
 			userId: user,
@@ -296,7 +346,8 @@ describe.each([
 					.first<{ balance_minor: string }>()
 			)?.balance_minor,
 		).toBe("9900");
-		expect(await stock()).toBe(95);
+		expect(await stock()).toBe(0);
+		expect(fetcher).not.toHaveBeenCalled();
 	});
 	it("keeps paid-but-unallocated legacy orders in sale obligations", async () => {
 		const first = await checkout(2);
@@ -321,11 +372,53 @@ describe.each([
 		expect(await stock()).toBe(100);
 	});
 
-	it("warehouse failure closes sales instead of falling back to the virtual code pool", async () => {
-		fetcher.mockRejectedValue(new Error("offline"));
-		await expect(checkout(1)).rejects.toMatchObject({
-			code: "redeem_sale_capacity_unavailable",
-		});
-		expect(await stock()).toBe(100);
+	it("zero cached capacity and an unavailable warehouse do not block checkout or payment", async () => {
+		keys = 0;
+		await refreshSaleCapacity(db, item);
+		fetcher.mockReset().mockRejectedValue(new Error("offline"));
+		const first = await checkout(1);
+		await completeWalletStoreOrder(db, { orderId: first.id, userId: user });
+		expect(await stock()).toBe(99);
+		expect(fetcher).not.toHaveBeenCalled();
+		const delivery = await db
+			.prepare(
+				"SELECT d.id,d.status FROM delivery_records d JOIN shop_order_items i ON i.id=d.order_item_id WHERE i.order_id=?",
+			)
+			.bind(first.id)
+			.first();
+		expect(delivery).toMatchObject({ status: "pending" });
+		await processDelivery(db, String(delivery?.id));
+		await processDelivery(db, String(delivery?.id));
+		const delivered = await db
+			.prepare(
+				"SELECT status,content_encrypted FROM delivery_records WHERE id=?",
+			)
+			.bind(delivery?.id)
+			.first<{ status: string; content_encrypted: string }>();
+		expect(delivered?.status).toBe("delivered");
+		expect(
+			await decryptSecret(
+				delivered?.content_encrypted ?? "",
+				secret,
+				"delivery-content",
+			),
+		).toContain(code(0));
+		expect(fetcher).not.toHaveBeenCalled();
+	});
+
+	it("legacy pending orders without a code hold allocate owned stock without upstream access", async () => {
+		const first = await checkout(1);
+		await db
+			.prepare(
+				"UPDATE stock_entries SET status='available',order_item_id=NULL,reserved_at=NULL WHERE order_item_id IN (SELECT id FROM shop_order_items WHERE order_id=?)",
+			)
+			.bind(first.id)
+			.run();
+		keys = 0;
+		await refreshSaleCapacity(db, item);
+		fetcher.mockReset().mockRejectedValue(new Error("offline"));
+		await completeWalletStoreOrder(db, { orderId: first.id, userId: user });
+		expect(await stock()).toBe(99);
+		expect(fetcher).not.toHaveBeenCalled();
 	});
 });

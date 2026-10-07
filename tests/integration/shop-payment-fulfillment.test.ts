@@ -684,7 +684,7 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 		});
 	});
 
-	it("records an accepted legacy payment even when the central sale budget cannot allocate stock", async () => {
+	it("records an accepted legacy payment and allocates owned codes despite zero upstream budget", async () => {
 		await database
 			.prepare(
 				"INSERT INTO redeem_sale_capacity (component_id,free_budget,generation,updated_at) VALUES ('sellableItem-card',0,0,?)",
@@ -711,7 +711,7 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 				)
 				.bind(orderItemId)
 				.first(),
-		).toEqual({ status: "failed", error_code: "inventory_unavailable" });
+		).toEqual({ status: "pending", error_code: null });
 	});
 
 	it("completes scoped delivery despite D1 counting its capacity-trigger updates", async () => {
