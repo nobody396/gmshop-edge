@@ -33,9 +33,7 @@ describe("VIP fixed buying guide", () => {
 					expect(step.product).toBe("gpt20ios");
 				if (path[0] === "gpt")
 					expect(guideProducts[step.product].productId).toBe(
-						step.product === "twentyrenew"
-							? "aa277f98-79b4-58cb-8b7b-1424fe930ab9"
-							: "2a794b89-3bb9-49d4-8691-0d13a1606869",
+						"2a794b89-3bb9-49d4-8691-0d13a1606869",
 					);
 				expect(guideProductUrl(step.product)).toBe(
 					`/products/${guideProducts[step.product].productId}?item=${guideProducts[step.product].itemId}#purchase-options`,

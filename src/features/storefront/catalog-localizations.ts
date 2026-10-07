@@ -133,7 +133,7 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		),
 	},
 	"0829de43-da22-420c-9866-38c83dd420f0": {
-		name: "ChatGPT Pro $200 tier Philippines — 1 month",
+		name: "ChatGPT Pro $200 tier Philippines new subscription — 1 month",
 		policy: chatGptPhilippinesPolicy,
 	},
 	"030582df-98c1-5b87-914d-28ddc606e163": {

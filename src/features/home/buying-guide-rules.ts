@@ -29,7 +29,7 @@ export const guideProducts = {
 		itemId: "bf88dfff-914a-4413-b4a9-19d56d30feca",
 	},
 	twentyrenew: {
-		productId: "aa277f98-79b4-58cb-8b7b-1424fe930ab9",
+		productId: "2a794b89-3bb9-49d4-8691-0d13a1606869",
 		itemId: "624bf652-debb-48f4-ab98-6b9daab2a6ea",
 	},
 	twentynew: {
