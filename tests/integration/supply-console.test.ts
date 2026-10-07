@@ -136,8 +136,9 @@ describe("supply console", { timeout: 30_000 }, () => {
 		try {
 			const before = await listSupplyConsole(db, COMMERCE_SECRET, offline);
 			expect(
-				before.find((row) => row.componentId === CENTRAL_ITEM)?.deliverable,
-			).toBe(0);
+				before.find((row) => row.componentId === CENTRAL_ITEM)
+					?.upstreamAvailable,
+			).toBe(null);
 			await db
 				.prepare(
 					"INSERT INTO system_settings (key,value,is_secret,created_at,updated_at) VALUES (?,?,0,1,1)",
@@ -147,7 +148,7 @@ describe("supply console", { timeout: 30_000 }, () => {
 			const rows = await listSupplyConsole(db, COMMERCE_SECRET, offline);
 			expect(
 				rows.find((row) => row.componentId === CENTRAL_ITEM),
-			).toMatchObject({ available: 3, deliverable: 3, gap: 0 });
+			).toMatchObject({ available: 3, upstreamAvailable: null, gap: null });
 			const stocked: typeof requestWarehouse = async () => ({
 				success: true,
 				data: [
@@ -167,23 +168,24 @@ describe("supply console", { timeout: 30_000 }, () => {
 			);
 			expect(
 				noDoubleCount.find((row) => row.componentId === CENTRAL_ITEM)
-					?.deliverable,
-			).toBe(3);
+					?.upstreamAvailable,
+			).toBe(13);
 			await db
 				.prepare("UPDATE stock_entries SET status='reserved' WHERE id='s3'")
 				.run();
 			const reserved = await listSupplyConsole(db, COMMERCE_SECRET, offline);
 			expect(
 				reserved.find((row) => row.componentId === CENTRAL_ITEM),
-			).toMatchObject({ available: 2, deliverable: 2, reserved: 1 });
+			).toMatchObject({ available: 2, upstreamAvailable: null, reserved: 1 });
 			await db
 				.prepare("UPDATE system_settings SET value=? WHERE key=?")
 				.bind(JSON.stringify("GPT_5X_PH"), routeKey)
 				.run();
 			const mismatch = await listSupplyConsole(db, COMMERCE_SECRET, offline);
 			expect(
-				mismatch.find((row) => row.componentId === CENTRAL_ITEM)?.deliverable,
-			).toBe(0);
+				mismatch.find((row) => row.componentId === CENTRAL_ITEM)
+					?.upstreamAvailable,
+			).toBe(null);
 		} finally {
 			await db
 				.prepare("DELETE FROM system_settings WHERE key=?")
@@ -216,7 +218,7 @@ describe("supply console", { timeout: 30_000 }, () => {
 			centralSku: "GPT_20X_IOS",
 			available: 3,
 			centralAvailable: 1,
-			deliverable: 1,
+			upstreamAvailable: 1,
 			gap: 2,
 			usdtMinor: "175000",
 			alipayMinor: "185000",
@@ -225,12 +227,12 @@ describe("supply console", { timeout: 30_000 }, () => {
 		expect(direct).toMatchObject({
 			centralSku: null,
 			available: 2,
-			deliverable: 2,
+			upstreamAvailable: 2,
 			gap: 0,
 		});
 	});
 
-	it("subtracts sold unredeemed Claude orders instead of treating the code pool as stock", async () => {
+	it("displays owned codes and upstream keys independently for Claude too", async () => {
 		await db
 			.prepare("UPDATE system_settings SET value=? WHERE key=?")
 			.bind(JSON.stringify({ [CENTRAL_ITEM]: "CLAUDE_PRO_IOS" }), supplyMapKey)
@@ -256,9 +258,8 @@ describe("supply console", { timeout: 30_000 }, () => {
 						};
 			const rows = await listSupplyConsole(db, COMMERCE_SECRET, warehouse);
 			expect(rows.find((r) => r.componentId === CENTRAL_ITEM)).toMatchObject({
-				available: 1,
-				ownedCodePool: 3,
-				deliverable: 1,
+				available: 3,
+				upstreamAvailable: 3,
 			});
 		} finally {
 			await db
@@ -275,7 +276,7 @@ describe("supply console", { timeout: 30_000 }, () => {
 		const rows = await listSupplyConsole(db, COMMERCE_SECRET, failing);
 		expect(rows.find((row) => row.componentId === CENTRAL_ITEM)).toMatchObject({
 			centralAvailable: null,
-			deliverable: 0,
+			upstreamAvailable: null,
 		});
 	});
 
@@ -326,7 +327,7 @@ describe("supply console", { timeout: 30_000 }, () => {
 		);
 		expect(rows.find((row) => row.componentId === DIRECT_ITEM)).toMatchObject({
 			available: 4,
-			deliverable: 4,
+			upstreamAvailable: 4,
 		});
 	});
 

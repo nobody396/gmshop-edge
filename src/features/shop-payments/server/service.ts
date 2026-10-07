@@ -6,9 +6,9 @@ import {
 } from "#/features/entitlements/server/ledger";
 import { quotePaymentCurrency } from "#/features/exchange-rates/server/quote";
 import {
-	refreshUnheldClaudeOrder,
+	refreshUnheldOrder,
 	SALE_CAPACITY_MAX_AGE_MS,
-	unallocatedClaudePaymentStatement,
+	unallocatedPaymentStatement,
 } from "#/features/redeem-warehouse/server/sale-capacity";
 import { grossUpPaymentAmount } from "#/features/shop-payments/fees";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
@@ -622,7 +622,7 @@ export async function processShopPaymentEvent(
 	);
 	validateEventMoney(context, event);
 	if (event.type === "payment_succeeded" && context.order_id)
-		await refreshUnheldClaudeOrder(db, context.order_id).catch(() => null);
+		await refreshUnheldOrder(db, context.order_id).catch(() => null);
 	if (context.attempt_status === "succeeded") {
 		const result = await runPaymentEventBatch(db, channelId, event, [
 			paymentEventStatement(
@@ -842,7 +842,7 @@ export async function processShopPaymentEvent(
 			.bind(crypto.randomUUID(), now, context.order_id),
 	);
 	if (context.order_id)
-		statements.push(unallocatedClaudePaymentStatement(db, context.order_id));
+		statements.push(unallocatedPaymentStatement(db, context.order_id));
 	const result = await runPaymentEventBatch(db, channelId, event, statements);
 	if (result.duplicate)
 		return presentPaymentReplayReceipt(result.duplicate, event);
@@ -856,7 +856,7 @@ export async function processShopPaymentEvent(
 }
 
 export async function completeFreeStoreOrder(db: D1Database, orderId: string) {
-	await refreshUnheldClaudeOrder(db, orderId).catch(() => null);
+	await refreshUnheldOrder(db, orderId).catch(() => null);
 	const order = await db
 		.prepare(
 			`SELECT id, status, version, total_minor FROM shop_orders
@@ -944,7 +944,7 @@ export async function completeFreeStoreOrder(db: D1Database, orderId: string) {
 			)
 			.bind(crypto.randomUUID(), now, order.id),
 	);
-	statements.push(unallocatedClaudePaymentStatement(db, orderId));
+	statements.push(unallocatedPaymentStatement(db, orderId));
 	const results = await db.batch(statements);
 	if (Number(results[0]?.meta.changes ?? 0) !== 1)
 		throw new DomainError(
@@ -959,7 +959,7 @@ export async function completeWalletStoreOrder(
 	db: D1Database,
 	input: { orderId: string; userId: string },
 ) {
-	await refreshUnheldClaudeOrder(db, input.orderId).catch(() => null);
+	await refreshUnheldOrder(db, input.orderId).catch(() => null);
 	const order = await db
 		.prepare(
 			`SELECT orders.id, orders.status, orders.version, orders.total_minor,
@@ -1085,7 +1085,7 @@ export async function completeWalletStoreOrder(
 				version,
 			),
 	);
-	statements.push(unallocatedClaudePaymentStatement(db, input.orderId));
+	statements.push(unallocatedPaymentStatement(db, input.orderId));
 	const results = await db.batch(statements);
 	if (Number(results[0]?.meta.changes ?? 0) !== 1) {
 		const current = await db

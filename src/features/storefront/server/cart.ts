@@ -2,10 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import type { z } from "zod";
 import {
-	claudeSaleComponent,
-	refreshClaudeSaleCapacity,
-} from "#/features/redeem-warehouse/server/sale-capacity";
-import {
 	cartMutationSchema,
 	cartRemoveSchema,
 	cartSyncSchema,
@@ -43,9 +39,6 @@ export const previewStoreCartFn = createServerFn({ method: "POST" })
 	)
 	.handler(async ({ data }) => {
 		const db = getDb().$client;
-		const claudeComponent = await claudeSaleComponent(db).catch(() => null);
-		if (data.items.some((item) => item.sellableItemId === claudeComponent))
-			await refreshClaudeSaleCapacity(db).catch(() => null);
 		const results = data.items.length
 			? await db.batch(
 					data.items.map((item) =>
@@ -512,9 +505,6 @@ async function loadStoredCartSellableItem(
 
 export async function presentCart(db: D1Database, userId: string) {
 	const cart = await ensureCart(db, userId);
-	const claudeComponent = await claudeSaleComponent(db).catch(() => null);
-	if (cart.items.some((item) => item.sellableItemId === claudeComponent))
-		await refreshClaudeSaleCapacity(db).catch(() => null);
 	const results = cart.items.length
 		? await db.batch(
 				cart.items.map((item) =>

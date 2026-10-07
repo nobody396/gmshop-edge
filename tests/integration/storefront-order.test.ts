@@ -193,7 +193,7 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 				.bind(sellableItemId, now, now, now),
 		]);
 
-		if (mode !== "supplier") {
+		if (!["supplier", "no-balance", "stale"].includes(mode)) {
 			await database
 				.prepare(
 					"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL WHERE id=?",
@@ -224,7 +224,15 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 			await database
 				.prepare("UPDATE supplier_bindings SET last_synced_at=1")
 				.run();
-		if (["local-only", "no-balance", "stale"].includes(mode)) {
+		if (
+			[
+				"local-only",
+				"local-first",
+				"local-shortfall",
+				"no-balance",
+				"stale",
+			].includes(mode)
+		) {
 			await expect(
 				createStoreOrder(database, {
 					sellableItemId,
@@ -234,12 +242,11 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 					customerNote: "",
 				}),
 			).rejects.toMatchObject({
-				code:
-					mode === "local-only"
-						? "inventory_unavailable"
-						: mode === "no-balance"
-							? "supplier_account_unavailable"
-							: "supplier_inventory_unavailable",
+				code: mode.startsWith("local-")
+					? "inventory_unavailable"
+					: mode === "no-balance"
+						? "supplier_account_unavailable"
+						: "supplier_inventory_unavailable",
 			});
 			expect(
 				(await database.prepare("SELECT id FROM supplier_orders").all())

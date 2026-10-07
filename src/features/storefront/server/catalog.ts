@@ -2,7 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { buildDefinitionListSchema } from "#/features/builds/schema";
-import { refreshClaudeSaleCapacity } from "#/features/redeem-warehouse/server/sale-capacity";
 import {
 	productIdSchema,
 	storefrontCatalogSchema,
@@ -38,7 +37,6 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 	.handler(async ({ data }) => {
 		const request = getRequest();
 		const db = getDb(request).$client;
-		await refreshClaudeSaleCapacity(db).catch(() => null);
 		const mainlandChina = requestIsFromMainlandChina(request);
 		const search = data.search ? `%${data.search}%` : null;
 		const filters = ["p.status = 'active'"];
@@ -118,6 +116,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				   AND sale_item.sale_disabled = 0
 				 ) THEN 1 ELSE 0 END AS effective_sale_disabled,
 				 json_array(p.product_type) AS delivery_types,
+                 EXISTS(SELECT 1 FROM product_sellable_items procurement_item WHERE procurement_item.product_id=p.id AND procurement_item.enabled=1 AND procurement_item.sale_disabled=0 AND procurement_item.fulfillment_source='supplier') AS has_procurement,
 				 EXISTS (SELECT 1 FROM product_sellable_items manual_item
 				  WHERE manual_item.product_id = p.id AND manual_item.enabled = 1
 				   AND manual_item.fulfillment_source = 'manual') AS has_manual_fulfillment,
@@ -126,13 +125,13 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				   AND automatic_item.fulfillment_source <> 'manual') AS has_automatic_fulfillment,
 				 CASE WHEN EXISTS (
 				  SELECT 1 FROM product_sellable_items stock_item
-				  WHERE stock_item.product_id = p.id AND stock_item.enabled = 1
-				   AND stock_item.fulfillment_source <> 'manual'
+				  WHERE stock_item.product_id = p.id AND stock_item.enabled = 1 AND stock_item.sale_disabled = 0
+				   AND stock_item.fulfillment_source = 'local'
 				 ) THEN (
 				  SELECT SUM(${storefrontStockExpression("p", "stock_item")})
 				  FROM product_sellable_items stock_item
-				  WHERE stock_item.product_id = p.id AND stock_item.enabled = 1
-				   AND stock_item.fulfillment_source <> 'manual'
+				  WHERE stock_item.product_id = p.id AND stock_item.enabled = 1 AND stock_item.sale_disabled = 0
+				   AND stock_item.fulfillment_source = 'local'
 				 ) ELSE NULL END AS display_stock_quantity,
 				 ${storefrontStockExpression("p", "s")} AS available_stock,
 			 COALESCE((SELECT SUM(item.quantity) FROM shop_order_items item JOIN shop_orders sold_order ON sold_order.id = item.order_id WHERE item.product_id = p.id AND sold_order.status IN ('paid','completed','fulfilling','refunding','refunded')), 0) AS sales_count
@@ -184,6 +183,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 					currency: String(row.currency),
 					currencyDecimals: Number(row.currency_decimals),
 					availableStock: Number(row.available_stock),
+					hasProcurement: Boolean(row.has_procurement),
 					displayStockQuantity:
 						row.display_stock_quantity == null
 							? null
@@ -206,7 +206,6 @@ export const getStorefrontProductFn = createServerFn({ method: "GET" })
 	.handler(async ({ data }) => {
 		const request = getRequest();
 		const db = getDb(request).$client;
-		await refreshClaudeSaleCapacity(db).catch(() => null);
 		const product = await selectStorefrontProductRow(db, data.productId);
 		if (!product)
 			throw new DomainError("product_not_found", 404, "Product not found");
@@ -322,10 +321,8 @@ function presentSellableItem(
 		},
 		String(row.fulfillment_source) as "local" | "manual" | "supplier",
 	);
-	// Customers only need to know whether fulfillment is automatic or manual.
-	// Never expose the internal supplier/local routing decision in the catalog.
-	const publicFulfillmentSource =
-		row.fulfillment_source === "manual" ? "manual" : "local";
+	// Expose the stock kind, not supplier identities or credentials. Automatic procurement is not owned inventory.
+	const publicFulfillmentSource = row.fulfillment_source;
 	const priceMinor =
 		channelPrices.length === 1
 			? (channelPrices[0]?.price_minor ?? String(row.price_minor))

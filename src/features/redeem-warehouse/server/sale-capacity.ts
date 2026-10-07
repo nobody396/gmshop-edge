@@ -1,21 +1,14 @@
 import { z } from "zod";
-import {
-	fingerprintInventorySecret,
-	formatInventoryDelivery,
-	maskInventorySecret,
-} from "#/features/catalog/server/inventory-secrets";
 import { sha256Hex } from "#/lib/crypto";
 import { DomainError } from "#/lib/domain-error";
-import { decryptSecret, encryptSecret } from "#/lib/secrets";
+import { decryptSecret } from "#/lib/secrets";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import {
 	loadDeliveryWarehouseToken,
 	requestWarehouse,
 } from "./warehouse-client";
 
-// This repair is scoped to Claude Pro's shared key pool. Raw PH cards and other
-// supplier/local products retain their existing fulfillment policies.
-const sku = "CLAUDE_PRO_IOS";
+// One sales authority per central pool; display stock and purchase capacity are independent.
 export const SALE_CAPACITY_MAX_AGE_MS = 30_000;
 const capacitySchema = z.object({
 	success: z.literal(true),
@@ -25,37 +18,39 @@ const capacitySchema = z.object({
 		sellable: z.number().int().nonnegative(),
 	}),
 });
-const codePattern = /claude-pro-ios-[A-Z2-9]{4}(?:-[A-Z2-9]{4}){3}/gi;
-
-export async function claudeSaleComponent(db: D1Database) {
+export async function saleComponents(db: D1Database) {
 	const row = await db
 		.prepare(
 			"SELECT value FROM system_settings WHERE key='integration.supply_console_map'",
 		)
 		.first<{ value: string }>();
-	if (!row) return null;
+	if (!row) return {} as Record<string, string>;
 	let map: unknown = JSON.parse(row.value);
 	if (typeof map === "string") map = JSON.parse(map);
-	const parsed = z.record(z.string(), z.string()).parse(map);
-	const components = Object.entries(parsed)
-		.filter(([, value]) => value === sku)
-		.map(([key]) => key);
-	if (components.length > 1)
+	const parsed = z
+		.record(z.string(), z.string().regex(/^[A-Z0-9_]+$/))
+		.parse(map);
+	if (new Set(Object.values(parsed)).size !== Object.keys(parsed).length)
 		throw new DomainError(
 			"redeem_capacity_mapping_conflict",
 			503,
 			"Shared pool must have one sales authority",
 		);
-	return components[0] ?? null;
+	return parsed;
 }
 
-export async function refreshClaudeSaleCapacity(
+export async function refreshSaleCapacity(
 	db: D1Database,
+	component: string,
 	commerceSecret?: string,
 	requester: typeof requestWarehouse = requestWarehouse,
 ) {
-	const component = await claudeSaleComponent(db);
-	if (!component) return null;
+	const sku = (await saleComponents(db))[component];
+	if (!sku) return null;
+	const codePattern = new RegExp(
+		`${sku.toLowerCase().replaceAll("_", "-")}-[A-Z2-9]{4}(?:-[A-Z2-9]{4}){3}`,
+		"gi",
+	);
 	const secret = commerceSecret ?? (await loadRuntimeConfig(db)).commerceSecret;
 	await db
 		.prepare(
@@ -74,10 +69,14 @@ export async function refreshClaudeSaleCapacity(
 				.first<{ generation: number }>();
 			if (!version) throw new Error("Capacity row missing");
 			const rows = await db
-				.prepare(`SELECT content_encrypted,'stock-entry' AS purpose FROM stock_entries WHERE sellable_item_id=? AND status IN ('reserved','delivered')
-     UNION ALL SELECT d.content_encrypted,'delivery-content' AS purpose FROM delivery_records d JOIN shop_order_items i ON i.id=d.order_item_id WHERE i.sellable_item_id=? AND d.content_encrypted IS NOT NULL`)
+				.prepare(`SELECT content_encrypted,'stock-entry' AS purpose,redeem_sku FROM stock_entries WHERE sellable_item_id=? AND status IN ('reserved','delivered')
+     UNION ALL SELECT d.content_encrypted,'delivery-content' AS purpose,d.redeem_sku FROM delivery_records d JOIN shop_order_items i ON i.id=d.order_item_id WHERE i.sellable_item_id=? AND d.content_encrypted IS NOT NULL`)
 				.bind(component, component)
-				.all<{ content_encrypted: string; purpose: string }>();
+				.all<{
+					content_encrypted: string;
+					purpose: string;
+					redeem_sku: string | null;
+				}>();
 			const missingPaid = await db
 				.prepare(`SELECT COALESCE(SUM(MAX(0,i.quantity-(SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=i.id AND s.status IN ('reserved','delivered')))),0) AS quantity
                 FROM shop_order_items i JOIN shop_orders o ON o.id=i.order_id WHERE i.delivery_component_id=? AND (o.status IN ('paid','fulfilling','completed','refunding') OR (o.status='failed' AND o.paid_minor<>'0'))
@@ -91,7 +90,10 @@ export async function refreshClaudeSaleCapacity(
 					secret,
 					row.purpose,
 				);
-				for (const code of content.match(codePattern) ?? [])
+				const matches = content.match(codePattern) ?? [];
+				if (row.redeem_sku && (row.redeem_sku !== sku || matches.length === 0))
+					throw new Error("Unresolved owned-code obligation");
+				for (const code of matches)
 					hashes.add(await sha256Hex(code.toLowerCase()));
 			}
 			const { data } = capacitySchema.parse(
@@ -104,6 +106,16 @@ export async function refreshClaudeSaleCapacity(
 				throw new Error("Invalid capacity arithmetic");
 			// An already-paid legacy order remains an obligation even before a
 			// customer code could be allocated. A failed delivery is not a refund.
+			const raw = await db
+				.prepare(`SELECT COUNT(*) AS count FROM stock_entries s
+    WHERE s.sellable_item_id=? AND s.status='available' AND s.redeem_sku IS NULL
+    AND EXISTS(SELECT 1 FROM system_settings WHERE key='integration.redeem_delivery.'||s.sellable_item_id AND json_extract(value,'$')=?)`)
+				.bind(
+					component,
+					["GPT_PLUS_PH", "GPT_5X_PH", "GPT_20X_PH"].includes(sku) ? sku : "",
+				)
+				.first<{ count: number }>();
+			data.available += Number(raw?.count ?? 0);
 			data.outstanding += Number(missingPaid?.quantity ?? 0);
 			data.sellable = Math.max(0, data.available - data.outstanding);
 			// A checkout changes generation in the same D1 transaction as its stock
@@ -132,128 +144,49 @@ export async function refreshClaudeSaleCapacity(
 	}
 }
 
-export async function prepareClaudeSale(
+export async function prepareSale(
 	db: D1Database,
 	componentId: string,
 	quantity: number,
 ) {
-	if (componentId !== (await claudeSaleComponent(db))) return false;
-	const runtime = await loadRuntimeConfig(db);
-	const capacity = await refreshClaudeSaleCapacity(db, runtime.commerceSecret);
-	if (!capacity || capacity.sellable < quantity)
-		throw new DomainError(
-			"inventory_unavailable",
-			409,
-			"Insufficient uncommitted upstream capacity",
-		);
+	if (!(componentId in (await saleComponents(db)))) return false;
+	const capacity = await refreshSaleCapacity(db, componentId);
 	const count = await db
 		.prepare(
 			"SELECT COUNT(*) AS count FROM stock_entries WHERE sellable_item_id=? AND status='available'",
 		)
 		.bind(componentId)
 		.first<{ count: number }>();
-	let missing = quantity - Number(count?.count ?? 0);
-	if (missing > 0) {
-		const token = await loadDeliveryWarehouseToken(db, runtime.commerceSecret);
-		while (missing > 0) {
-			const batchCount = Math.min(100, missing);
-			const ref = `sale_pool_${crypto.randomUUID()}`;
-			const batch = z
-				.object({
-					success: z.literal(true),
-					data: z.object({
-						sku: z.literal(sku),
-						count: z.literal(batchCount),
-						codes: z
-							.array(
-								z
-									.string()
-									.regex(/^claude-pro-ios-[A-Z2-9]{4}(?:-[A-Z2-9]{4}){3}$/),
-							)
-							.length(batchCount),
-					}),
-				})
-				.parse(
-					await requestWarehouse(token, "/api/internal/codes/batch", {
-						method: "POST",
-						body: JSON.stringify({
-							sku,
-							storefront: "lsrai",
-							request_ref: ref,
-							count: batchCount,
-						}),
-					}),
-				);
-			if (new Set(batch.data.codes).size !== batchCount)
-				throw new DomainError(
-					"redeem_code_pool_invalid",
-					503,
-					"Invalid owned-code pool",
-				);
-			const entries = await Promise.all(
-				batch.data.codes.map(async (code) => ({
-					id: crypto.randomUUID(),
-					cipher: await encryptSecret(
-						formatInventoryDelivery(code, "https://redeem.lsrai.shop", true),
-						runtime.commerceSecret,
-						"stock-entry",
-					),
-					fingerprint: await fingerprintInventorySecret(
-						code,
-						runtime.commerceSecret,
-					),
-					mask: maskInventorySecret(code),
-				})),
-			);
-			const now = Date.now();
-			await db.batch(
-				entries.map((e) =>
-					db
-						.prepare(
-							"INSERT INTO stock_entries (id,sellable_item_id,content_encrypted,key_version,content_fingerprint,content_mask,status,note,created_at,updated_at,redeem_sku) VALUES (?,?,?,1,?,?,'available',?,?,?,?)",
-						)
-						.bind(
-							e.id,
-							componentId,
-							e.cipher,
-							e.fingerprint,
-							e.mask,
-							`Owned-code pool; ${ref}`,
-							now,
-							now,
-							sku,
-						),
-				),
-			);
-			missing -= batchCount;
-		}
-	}
+	if (
+		!capacity ||
+		capacity.sellable < quantity ||
+		Number(count?.count ?? 0) < quantity
+	)
+		throw new DomainError(
+			"inventory_unavailable",
+			409,
+			"Insufficient owned codes or uncommitted upstream capacity",
+		);
 	return true;
 }
 
 // Existing paid/legacy orders need a fresh budget only when they have not
 // already acquired their code hold. Other purchases do not query this pool.
-export async function refreshUnheldClaudeOrder(
-	db: D1Database,
-	orderId: string,
-) {
-	const component = await claudeSaleComponent(db);
-	if (!component) return;
-	const unheld = await db
-		.prepare(`SELECT i.id FROM shop_order_items i WHERE i.order_id=? AND i.delivery_component_id=?
-  AND i.quantity>(SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=i.id AND s.status IN ('reserved','delivered')) LIMIT 1`)
-		.bind(orderId, component)
-		.first();
-	if (unheld) await refreshClaudeSaleCapacity(db);
+export async function refreshUnheldOrder(db: D1Database, orderId: string) {
+	const map = await saleComponents(db);
+	const rows = await db
+		.prepare(`SELECT DISTINCT i.delivery_component_id AS component FROM shop_order_items i WHERE i.order_id=?
+  AND i.quantity>(SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=i.id AND s.status IN ('reserved','delivered'))`)
+		.bind(orderId)
+		.all<{ component: string }>();
+	for (const row of rows.results)
+		if (map[row.component]) await refreshSaleCapacity(db, row.component);
 }
 
 // Keep payment statement row counts unchanged: D1 reports trigger updates in
 // meta.changes, so unallocated cash obligations bump the read version explicitly
 // at the end of the same financial transaction, not in a shop_orders trigger.
-export function unallocatedClaudePaymentStatement(
-	db: D1Database,
-	orderId: string,
-) {
+export function unallocatedPaymentStatement(db: D1Database, orderId: string) {
 	return db
 		.prepare(`UPDATE redeem_sale_capacity SET generation=generation+1 WHERE component_id IN
    (SELECT i.delivery_component_id FROM shop_order_items i JOIN shop_orders o ON o.id=i.order_id WHERE o.id=?
@@ -264,7 +197,7 @@ export function unallocatedClaudePaymentStatement(
 }
 
 // Used inside the order-creation D1 transaction, never as a separate preflight.
-export function reserveClaudeSaleStatements(
+export function reserveSaleStatements(
 	db: D1Database,
 	componentId: string,
 	orderItemId: string,
@@ -291,7 +224,7 @@ export function reserveClaudeSaleStatements(
 	];
 }
 
-export function releaseClaudeSaleStatements(
+export function releaseSaleStatements(
 	db: D1Database,
 	orderId: string,
 	now: number,

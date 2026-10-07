@@ -129,8 +129,13 @@ export function SupplyConsolePage() {
 				}
 			/>
 			<Card>
-				<CardContent className="p-0">
-					<div className="grid grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto] items-center gap-2 border-b px-4 py-2 text-muted-foreground text-xs">
+				<CardContent
+					className="overflow-x-auto p-0"
+					tabIndex={0}
+					role="region"
+					aria-label={m.supply_console_title()}
+				>
+					<div className="grid min-w-[48rem] grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto] items-center gap-2 border-b px-4 py-2 text-muted-foreground text-xs">
 						<span>{m.supply_console_column_sku()}</span>
 						<span className="text-right">
 							{m.supply_console_column_price()}
@@ -213,8 +218,8 @@ function SupplyRow({
 }) {
 	const direct = row.centralSku === null;
 	return (
-		<div className="border-b last:border-b-0">
-			<div className="grid grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto] items-center gap-2 px-4 py-3 text-sm">
+		<div className="min-w-[48rem] border-b last:border-b-0">
+			<div className="grid min-w-[48rem] grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto] items-center gap-2 px-4 py-3 text-sm">
 				<button
 					type="button"
 					onClick={onToggle}
@@ -238,8 +243,8 @@ function SupplyRow({
 				</span>
 				<span className="text-right tabular-nums">{row.available}</span>
 				<span className="text-right tabular-nums">
-					{row.deliverable}
-					{row.gap > 0 ? (
+					{row.upstreamAvailable ?? "—"}
+					{row.gap != null && row.gap > 0 ? (
 						<Badge variant="destructive" className="ml-2">
 							{m.supply_console_gap({ count: row.gap })}
 						</Badge>
@@ -306,13 +311,17 @@ function SupplyRow({
 			{expanded ? (
 				<div className="grid gap-2 bg-muted/20 px-10 py-3 text-xs sm:grid-cols-2">
 					<Detail label={m.supply_console_source()} value={sourceText(row)} />
-					{row.centralSku === "CLAUDE_PRO_IOS" ? (
-						<p>
-							{m.supply_console_owned_pool({
-								codes: row.ownedCodePool,
-								outstanding: row.outstanding ?? "—",
-							})}
-						</p>
+					{row.centralSku ? (
+						<Detail
+							label={m.supply_console_upstream_processing()}
+							value={`${row.processing ?? "—"} / ${row.upstreamLeased ?? "—"}`}
+						/>
+					) : null}
+					{row.binding ? (
+						<Detail
+							label={m.supply_console_supplier_quantity()}
+							value={String(row.binding.stock)}
+						/>
 					) : null}
 					<Detail
 						label={m.supply_console_cost()}
@@ -377,7 +386,7 @@ function sourceText(row: Row) {
 	if (row.centralSku)
 		return m.supply_console_source_central({
 			sku: row.centralSku,
-			available: row.centralAvailable ?? 0,
+			available: row.centralAvailable ?? "—",
 		});
 	if (row.mode === "supplier" && row.binding)
 		return m.supply_console_source_supplier({

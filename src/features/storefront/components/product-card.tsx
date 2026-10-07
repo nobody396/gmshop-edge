@@ -18,14 +18,17 @@ export function StorefrontProductCard({
 	product: StorefrontCatalogProduct;
 }) {
 	const currency = useCurrency();
-	const available = product.displayStockQuantity !== 0;
+	const available =
+		product.hasProcurement || product.displayStockQuantity !== 0;
 	const isFree = BigInt(product.maxPriceMinor) === 0n;
 	const singlePrice = product.maxPriceMinor === product.priceMinor;
 	const hasDiscount =
 		singlePrice &&
 		product.listPriceMinor != null &&
 		BigInt(product.listPriceMinor) > BigInt(product.priceMinor);
-	const availability = stockLabel(product.displayStockQuantity);
+	const availability = product.hasProcurement
+		? m.store_procurement_available()
+		: stockLabel(product.displayStockQuantity);
 	let price: string = m.store_price_free();
 	if (!isFree) {
 		price = singlePrice

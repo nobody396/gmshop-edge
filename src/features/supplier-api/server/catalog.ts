@@ -1,4 +1,3 @@
-import { refreshClaudeSaleCapacity } from "#/features/redeem-warehouse/server/sale-capacity";
 import { storefrontStockExpression } from "#/features/storefront/server/stock-availability";
 import { DomainError } from "#/lib/domain-error";
 
@@ -66,7 +65,6 @@ export async function listSupplierCatalog(
 	db: D1Database,
 	input: { page: number; pageSize: number; updatedAfter?: string },
 ) {
-	await refreshClaudeSaleCapacity(db).catch(() => null);
 	const updatedAfter = input.updatedAfter ? Date.parse(input.updatedAfter) : 0;
 	const offset = (input.page - 1) * input.pageSize;
 	const [countResult, productResult] = await db.batch([
@@ -101,7 +99,6 @@ export async function listSupplierCatalog(
 }
 
 export async function getSupplierProduct(db: D1Database, productId: string) {
-	await refreshClaudeSaleCapacity(db).catch(() => null);
 	const product = await db
 		.prepare(
 			`WITH eligible_products AS (${ELIGIBLE_PRODUCTS})

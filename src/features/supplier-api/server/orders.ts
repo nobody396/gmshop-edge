@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import {
-	prepareClaudeSale,
-	reserveClaudeSaleStatements,
+	prepareSale,
+	reserveSaleStatements,
 } from "#/features/redeem-warehouse/server/sale-capacity";
 import { completeWalletStoreOrder } from "#/features/shop-payments/server/service";
 import { assertSupplierAvailability } from "#/features/storefront/server/multi-order";
@@ -103,14 +103,14 @@ export async function createSupplierApiOrder(
 		}>();
 	if (!item)
 		throw new DomainError("supplier_sku_not_found", 404, "SKU not found");
-	const claudeSale = await prepareClaudeSale(db, input.skuId, input.quantity);
-	if (!claudeSale && Number(item.stock_quantity) < input.quantity)
+	const centralSale = await prepareSale(db, input.skuId, input.quantity);
+	if (!centralSale && Number(item.stock_quantity) < input.quantity)
 		throw new DomainError(
 			"supplier_stock_unavailable",
 			409,
 			"Insufficient stock",
 		);
-	if (!claudeSale && item.owned_stock_quantity < input.quantity)
+	if (!centralSale && item.owned_stock_quantity < input.quantity)
 		await assertSupplierAvailability(
 			db,
 			item.id,
@@ -181,14 +181,8 @@ export async function createSupplierApiOrder(
 					`INSERT INTO shop_order_events (id, order_id, event_type, visibility, actor_type, created_at) VALUES (?, ?, 'supplier_api_order_created', 'internal', 'customer', ?)`,
 				)
 				.bind(crypto.randomUUID(), orderId, now),
-			...(claudeSale
-				? reserveClaudeSaleStatements(
-						db,
-						item.id,
-						orderItemId,
-						input.quantity,
-						now,
-					)
+			...(centralSale
+				? reserveSaleStatements(db, item.id, orderItemId, input.quantity, now)
 				: []),
 		]);
 		await completeWalletStoreOrder(db, { orderId, userId: identity.userId });
