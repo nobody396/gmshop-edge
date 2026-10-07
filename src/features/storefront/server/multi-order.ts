@@ -463,12 +463,12 @@ export async function createMultiStoreOrder(
 	} catch (error) {
 		if (
 			error instanceof Error &&
-			/free_budget|redeem_sale_capacity_budget_check/.test(error.message)
+			/owned_code_stock_unavailable/.test(error.message)
 		)
 			throw new DomainError(
 				"inventory_unavailable",
 				409,
-				"Insufficient uncommitted upstream capacity",
+				"Insufficient owned codes",
 			);
 		if (coupon)
 			throw new DomainError("coupon_unavailable", 409, "Coupon is unavailable");

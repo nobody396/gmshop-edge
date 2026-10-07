@@ -8,8 +8,7 @@ import {
 	requestWarehouse,
 } from "./warehouse-client";
 
-// One sales authority per central pool; display stock and purchase capacity are independent.
-export const SALE_CAPACITY_MAX_AGE_MS = 30_000;
+// Upstream capacity is operational telemetry, never a gate for issuing owned codes.
 const capacitySchema = z.object({
 	success: z.literal(true),
 	data: z.object({
@@ -150,37 +149,19 @@ export async function prepareSale(
 	quantity: number,
 ) {
 	if (!(componentId in (await saleComponents(db)))) return false;
-	const capacity = await refreshSaleCapacity(db, componentId);
 	const count = await db
 		.prepare(
 			"SELECT COUNT(*) AS count FROM stock_entries WHERE sellable_item_id=? AND status='available'",
 		)
 		.bind(componentId)
 		.first<{ count: number }>();
-	if (
-		!capacity ||
-		capacity.sellable < quantity ||
-		Number(count?.count ?? 0) < quantity
-	)
+	if (Number(count?.count ?? 0) < quantity)
 		throw new DomainError(
 			"inventory_unavailable",
 			409,
-			"Insufficient owned codes or uncommitted upstream capacity",
+			"Insufficient owned codes",
 		);
 	return true;
-}
-
-// Existing paid/legacy orders need a fresh budget only when they have not
-// already acquired their code hold. Other purchases do not query this pool.
-export async function refreshUnheldOrder(db: D1Database, orderId: string) {
-	const map = await saleComponents(db);
-	const rows = await db
-		.prepare(`SELECT DISTINCT i.delivery_component_id AS component FROM shop_order_items i WHERE i.order_id=?
-  AND i.quantity>(SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=i.id AND s.status IN ('reserved','delivered'))`)
-		.bind(orderId)
-		.all<{ component: string }>();
-	for (const row of rows.results)
-		if (map[row.component]) await refreshSaleCapacity(db, row.component);
 }
 
 // Keep payment statement row counts unchanged: D1 reports trigger updates in
@@ -206,17 +187,6 @@ export function reserveSaleStatements(
 ) {
 	return [
 		db
-			.prepare(`UPDATE redeem_sale_capacity SET free_budget=CASE WHEN updated_at>=? AND
-    (SELECT COUNT(*) FROM stock_entries WHERE sellable_item_id=? AND status='available')>=?
-    AND free_budget>=? THEN free_budget ELSE -1 END WHERE component_id=?`)
-			.bind(
-				now - SALE_CAPACITY_MAX_AGE_MS,
-				componentId,
-				quantity,
-				quantity,
-				componentId,
-			),
-		db
 			.prepare(
 				"UPDATE stock_entries SET status='reserved',order_item_id=?,reserved_at=?,updated_at=? WHERE id IN (SELECT id FROM stock_entries WHERE sellable_item_id=? AND status='available' ORDER BY created_at,id LIMIT ?)",
 			)
@@ -232,7 +202,6 @@ export function releaseSaleStatements(
 	return [
 		db
 			.prepare(`UPDATE stock_entries SET status='available',order_item_id=NULL,reserved_at=NULL,updated_at=? WHERE status='reserved'
-    AND sellable_item_id IN (SELECT component_id FROM redeem_sale_capacity)
     AND order_item_id IN (SELECT i.id FROM shop_order_items i JOIN shop_orders o ON o.id=i.order_id WHERE o.id=? AND o.status IN ('cancelled','expired','failed','refunded'))`)
 			.bind(now, orderId),
 	];

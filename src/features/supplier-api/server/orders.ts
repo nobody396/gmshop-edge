@@ -197,12 +197,12 @@ export async function createSupplierApiOrder(
 	} catch (error) {
 		if (
 			error instanceof Error &&
-			/free_budget|redeem_sale_capacity_budget_check/.test(error.message)
+			/owned_code_stock_unavailable/.test(error.message)
 		)
 			throw new DomainError(
 				"supplier_stock_unavailable",
 				409,
-				"Insufficient uncommitted upstream capacity",
+				"Insufficient owned codes",
 			);
 		if (error instanceof DomainError) throw error;
 		const replay = await db
