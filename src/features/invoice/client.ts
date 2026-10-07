@@ -3,7 +3,10 @@ import { m } from "#/paraglide/messages";
 
 const invoiceSchema = z.object({
 	request_no: z.string().optional(),
+	consumption_screenshot: z.boolean().optional(),
+	screenshot_fee_amount: z.string().optional(),
 	status: z.string().optional(),
+	invoice_base_amount: z.string().optional(),
 	invoice_total_amount: z.string(),
 	invoice_fee_amount: z.string(),
 	payment_fee_amount: z.string(),
@@ -21,7 +24,17 @@ export function canPreview(form: Record<string, string>): boolean {
 		: Boolean(form.invoice_amount?.trim());
 }
 
-export async function send(input: Record<string, string>): Promise<Invoice> {
+export async function send(input: {
+	action: string;
+	request_no?: string;
+	order_no?: string;
+	order_email?: string;
+	invoice_amount?: string;
+	buyer_title?: string;
+	tax_number?: string;
+	recipient_email?: string;
+	consumption_screenshot?: boolean;
+}): Promise<Invoice> {
 	const { action, request_no, ...form } = input;
 	if (!["preview", "create", "status"].includes(action ?? ""))
 		throw new Error(m.invoice_error());
@@ -37,6 +50,7 @@ export async function send(input: Record<string, string>): Promise<Invoice> {
 					order_no: form.order_no,
 					order_email: form.order_email,
 					invoice_amount: form.invoice_amount,
+					consumption_screenshot: form.consumption_screenshot,
 				}
 			: form;
 	const response = await fetch(`https://lsrai.shop/api/v1/${path}`, {
@@ -64,5 +78,13 @@ export async function send(input: Record<string, string>): Promise<Invoice> {
 		throw new Error(body.msg || m.invoice_error());
 	const invoice = invoiceSchema.safeParse(body.data);
 	if (!invoice.success) throw new Error(m.invoice_error());
+	// Do not accept a stale backend silently ignoring a selected paid option.
+	if (
+		input.consumption_screenshot &&
+		(invoice.data.consumption_screenshot !== true ||
+			invoice.data.screenshot_fee_amount !== "5.00" ||
+			!invoice.data.invoice_base_amount)
+	)
+		throw new Error(m.invoice_screenshot_unavailable());
 	return invoice.data;
 }

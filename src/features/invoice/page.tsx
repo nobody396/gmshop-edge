@@ -15,6 +15,7 @@ export function InvoicePage() {
 		tax_number: "",
 		recipient_email: "",
 	});
+	const [consumptionScreenshot, setConsumptionScreenshot] = useState(false);
 	const [preview, setPreview] = useState<Invoice | null>(null);
 	const [result, setResult] = useState<Invoice | null>(null);
 	const [requestNo, setRequestNo] = useState("");
@@ -59,6 +60,7 @@ export function InvoicePage() {
 		try {
 			const data = await send({
 				...form,
+				consumption_screenshot: consumptionScreenshot,
 				action: preview ? "create" : "preview",
 			});
 			if (preview) {
@@ -78,19 +80,30 @@ export function InvoicePage() {
 			setBusy(false);
 		}
 	}
-	async function refreshPreview(current: typeof form) {
+	async function refreshPreview(
+		current: typeof form,
+		screenshot = consumptionScreenshot,
+	) {
 		if (busy || !canPreview(current)) return;
 		setBusy(true);
 		setError("");
 		try {
-			const data = await send({ ...current, action: "preview" });
+			const data = await send({
+				...current,
+				consumption_screenshot: screenshot,
+				action: "preview",
+			});
 			setPreview(data);
 			if (!current.invoice_amount.trim())
 				setForm((f) =>
 					f.order_no === current.order_no &&
 					f.order_email === current.order_email &&
 					!f.invoice_amount.trim()
-						? { ...f, invoice_amount: data.invoice_total_amount }
+						? {
+								...f,
+								invoice_amount:
+									data.invoice_base_amount ?? data.invoice_total_amount,
+							}
 						: f,
 				);
 		} catch (cause) {
@@ -116,7 +129,7 @@ export function InvoicePage() {
 	const labels = {
 		order_no: m.invoice_order(),
 		order_email: m.invoice_order_email(),
-		invoice_amount: m.invoice_amount(),
+		invoice_amount: m.invoice_base_amount(),
 		buyer_title: m.invoice_buyer(),
 		tax_number: m.invoice_tax(),
 		recipient_email: m.invoice_email(),
@@ -206,6 +219,32 @@ export function InvoicePage() {
 									/>
 								</label>
 							))}
+						<label
+							className="flex cursor-pointer items-start gap-3 rounded-lg border p-4"
+							htmlFor="invoice-consumption-screenshot"
+						>
+							<input
+								id="invoice-consumption-screenshot"
+								type="checkbox"
+								className="mt-1 size-4 accent-primary"
+								checked={consumptionScreenshot}
+								disabled={busy}
+								onChange={(event) => {
+									const selected = event.target.checked;
+									setConsumptionScreenshot(selected);
+									setPreview(null);
+									void refreshPreview(form, selected);
+								}}
+							/>
+							<span>
+								<span className="block font-medium text-sm">
+									{m.invoice_screenshot_option()}
+								</span>
+								<span className="mt-1 block text-muted-foreground text-xs leading-5">
+									{m.invoice_screenshot_hint()}
+								</span>
+							</span>
+						</label>
 						<p className="text-muted-foreground text-sm">{m.invoice_hint()}</p>
 						<Button className="w-full" disabled={busy} type="submit">
 							{busy
@@ -225,6 +264,8 @@ export function InvoicePage() {
 						<dd>¥{amounts.invoice_total_amount}</dd>
 						<dt>{m.invoice_fee()}</dt>
 						<dd>¥{amounts.invoice_fee_amount}</dd>
+						<dt>{m.invoice_screenshot_fee()}</dt>
+						<dd>¥{amounts.screenshot_fee_amount ?? "0.00"}</dd>
 						<dt>{m.invoice_payment_fee()}</dt>
 						<dd>¥{amounts.payment_fee_amount}</dd>
 						<dt className="font-semibold">{m.invoice_due()}</dt>

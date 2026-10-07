@@ -2101,7 +2101,7 @@
 	"guide_xplusmonth": "Premium+ 1个月",
 	"guide_pro500": "Pro 500美元档",
 	"guide_sms_hint": "登录时接收短信验证码",
-	"guide_entry": "先按引导确认账号状态、充值渠道与商品限制，再下单。",
+	"guide_entry": "下单前请先按引导确认账号状态、充值渠道与商品限制；因自行拍错商品导致充值失败，不提供任何售后服务。",
 	"guide_unavailable": "这个规格已下架或暂停销售",
 	"guide_claudefive": "Max 5X 1个月",
 	"guide_overwrite": "这个渠道会覆盖原有剩余订阅，不是叠加剩余天数。",
@@ -2160,5 +2160,10 @@
 	"telegram_away_invalid_guide": "指南链接未保存：请提供我们商城网站上的 HTTPS 链接",
 	"telegram_away_usage": "用法：/away status 查看，/away guide 加指南链接，/away on 开启，/away off 关闭",
 	"telegram_away_customer_message": "老板，我这会儿不在，有问题先留言哈\n下单前请打开下面的首页，点「下单必看」完成选购确认\n{guideUrl}\n消息看到了都会回复",
-	"telegram_away_email_notice": "，回复后也会发邮件提醒你"
+	"telegram_away_email_notice": "，回复后也会发邮件提醒你",
+	"invoice_screenshot_option": "需要消费截图（+¥5 / 次）",
+	"invoice_screenshot_hint": "提供收款主体与开票主体一致的消费截图，不需要可不勾选。",
+	"invoice_screenshot_fee": "消费截图服务费",
+	"invoice_screenshot_unavailable": "消费截图服务暂未就绪，请稍后再试，勿继续付款",
+	"invoice_base_amount": "原开票金额（不含截图服务费）"
 }

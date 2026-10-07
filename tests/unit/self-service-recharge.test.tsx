@@ -35,6 +35,9 @@ describe("homepage self-service recharge", () => {
 		expect(text).toContain("30-day subscription warranty");
 		expect(text).toContain("Contact support directly");
 		expect(text).toContain("provide only what that page requests");
+		expect(text).toContain(
+			"No after-sales service is provided for recharge failures caused by purchasing the wrong product yourself.",
+		);
 		expect(text).not.toContain("no information required");
 		expect(container.querySelectorAll("li")).toHaveLength(3);
 		expect(container.querySelector("[data-self-service-recharge]")?.id).toBe(
