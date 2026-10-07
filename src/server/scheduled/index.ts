@@ -4,6 +4,7 @@ import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import { publishPendingNotifications } from "#/features/notifications/server/delivery";
 import { fanOutPendingCommerceNotifications } from "#/features/notifications/server/fanout";
 import { publishPendingOwnerSaleAlerts } from "#/features/notifications/server/owner-sale-alerts";
+import { runRedemptionExceptionTodos } from "#/features/redeem-warehouse/server/exception-todos";
 import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
 import { publishPendingRefunds } from "#/features/shop-payments/server/refunds";
 import { reconcilePendingShopPayments } from "#/features/shop-payments/server/service";
@@ -81,8 +82,12 @@ export async function runScheduledCommerceWork(
 		env.DB,
 		scheduledAt,
 	).catch(() => ({ status: "failed" }));
+	const redemptionExceptions = await runRedemptionExceptionTodos({
+		db: env.DB,
+	}).catch(() => ({ status: "failed", changed: 0, accepted: 0 }));
 	return {
 		payments,
+		redemptionExceptions,
 		expired,
 		deliveries,
 		suppliers,
