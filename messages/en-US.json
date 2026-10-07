@@ -2101,7 +2101,7 @@
 	"guide_xplusmonth": "Premium+ · 1 month",
 	"guide_pro500": "Pro $500 tier",
 	"guide_sms_hint": "Receive a verification code for sign-in",
-	"guide_entry": "Confirm your account status, recharge channel, and product restrictions before placing an order.",
+	"guide_entry": "Confirm your account status, recharge channel, and product restrictions before placing an order. No after-sales service is provided for recharge failures caused by purchasing the wrong product yourself.",
 	"guide_unavailable": "This option is unavailable",
 	"guide_claudefive": "Max 5X · 1 month",
 	"guide_overwrite": "This option replaces remaining subscription time; it does not add to it.",
@@ -2160,5 +2160,10 @@
 	"telegram_away_invalid_guide": "Guide not saved: use an HTTPS URL on our storefront",
 	"telegram_away_usage": "Use /away status, /away guide <URL>, /away on or /away off",
 	"telegram_away_customer_message": "I’m away right now, but feel free to leave your question here\nBefore ordering, open the homepage below and select “Read before ordering” to check your purchase.\n{guideUrl}\nI’ll get back to you when I see your message",
-	"telegram_away_email_notice": " — I’ll also send you an email reminder after replying"
+	"telegram_away_email_notice": " — I’ll also send you an email reminder after replying",
+	"invoice_screenshot_option": "Include a transaction screenshot (+¥5 per request)",
+	"invoice_screenshot_hint": "A transaction screenshot with the same payment recipient and invoice issuer. Leave unchecked if not needed.",
+	"invoice_screenshot_fee": "Transaction screenshot service",
+	"invoice_screenshot_unavailable": "The screenshot service is not ready. Please try later and do not proceed with payment.",
+	"invoice_base_amount": "Original invoice amount (excluding screenshot service)"
 }

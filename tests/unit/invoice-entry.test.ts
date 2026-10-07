@@ -163,3 +163,58 @@ it("previews an order before the amount is entered so the service can prefill it
 		invoice_amount: "",
 	});
 });
+
+it.each([
+	"preview",
+	"create",
+])("forwards selected screenshot in %s and verifies server pricing", async (action) => {
+	const selected = {
+		...data,
+		invoice_base_amount: "100.00",
+		invoice_total_amount: "105.00",
+		invoice_fee_amount: "3.15",
+		consumption_screenshot: true,
+		screenshot_fee_amount: "5.00",
+		payment_fee_amount: "0.33",
+		payment_amount: "8.48",
+	};
+	const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+		Response.json({ data: selected }),
+	);
+	vi.stubGlobal("fetch", fetch);
+	expect(
+		await send({ action, invoice_amount: "100", consumption_screenshot: true }),
+	).toEqual(selected);
+	expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+		consumption_screenshot: true,
+		invoice_amount: "100",
+		payment_method: "alipay",
+	});
+});
+it("blocks a selected screenshot when an older backend ignores it", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ data })),
+	);
+	await expect(
+		send({
+			action: "preview",
+			invoice_amount: "100",
+			consumption_screenshot: true,
+		}),
+	).rejects.toThrow();
+});
+it("passes unchecked explicitly so revising an unpaid application can remove the fee", async () => {
+	const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+		Response.json({ data }),
+	);
+	vi.stubGlobal("fetch", fetch);
+	await send({
+		action: "create",
+		invoice_amount: "100",
+		consumption_screenshot: false,
+	});
+	expect(
+		JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).consumption_screenshot,
+	).toBe(false);
+});
