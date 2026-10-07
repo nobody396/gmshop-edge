@@ -2429,3 +2429,43 @@ export const redeemSaleCapacity = sqliteTable(
 		check("redeem_sale_capacity_budget_check", sql`${table.freeBudget} >= 0`),
 	],
 );
+
+export const redeemExceptionTodos = sqliteTable(
+	"redeem_exception_todos",
+	{
+		codeId: text("code_id").primaryKey(),
+		reference: text("reference").notNull(),
+		state: text("state", { enum: ["open", "resolved"] }).notNull(),
+		severity: integer("severity").notNull(),
+		fingerprint: text("fingerprint").notNull(),
+		snapshot: text("snapshot").notNull(),
+		revision: integer("revision").notNull(),
+		alertAttempted: integer("alert_attempted", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		observedAt: integer("observed_at").notNull(),
+		firstSeenAt: integer("first_seen_at").notNull(),
+		lastCheckedAt: integer("last_checked_at").notNull(),
+		resolvedAt: integer("resolved_at"),
+	},
+	(table) => [
+		index("redeem_exception_todos_open_idx").on(
+			table.state,
+			table.lastCheckedAt,
+			table.codeId,
+		),
+		check(
+			"redeem_exception_todos_state_check",
+			sql`${table.state} IN ('open','resolved')`,
+		),
+		check(
+			"redeem_exception_todos_severity_check",
+			sql`${table.severity} IN (1,2)`,
+		),
+		check("redeem_exception_todos_revision_check", sql`${table.revision} > 0`),
+		check(
+			"redeem_exception_todos_alert_attempted_check",
+			sql`${table.alertAttempted} IN (0,1)`,
+		),
+	],
+);

@@ -486,3 +486,25 @@ for these checks, and example prices are not the store price or a recharge guara
 The IP quality check precedes both official-site methods. Method 1 also includes the owner-supplied, already-redacted normal conversation screenshot alongside the disabled-organization example. No attempt is made to recover redacted content.
 
 IP quality is a standalone first section. The separate Claude pre-purchase section follows it; IP advice is not nested under purchase/refund warnings.
+
+### Proactive redemption exception todos
+
+An opt-in owner-only exception monitor reuses the existing scheduler, outbox and
+Feishu sender. It is disabled until explicitly configured after both services are
+released; it does not recharge, refund or email customers. See
+[operational details](README.zh-CN.md#主动兑换异常待办).
+
+Deploy the authenticated, read-only redeem feed first; apply incremental migration
+`0025_redeem_exception_todos.sql`, then deploy GMShop with the feature off. After
+verifying the existing bot/chat, explicitly set `commerce.redemption.exception_todos`
+to `{ "enabled": true, "since": <activation Unix milliseconds> }`. Keep `since`
+fixed; discovery does not replay older attempts. Disable via `enabled:false` before
+rollback; keep the case/outbox audit history. No new credentials are required.
+
+One opaque customer-code ID is one todo. Only new/changed actionable states or
+explicit resolution create outbox revisions. Missing/partial reads never resolve
+cases; ordinary pending states are not interruptions. Sender UUIDs are stable,
+with three attempts within 15 minutes; provider acceptance is not recipient receipt.
+The monitor does not create Feishu Tasks or a separate admin UI. It only reuses the
+existing configured owner-alert channel. Startup is disabled, including old queued
+messages, unless explicitly enabled.
