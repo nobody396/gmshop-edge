@@ -339,13 +339,9 @@ export function StorefrontProductPage({
 												<span className="font-medium leading-snug">
 													{item.name}
 												</span>
-												{item.availableStock > 0 ? (
+												{item.availableStock >= 0 ? (
 													<span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-														{item.fulfillmentSource === "supplier"
-															? m.store_procurement_stock({
-																	count: item.availableStock,
-																})
-															: m.store_stock({ count: item.availableStock })}
+														{m.store_stock({ count: item.availableStock })}
 													</span>
 												) : !isAvailable(item) ? (
 													<span className="shrink-0 text-muted-foreground text-xs">

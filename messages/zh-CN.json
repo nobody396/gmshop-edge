@@ -2166,7 +2166,5 @@
 	"invoice_screenshot_unavailable": "消费截图服务暂未就绪，请稍后再试，勿继续付款",
 	"invoice_base_amount": "订单金额",
 	"supply_console_upstream_processing": "上游处理中 / 已锁定",
-	"supply_console_supplier_quantity": "供应商可采购量（未购入）",
-	"store_procurement_stock": "可采购 {count}",
-	"store_procurement_available": "支持自动采购"
+	"supply_console_supplier_quantity": "供应商可采购量（未购入）"
 }

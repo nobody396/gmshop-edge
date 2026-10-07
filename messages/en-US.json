@@ -2166,7 +2166,5 @@
 	"invoice_screenshot_unavailable": "The screenshot service is not ready. Please try later and do not proceed with payment.",
 	"invoice_base_amount": "Order amount",
 	"supply_console_upstream_processing": "Upstream processing / reserved",
-	"supply_console_supplier_quantity": "Supplier catalogue quantity (not owned)",
-	"store_procurement_stock": "Available to procure: {count}",
-	"store_procurement_available": "Automatic procurement available"
+	"supply_console_supplier_quantity": "Supplier catalogue quantity (not owned)"
 }
