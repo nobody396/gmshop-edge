@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { canPreview, send } from "../../src/features/invoice/client";
 
@@ -217,4 +218,19 @@ it("passes unchecked explicitly so revising an unpaid application can remove the
 	expect(
 		JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).consumption_screenshot,
 	).toBe(false);
+});
+
+it("shows the three-business-day promise and order-amount label without changing pricing fields", () => {
+	const zh = JSON.parse(
+		readFileSync(new URL("../../messages/zh-CN.json", import.meta.url), "utf8"),
+	);
+	const en = JSON.parse(
+		readFileSync(new URL("../../messages/en-US.json", import.meta.url), "utf8"),
+	);
+	expect(zh.invoice_intro).toBe(
+		"在本网站填写资料并支付开票补款，三个工作日内完成",
+	);
+	expect(zh.invoice_base_amount).toBe("订单金额");
+	expect(en.invoice_intro).toContain("within three business days");
+	expect(en.invoice_base_amount).toBe("Order amount");
 });

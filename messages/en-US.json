@@ -1836,7 +1836,7 @@
 	"redeem_warehouse_generate_count": "Generation count",
 	"redeem_warehouse_sellable_result": "Planned {count} and added {imported} codes to central sellable inventory",
 	"invoice_title": "Request an electronic invoice",
-	"invoice_intro": "Apply on this website and pay the invoice fee. Finance processes all requests centrally.",
+	"invoice_intro": "Apply on this website and pay the invoice fee. Your request will be completed within three business days.",
 	"invoice_item": "Invoice item: Production and living services information system services",
 	"invoice_order": "Order number (optional for offline payments)",
 	"invoice_order_email": "Order email",
@@ -2165,5 +2165,5 @@
 	"invoice_screenshot_hint": "A transaction screenshot with the same payment recipient and invoice issuer. Leave unchecked if not needed.",
 	"invoice_screenshot_fee": "Transaction screenshot service",
 	"invoice_screenshot_unavailable": "The screenshot service is not ready. Please try later and do not proceed with payment.",
-	"invoice_base_amount": "Original invoice amount (excluding screenshot service)"
+	"invoice_base_amount": "Order amount"
 }
