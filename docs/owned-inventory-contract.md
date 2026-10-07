@@ -10,7 +10,7 @@
 ## Behavior
 
 1. Local SKUs display owned codes identically in storefront, supply console and supplier-export catalog. Existing agent/subsite mirrors synchronize this authoritative export; they must not sum mirrored stock into another pool.
-2. Supplier-only SKUs retain automatic procurement. Their product option label is 可采购, not 库存. Mixed product-list cards display owned inventory separately from an automatic-procurement indicator.
+2. Supplier-only SKUs retain automatic procurement. All customer-facing options use 库存 / Stock, regardless of internal sourcing. Product-list summaries add independent owned-code pools to the largest verified supplier-variant quantity (never sum the same shared procurement wallet multiple times). Supply/procurement terminology is admin-only; purchasing checks and per-SKU quantities are unchanged.
 3. Preissuing up to 100 codes per batch is independent of upstream inventory. Replaying the same batch reference returns the same codes. Preissuing neither reserves keys nor calls the provider.
 4. Mapped central SKUs reserve owned customer codes atomically at checkout and supplier API order creation. Main and reseller orders share one code pool. Zero upstream capacity or an unavailable warehouse does not block code sale, payment, or delivery. Upstream stock is checked when the customer redeems. A transaction-local stock trigger rejects insufficient owned codes before payment; payment replay does not reserve twice and unpaid expiration/cancellation releases reservations.
 5. Checkout never silently generates extra codes. Local products cannot accept new orders beyond owned code stock. Existing paid-order supplier fallback/recovery behavior is retained; supplier-only order placement still checks procurement balance and price.

@@ -55,3 +55,15 @@ export function storefrontSyncedSupplierStockExpression(itemAlias: string) {
 }
 
 export { SUPPLIER_SNAPSHOT_MAX_AGE_MS };
+
+// A product-card summary, not a purchasing budget. Supplier variants share a
+// wallet: use the largest individually verified quantity, never sum that wallet
+// multiple times. Independent owned SKU code pools can be added normally.
+export function storefrontCatalogStockExpression(
+	productAlias: string,
+	itemAlias: string,
+) {
+	const stock = storefrontStockExpression(productAlias, itemAlias);
+	return `COALESCE(SUM(CASE WHEN ${itemAlias}.fulfillment_source='local' THEN ${stock} ELSE 0 END),0)
+  + COALESCE(MAX(CASE WHEN ${itemAlias}.fulfillment_source='supplier' THEN ${stock} ELSE 0 END),0)`;
+}
