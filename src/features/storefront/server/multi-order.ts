@@ -6,8 +6,8 @@ import {
 } from "#/features/catalog/input-values";
 import { couponScopeSchema } from "#/features/coupons/schema";
 import {
-	prepareClaudeSale,
-	reserveClaudeSaleStatements,
+	prepareSale,
+	reserveSaleStatements,
 } from "#/features/redeem-warehouse/server/sale-capacity";
 import { multiStoreOrderSchema } from "#/features/storefront/schema";
 import { DomainError } from "#/lib/domain-error";
@@ -154,7 +154,7 @@ export async function createMultiStoreOrder(
 	}
 
 	const lines: Line[] = [];
-	const claudeComponents = new Set<string>();
+	const capacityComponents = new Set<string>();
 	for (const item of input.items) {
 		const sellableItem = await loadSellableItem(
 			db,
@@ -176,13 +176,9 @@ export async function createMultiStoreOrder(
 		);
 		if (sellableItem.delivery_component_type === "stock") {
 			if (
-				await prepareClaudeSale(
-					db,
-					sellableItem.delivery_component_id,
-					item.quantity,
-				)
+				await prepareSale(db, sellableItem.delivery_component_id, item.quantity)
 			)
-				claudeComponents.add(sellableItem.delivery_component_id);
+				capacityComponents.add(sellableItem.delivery_component_id);
 			await assertStockAvailability(db, sellableItem, item.quantity);
 		}
 		if (item.renewedFromEntitlementId)
@@ -380,9 +376,9 @@ export async function createMultiStoreOrder(
 					now,
 				),
 		);
-		if (claudeComponents.has(line.sellableItem.delivery_component_id))
+		if (capacityComponents.has(line.sellableItem.delivery_component_id))
 			statements.push(
-				...reserveClaudeSaleStatements(
+				...reserveSaleStatements(
 					db,
 					line.sellableItem.delivery_component_id,
 					line.orderItemId,
@@ -608,20 +604,11 @@ async function assertStockAvailability(
 		.bind(sellableItem.sellable_item_id)
 		.first<{ total: number }>();
 	if (Number(row?.total ?? 0) >= quantity) return;
-	if (sellableItem.supplier_fallback_enabled === 1) {
-		await assertSupplierAvailability(
-			db,
-			sellableItem.sellable_item_id,
-			quantity - Number(row?.total ?? 0),
-		);
-		return;
-	}
-	if (Number(row?.total ?? 0) < quantity)
-		throw new DomainError(
-			"inventory_unavailable",
-			409,
-			"Inventory is unavailable",
-		);
+	throw new DomainError(
+		"inventory_unavailable",
+		409,
+		"Inventory is unavailable",
+	);
 }
 
 export async function assertSupplierAvailability(

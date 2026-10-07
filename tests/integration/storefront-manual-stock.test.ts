@@ -65,6 +65,34 @@ describe("storefront manual procurement stock", { timeout: 30_000 }, () => {
 		await expect(stock()).resolves.toBe(-1);
 		await db
 			.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='supplier',supplier_status='active' WHERE id='manual-item'",
+			)
+			.run();
+		await db
+			.prepare(
+				"UPDATE supplier_accounts SET balance_minor='1700',reserve_balance_minor='200' WHERE id='manual-account'",
+			)
+			.run();
+		await expect(stock()).resolves.toBe(3);
+		await db
+			.prepare(
+				"UPDATE supplier_accounts SET max_order_cost_minor='500' WHERE id='manual-account'",
+			)
+			.run();
+		await expect(stock()).resolves.toBe(1);
+		await db
+			.prepare(
+				"UPDATE supplier_accounts SET balance_minor='199' WHERE id='manual-account'",
+			)
+			.run();
+		await expect(stock()).resolves.toBe(0);
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='manual',supplier_status=NULL WHERE id='manual-item'",
+			)
+			.run();
+		await db
+			.prepare(
 				"UPDATE supplier_bindings SET stock_quantity = 0 WHERE id = 'manual-binding'",
 			)
 			.run();

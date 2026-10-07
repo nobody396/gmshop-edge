@@ -1804,8 +1804,8 @@
 	"supply_console_column_sku": "SKU",
 	"supply_console_column_price": "USDT / Alipay",
 	"supply_console_column_supply_price": "Agent supply price",
-	"supply_console_column_available": "On sale",
-	"supply_console_column_deliverable": "Deliverable",
+	"supply_console_column_available": "Owned code stock",
+	"supply_console_column_deliverable": "Owned upstream keys",
 	"supply_console_gap": "{count} short",
 	"supply_console_restock": "Restock",
 	"supply_console_restock_central_hint": "Keys enter central pool {sku}; storefront codes are issued for the accepted count",
@@ -1827,7 +1827,7 @@
 	"supply_console_last_cost": "last purchase {price}",
 	"supply_console_reserved": "Reserved",
 	"supply_console_last_restock": "Last restock",
-	"supply_console_generate_hint": "Use this when keys reached the vault but storefront codes were not issued",
+	"supply_console_generate_hint": "Preissue owned storefront codes without reserving upstream keys. Checkout verifies fulfillment capacity separately.",
 	"supplier_api_export_title": "Agent catalog export",
 	"supplier_api_export_description": "Only explicitly enabled SKUs are exported to lsrai.shop. The agent marketplace keeps its own markup. Keep test products disabled.",
 	"supplier_api_export_price": "Agent purchase price",
@@ -2023,7 +2023,6 @@
 	"telegram_web_support_email_failed": "No email reminder was created. Check administrator access, a recent reply in this topic, and the approved email channel.",
 	"telegram_web_support_email_suppressed": "This recipient cannot receive this notification. The email was suppressed, not sent.",
 	"notifications_event_support_reply_manual": "Support reply reminder (manual)",
-	"supply_console_owned_pool": "Owned-code pool: {codes} (not stock) · Unleased sold obligations: {outstanding}",
 	"guide_x_target": "Which X plan would you like?",
 	"guide_grace": "If Go, Plus, or Pro is still displayed after the expiry date, select that paid plan. Do not guess from the date.",
 	"guide_renew_bill_mismatch": "Check the Philippines $200 renewal bill first",
@@ -2165,5 +2164,9 @@
 	"invoice_screenshot_hint": "A transaction screenshot with the same payment recipient and invoice issuer. Leave unchecked if not needed.",
 	"invoice_screenshot_fee": "Transaction screenshot service",
 	"invoice_screenshot_unavailable": "The screenshot service is not ready. Please try later and do not proceed with payment.",
-	"invoice_base_amount": "Original invoice amount (excluding screenshot service)"
+	"invoice_base_amount": "Original invoice amount (excluding screenshot service)",
+	"supply_console_upstream_processing": "Upstream processing / reserved",
+	"supply_console_supplier_quantity": "Supplier catalogue quantity (not owned)",
+	"store_procurement_stock": "Available to procure: {count}",
+	"store_procurement_available": "Automatic procurement available"
 }

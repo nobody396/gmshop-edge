@@ -1804,8 +1804,8 @@
 	"supply_console_column_sku": "规格",
 	"supply_console_column_price": "USDT / 支付宝",
 	"supply_console_column_supply_price": "代理拿货价",
-	"supply_console_column_available": "前台可售",
-	"supply_console_column_deliverable": "真实可交付",
+	"supply_console_column_available": "自有卡密库存",
+	"supply_console_column_deliverable": "上游可用凭证",
 	"supply_console_gap": "缺 {count}",
 	"supply_console_restock": "补货",
 	"supply_console_restock_central_hint": "卡密先入中央仓 {sku}，按实际可用张数生成前台兑换码",
@@ -1827,7 +1827,7 @@
 	"supply_console_last_cost": "最近进货 {price}",
 	"supply_console_reserved": "已锁定",
 	"supply_console_last_restock": "最近补货",
-	"supply_console_generate_hint": "凭证已在中央仓、但前台兑换码没生成时用这个补上",
+	"supply_console_generate_hint": "提前生成自有前台卡密，不占用上游凭证；下单时独立校验履约容量",
 	"supplier_api_export_title": "代理商品导出",
 	"supplier_api_export_description": "只向 lsrai.shop 导出明确启用的 SKU；代理站保留自己的加价。测试商品应保持关闭。",
 	"supplier_api_export_price": "代理采购价",
@@ -2023,7 +2023,6 @@
 	"telegram_web_support_email_failed": "未创建邮件通知，请确认管理员权限、当前话题已有有效回复，以及官方邮件通道可用。",
 	"telegram_web_support_email_suppressed": "该邮箱无法接收通知，邮件已被拦截，未发送。",
 	"notifications_event_support_reply_manual": "客服回复提醒（手动）",
-	"supply_console_owned_pool": "客户兑换码池 {codes} 个（不是库存） · 已售未兑待保障 {outstanding} 份",
 	"guide_x_target": "你想买哪个 X 套餐？",
 	"guide_grace": "到期日期过了，但仍显示 Plus、Go 或 Pro，就按当前显示的付费套餐选择。不要按日期猜。",
 	"guide_renew_bill_mismatch": "请先核对菲区200美元档续费账单",
@@ -2165,5 +2164,9 @@
 	"invoice_screenshot_hint": "提供收款主体与开票主体一致的消费截图，不需要可不勾选。",
 	"invoice_screenshot_fee": "消费截图服务费",
 	"invoice_screenshot_unavailable": "消费截图服务暂未就绪，请稍后再试，勿继续付款",
-	"invoice_base_amount": "原开票金额（不含截图服务费）"
+	"invoice_base_amount": "原开票金额（不含截图服务费）",
+	"supply_console_upstream_processing": "上游处理中 / 已锁定",
+	"supply_console_supplier_quantity": "供应商可采购量（未购入）",
+	"store_procurement_stock": "可采购 {count}",
+	"store_procurement_available": "支持自动采购"
 }

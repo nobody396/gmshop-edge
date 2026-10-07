@@ -373,7 +373,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		).toEqual({ status: "reserved" });
 	});
 
-	it("exports and accepts reseller fallback only when explicitly enabled, with balance guards", async () => {
+	it("exports owned stock only; fallback catalogue cannot expand a new reseller purchase", async () => {
 		await db.batch([
 			db.prepare(
 				"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL WHERE id='item'",
@@ -411,40 +411,28 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		expect(
 			(await getSupplierProduct(db, "product")).product?.skus[0]
 				?.stock_quantity,
-		).toBe(11);
-		await db.prepare("UPDATE supplier_accounts SET balance_minor='0'").run();
+		).toBe(1);
 		await expect(
 			createSupplierApiOrder(db, identity, input),
-		).rejects.toMatchObject({ code: "supplier_account_unavailable" });
+		).rejects.toMatchObject({ code: "supplier_stock_unavailable" });
 		expect(
 			await db
 				.prepare("SELECT balance_minor FROM users WHERE id='buyer'")
 				.first(),
 		).toEqual({ balance_minor: "10000" });
-		await db
-			.prepare("UPDATE supplier_accounts SET balance_minor='10000'")
-			.run();
-		const created = await createSupplierApiOrder(db, identity, input);
-		const duplicate = await createSupplierApiOrder(db, identity, input);
-		expect(duplicate.order_id).toBe(created.order_id);
+		const ownInput = { ...input, quantity: 1 };
+		const created = await createSupplierApiOrder(db, identity, ownInput);
 		expect(
-			await db
-				.prepare("SELECT quantity,total_cost_minor FROM supplier_orders")
-				.first(),
-		).toEqual({ quantity: 1, total_cost_minor: "100" });
+			(await createSupplierApiOrder(db, identity, ownInput)).order_id,
+		).toBe(created.order_id);
+		expect(
+			await db.prepare("SELECT COUNT(*) AS n FROM supplier_orders").first(),
+		).toEqual({ n: 0 });
 		expect(
 			await db
 				.prepare("SELECT balance_minor FROM users WHERE id='buyer'")
 				.first(),
-		).toEqual({ balance_minor: "9800" });
-		expect(
-			(
-				await db
-					.prepare("SELECT id FROM wallet_entries WHERE direction='debit'")
-					.all()
-			).results,
-		).toHaveLength(1);
-		await db.prepare("UPDATE supplier_bindings SET last_synced_at=1").run();
+		).toEqual({ balance_minor: "9900" });
 		expect(
 			(await getSupplierProduct(db, "product")).product?.skus[0]
 				?.stock_quantity,

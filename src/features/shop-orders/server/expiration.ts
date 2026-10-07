@@ -1,4 +1,4 @@
-import { releaseClaudeSaleStatements } from "#/features/redeem-warehouse/server/sale-capacity";
+import { releaseSaleStatements } from "#/features/redeem-warehouse/server/sale-capacity";
 export async function expireStoreOrders(
 	db: D1Database,
 	now = Date.now(),
@@ -55,7 +55,7 @@ export async function expireStoreOrders(
 					 ON CONFLICT(order_id, order_version) DO NOTHING`,
 				)
 				.bind(crypto.randomUUID(), nextVersion, now, order.id, nextVersion),
-			...releaseClaudeSaleStatements(db, order.id, now),
+			...releaseSaleStatements(db, order.id, now),
 		]);
 		expired += Number(results[0]?.meta.changes ?? 0);
 	}
