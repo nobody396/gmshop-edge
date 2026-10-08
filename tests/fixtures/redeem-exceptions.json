@@ -1,0 +1,115 @@
+{
+	"observed_at": 1791389219748,
+	"next_cursor": null,
+	"cases": [
+		{
+			"id": "1ad41093-8338-4231-a47a-14fd6a28705b",
+			"reference": "eed27366-83ab-4de3-a444-fafa173c959c",
+			"sku": "GPT_PLUS_PH",
+			"product_name": "ChatGPT Plus 菲律宾",
+			"storefront": "lsrai",
+			"state": "open",
+			"severity": 1,
+			"reason_code": "provider.needs_review",
+			"reason": "充值结果需要核查，请联系管理员，勿重复充值",
+			"resolution": null,
+			"diagnosis": {
+				"stage": "结果核查",
+				"submission": "submitted",
+				"card_usage": "unknown",
+				"next_step": "充值结果需要核查，请联系管理员，勿重复充值"
+			}
+		},
+		{
+			"id": "2390713b-8c68-48e5-ac53-575de15c27c7",
+			"reference": "955d7cbf-23a8-4e19-97ba-9fad9594577d",
+			"sku": "GPT_PLUS_PH",
+			"product_name": "ChatGPT Plus 菲律宾",
+			"storefront": "lsrai",
+			"state": "open",
+			"severity": 1,
+			"reason_code": "account.subscription_incompatible",
+			"reason": "当前账号订阅与本商品的充值条件不兼容。请先核对当前套餐、充值渠道及所购商品；不要重复提交或自行换卡，不确定时请携带核查信息联系客服",
+			"resolution": null,
+			"diagnosis": {
+				"stage": "充值提交",
+				"submission": "rejected",
+				"card_usage": "unknown",
+				"next_step": "当前账号订阅与本商品的充值条件不兼容。请先核对当前套餐、充值渠道及所购商品；不要重复提交或自行换卡，不确定时请携带核查信息联系客服"
+			}
+		},
+		{
+			"id": "5f994718-f16b-4235-b338-b16cebbec4b0",
+			"reference": "1c8221aa-4020-40d4-9857-fd1971b8f741",
+			"sku": "GPT_20X_PH",
+			"product_name": "ChatGPT Pro 200美元档｜菲区｜1个月",
+			"storefront": "lsrai",
+			"state": "open",
+			"severity": 1,
+			"reason_code": "provider.verification_failed",
+			"reason": "自动验证失败，请联系管理员核查，勿重复充值",
+			"resolution": null,
+			"diagnosis": {
+				"stage": "结果核查",
+				"submission": "submitted",
+				"card_usage": "unknown",
+				"next_step": "自动验证失败，请联系管理员核查，勿重复充值"
+			}
+		},
+		{
+			"id": "61aafd19-f11a-428d-a32f-e3008b4a7032",
+			"reference": "a026c203-c963-4736-82f7-d7b30830facf",
+			"sku": "GPT_PLUS_PH",
+			"product_name": "ChatGPT Plus 菲律宾",
+			"storefront": "lsrai",
+			"state": "waiting",
+			"severity": 1,
+			"reason_code": "provider.needs_review",
+			"reason": "充值结果需要核查，请联系管理员，勿重复充值",
+			"resolution": null,
+			"diagnosis": {
+				"stage": "结果核查",
+				"submission": "submitted",
+				"card_usage": "unknown",
+				"next_step": "系统将继续核查原订单，可稍后查询；请勿重复提交或更换卡密。"
+			}
+		},
+		{
+			"id": "8489855a-c44e-407c-ad1d-06a0373ab6b9",
+			"reference": "26b28283-79fe-4d2e-b1c3-f9ce7aee566f",
+			"sku": "GPT_PLUS_PH",
+			"product_name": "ChatGPT Plus 菲律宾",
+			"storefront": "laoshirenvip",
+			"state": "open",
+			"severity": 1,
+			"reason_code": "account.order_pending",
+			"reason": "该账号已有待处理订单，请先查询原订单",
+			"resolution": null,
+			"diagnosis": {
+				"stage": "充值提交",
+				"submission": "rejected",
+				"card_usage": "unknown",
+				"next_step": "该账号已有待处理订单，请先查询原订单"
+			}
+		},
+		{
+			"id": "8df745d7-388e-421b-b812-f34535d78657",
+			"reference": "d5cf97ac-e8c1-4f0f-a94b-5ff91762dbe6",
+			"sku": "GPT_PLUS_PH",
+			"product_name": "ChatGPT Plus 菲律宾",
+			"storefront": "lsrai",
+			"state": "open",
+			"severity": 2,
+			"reason_code": "provider.payment_incomplete",
+			"reason": "付款未完成，本次充值未成功，请联系管理员核查原订单，勿重复充值",
+			"resolution": null,
+			"diagnosis": {
+				"stage": "结果核查",
+				"submission": "submitted",
+				"card_usage": "unknown",
+				"next_step": "付款未完成，本次充值未成功，请联系管理员核查原订单，勿重复充值"
+			}
+		}
+	],
+	"missing_ids": []
+}

@@ -59,6 +59,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0022_owned_code_delivery.sql",
 			"0023_agent_access.sql",
 			"0024_agent_access_policy.sql",
+			"0025_redeem_exception_todos.sql",
 		]);
 		const legacyTables = await database
 			.prepare(
@@ -84,6 +85,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"supplier_api_keys",
 				"supplier_api_orders",
 				"redeem_sale_capacity",
+				"redeem_exception_todos",
 				"supplier_export_listings",
 				"supplier_exchange_records",
 				"wallet_entries",
