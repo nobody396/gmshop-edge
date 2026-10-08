@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { canPreview, send } from "../../src/features/invoice/client";
 
 const data = {
-	invoice_total_amount: "100.00",
-	invoice_fee_amount: "3.00",
+	fees_included: true,
+	invoice_base_amount: "100.00",
+	invoice_total_amount: "103.22",
+	invoice_fee_amount: "3.10",
 	payment_fee_amount: "0.12",
-	payment_amount: "3.12",
+	payment_amount: "3.22",
 };
 afterEach(() => vi.unstubAllGlobals());
 describe("independent VIP invoice API", () => {
@@ -172,12 +174,12 @@ it.each([
 	const selected = {
 		...data,
 		invoice_base_amount: "100.00",
-		invoice_total_amount: "105.00",
-		invoice_fee_amount: "3.15",
+		invoice_total_amount: "108.59",
+		invoice_fee_amount: "3.26",
 		consumption_screenshot: true,
 		screenshot_fee_amount: "5.00",
 		payment_fee_amount: "0.33",
-		payment_amount: "8.48",
+		payment_amount: "8.59",
 	};
 	const fetch = vi.fn<typeof globalThis.fetch>(async () =>
 		Response.json({ data: selected }),
@@ -233,4 +235,38 @@ it("shows the three-business-day promise and order-amount label without changing
 	expect(zh.invoice_base_amount).toBe("订单金额");
 	expect(en.invoice_intro).toContain("within three business days");
 	expect(en.invoice_base_amount).toBe("Order amount");
+});
+
+it("blocks old pricing previews but preserves historical status amounts", async () => {
+	const legacy = {
+		...data,
+		fees_included: false,
+		invoice_total_amount: "100.00",
+		payment_amount: "3.12",
+	};
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ data: legacy })),
+	);
+	await expect(
+		send({ action: "preview", invoice_amount: "100" }),
+	).rejects.toThrow();
+	expect(await send({ action: "status", request_no: "INV-OLD" })).toEqual(
+		legacy,
+	);
+});
+
+it("emphasizes the final printed amount separately from the additional payment", () => {
+	const page = readFileSync(
+		new URL("../../src/features/invoice/page.tsx", import.meta.url),
+		"utf8",
+	);
+	const zh = JSON.parse(
+		readFileSync(new URL("../../messages/zh-CN.json", import.meta.url), "utf8"),
+	);
+	expect(zh.invoice_amount).toBe("最终发票票面金额");
+	expect(zh.invoice_due).toBe("本次需补付");
+	expect(zh.invoice_hint).toContain("原订单金额不重复收取");
+	expect(page).toContain('data-testid="invoice-face-amount"');
+	expect(page).toContain("text-3xl text-primary");
 });
