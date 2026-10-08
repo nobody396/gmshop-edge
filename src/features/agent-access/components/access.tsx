@@ -62,7 +62,7 @@ export function AgentAccessCheckout({
 				<AgentEmailVerification itemId={itemId} />
 			) : (
 				<>
-					<p className="break-all text-sm">
+					<p className="break-words text-sm">
 						{m.agent_access_verified_email({ email: session.data.user.email })}
 					</p>
 					{check.isFetching ? (

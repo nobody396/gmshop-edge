@@ -814,13 +814,23 @@ export function StorefrontCheckoutPage() {
 									<section
 										aria-busy="true"
 										aria-label={m.common_loading()}
-										className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3"
+										className={
+											hasAgentAccess
+												? "grid grid-cols-2 gap-3"
+												: "grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3"
+										}
 									>
 										<Skeleton className="h-16 w-full rounded-lg" />
 										<Skeleton className="h-16 w-full rounded-lg" />
 									</section>
 								) : null}
-								<div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3">
+								<div
+									className={
+										hasAgentAccess
+											? "grid grid-cols-2 gap-3"
+											: "grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3"
+									}
+								>
 									{wallet.data && !hasAgentAccess && balanceAvailable > 0n ? (
 										<label className="grid min-h-16 cursor-pointer place-items-center content-center gap-1.5 rounded-lg bg-background/70 px-3 py-2.5 text-center text-sm ring-offset-background transition hover:bg-background has-checked:bg-primary/10 has-checked:ring-2 has-checked:ring-primary has-checked:ring-offset-2 has-focus-visible:ring-2 has-focus-visible:ring-ring">
 											<input
