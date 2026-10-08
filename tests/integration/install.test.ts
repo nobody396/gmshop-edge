@@ -62,6 +62,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0027_agent_access_policy.sql",
 			"0028_invitation_promotions.sql",
 			"0029_promotion_wallet.sql",
+			"0030_promotion_next_beijing_day.sql",
 		]);
 		const legacyTables = await database
 			.prepare(

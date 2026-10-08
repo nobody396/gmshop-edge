@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { formatDateTime, formatMinorAmountWithSymbol } from "#/lib/format";
@@ -57,10 +58,15 @@ export function PromotionAccount() {
 							<Button
 								variant="outline"
 								disabled={!data.referral.enabled}
-								onClick={() => {
+								onClick={async () => {
 									const url = new URL("/", window.location.origin);
 									url.searchParams.set("ref", data.referral?.code ?? "");
-									void navigator.clipboard.writeText(url.href);
+									try {
+										await navigator.clipboard.writeText(url.href);
+										toast.success(m.common_copy_success());
+									} catch {
+										toast.error(m.common_copy_failed());
+									}
 								}}
 							>
 								{m.promotion_copy_link()}
