@@ -10,6 +10,7 @@ import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { safePostAuthRedirect } from "#/features/auth/post-auth-redirect";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
+import { agentEmailSendErrorMessage } from "../error-message";
 
 // Better Auth owns the OTP, verified identity and session. No guest identity table.
 export function AgentEmailVerification({
@@ -28,17 +29,18 @@ export function AgentEmailVerification({
 	const [otp, setOtp] = useState("");
 	const challenge = useTurnstile("register");
 	const normalized = email.trim().toLowerCase();
+	const codeSent = Boolean(sentEmail && sentEmail === normalized);
 	const send = useMutation({
 		mutationFn: async () => {
 			const result = await authClient.emailOtp.sendVerificationOtp(
 				{ email: normalized, type: "sign-in" },
 				{ headers: { "x-agent-access-item": itemId, ...challenge.headers } },
 			);
-			if (result.error) throw new Error("send_failed");
+			if (result.error) throw result.error;
 			setSentEmail(normalized);
 			setOtp("");
 		},
-		onSettled: () => challenge.reset(),
+		onError: () => challenge.reset(),
 	});
 	const verify = useMutation({
 		mutationFn: async () => {
@@ -52,9 +54,8 @@ export function AgentEmailVerification({
 				{ headers: { "x-agent-access-item": itemId } },
 			);
 			if (result.error) throw new Error("invalid_code");
-			// Reload this exact purchase page: cart, quotes and consent belong to the new session.
+			// Better Auth emailOTPClient already refreshes the session; stay on this form.
 			if (redirectTo) window.location.assign(safePostAuthRedirect(redirectTo));
-			else window.location.reload();
 		},
 	});
 	return (
@@ -73,27 +74,33 @@ export function AgentEmailVerification({
 				autoComplete="email"
 				value={email}
 				onChange={(e) => {
+					if (sentEmail) challenge.reset();
 					setEmail(e.target.value);
 					setSentEmail("");
 					verify.reset();
 					send.reset();
 				}}
 			/>
-			{challenge.widget}
-			<Button
-				type="button"
-				variant="outline"
-				disabled={
-					!challenge.ready ||
-					send.isPending ||
-					verify.isPending ||
-					!z.email().safeParse(normalized).success
-				}
-				onClick={() => send.mutate()}
-			>
-				{m.auth_email_otp_send_code()}
-			</Button>
-			{sentEmail === normalized && sentEmail ? (
+			{!codeSent ? (
+				<>
+					{" "}
+					{challenge.widget}
+					<Button
+						type="button"
+						variant="outline"
+						disabled={
+							!challenge.ready ||
+							send.isPending ||
+							verify.isPending ||
+							!z.email().safeParse(normalized).success
+						}
+						onClick={() => send.mutate()}
+					>
+						{m.auth_email_otp_send_code()}
+					</Button>
+				</>
+			) : null}
+			{codeSent ? (
 				<>
 					<output>{m.auth_email_otp_sent({ email: sentEmail })}</output>
 					<Label htmlFor={`access-otp-${itemId}`}>
@@ -116,9 +123,25 @@ export function AgentEmailVerification({
 					>
 						{m.agent_access_verify_continue()}
 					</Button>
+					<Button
+						type="button"
+						variant="link"
+						className="w-fit p-0"
+						disabled={verify.isPending}
+						onClick={() => {
+							setSentEmail("");
+							setOtp("");
+							send.reset();
+							challenge.reset();
+						}}
+					>
+						{m.auth_reset_resend_code()}
+					</Button>
 				</>
 			) : null}
-			{send.isError ? <p role="alert">{m.agent_access_send_failed()}</p> : null}
+			{send.isError ? (
+				<p role="alert">{agentEmailSendErrorMessage(send.error)}</p>
+			) : null}
 			{verify.isError ? (
 				<p role="alert">{m.agent_access_code_failed()}</p>
 			) : null}

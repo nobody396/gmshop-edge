@@ -15,7 +15,7 @@ describe("paid agent access boundaries", () => {
 					body: String(init.body),
 					headers: new Headers(init.headers),
 				});
-				expect(init.redirect).toBe("error");
+				expect(init.redirect).toBe("manual");
 				return Response.json({ state: "active", userId: 1 });
 			}),
 		);

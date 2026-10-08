@@ -2191,7 +2191,7 @@
 	"agent_access_enable_description": "默认关闭。仅在两站联动验收完成后启用；不修改代理主站或任何子站的注册和购买设置。",
 	"agent_access_retry": "按原订单重试开通",
 	"agent_access_automatic_delivery": "付款确认后系统自动开通，无需再次提交申请",
-	"agent_access_accept_policy": "我已阅读并同意：{policy}",
+	"agent_access_accept_policy": "我已确认订单，并同意购买、开通及售后条款：{policy}",
 	"agent_access_exception_support": "开通异常／争议处理",
 	"promotion_title": "邀请好友，获得购物奖励",
 	"promotion_rules": "朋友用你的邀请码下单享优惠，你获得购物奖励。交付完成后的次日北京时间 00:00 起奖励可用，不可提现，退款会冲回奖励。",
@@ -2228,7 +2228,7 @@
 	"agent_access_email_steps": "填写您的邮箱并验证 → 付款 → 自动开通。验证后将自动创建或登录购物账号。",
 	"agent_access_verified_email": "开通账号邮箱：{email}（已验证）",
 	"agent_access_verify_continue": "验证邮箱并继续",
-	"agent_access_send_failed": "验证码发送失败或过于频繁，请稍后重试。",
+	"agent_access_send_failed": "验证码发送失败，请稍后重试或联系客服。",
 	"agent_access_code_failed": "验证码错误、过期或尝试过多，请重新获取。",
 	"agent_access_initial_password": "随机初始密码",
 	"agent_access_password_notice": "请妥善保存，并在首次登录后到账号安全中设置自己的密码。修改后此处不再显示初始密码。已有账号沿用原密码。",
@@ -2236,5 +2236,8 @@
 	"agent_access_unavailable": "开通服务暂时不可用，请稍后重试或联系客服，不要重复付款。",
 	"agent_access_terms_missing": "请先勾选并确认开通及退款条款。",
 	"agent_access_order_signin": "代理资格订单：邮箱验证码登录",
-	"agent_access_reentry_notice": "使用购买时的邮箱验证登录，查看原订单；无需再次购买。这里登录的是购物账号，代理账号请前往 lsrai.shop。"
+	"agent_access_reentry_notice": "使用购买时的邮箱验证登录，查看原订单；无需再次购买。这里登录的是购物账号，代理账号请前往 lsrai.shop。",
+	"agent_access_checking": "正在检查开通资格…",
+	"agent_access_reverify": "人机验证已失效，请重新完成下方验证后再发送。",
+	"agent_access_original_login": "此账号请使用原有登录方式登录后继续购买。"
 }

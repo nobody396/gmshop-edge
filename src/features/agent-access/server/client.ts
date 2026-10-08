@@ -83,7 +83,8 @@ export async function callAgent(input: AgentRequest): Promise<AgentResult> {
 	const response = await fetch(agentOrigin + path, {
 		method: "POST",
 		body,
-		redirect: "error",
+		// workerd rejects redirect:"error" before sending. Manual + !ok rejects 3xx safely.
+		redirect: "manual",
 		signal: AbortSignal.timeout(20000),
 		headers: {
 			"Content-Type": "application/json",
