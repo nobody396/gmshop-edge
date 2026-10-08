@@ -5,6 +5,10 @@ import { requireStorefrontPermission } from "#/features/access/storefront-access
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import {
+	cancelUnstartedBalancePayment,
+	reserveOrderBalance,
+} from "#/features/promotions/server/balance";
+import {
 	completeFreeStoreOrder,
 	completeWalletStoreOrder,
 	createShopPayment,
@@ -257,6 +261,33 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 				accountOrder: Boolean(account),
 			};
 		}
+		if (data.useBalance) {
+			if (!account)
+				throw new DomainError(
+					"authentication_required",
+					401,
+					"Sign in required",
+				);
+			const hold = await reserveOrderBalance(db, order.id, account.user.id);
+			if (hold?.external_minor === "0") {
+				try {
+					await completeFreeStoreOrder(db, order.id, account.user.id);
+				} catch (error) {
+					await cancelUnstartedBalancePayment(db, order.id);
+					throw error;
+				}
+				const queue = getCloudflareEnv(request).COMMERCE_QUEUE;
+				if (queue) {
+					await publishPendingDeliveries(db, queue);
+					await publishPendingSupplierOrders(db, queue);
+				}
+				return {
+					order: { ...order, status: "paid" },
+					payment: null,
+					accountOrder: true,
+				};
+			}
+		}
 		if (data.walletPayment) {
 			if (!account)
 				throw new DomainError(
@@ -279,12 +310,14 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 				accountOrder: true,
 			};
 		}
-		if (!data.paymentChannelId)
+		if (!data.paymentChannelId) {
+			await cancelUnstartedBalancePayment(db, order.id);
 			throw new DomainError(
 				"payment_channel_required",
 				400,
 				"Select a payment channel",
 			);
+		}
 		try {
 			const payment = await createShopPayment(db, {
 				orderId: order.id,
@@ -306,6 +339,12 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 				.bind(order.id)
 				.first<{ id: string; status: string }>();
 			if (!failed) {
+				if (await cancelUnstartedBalancePayment(db, order.id))
+					return {
+						order: { ...order, status: "cancelled" },
+						payment: null,
+						accountOrder: Boolean(account),
+					};
 				const now = Date.now();
 				const fallbackId = crypto.randomUUID();
 				await db

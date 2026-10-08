@@ -35,6 +35,8 @@ import {
 	StoreMoney,
 	useCurrency,
 } from "#/features/exchange-rates/currency-context";
+import { readReferral } from "#/features/promotions/referral-storage";
+import { quotePromotionFn } from "#/features/promotions/server/functions";
 import { paymentSurchargeAmount } from "#/features/shop-payments/fees";
 import {
 	useLocalCart,
@@ -114,7 +116,11 @@ export function StorefrontCheckoutPage() {
 		.map((item) => `${item.sellableItemId}:${item.quantity}`)
 		.join("|");
 	const [email, setEmail] = useState("");
-	const [couponCode, setCouponCode] = useState("");
+	const [enteredCouponCode, setCouponCode] = useState("");
+	const [useBalance, setUseBalance] = useState(true);
+	useEffect(() => {
+		setCouponCode(readReferral());
+	}, []);
 	const [paymentChannelId, setPaymentChannelId] = useState("");
 	const [termsAccepted, setTermsAccepted] = useState(true);
 	const [acceptedAgentTermsScope, setAcceptedAgentTermsScope] = useState<
@@ -124,14 +130,6 @@ export function StorefrontCheckoutPage() {
 		Record<string, Record<string, InputValue>>
 	>({});
 	const idempotencyKeys = useRef(new Map<string, string>());
-	const checkoutIdempotencyScope = `${checkoutItemsKey}:${paymentChannelId || "unselected"}`;
-	const idempotencyKey =
-		idempotencyKeys.current.get(checkoutIdempotencyScope) ??
-		(() => {
-			const key = crypto.randomUUID();
-			idempotencyKeys.current.set(checkoutIdempotencyScope, key);
-			return key;
-		})();
 	const cloud = useQuery({
 		queryKey: ["storefront", "cart"],
 		queryFn: () => getStoreCartFn(),
@@ -156,6 +154,15 @@ export function StorefrontCheckoutPage() {
 	const hasAgentAccess = items.some((item) =>
 		agentAccessKind(item.sellableItemId),
 	);
+	const couponCode = hasAgentAccess ? "" : enteredCouponCode;
+	const checkoutIdempotencyScope = `${checkoutItemsKey}:${paymentChannelId || "unselected"}:${couponCode.trim().toUpperCase()}:${useBalance}:${email}:${JSON.stringify(inputValues)}`;
+	const idempotencyKey =
+		idempotencyKeys.current.get(checkoutIdempotencyScope) ??
+		(() => {
+			const key = crypto.randomUUID();
+			idempotencyKeys.current.set(checkoutIdempotencyScope, key);
+			return key;
+		})();
 	const agentTermsScope = `${session.data?.user.id ?? "guest"}:${items.map((item) => `${item.sellableItemId}:${item.quantity}`).join("|")}`;
 	const agentAccessTermsAccepted = acceptedAgentTermsScope === agentTermsScope;
 	const currencies = new Set(
@@ -229,18 +236,38 @@ export function StorefrontCheckoutPage() {
 				: sum,
 		0n,
 	);
-	const surcharge = selectedChannel
-		? selectedChannelHasFixedPrices
-			? 0n
-			: BigInt(
-					paymentSurchargeAmount(
-						total.toString(),
-						selectedChannel.feeBps,
-						selectedChannel.fixedFeeMinor,
-					),
-				)
-		: 0n;
-	const payableTotal = total + surcharge;
+	const promotion = useQuery({
+		queryKey: [
+			"promotion-quote",
+			couponCode,
+			email,
+			session.data?.user.id,
+			checkoutItemsKey,
+			paymentChannelId,
+		],
+		queryFn: () =>
+			quotePromotionFn({
+				data: {
+					code: couponCode,
+					email: email.includes("@") ? email : null,
+					channelId:
+						paymentChannelId && paymentChannelId !== "wallet"
+							? paymentChannelId
+							: null,
+					items: items.map((item) => ({
+						id: item.sellableItemId,
+						quantity: item.quantity,
+					})),
+				},
+			}),
+		enabled: Boolean(couponCode.trim() && items.length),
+		retry: false,
+	});
+	const couponBlocked = Boolean(
+		couponCode.trim() && (promotion.isPending || promotion.isError),
+	);
+	const discount = BigInt(promotion.data?.discountMinor ?? "0");
+	const orderDue = total > discount ? total - discount : 0n;
 	const channelAmountDue = (
 		channel: NonNullable<typeof channels.data>[number],
 	) => {
@@ -258,12 +285,21 @@ export function StorefrontCheckoutPage() {
 		const fixedPrices = items.every(
 			(item) => channel.itemPrices[item.sellableItemId],
 		);
-		return fixedPrices
-			? channelSubtotal
-			: channelSubtotal +
+		const afterDiscount =
+			channelSubtotal > discount ? channelSubtotal - discount : 0n;
+		const used =
+			session.data?.user && mixedBalanceSupported && useBalance
+				? balanceAvailable < afterDiscount
+					? balanceAvailable
+					: afterDiscount
+				: 0n;
+		const remainder = afterDiscount - used;
+		return fixedPrices || remainder === 0n
+			? remainder
+			: remainder +
 					BigInt(
 						paymentSurchargeAmount(
-							channelSubtotal.toString(),
+							remainder.toString(),
 							channel.feeBps,
 							channel.fixedFeeMinor,
 						),
@@ -274,12 +310,40 @@ export function StorefrontCheckoutPage() {
 		queryFn: () => getWalletFn(),
 		enabled: Boolean(session.data?.user && currencyItem && total > 0n),
 	});
-	const walletAvailable = Boolean(
+	const balanceCurrencyMatches = Boolean(
 		wallet.data &&
 			currencyItem &&
-			wallet.data.currency === currencyItem.currency &&
-			BigInt(wallet.data.balanceMinor) >= total,
+			wallet.data.currency === currencyItem.currency,
 	);
+	const mixedBalanceSupported =
+		wallet.data?.currency === "CNY" && wallet.data?.currencyDecimals === 2;
+	const rewards = BigInt(wallet.data?.rewardBalanceMinor ?? "0");
+	const balanceAvailable = balanceCurrencyMatches
+		? BigInt(wallet.data?.balanceMinor ?? "0") + (rewards > 0n ? rewards : 0n)
+		: 0n;
+	const balanceUsed =
+		session.data?.user && mixedBalanceSupported && useBalance
+			? balanceAvailable < orderDue
+				? balanceAvailable
+				: orderDue
+			: 0n;
+	const externalDue = orderDue - balanceUsed;
+	const surcharge =
+		selectedChannel && !selectedChannelHasFixedPrices && externalDue > 0n
+			? BigInt(
+					paymentSurchargeAmount(
+						externalDue.toString(),
+						selectedChannel.feeBps,
+						selectedChannel.fixedFeeMinor,
+					),
+				)
+			: 0n;
+	const payableTotal = externalDue + surcharge;
+	const walletAvailable =
+		balanceCurrencyMatches &&
+		(useBalance
+			? balanceAvailable
+			: BigInt(wallet.data?.balanceMinor ?? "0")) >= orderDue;
 	const cartPending =
 		session.isPending ||
 		(!buyNow && Boolean(session.data?.user) && cloud.isPending) ||
@@ -350,6 +414,7 @@ export function StorefrontCheckoutPage() {
 		event.preventDefault();
 		if (
 			blocked ||
+			couponBlocked ||
 			signInRequired ||
 			!termsAccepted ||
 			(hasAgentAccess && !agentAccessTermsAccepted) ||
@@ -366,7 +431,15 @@ export function StorefrontCheckoutPage() {
 				customerNote: "",
 				commerceSessionId: commerceSessionId(),
 				locale: getLocale(),
-				walletPayment: paymentChannelId === "wallet",
+				walletPayment:
+					paymentChannelId === "wallet" &&
+					!(mixedBalanceSupported && useBalance),
+				useBalance: Boolean(
+					session.data?.user &&
+						mixedBalanceSupported &&
+						useBalance &&
+						balanceAvailable > 0n,
+				),
 				paymentChannelId:
 					paymentChannelId && paymentChannelId !== "wallet"
 						? paymentChannelId
@@ -579,6 +652,8 @@ export function StorefrontCheckoutPage() {
 							<Label htmlFor="checkout-coupon">{m.store_coupon()}</Label>
 							<Input
 								id="checkout-coupon"
+								disabled={hasAgentAccess}
+								aria-invalid={promotion.isError}
 								onChange={(event) => setCouponCode(event.target.value)}
 								placeholder={m.store_checkout_coupon_placeholder()}
 								value={couponCode}
@@ -595,7 +670,7 @@ export function StorefrontCheckoutPage() {
 							{currencyItem && "currency" in currencyItem ? (
 								<strong className="mt-2 block text-4xl text-primary tracking-tight">
 									<StoreMoney
-										amountMinor={payableTotal.toString()}
+										amountMinor={(payableTotal + balanceUsed).toString()}
 										currency={currencyItem.currency ?? "USD"}
 										decimals={currencyItem.currencyDecimals ?? 2}
 									/>
@@ -622,6 +697,56 @@ export function StorefrontCheckoutPage() {
 								</div>
 							) : null}
 						</div>
+						{couponCode.trim() ? (
+							<output className="text-sm">
+								{promotion.isError
+									? m.promotion_coupon_error()
+									: promotion.isPending
+										? m.common_loading()
+										: promotion.data?.purpose === "recall"
+											? m.promotion_recall_exclusive()
+											: promotion.data?.purpose === "referral"
+												? m.promotion_invitation_applied()
+												: null}
+							</output>
+						) : null}
+						{currencyItem ? (
+							<div className="grid gap-2 text-sm" aria-live="polite">
+								<p>
+									{m.promotion_discount()}:{" "}
+									<StoreMoney
+										amountMinor={discount.toString()}
+										currency={currencyItem.currency ?? "CNY"}
+										decimals={currencyItem.currencyDecimals ?? 2}
+									/>
+								</p>
+								{session.data?.user &&
+								balanceCurrencyMatches &&
+								mixedBalanceSupported ? (
+									<label className="flex items-center gap-2">
+										<input
+											type="checkbox"
+											checked={useBalance}
+											onChange={(event) => setUseBalance(event.target.checked)}
+										/>
+										{m.promotion_use_balance()}{" "}
+										<StoreMoney
+											amountMinor={balanceUsed.toString()}
+											currency="CNY"
+											decimals={2}
+										/>
+									</label>
+								) : null}
+								<p>
+									{m.promotion_external_due()}:{" "}
+									<StoreMoney
+										amountMinor={payableTotal.toString()}
+										currency={currencyItem.currency ?? "CNY"}
+										decimals={currencyItem.currencyDecimals ?? 2}
+									/>
+								</p>
+							</div>
+						) : null}
 						{total > 0n && !signInRequired ? (
 							<fieldset
 								className="grid gap-3"
@@ -656,7 +781,7 @@ export function StorefrontCheckoutPage() {
 											<span className="text-muted-foreground text-xs">
 												{m.wallet_balance()}:{" "}
 												<StoreMoney
-													amountMinor={wallet.data.balanceMinor}
+													amountMinor={balanceAvailable.toString()}
 													currency={wallet.data.currency}
 													decimals={wallet.data.currencyDecimals}
 												/>
@@ -793,6 +918,7 @@ export function StorefrontCheckoutPage() {
 									className="h-12"
 									disabled={
 										blocked ||
+										couponBlocked ||
 										checkout.isPending ||
 										!termsAccepted ||
 										(hasAgentAccess && !agentAccessTermsAccepted) ||

@@ -10,6 +10,11 @@ import {
 	serializeInputValue,
 } from "#/features/catalog/input-values";
 import { couponScopeSchema } from "#/features/coupons/schema";
+import { pricePromotion } from "#/features/promotions/pricing";
+import {
+	assertPromotionOwner,
+	type PromotionCoupon,
+} from "#/features/promotions/server/coupons";
 import {
 	prepareSale,
 	reserveSaleStatements,
@@ -29,6 +34,7 @@ type SellableItemContext = {
 	sellable_item_name: string;
 	price_minor: string;
 	cost_minor: string | null;
+	promotion_budget_minor: string;
 	currency: string;
 	currency_decimals: number;
 	delivery_component_id: string;
@@ -65,7 +71,9 @@ type Line = {
 	inputs: Awaited<ReturnType<typeof prepareInputs>>;
 };
 
-type CouponRow = {
+type PricingLine = Omit<Line, "inputs">;
+
+type CouponRow = PromotionCoupon & {
 	id: string;
 	type: "fixed" | "percentage";
 	currency: string | null;
@@ -229,8 +237,9 @@ export async function createMultiStoreOrder(
 				normalizedEmail: couponIdentity,
 			})
 		: null;
-	const eligible = coupon ? await eligibleLines(db, coupon.id, lines) : lines;
-	const discount = allocateDiscount(coupon, subtotal, eligible);
+	const priced = await priceStoreCoupon(db, coupon, lines);
+	const promotion = coupon && coupon.purpose !== "standard" ? priced : null;
+	const discount = BigInt(priced.discountMinor);
 	const total = subtotal - discount;
 	if (
 		agentCheckout &&
@@ -479,6 +488,28 @@ export async function createMultiStoreOrder(
 				),
 		);
 
+	if (promotion && coupon) {
+		statements.push(
+			db
+				.prepare(
+					`UPDATE shop_orders SET promotion_purpose = ?, referrer_user_id = ?, referral_reward_minor = ? WHERE id = ?`,
+				)
+				.bind(
+					coupon.purpose,
+					coupon.referrer_user_id,
+					promotion.rewardMinor,
+					orderId,
+				),
+		);
+		for (const line of promotion.lines)
+			statements.push(
+				db
+					.prepare(
+						"UPDATE shop_order_items SET referral_reward_minor = ? WHERE id = ?",
+					)
+					.bind(line.rewardMinor, line.id),
+			);
+	}
 	try {
 		await db.batch(statements);
 	} catch (error) {
@@ -524,7 +555,8 @@ async function loadSellableItem(
 			   AND channel_price.channel_id = ? AND channel_price.enabled = 1
 			   AND channel.enabled = 1 LIMIT 1
 			 ), s.price_minor) AS price_minor,
-			 s.cost_minor, s.currency, s.currency_decimals,
+			 s.cost_minor, CASE WHEN s.promotion_budget_minor='800' AND CAST(s.price_minor AS INTEGER)<100000
+    THEN '0' ELSE s.promotion_budget_minor END AS promotion_budget_minor, s.currency, s.currency_decimals,
 			 s.fulfillment_source, s.supplier_status,
  ${supplierFallbackEnabledExpression("s")} AS supplier_fallback_enabled,
 			 s.id AS delivery_component_id, p.product_type AS delivery_component_type,
@@ -770,7 +802,7 @@ async function assertRenewal(
 		);
 }
 
-function assertSingleCurrency(lines: Line[]) {
+function assertSingleCurrency(lines: Pick<Line, "sellableItem">[]) {
 	const currencies = new Set(
 		lines.map(
 			(line) =>
@@ -783,6 +815,90 @@ function assertSingleCurrency(lines: Line[]) {
 			409,
 			"Checkout items must use one currency",
 		);
+}
+
+export async function previewStoreCoupon(
+	db: D1Database,
+	code: string,
+	items: readonly { id: string; quantity: number }[],
+	owner: { userId?: string; normalizedEmail: string | null },
+	channelId?: string,
+) {
+	const coupon = await loadCoupon(db, code, owner);
+	const lines: PricingLine[] = await Promise.all(
+		items.map(async (item) => {
+			const sellableItem = await loadSellableItem(db, item.id, channelId);
+			return {
+				orderItemId: item.id,
+				sellableItem,
+				subtotal: BigInt(sellableItem.price_minor) * BigInt(item.quantity),
+				discount: 0n,
+				input: {
+					sellableItemId: item.id,
+					quantity: item.quantity,
+					inputValues: {},
+					renewedFromEntitlementId: null,
+				},
+			};
+		}),
+	);
+	assertSingleCurrency(lines);
+	return priceStoreCoupon(db, coupon, lines);
+}
+
+async function priceStoreCoupon(
+	db: D1Database,
+	coupon: CouponRow | null,
+	lines: PricingLine[],
+) {
+	const eligible = coupon ? await eligibleLines(db, coupon.id, lines) : lines;
+	const subtotal = lines.reduce((sum, line) => sum + line.subtotal, 0n);
+	if (!coupon || coupon.purpose === "standard") {
+		const discount = allocateDiscount(coupon, subtotal, eligible);
+		return {
+			purpose: "standard" as const,
+			discountMinor: discount.toString(),
+			rewardMinor: "0",
+			lines: lines.map((line) => ({
+				id: line.orderItemId,
+				discountMinor: line.discount.toString(),
+				rewardMinor: "0",
+			})),
+		};
+	}
+	if (
+		lines.some(
+			(line) =>
+				line.sellableItem.currency !== "CNY" ||
+				line.sellableItem.currency_decimals !== 2,
+		)
+	)
+		throw new DomainError(
+			"coupon_currency_invalid",
+			409,
+			"Promotions require CNY",
+		);
+	const pricing = pricePromotion(
+		coupon.purpose,
+		eligible.map((line) => ({
+			id: line.orderItemId,
+			budgetMinor: line.sellableItem.promotion_budget_minor,
+			subtotalMinor: line.subtotal.toString(),
+			quantity: line.input.quantity,
+		})),
+	);
+	if (pricing.discountMinor === "0")
+		throw new DomainError(
+			"coupon_scope_invalid",
+			409,
+			"No eligible promotion items",
+		);
+	for (const line of lines)
+		line.discount = BigInt(
+			pricing.lines.find((item) => item.id === line.orderItemId)
+				?.discountMinor ?? "0",
+		);
+	return { purpose: coupon.purpose, ...pricing };
 }
 
 async function loadCoupon(
@@ -823,10 +939,15 @@ async function loadCoupon(
 			409,
 			"Coupon customer limit reached",
 		);
+	await assertPromotionOwner(db, coupon, owner);
 	return coupon;
 }
 
-async function eligibleLines(db: D1Database, couponId: string, lines: Line[]) {
+async function eligibleLines(
+	db: D1Database,
+	couponId: string,
+	lines: PricingLine[],
+) {
 	const coupon = await db
 		.prepare("SELECT scope_json FROM coupons WHERE id = ? LIMIT 1")
 		.bind(couponId)
@@ -883,7 +1004,7 @@ function parseCouponScope(value: string) {
 function allocateDiscount(
 	coupon: CouponRow | null,
 	orderSubtotal: bigint,
-	eligible: Line[],
+	eligible: PricingLine[],
 ) {
 	if (!coupon) return 0n;
 	const first = eligible[0]?.sellableItem;

@@ -11,9 +11,13 @@ import {
 	reconcileAgentAccess,
 } from "#/features/agent-access/server/fulfillment";
 import { prepareAgentProducts } from "#/features/agent-access/server/products";
+import { reserveOrderBalance } from "#/features/promotions/server/balance";
 import { openAfterSaleCase } from "#/features/shop-orders/server/after-sales";
 import { requestShopRefund } from "#/features/shop-payments/server/refunds";
-import { completeWalletStoreOrder } from "#/features/shop-payments/server/service";
+import {
+	completeFreeStoreOrder,
+	completeWalletStoreOrder,
+} from "#/features/shop-payments/server/service";
 import { createMultiStoreOrder } from "#/features/storefront/server/multi-order";
 import { applyMigrations } from "./migrations";
 
@@ -266,6 +270,66 @@ describe("paid agent access", { timeout: 30000 }, () => {
 			await db
 				.prepare("SELECT state FROM agent_access_orders WHERE order_item_id=?")
 				.bind(order_item_id)
+				.first("state"),
+		).toBe("revoked");
+	});
+
+	it("reward-funded qualification keeps exact price, earns no reward and refunds each source", async () => {
+		await db
+			.prepare("UPDATE users SET reward_balance_minor='500' WHERE id=?")
+			.bind(userId)
+			.run();
+		const order = await make(db);
+		const cashBefore = await db
+			.prepare("SELECT balance_minor FROM users WHERE id=?")
+			.bind(userId)
+			.first<string>("balance_minor");
+		expect(await reserveOrderBalance(db, order.id, userId)).toMatchObject({
+			reward_minor: "500",
+			cash_minor: "490",
+			external_minor: "0",
+		});
+		await completeFreeStoreOrder(db, order.id, userId);
+		const delivery = await db
+			.prepare(
+				"SELECT d.id FROM delivery_records d JOIN shop_order_items oi ON oi.id=d.order_item_id WHERE oi.order_id=?",
+			)
+			.bind(order.id)
+			.first<{ id: string }>();
+		if (!delivery) throw new Error("qualification delivery missing");
+		await processAgentDelivery(db, delivery.id);
+		expect(
+			await db
+				.prepare("SELECT referral_reward_minor FROM shop_orders WHERE id=?")
+				.bind(order.id)
+				.first("referral_reward_minor"),
+		).toBe("0");
+		await requestShopRefund(
+			db,
+			{
+				orderId: order.id,
+				amountMinor: "990",
+				reason: "Verified activation failure",
+				idempotencyKey: "combined-reward-agent-refund",
+			},
+			{
+				actorUserId: userId,
+				request: new Request("https://shop.example/admin"),
+			},
+		);
+		await reconcileAgentAccess(db);
+		expect(
+			await db
+				.prepare(
+					"SELECT balance_minor,reward_balance_minor FROM users WHERE id=?",
+				)
+				.bind(userId)
+				.first(),
+		).toMatchObject({ balance_minor: cashBefore, reward_balance_minor: "500" });
+		expect(
+			await db
+				.prepare("SELECT state FROM agent_access_orders WHERE user_id=?")
+				.bind(userId)
 				.first("state"),
 		).toBe("revoked");
 	});

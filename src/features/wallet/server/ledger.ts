@@ -76,7 +76,7 @@ export async function mutateWallet(db: D1Database, input: WalletMutation) {
 						  balance_after_minor, currency, source_type, source_id,
 						  idempotency_key, reason, actor_user_id, created_at)
 						 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-						 FROM users WHERE id = ? AND balance_version = ?`,
+						 FROM users WHERE id = ? AND balance_version = ? AND changes() = 1`,
 					)
 					.bind(
 						entryId,
@@ -125,9 +125,11 @@ export async function getWallet(db: D1Database, userId: string) {
 	};
 	const [user, settings, entries] = await Promise.all([
 		db
-			.prepare("SELECT balance_minor FROM users WHERE id = ? LIMIT 1")
+			.prepare(
+				"SELECT balance_minor,reward_balance_minor FROM users WHERE id = ? LIMIT 1",
+			)
 			.bind(userId)
-			.first<{ balance_minor: string }>(),
+			.first<{ balance_minor: string; reward_balance_minor: string }>(),
 		db
 			.prepare(
 				"SELECT key, value FROM system_settings WHERE key IN ('commerce.default_currency', 'commerce.currency_decimals')",
@@ -147,6 +149,7 @@ export async function getWallet(db: D1Database, userId: string) {
 	);
 	return {
 		balanceMinor: user.balance_minor,
+		rewardBalanceMinor: user.reward_balance_minor,
 		currency: String(values.get("commerce.default_currency") ?? "USD"),
 		currencyDecimals: Number(values.get("commerce.currency_decimals") ?? 2),
 		entries: entries.results,

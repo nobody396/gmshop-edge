@@ -58,8 +58,13 @@ Legacy agents require no new payment record. Child-shop registration and checkou
 
 ### 资格费条款确认
 
-两种资格统一使用 `agentAccessRefundPolicy` 的版本化双语文案。结账页为本人及当前商品显示非预勾选的独立确认框；`agentAccessTermsAccepted` 仅对资格商品必需，其他商品不增加确认步骤。新增迁移 `0024_agent_access_policy.sql` 为开通订单记录增加可空快照列；新订单保存条款原文、版本和确认时间，不伪造历史订单同意记录。
+两种资格统一使用 `agentAccessRefundPolicy` 的版本化双语文案。结账页为本人及当前商品显示非预勾选的独立确认框；`agentAccessTermsAccepted` 仅对资格商品必需，其他商品不增加确认步骤。新增迁移 `0027_agent_access_policy.sql` 为开通订单记录增加可空快照列；新订单保存条款原文、版本和确认时间，不伪造历史订单同意记录。
 
 已确认新条款的资格订单，客户通过“开通异常/争议处理”提出故障和法定诉求，不提供个人原因退款、重发卡密或重跑 CI 的入口。后台人工纠错和依法处理所需的原路退款仍然保留。没有新条款快照的历史订单不被服务器追溯限制。
 
 Both access products require explicit, unchecked purchase acknowledgment. The exact bilingual policy and acceptance time are snapshotted with the order. Personal-reason refunds after successful activation are not offered; failed activation, duplicate charges and legally required remedies retain an exception-support path. Historical orders without the new policy snapshot are not retroactively restricted, and authorized administrative refunds remain available.
+
+
+### 联合发布验收
+
+本轮老板已明确授权部署、上架这两种资格及邀请返利。5% 加价只初始化新付费子站；资格商品不能使用推广码或产生邀请奖励，已积累奖励作为支付来源时仍按原来源退款。迁移统一排序为 0026/0027（资格）及 0028/0029（推广），已有 0025 保持不变。主站准入限制仍以老代理和子站回归为门槛，且不修改全局注册设置。营销邮件、老客户批量发券和真实支付测试不随部署自动执行。

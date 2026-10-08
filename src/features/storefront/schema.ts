@@ -109,6 +109,7 @@ export const createStoreOrderSchema = multiStoreOrderSchema;
 
 const checkoutFields = {
 	walletPayment: z.boolean().default(false),
+	useBalance: z.boolean().default(false),
 	paymentChannelId: z.uuid().nullable().default(null),
 	paymentCurrency: z
 		.string()
@@ -120,8 +121,12 @@ const checkoutFields = {
 	termsAccepted: z.literal(true),
 };
 
-export const checkoutStoreOrderSchema =
-	multiStoreOrderSchema.extend(checkoutFields);
+export const checkoutStoreOrderSchema = multiStoreOrderSchema
+	.extend(checkoutFields)
+	.refine(
+		(value) => !(value.walletPayment && value.useBalance),
+		"Choose either legacy wallet payment or split balance payment",
+	);
 
 export const storeOrderLookupSchema = z.object({
 	orderNumber: z.string().trim().toUpperCase().min(8).max(80),
