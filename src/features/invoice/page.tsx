@@ -260,8 +260,21 @@ export function InvoicePage() {
 						className="mt-6 grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-4 text-sm"
 						aria-live="polite"
 					>
-						<dt>{m.invoice_amount()}</dt>
-						<dd>¥{amounts.invoice_total_amount}</dd>
+						<div className="col-span-2 rounded-lg border border-primary/30 bg-primary/5 p-4">
+							<dt className="font-semibold">{m.invoice_amount()}</dt>
+							<dd
+								className="mt-2 font-bold text-3xl text-primary"
+								data-testid="invoice-face-amount"
+							>
+								¥{amounts.invoice_total_amount}
+							</dd>
+						</div>
+						{amounts.invoice_base_amount && (
+							<div className="col-span-2 grid grid-cols-2 gap-3">
+								<dt>{m.invoice_base_amount()}</dt>
+								<dd>¥{amounts.invoice_base_amount}</dd>
+							</div>
+						)}
 						<dt>{m.invoice_fee()}</dt>
 						<dd>¥{amounts.invoice_fee_amount}</dd>
 						<dt>{m.invoice_screenshot_fee()}</dt>

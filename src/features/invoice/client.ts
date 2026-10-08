@@ -2,6 +2,7 @@ import { z } from "zod";
 import { m } from "#/paraglide/messages";
 
 const invoiceSchema = z.object({
+	fees_included: z.boolean().optional(),
 	request_no: z.string().optional(),
 	consumption_screenshot: z.boolean().optional(),
 	screenshot_fee_amount: z.string().optional(),
@@ -17,7 +18,7 @@ const invoiceSchema = z.object({
 export type Invoice = z.infer<typeof invoiceSchema>;
 
 // An order preview can run before the amount is known: the service prefills
-// the face amount from the paid amount. Offline applications need the amount.
+// the base amount from the paid amount. Offline applications need the amount.
 export function canPreview(form: Record<string, string>): boolean {
 	return form.order_no?.trim()
 		? Boolean(form.order_email?.trim())
@@ -78,6 +79,9 @@ export async function send(input: {
 		throw new Error(body.msg || m.invoice_error());
 	const invoice = invoiceSchema.safeParse(body.data);
 	if (!invoice.success) throw new Error(m.invoice_error());
+	// Preview must use the new pricing contract; historical status stays readable.
+	if (action === "preview" && invoice.data.fees_included !== true)
+		throw new Error(m.invoice_pricing_unavailable());
 	// Do not accept a stale backend silently ignoring a selected paid option.
 	if (
 		input.consumption_screenshot &&

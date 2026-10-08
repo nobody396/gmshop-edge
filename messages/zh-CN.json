@@ -1840,11 +1840,11 @@
 	"invoice_item": "开票项目：生产生活服务信息系统服务",
 	"invoice_order": "订单号（选填，线下转账可不填）",
 	"invoice_order_email": "下单邮箱",
-	"invoice_amount": "发票金额（价税合计）",
+	"invoice_amount": "最终发票票面金额",
 	"invoice_buyer": "发票抬头",
 	"invoice_tax": "统一社会信用代码",
 	"invoice_email": "发票接收邮箱",
-	"invoice_hint": "普通发票，按价税合计金额另收 3% 开票服务费，支持支付宝付款",
+	"invoice_hint": "普通发票，开票服务费按最终票面金额的 3% 计算。最终票面包含原订单金额、开票服务费、截图费及本次支付手续费，原订单金额不重复收取。支持支付宝付款。",
 	"invoice_preview": "预览开票费用",
 	"invoice_confirm": "确认资料并支付",
 	"invoice_loading": "正在处理…",
@@ -1857,7 +1857,7 @@
 	"invoice_pay": "打开支付宝付款",
 	"invoice_fee": "开票服务费（3%）",
 	"invoice_payment_fee": "支付通道手续费",
-	"invoice_due": "本次应付",
+	"invoice_due": "本次需补付",
 	"invoice_sending": "等待发送发票邮件",
 	"invoice_failed": "邮件发送失败，等待处理",
 	"invoice_cancelled": "申请已取消",
@@ -2225,5 +2225,6 @@
 	"promotion_type_referral": "长期邀请",
 	"promotion_type_recall": "个人回购",
 	"promotion_dynamic_budget": "按 SKU 档位，整单封顶 ¥8",
-	"promotion_eligible_items": "仅参与活动的 SKU"
+	"promotion_eligible_items": "仅参与活动的 SKU",
+	"invoice_pricing_unavailable": "全费用开票暂未就绪，请稍后再试，勿继续付款"
 }

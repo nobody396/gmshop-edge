@@ -1840,11 +1840,11 @@
 	"invoice_item": "Invoice item: Production and living services information system services",
 	"invoice_order": "Order number (optional for offline payments)",
 	"invoice_order_email": "Order email",
-	"invoice_amount": "Invoice total (tax included)",
+	"invoice_amount": "Final invoice face amount",
 	"invoice_buyer": "Invoice title",
 	"invoice_tax": "Tax identification number",
 	"invoice_email": "Invoice delivery email",
-	"invoice_hint": "Ordinary invoice. A separate 3% service fee applies to the invoice total. Pay with Alipay.",
+	"invoice_hint": "Ordinary invoice. The service fee is 3% of the final invoice amount. The invoice includes the original order amount, service fee, screenshot fee and this payment’s processing fee. The original order amount is not charged again. Pay with Alipay.",
 	"invoice_preview": "Preview fees",
 	"invoice_confirm": "Confirm and pay",
 	"invoice_loading": "Processing…",
@@ -1857,7 +1857,7 @@
 	"invoice_pay": "Pay with Alipay",
 	"invoice_fee": "Invoice service fee (3%)",
 	"invoice_payment_fee": "Payment processing fee",
-	"invoice_due": "Amount due",
+	"invoice_due": "Additional payment due",
 	"invoice_sending": "Invoice email pending",
 	"invoice_failed": "Email delivery needs attention",
 	"invoice_cancelled": "Application cancelled",
@@ -2225,5 +2225,6 @@
 	"promotion_type_referral": "Invitation",
 	"promotion_type_recall": "Personal recall",
 	"promotion_dynamic_budget": "Per-SKU budget, order cap ¥8",
-	"promotion_eligible_items": "Participating SKUs only"
+	"promotion_eligible_items": "Participating SKUs only",
+	"invoice_pricing_unavailable": "All-inclusive invoicing is not ready. Please try again later and do not proceed with payment."
 }
