@@ -150,6 +150,7 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 		"local-only",
 		"local-shortfall",
 		"no-balance",
+		"unfunded-opt-in",
 		"stale",
 	])("checks supplier eligibility without purchasing before payment: %s", async (mode) => {
 		const now = Date.now();
@@ -193,7 +194,9 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 				.bind(sellableItemId, now, now, now),
 		]);
 
-		if (!["supplier", "no-balance", "stale"].includes(mode)) {
+		if (
+			!["supplier", "no-balance", "unfunded-opt-in", "stale"].includes(mode)
+		) {
 			await database
 				.prepare(
 					"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL WHERE id=?",
@@ -216,9 +219,14 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 				.prepare("UPDATE supplier_bindings SET stock_quantity=1")
 				.run();
 		}
-		if (mode === "no-balance")
+		if (mode === "no-balance" || mode === "unfunded-opt-in")
 			await database
 				.prepare("UPDATE supplier_accounts SET balance_minor='0'")
+				.run();
+		if (mode === "unfunded-opt-in")
+			await database
+				.prepare("INSERT INTO system_settings(key,value) VALUES (?, 'true')")
+				.bind(`fulfillment.supplier_unfunded_checkout.${sellableItemId}`)
 				.run();
 		if (mode === "stale")
 			await database

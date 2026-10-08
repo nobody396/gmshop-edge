@@ -16,6 +16,7 @@ import { encryptOrderInput } from "./order-input-secrets";
 import {
 	SUPPLIER_SNAPSHOT_MAX_AGE_MS,
 	supplierFallbackEnabledExpression,
+	supplierUnfundedCheckoutExpression,
 } from "./stock-availability";
 
 type MultiOrderInput = ReturnType<typeof multiStoreOrderSchema.parse>;
@@ -620,7 +621,8 @@ export async function assertSupplierAvailability(
 	const binding = await db
 		.prepare(
 			`SELECT provider, normalized_api_origin, protocol_version,
-			 reference_cost_minor, max_cost_minor, stock_quantity
+			 reference_cost_minor, max_cost_minor, stock_quantity,
+			 ${supplierUnfundedCheckoutExpression("sellable_item_id")} AS unfunded_checkout
 			 FROM supplier_bindings
 			 WHERE sellable_item_id = ? AND enabled = 1
 			  AND remote_status = 'active' AND last_synced_at >= ?
@@ -634,6 +636,7 @@ export async function assertSupplierAvailability(
 			reference_cost_minor: string;
 			max_cost_minor: string;
 			stock_quantity: number;
+			unfunded_checkout: number;
 		}>();
 	if (
 		!binding ||
@@ -674,8 +677,9 @@ export async function assertSupplierAvailability(
 				: BigInt(account.max_order_cost_minor);
 		return (
 			(maximum == null || required <= maximum) &&
-			BigInt(account.balance_minor) - BigInt(account.reserve_balance_minor) >=
-				required
+			(binding.unfunded_checkout === 1 ||
+				BigInt(account.balance_minor) - BigInt(account.reserve_balance_minor) >=
+					required)
 		);
 	});
 	if (!hasCandidate)
