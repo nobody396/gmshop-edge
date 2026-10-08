@@ -300,3 +300,20 @@ it("rejects new previews without a server-owned rate", async () => {
 		legacy,
 	);
 });
+
+it("uses the requested invoice tax fee wording in both locales", () => {
+	for (const [locale, term, old] of [
+		["zh-CN", "开票税费", "开票服务费"],
+		["en-US", "Invoice tax fee", "Invoice service fee"],
+	]) {
+		const messages = JSON.parse(
+			readFileSync(
+				new URL(`../../messages/${locale}.json`, import.meta.url),
+				"utf8",
+			),
+		);
+		expect(messages.invoice_fee).toContain(term);
+		expect(messages.invoice_fee).not.toContain(old);
+		expect(messages.invoice_fee).toContain("{rate}%");
+	}
+});
