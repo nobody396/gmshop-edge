@@ -1,3 +1,4 @@
+-- Parenthesized CASE preserves SQLite semantics and avoids the remote D1 /query trigger splitter bug.
 ALTER TABLE users ADD COLUMN reward_balance_minor TEXT NOT NULL DEFAULT '0';
 --> statement-breakpoint
 CREATE TABLE reward_entries (
@@ -44,7 +45,7 @@ ALTER TABLE refunds ADD COLUMN reward_return_minor TEXT NOT NULL DEFAULT '0';
 ALTER TABLE refunds ADD COLUMN referral_reversal_minor TEXT NOT NULL DEFAULT '0';
 --> statement-breakpoint
 CREATE TRIGGER order_balance_hold_validate BEFORE INSERT ON order_balance_holds BEGIN
- SELECT CASE WHEN NEW.state <> 'held' OR NOT EXISTS (
+ SELECT (CASE WHEN NEW.state <> 'held' OR NOT EXISTS (
   SELECT 1 FROM shop_orders o JOIN users u ON u.id = NEW.user_id
   WHERE o.id = NEW.order_id AND o.user_id = NEW.user_id AND u.enabled = 1 AND o.status = 'pending_payment'
    AND o.currency = 'CNY' AND o.currency_decimals = 2 AND o.expires_at > NEW.created_at
@@ -52,7 +53,7 @@ CREATE TRIGGER order_balance_hold_validate BEFORE INSERT ON order_balance_holds 
    AND MAX(0,CAST(u.reward_balance_minor AS INTEGER)) >= CAST(NEW.reward_minor AS INTEGER)
    AND CAST(NEW.cash_minor AS INTEGER) + CAST(NEW.reward_minor AS INTEGER) + CAST(NEW.external_minor AS INTEGER) = CAST(o.total_minor AS INTEGER)
    AND NOT EXISTS (SELECT 1 FROM payment_attempts WHERE order_id = o.id)
- ) THEN RAISE(ABORT,'wallet_hold_conflict') END;
+ ) THEN RAISE(ABORT,'wallet_hold_conflict') END);
 END;
 --> statement-breakpoint
 CREATE TRIGGER order_balance_hold_debit AFTER INSERT ON order_balance_holds BEGIN
@@ -66,10 +67,10 @@ CREATE TRIGGER order_balance_hold_debit AFTER INSERT ON order_balance_holds BEGI
 END;
 --> statement-breakpoint
 CREATE TRIGGER order_balance_hold_immutable BEFORE UPDATE ON order_balance_holds BEGIN
- SELECT CASE WHEN NEW.order_id<>OLD.order_id OR NEW.user_id<>OLD.user_id OR NEW.cash_minor<>OLD.cash_minor
+ SELECT (CASE WHEN NEW.order_id<>OLD.order_id OR NEW.user_id<>OLD.user_id OR NEW.cash_minor<>OLD.cash_minor
   OR NEW.reward_minor<>OLD.reward_minor OR NEW.external_minor<>OLD.external_minor
   OR (NEW.state<>OLD.state AND (OLD.state<>'held' OR NEW.state NOT IN ('consumed','released')))
- THEN RAISE(ABORT,'wallet_hold_immutable') END;
+ THEN RAISE(ABORT,'wallet_hold_immutable') END);
 END;
 --> statement-breakpoint
 CREATE TRIGGER order_balance_hold_release AFTER UPDATE OF state ON order_balance_holds WHEN OLD.state='held' AND NEW.state='released' BEGIN
@@ -83,12 +84,12 @@ CREATE TRIGGER order_balance_hold_release AFTER UPDATE OF state ON order_balance
 END;
 --> statement-breakpoint
 CREATE TRIGGER order_balance_paid_guard BEFORE UPDATE OF status ON shop_orders WHEN NEW.status='paid' AND OLD.status<>'paid' BEGIN
- SELECT CASE WHEN EXISTS(SELECT 1 FROM order_balance_holds WHERE order_id=NEW.id AND state='released')
- THEN RAISE(ABORT,'payment_reconciliation_required') END;
+ SELECT (CASE WHEN EXISTS(SELECT 1 FROM order_balance_holds WHERE order_id=NEW.id AND state='released')
+ THEN RAISE(ABORT,'payment_reconciliation_required') END);
 END;
 --> statement-breakpoint
 CREATE TRIGGER order_balance_lifecycle AFTER UPDATE OF status ON shop_orders BEGIN
- UPDATE order_balance_holds SET state=CASE WHEN NEW.status='paid' THEN 'consumed' ELSE 'released' END,updated_at=NEW.updated_at
+ UPDATE order_balance_holds SET state=(CASE WHEN NEW.status='paid' THEN 'consumed' ELSE 'released' END),updated_at=NEW.updated_at
   WHERE order_id=NEW.id AND state='held' AND NEW.status IN ('paid','cancelled','expired');
  INSERT INTO promotion_rewards(order_id,user_id,amount_minor,remaining_minor,state,created_at,updated_at)
   SELECT NEW.id,NEW.referrer_user_id,NEW.referral_reward_minor,NEW.referral_reward_minor,'pending',NEW.updated_at,NEW.updated_at
@@ -127,7 +128,7 @@ CREATE TRIGGER promotion_refund_insert AFTER INSERT ON refunds WHEN NEW.status='
  INSERT INTO reward_entries SELECT lower(hex(randomblob(16))),u.id,CAST(-CAST(NEW.referral_reversal_minor AS INTEGER) AS TEXT),u.reward_balance_minor,'reversal',NEW.id,'reversal:'||NEW.id,NEW.updated_at
   FROM users u JOIN promotion_rewards r ON r.user_id=u.id WHERE r.order_id=NEW.order_id AND r.state='available' AND CAST(NEW.referral_reversal_minor AS INTEGER)>0;
  UPDATE promotion_rewards SET remaining_minor=CAST(MAX(0,CAST(remaining_minor AS INTEGER)-CAST(NEW.referral_reversal_minor AS INTEGER)) AS TEXT),
-  state=CASE WHEN CAST(remaining_minor AS INTEGER)<=CAST(NEW.referral_reversal_minor AS INTEGER) THEN 'reversed' ELSE state END,updated_at=NEW.updated_at
+  state=(CASE WHEN CAST(remaining_minor AS INTEGER)<=CAST(NEW.referral_reversal_minor AS INTEGER) THEN 'reversed' ELSE state END),updated_at=NEW.updated_at
   WHERE order_id=NEW.order_id AND CAST(NEW.referral_reversal_minor AS INTEGER)>0;
 END;
 
@@ -148,30 +149,30 @@ CREATE TRIGGER promotion_refund_update AFTER UPDATE OF status ON refunds WHEN NE
  INSERT INTO reward_entries SELECT lower(hex(randomblob(16))),u.id,CAST(-CAST(NEW.referral_reversal_minor AS INTEGER) AS TEXT),u.reward_balance_minor,'reversal',NEW.id,'reversal:'||NEW.id,NEW.updated_at
   FROM users u JOIN promotion_rewards r ON r.user_id=u.id WHERE r.order_id=NEW.order_id AND r.state='available' AND CAST(NEW.referral_reversal_minor AS INTEGER)>0;
  UPDATE promotion_rewards SET remaining_minor=CAST(MAX(0,CAST(remaining_minor AS INTEGER)-CAST(NEW.referral_reversal_minor AS INTEGER)) AS TEXT),
-  state=CASE WHEN CAST(remaining_minor AS INTEGER)<=CAST(NEW.referral_reversal_minor AS INTEGER) THEN 'reversed' ELSE state END,updated_at=NEW.updated_at
+  state=(CASE WHEN CAST(remaining_minor AS INTEGER)<=CAST(NEW.referral_reversal_minor AS INTEGER) THEN 'reversed' ELSE state END),updated_at=NEW.updated_at
   WHERE order_id=NEW.order_id AND CAST(NEW.referral_reversal_minor AS INTEGER)>0;
 END;
 --> statement-breakpoint
 ALTER TABLE payment_attempts ADD COLUMN order_amount_minor TEXT;
 --> statement-breakpoint
 CREATE TRIGGER payment_funding_snapshot_guard BEFORE INSERT ON payment_attempts WHEN NEW.order_id IS NOT NULL BEGIN
- SELECT CASE WHEN EXISTS(SELECT 1 FROM order_balance_holds h WHERE h.order_id=NEW.order_id
+ SELECT (CASE WHEN EXISTS(SELECT 1 FROM order_balance_holds h WHERE h.order_id=NEW.order_id
   AND (h.state<>'held' OR NEW.order_amount_minor IS NOT h.external_minor))
- THEN RAISE(ABORT,'payment_funding_changed') END;
+ THEN RAISE(ABORT,'payment_funding_changed') END);
 END;
 --> statement-breakpoint
 CREATE TRIGGER mixed_payment_single_attempt_guard BEFORE INSERT ON payment_attempts
 WHEN EXISTS(SELECT 1 FROM order_balance_holds WHERE order_id=NEW.order_id) BEGIN
- SELECT CASE WHEN EXISTS(SELECT 1 FROM payment_attempts WHERE order_id=NEW.order_id
+ SELECT (CASE WHEN EXISTS(SELECT 1 FROM payment_attempts WHERE order_id=NEW.order_id
   AND idempotency_key<>NEW.idempotency_key AND status IN ('created','pending','succeeded'))
- THEN RAISE(ABORT,'payment_attempt_already_active') END;
+ THEN RAISE(ABORT,'payment_attempt_already_active') END);
 END;
 --> statement-breakpoint
 CREATE INDEX promotion_rewards_user_created_idx ON promotion_rewards(user_id,created_at,order_id);
 --> statement-breakpoint
 CREATE TRIGGER mixed_payment_receipt_guard BEFORE UPDATE OF status ON shop_orders
 WHEN NEW.status='paid' AND OLD.status<>'paid' BEGIN
- SELECT CASE WHEN EXISTS(SELECT 1 FROM order_balance_holds WHERE order_id=NEW.id AND state='held' AND CAST(external_minor AS INTEGER)>0)
+ SELECT (CASE WHEN EXISTS(SELECT 1 FROM order_balance_holds WHERE order_id=NEW.id AND state='held' AND CAST(external_minor AS INTEGER)>0)
   AND NOT EXISTS(SELECT 1 FROM payment_attempts WHERE order_id=NEW.id AND status='succeeded')
- THEN RAISE(ABORT,'external_payment_required') END;
+ THEN RAISE(ABORT,'external_payment_required') END);
 END;
