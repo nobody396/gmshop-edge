@@ -122,6 +122,7 @@ export function activateEntitlementGrantStatements(
 				 revoked_at = NULL, updated_at = ?
 				 WHERE id = (SELECT entitlement_id FROM entitlement_grants
 				  WHERE source_order_item_id = ? AND status = 'pending' AND applied_at IS NULL
+ AND NOT EXISTS (SELECT 1 FROM agent_access_orders aa WHERE aa.order_item_id=entitlement_grants.source_order_item_id AND aa.state<>'active')
 				  AND (? = 0 OR EXISTS (
 				   SELECT 1 FROM order_item_download_assets snapshot
 				   WHERE snapshot.order_item_id = entitlement_grants.source_order_item_id

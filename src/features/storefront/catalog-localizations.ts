@@ -1,3 +1,7 @@
+import {
+	agentAccessProducts,
+	agentAccessRefundPolicy,
+} from "#/features/agent-access/products";
 import type { SupportedLocale } from "#/lib/locales";
 
 type Policy = {
@@ -25,6 +29,16 @@ const immediate = standardDeliveryTime;
 const manual = "Processed online after payment confirmation";
 
 const productEnglish: Record<string, ProductLocalization> = {
+	[agentAccessProducts.subsite.productId]: {
+		name: "One-time hosted storefront access",
+		description:
+			"A hosted storefront with a system subdomain and console. No purchasing credit. For your own verified account only; existing access must not be purchased again.",
+	},
+	[agentAccessProducts.api.productId]: {
+		name: "One-time API access",
+		description:
+			"API access and secure credential claim for supported integrations. No purchasing credit or hosted storefront. For your own verified account only.",
+	},
 	"2a794b89-3bb9-49d4-8691-0d13a1606869": {
 		name: "ChatGPT Membership Recharge",
 		description:
@@ -102,6 +116,26 @@ const claudePolicy = policy(
 );
 
 const sellableItemEnglish: Record<string, SellableItemLocalization> = {
+	[agentAccessProducts.subsite.itemId]: {
+		name: "One-time activation",
+		policy: policy(
+			"Automatic activation after payment",
+			"Track progress on the order page; failures are retried or referred to support",
+			"Access has no scheduled expiry. Purchasing credit is not included.",
+			agentAccessRefundPolicy["en-US"],
+			"For your own verified account only. Do not repurchase existing access.",
+		),
+	},
+	[agentAccessProducts.api.itemId]: {
+		name: "One-time activation",
+		policy: policy(
+			"Automatic activation after payment",
+			"Track progress on the order page; failures are retried or referred to support",
+			"API access only; no hosted storefront or purchasing credit.",
+			agentAccessRefundPolicy["en-US"],
+			"Test your own integration before taking live orders.",
+		),
+	},
 	"983f6e73-061e-419d-a7d5-8ac5ec5648ab": {
 		name: "ChatGPT Go — 1 month",
 		policy: chatGptIosPolicy,

@@ -29,6 +29,10 @@ export const users = sqliteTable(
 		telegramPhoneNumber: text("telegram_phone_number"),
 		enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 		balanceMinor: text("balance_minor").notNull().default("0"),
+		rewardBalanceMinor: text("reward_balance_minor").notNull().default("0"),
+		marketingConsent: integer("marketing_consent", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		balanceVersion: integer("balance_version").notNull().default(1),
 		customerNote: text("customer_note"),
 		lastOrderedAt: integer("last_ordered_at", { mode: "timestamp_ms" }),

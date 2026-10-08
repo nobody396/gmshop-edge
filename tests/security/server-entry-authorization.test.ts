@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "../..");
 
 const adminServerModules = [
+	"src/features/agent-access/server/admin.ts",
 	"src/features/access/server/admin.ts",
 	"src/features/auth/server/provider-admin.ts",
 	"src/features/builds/server/admin.ts",
@@ -20,6 +21,7 @@ const adminServerModules = [
 	"src/features/fulfillment/server/admin.ts",
 	"src/features/notifications/server/admin.ts",
 	"src/features/operations/server/admin.ts",
+	"src/features/promotions/server/admin.ts",
 	"src/features/redeem-warehouse/server/admin.ts",
 	"src/features/settings/server/admin.ts",
 	"src/features/shop-orders/server/admin.ts",
@@ -35,9 +37,11 @@ const adminServerModules = [
 ] as const;
 
 const reviewedPublicServerModules = [
+	"src/features/agent-access/server/functions.ts",
 	"src/features/auth/server/session.ts",
 	"src/features/exchange-rates/server/public.ts",
 	"src/features/installation/server/functions.ts",
+	"src/features/promotions/server/functions.ts",
 	"src/features/settings/server/site-brand-entry.ts",
 	"src/features/status/server/functions.ts",
 	"src/features/storefront/server/account-functions.ts",
@@ -49,9 +53,12 @@ const reviewedPublicServerModules = [
 ] as const;
 
 const reviewedInputlessPostFunctions = new Set([
+	"prepareAgentProductsFn",
 	"exportAuditLogsFn",
 	"removeSiteLogoFn",
 	"syncTelegramBotFn",
+	// No caller-supplied user ID: the authenticated session owns the persistent code.
+	"openReferralFn",
 ]);
 
 describe("server entry authorization coverage", () => {

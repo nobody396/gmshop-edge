@@ -114,7 +114,7 @@ export async function transitionShopOrder(
 		...releaseSaleStatements(db, input.id, now),
 		unallocatedPaymentStatement(db, input.id),
 	]);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		throw new DomainError(
 			"order_version_conflict",
 			409,

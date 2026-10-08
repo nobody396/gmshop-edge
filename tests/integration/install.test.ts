@@ -58,6 +58,10 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0021_support_away_reply_source.sql",
 			"0022_owned_code_delivery.sql",
 			"0025_redeem_exception_todos.sql",
+			"0026_agent_access.sql",
+			"0027_agent_access_policy.sql",
+			"0028_invitation_promotions.sql",
+			"0029_promotion_wallet.sql",
 		]);
 		const legacyTables = await database
 			.prepare(
@@ -73,7 +77,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 			)
 			.all<{ name: string }>();
-		expect(tables.results).toHaveLength(63);
+		expect(tables.results).toHaveLength(67);
 		expect(tables.results.map((table) => table.name)).toEqual(
 			expect.arrayContaining([
 				"telegram_web_support_conversations",
@@ -88,9 +92,13 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"supplier_exchange_records",
 				"wallet_entries",
 				"wallet_topups",
+				"order_balance_holds",
+				"promotion_rewards",
+				"reward_entries",
 				"sellable_item_channel_prices",
 				"ip_check_score_buckets",
 				"email_recipient_suppressions",
+				"agent_access_orders",
 			]),
 		);
 		const foreignKeyFailures = await database

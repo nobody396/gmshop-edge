@@ -27,6 +27,8 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
+import { AgentAccessDelivery } from "#/features/agent-access/components/access";
+import { agentAccessProducts } from "#/features/agent-access/products";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { DeliveryRevealContent } from "#/features/storefront/components/delivery-reveal-content";
@@ -171,19 +173,28 @@ export function StorefrontOrderPage({
 		(asset) =>
 			asset.accessLimit === null || asset.accessCount < asset.accessLimit,
 	);
-	const afterSaleOptions = [
-		{ value: "refund", label: m.store_after_sale_refund() },
-		{ value: "redelivery", label: m.store_after_sale_redelivery() },
-		...(data.items.some((item) => item.deliveryType === "automation")
-			? [
-					{
-						value: "rebuild" as const,
-						label: m.store_after_sale_rebuild(),
-					},
-				]
-			: []),
-		{ value: "dispute", label: m.store_after_sale_dispute() },
-	] as const;
+	const isAgentAccessOrder = data.items.some((item) =>
+		Object.values(agentAccessProducts).some(
+			(product) => product.productId === item.productId,
+		),
+	);
+	const afterSaleOptions = isAgentAccessOrder
+		? ([
+				{ value: "dispute", label: m.agent_access_exception_support() },
+			] as const)
+		: ([
+				{ value: "refund", label: m.store_after_sale_refund() },
+				{ value: "redelivery", label: m.store_after_sale_redelivery() },
+				...(data.items.some((item) => item.deliveryType === "automation")
+					? [
+							{
+								value: "rebuild" as const,
+								label: m.store_after_sale_rebuild(),
+							},
+						]
+					: []),
+				{ value: "dispute", label: m.store_after_sale_dispute() },
+			] as const);
 	async function downloadAsset(asset: (typeof data.downloads)[number]) {
 		const response = await fetch(
 			`/api/shop/orders/${encodeURIComponent(orderNumber)}/downloads/${encodeURIComponent(asset.id)}`,
@@ -515,8 +526,19 @@ export function StorefrontOrderPage({
 										</div>
 									</section>
 								) : null}
+								{data.items.some((item) =>
+									Object.values(agentAccessProducts).some(
+										(p) => p.productId === item.productId,
+									),
+								) ? (
+									<AgentAccessDelivery orderNumber={orderNumber} />
+								) : null}
 								{data.items.some(
-									(item) => item.deliveryType === "automation",
+									(item) =>
+										item.deliveryType === "automation" &&
+										!Object.values(agentAccessProducts).some(
+											(p) => p.productId === item.productId,
+										),
 								) ? (
 									<OrderSection title={m.store_account_entitlements()}>
 										<p className="text-muted-foreground text-sm leading-6">
@@ -600,7 +622,7 @@ export function StorefrontOrderPage({
 							label: m.store_after_sale_type(),
 							valueType: "select",
 							required: true,
-							initialValue: "refund",
+							initialValue: isAgentAccessOrder ? "dispute" : "refund",
 							fieldProps: { options: afterSaleOptions },
 						},
 						{

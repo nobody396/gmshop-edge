@@ -1,4 +1,6 @@
-"use client";
+import { PromotionAccount } from "#/features/promotions/account";
+
+("use client");
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
@@ -83,6 +85,7 @@ export function AccountOverviewPage({ account }: { account: Account }) {
 	).length;
 	return (
 		<>
+			<PromotionAccount />
 			<PageTitle
 				title={m.store_account_title()}
 				description={m.store_account_overview_description()}

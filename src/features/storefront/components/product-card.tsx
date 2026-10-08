@@ -18,14 +18,19 @@ export function StorefrontProductCard({
 	product: StorefrontCatalogProduct;
 }) {
 	const currency = useCurrency();
-	const available = product.displayStockQuantity !== 0;
+	// Negative counts are the existing non-stock/unlimited sentinel, not inventory.
+	const displayStockQuantity =
+		product.displayStockQuantity != null && product.displayStockQuantity < 0
+			? null
+			: product.displayStockQuantity;
+	const available = displayStockQuantity !== 0;
 	const isFree = BigInt(product.maxPriceMinor) === 0n;
 	const singlePrice = product.maxPriceMinor === product.priceMinor;
 	const hasDiscount =
 		singlePrice &&
 		product.listPriceMinor != null &&
 		BigInt(product.listPriceMinor) > BigInt(product.priceMinor);
-	const availability = stockLabel(product.displayStockQuantity);
+	const availability = stockLabel(displayStockQuantity);
 	let price: string = m.store_price_free();
 	if (!isFree) {
 		price = singlePrice
@@ -121,12 +126,12 @@ export function StorefrontProductCard({
 								</span>
 							) : null}
 						</div>
-						{product.displayStockQuantity != null || availability ? (
+						{displayStockQuantity != null || availability ? (
 							<div className="text-right text-muted-foreground text-xs">
-								{product.displayStockQuantity != null ? (
+								{displayStockQuantity != null ? (
 									<p className="flex items-center justify-end gap-1.5">
 										<span className="font-medium text-foreground/75">
-											{m.store_stock({ count: product.displayStockQuantity })}
+											{m.store_stock({ count: displayStockQuantity })}
 										</span>
 									</p>
 								) : null}

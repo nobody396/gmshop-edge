@@ -29,6 +29,8 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
+import { AgentAccessCheckout } from "#/features/agent-access/components/access";
+import { agentAccessKind } from "#/features/agent-access/products";
 import { authClient } from "#/features/auth/auth-client";
 import { StoreMoney } from "#/features/exchange-rates/currency-context";
 import { addLocalCartItem } from "#/features/storefront/cart-storage";
@@ -164,7 +166,11 @@ export function StorefrontProductPage({
 		maximumQuantity != null &&
 		quantity <= maximumQuantity;
 	const entitlement = selectedItem ? entitlementSummary(selectedItem) : null;
-	const delivery = selectedItem ? deliveryPromise(selectedItem) : null;
+	const delivery = selectedItem
+		? agentAccessKind(selectedItem.id)
+			? m.agent_access_automatic_delivery()
+			: deliveryPromise(selectedItem)
+		: null;
 	const purchaseLimit = selectedItem
 		? purchaseLimitSummary(selectedItem)
 		: null;
@@ -408,6 +414,12 @@ export function StorefrontProductPage({
 						)}
 					</div>
 					{selectedItem ? <SkuPolicyPanel sellableItem={selectedItem} /> : null}
+					{selectedItem && agentAccessKind(selectedItem.id) ? (
+						<AgentAccessCheckout
+							key={selectedItem.id}
+							itemId={selectedItem.id}
+						/>
+					) : null}
 					{selectedItem ? (
 						<div className="mt-5 grid gap-3">
 							{delivery ? (

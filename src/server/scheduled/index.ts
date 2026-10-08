@@ -1,9 +1,11 @@
+import { reconcileAgentAccess } from "#/features/agent-access/server/fulfillment";
 import { publishAuthSecurityAlert } from "#/features/auth/server/security-alerts";
 import { publishPendingBuilds } from "#/features/builds/server/outbox";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import { publishPendingNotifications } from "#/features/notifications/server/delivery";
 import { fanOutPendingCommerceNotifications } from "#/features/notifications/server/fanout";
 import { publishPendingOwnerSaleAlerts } from "#/features/notifications/server/owner-sale-alerts";
+import { settlePromotionRewards } from "#/features/promotions/server/balance";
 import { runRedemptionExceptionTodos } from "#/features/redeem-warehouse/server/exception-todos";
 import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
 import { publishPendingRefunds } from "#/features/shop-payments/server/refunds";
@@ -30,6 +32,7 @@ export async function runScheduledCommerceWork(
 	cron: string,
 	scheduledAt: number,
 ) {
+	const agentAccess = await reconcileAgentAccess(env.DB);
 	const publishBatchSize = await loadPublishBatchSize(env.DB);
 	const payments = await reconcilePendingShopPayments(
 		env.DB,
@@ -37,6 +40,7 @@ export async function runScheduledCommerceWork(
 		scheduledAt,
 	);
 	const expired = await expireStoreOrders(env.DB, scheduledAt);
+	const promotionRewards = await settlePromotionRewards(env.DB, scheduledAt);
 	const deliveries = await publishPendingDeliveries(
 		env.DB,
 		env.COMMERCE_QUEUE,
@@ -86,6 +90,8 @@ export async function runScheduledCommerceWork(
 		db: env.DB,
 	}).catch(() => ({ status: "failed", changed: 0, accepted: 0 }));
 	return {
+		agentAccess,
+		promotionRewards,
 		payments,
 		redemptionExceptions,
 		expired,

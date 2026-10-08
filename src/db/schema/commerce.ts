@@ -189,6 +189,7 @@ export const productSellableItems = sqliteTable(
 		listPriceMinor: text("list_price_minor"),
 		priceMinor: text("price_minor").notNull(),
 		costMinor: text("cost_minor"),
+		promotionBudgetMinor: text("promotion_budget_minor").notNull().default("0"),
 		minimumQuantity: integer("minimum_quantity").notNull().default(1),
 		maximumQuantity: integer("maximum_quantity").notNull().default(1),
 		maximumPerCustomer: integer("maximum_per_customer"),
@@ -627,6 +628,11 @@ export const shopOrders = sqliteTable(
 	"shop_orders",
 	{
 		id: text("id").primaryKey(),
+		promotionPurpose: text("promotion_purpose", {
+			enum: ["referral", "recall"],
+		}),
+		referrerUserId: text("referrer_user_id").references(() => users.id),
+		referralRewardMinor: text("referral_reward_minor").notNull().default("0"),
 		orderNumber: text("order_number").notNull(),
 		idempotencyKey: text("idempotency_key"),
 		userId: text("user_id").references(() => users.id, {
@@ -761,6 +767,7 @@ export const shopOrderItems = sqliteTable(
 	"shop_order_items",
 	{
 		id: text("id").primaryKey(),
+		referralRewardMinor: text("referral_reward_minor").notNull().default("0"),
 		orderId: text("order_id")
 			.notNull()
 			.references(() => shopOrders.id, { onDelete: "cascade" }),
@@ -1112,6 +1119,7 @@ export const paymentAttempts = sqliteTable(
 	"payment_attempts",
 	{
 		id: text("id").primaryKey(),
+		orderAmountMinor: text("order_amount_minor"),
 		orderId: text("order_id").references(() => shopOrders.id),
 		walletTopupId: text("wallet_topup_id").references(() => walletTopups.id),
 		channelId: text("channel_id")
@@ -1970,6 +1978,12 @@ export const coupons = sqliteTable(
 		id: text("id").primaryKey(),
 		code: text("code").notNull(),
 		name: text("name").notNull(),
+		purpose: text("purpose", { enum: ["standard", "referral", "recall"] })
+			.notNull()
+			.default("standard"),
+		referrerUserId: text("referrer_user_id").references(() => users.id),
+		recipientUserId: text("recipient_user_id").references(() => users.id),
+		campaignKey: text("campaign_key"),
 		type: text("type", { enum: ["fixed", "percentage"] }).notNull(),
 		currency: text("currency"),
 		currencyDecimals: integer("currency_decimals"),
@@ -2070,6 +2084,11 @@ export const refunds = sqliteTable(
 	"refunds",
 	{
 		id: text("id").primaryKey(),
+		cashReturnMinor: text("cash_return_minor").notNull().default("0"),
+		rewardReturnMinor: text("reward_return_minor").notNull().default("0"),
+		referralReversalMinor: text("referral_reversal_minor")
+			.notNull()
+			.default("0"),
 		orderId: text("order_id")
 			.notNull()
 			.references(() => shopOrders.id),

@@ -28,6 +28,7 @@ import {
 	saveCouponFn,
 	setCouponEnabledFn,
 } from "#/features/coupons/server/admin";
+import { PromotionAdmin } from "#/features/promotions/admin";
 import { ConfirmDialog } from "#/layouts/components/confirm-dialog";
 import { PageHeader } from "#/layouts/components/page-header";
 import {
@@ -118,7 +119,11 @@ export function CouponsPage() {
 					<div>
 						<strong className="block font-mono">{row.original.code}</strong>
 						<span className="text-muted-foreground text-xs">
-							{row.original.name}
+							{row.original.purpose === "standard"
+								? row.original.name
+								: row.original.purpose === "referral"
+									? m.promotion_type_referral()
+									: m.promotion_type_recall()}
 						</span>
 					</div>
 				),
@@ -127,7 +132,13 @@ export function CouponsPage() {
 				accessorKey: "type",
 				header: m.common_type(),
 				cell: ({ row }) => (
-					<Badge variant="outline">{couponTypeLabel(row.original.type)}</Badge>
+					<Badge variant="outline">
+						{row.original.purpose === "standard"
+							? couponTypeLabel(row.original.type)
+							: row.original.purpose === "referral"
+								? m.promotion_type_referral()
+								: m.promotion_type_recall()}
+					</Badge>
 				),
 			},
 			{
@@ -145,12 +156,14 @@ export function CouponsPage() {
 				id: "scope",
 				header: m.coupons_scope(),
 				cell: ({ row }) =>
-					row.original.productIds.length || row.original.tagNames.length
-						? m.coupons_scope_count({
-								products: row.original.productIds.length,
-								tags: row.original.tagNames.length,
-							})
-						: m.coupons_scope_all(),
+					row.original.purpose !== "standard"
+						? m.promotion_eligible_items()
+						: row.original.productIds.length || row.original.tagNames.length
+							? m.coupons_scope_count({
+									products: row.original.productIds.length,
+									tags: row.original.tagNames.length,
+								})
+							: m.coupons_scope_all(),
 			},
 			{
 				id: "validity",
@@ -186,13 +199,19 @@ export function CouponsPage() {
 								</ProButton>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end">
-								<DropdownMenuItem onClick={() => setEditing(row.original)}>
+								<DropdownMenuItem
+									disabled={row.original.purpose !== "standard"}
+									onClick={() => setEditing(row.original)}
+								>
 									<Pencil />
 									{m.common_edit()}
 								</DropdownMenuItem>
 								<DropdownMenuItem
 									variant="destructive"
-									disabled={row.original.usedCount > 0}
+									disabled={
+										row.original.purpose !== "standard" ||
+										row.original.usedCount > 0
+									}
 									onClick={() => setDeleting(row.original)}
 								>
 									<Trash2 />
@@ -235,6 +254,7 @@ export function CouponsPage() {
 
 	return (
 		<>
+			<PromotionAdmin onIssued={refresh} />
 			<div className="flex min-h-0 w-full flex-1 flex-col gap-4">
 				<PageHeader
 					title={m.nav_coupons()}
@@ -421,6 +441,7 @@ function couponValues(coupon: Coupon) {
 }
 
 function couponValue(coupon: Coupon) {
+	if (coupon.purpose !== "standard") return m.promotion_dynamic_budget();
 	if (coupon.type === "percentage")
 		return formatBasisPoints(coupon.valueBps ?? 0);
 	if (!coupon.currency || coupon.currencyDecimals == null || !coupon.valueMinor)
