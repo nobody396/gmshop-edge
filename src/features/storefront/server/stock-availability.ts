@@ -7,6 +7,14 @@ export function supplierFallbackEnabledExpression(itemAlias: string) {
    AND setting.value = 'true')`;
 }
 
+// Accept paid orders for an explicitly opted-in SKU before funding its supplier.
+// Procurement keeps its independent live balance and spending checks.
+export function supplierUnfundedCheckoutExpression(itemIdExpression: string) {
+	return `EXISTS (SELECT 1 FROM system_settings setting
+  WHERE setting.key = 'fulfillment.supplier_unfunded_checkout.' || ${itemIdExpression}
+   AND setting.value = 'true')`;
+}
+
 export function storefrontStockExpression(
 	productAlias: string,
 	itemAlias: string,
@@ -30,8 +38,10 @@ export function storefrontSyncedSupplierStockExpression(itemAlias: string) {
 	return `COALESCE((
 			SELECT MIN(binding.stock_quantity, COALESCE((SELECT MAX(
       CASE WHEN CAST(binding.reference_cost_minor AS INTEGER) > 0 THEN
-       MAX(0, MIN(CAST(account.balance_minor AS INTEGER)-CAST(account.reserve_balance_minor AS INTEGER),
-        COALESCE(CAST(account.max_order_cost_minor AS INTEGER),CAST(account.balance_minor AS INTEGER)))) / CAST(binding.reference_cost_minor AS INTEGER)
+       CASE WHEN ${supplierUnfundedCheckoutExpression(`${itemAlias}.id`)} THEN
+        COALESCE(CAST(account.max_order_cost_minor AS INTEGER) / CAST(binding.reference_cost_minor AS INTEGER), binding.stock_quantity)
+       ELSE MAX(0, MIN(CAST(account.balance_minor AS INTEGER)-CAST(account.reserve_balance_minor AS INTEGER),
+        COALESCE(CAST(account.max_order_cost_minor AS INTEGER),CAST(account.balance_minor AS INTEGER)))) / CAST(binding.reference_cost_minor AS INTEGER) END
        ELSE 0 END)
      FROM supplier_accounts account WHERE account.provider=binding.provider
       AND account.normalized_api_origin=binding.normalized_api_origin AND account.protocol_version=binding.protocol_version

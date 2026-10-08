@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assertSupplierAvailability } from "#/features/storefront/server/multi-order";
 import {
 	storefrontCatalogStockExpression,
 	storefrontStockExpression,
@@ -89,6 +90,71 @@ describe("customer stock labels and product summaries", {
 		await db.prepare("UPDATE supplier_accounts SET balance_minor='0'").run();
 		expect(await summary("i.fulfillment_source='supplier'")).toBe(0);
 		expect(await summary()).toBe(100);
+	});
+	it("allows only opted-in SKUs to sell unfunded stock and preserves other guards", async () => {
+		await db.prepare("UPDATE supplier_accounts SET balance_minor='0'").run();
+		await db
+			.prepare(
+				"INSERT INTO system_settings(key,value) VALUES ('fulfillment.supplier_unfunded_checkout.b','true')",
+			)
+			.run();
+		async function stock() {
+			return (
+				await db
+					.prepare(
+						`SELECT ${storefrontStockExpression("p", "i")} AS stock FROM product_sellable_items i JOIN products p ON p.id=i.product_id WHERE i.id='b'`,
+					)
+					.first<{ stock: number }>()
+			)?.stock;
+		}
+		expect(await stock()).toBe(50);
+		await expect(
+			assertSupplierAvailability(db, "b", 1),
+		).resolves.toBeUndefined();
+		await expect(assertSupplierAvailability(db, "a", 1)).rejects.toMatchObject({
+			code: "supplier_account_unavailable",
+		});
+		for (const change of [
+			"UPDATE supplier_bindings SET stock_quantity=0 WHERE id='b'",
+			"UPDATE supplier_bindings SET last_synced_at=1 WHERE id='b'",
+			"UPDATE supplier_bindings SET remote_status='deleted' WHERE id='b'",
+			"UPDATE supplier_bindings SET max_cost_minor='1' WHERE id='b'",
+			"UPDATE supplier_bindings SET enabled=0 WHERE id='b'",
+			"UPDATE supplier_accounts SET health_status='unavailable'",
+			"UPDATE supplier_accounts SET enabled=0",
+			"UPDATE supplier_accounts SET cooldown_until=9999999999999",
+			"UPDATE supplier_accounts SET max_order_cost_minor='1'",
+		]) {
+			await db.prepare(change).run();
+			expect(await stock(), change).toBe(0);
+			await expect(assertSupplierAvailability(db, "b", 1)).rejects.toThrow();
+			await db.batch([
+				db
+					.prepare(
+						"UPDATE supplier_bindings SET stock_quantity=50,last_synced_at=?,remote_status='active',max_cost_minor='20',enabled=1 WHERE id='b'",
+					)
+					.bind(Date.now()),
+				db.prepare(
+					"UPDATE supplier_accounts SET health_status='healthy',enabled=1,cooldown_until=NULL,max_order_cost_minor=NULL",
+				),
+			]);
+		}
+		await db
+			.prepare("UPDATE supplier_accounts SET max_order_cost_minor='40'")
+			.run();
+		expect(await stock()).toBe(2);
+		await expect(assertSupplierAvailability(db, "b", 3)).rejects.toMatchObject({
+			code: "supplier_account_unavailable",
+		});
+		await db
+			.prepare(
+				"UPDATE system_settings SET value='false' WHERE key='fulfillment.supplier_unfunded_checkout.b'",
+			)
+			.run();
+		expect(await stock()).toBe(0);
+		await expect(assertSupplierAvailability(db, "b", 1)).rejects.toMatchObject({
+			code: "supplier_account_unavailable",
+		});
 	});
 	it("uses only the stock label on public product cards and options", () => {
 		for (const path of [

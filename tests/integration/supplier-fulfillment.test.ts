@@ -344,7 +344,16 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			),
 		).toBe("OWNED-0\nAISOU-CARD");
 	});
-	it("does not charge AISOU when its live balance is insufficient", async () => {
+	it.each([
+		false,
+		true,
+	])("does not charge AISOU with insufficient live balance even when checkout opted in: %s", async (unfunded) => {
+		if (unfunded)
+			await db
+				.prepare(
+					"INSERT INTO system_settings(key,value) VALUES ('fulfillment.supplier_unfunded_checkout.item','true')",
+				)
+				.run();
 		await enableFallback();
 		await addOwned(1);
 		await completeFreeStoreOrder(db, "order");
@@ -368,6 +377,17 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			processSupplierOrder(db, order?.id ?? "", { fetcher }),
 		).rejects.toMatchObject({ code: "supplier_accounts_exhausted" });
 		expect(requests).not.toContain("/api/v1/upstream/orders");
+		expect(
+			await db
+				.prepare(
+					"SELECT state,last_error_code,selected_account_id FROM supplier_orders",
+				)
+				.first(),
+		).toEqual({
+			state: "failed",
+			last_error_code: "supplier_accounts_exhausted",
+			selected_account_id: null,
+		});
 		expect(
 			await db.prepare("SELECT status FROM stock_entries").first(),
 		).toEqual({ status: "reserved" });
