@@ -4,6 +4,7 @@ import { canPreview, send } from "../../src/features/invoice/client";
 
 const data = {
 	fees_included: true,
+	rate_percent: 6,
 	invoice_base_amount: "100.00",
 	invoice_total_amount: "103.22",
 	invoice_fee_amount: "3.10",
@@ -269,4 +270,33 @@ it("emphasizes the final printed amount separately from the additional payment",
 	expect(zh.invoice_hint).toContain("原订单金额不重复收取");
 	expect(page).toContain('data-testid="invoice-face-amount"');
 	expect(page).toContain("text-3xl text-primary");
+});
+
+it("displays the server rate and preserves 3% historical status", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ data: { ...data, rate_percent: 3 } })),
+	);
+	expect(
+		(await send({ action: "status", request_no: "INV-OLD" })).rate_percent,
+	).toBe(3);
+	const page = readFileSync(
+		new URL("../../src/features/invoice/page.tsx", import.meta.url),
+		"utf8",
+	);
+	expect(page).toContain("m.invoice_fee({ rate:");
+});
+
+it("rejects new previews without a server-owned rate", async () => {
+	const { rate_percent: _, ...legacy } = data;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ data: legacy })),
+	);
+	await expect(
+		send({ action: "preview", invoice_amount: "100" }),
+	).rejects.toThrow();
+	expect(await send({ action: "status", request_no: "INV-OLD" })).toEqual(
+		legacy,
+	);
 });

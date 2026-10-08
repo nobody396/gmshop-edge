@@ -3,6 +3,7 @@ import { m } from "#/paraglide/messages";
 
 const invoiceSchema = z.object({
 	fees_included: z.boolean().optional(),
+	rate_percent: z.union([z.literal(3), z.literal(6)]).optional(),
 	request_no: z.string().optional(),
 	consumption_screenshot: z.boolean().optional(),
 	screenshot_fee_amount: z.string().optional(),
@@ -80,7 +81,11 @@ export async function send(input: {
 	const invoice = invoiceSchema.safeParse(body.data);
 	if (!invoice.success) throw new Error(m.invoice_error());
 	// Preview must use the new pricing contract; historical status stays readable.
-	if (action === "preview" && invoice.data.fees_included !== true)
+	if (
+		action === "preview" &&
+		(invoice.data.fees_included !== true ||
+			invoice.data.rate_percent === undefined)
+	)
 		throw new Error(m.invoice_pricing_unavailable());
 	// Do not accept a stale backend silently ignoring a selected paid option.
 	if (
