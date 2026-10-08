@@ -389,7 +389,7 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		).toBe("expired");
 		expect((await getWallet(db, buyer)).rewardBalanceMinor).toBe("800");
 	});
-	it("matures after fulfillment plus seven days and reverses spent rewards without touching cash", async () => {
+	it("matures at the next Beijing midnight after fulfillment and reverses spent rewards without touching cash", async () => {
 		const id = await emptyOrder();
 		await db
 			.prepare(
@@ -401,20 +401,21 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		expect(
 			await settlePromotionRewards(db, Date.now() + 20 * 86400000),
 		).toEqual({ settled: 0 });
-		const completed = Date.now();
+		const completed = Date.parse("2026-10-08T15:59:59.999Z");
+		const available = Date.parse("2026-10-08T16:00:00.000Z");
 		await db
 			.prepare(
 				"UPDATE shop_orders SET status='completed',updated_at=? WHERE id=?",
 			)
 			.bind(completed, id)
 			.run();
-		expect(
-			await settlePromotionRewards(db, completed + 7 * 86400000 - 1),
-		).toEqual({ settled: 0 });
-		expect(await settlePromotionRewards(db, completed + 7 * 86400000)).toEqual({
+		expect(await settlePromotionRewards(db, available - 1)).toEqual({
+			settled: 0,
+		});
+		expect(await settlePromotionRewards(db, available)).toEqual({
 			settled: 1,
 		});
-		expect(await settlePromotionRewards(db, completed + 8 * 86400000)).toEqual({
+		expect(await settlePromotionRewards(db, available + 86400000)).toEqual({
 			settled: 0,
 		});
 		await db

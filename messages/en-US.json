@@ -2196,7 +2196,7 @@
 	"agent_access_accept_policy": "I have read and agree: {policy}",
 	"agent_access_exception_support": "Activation issue / dispute support",
 	"promotion_title": "Invite friends and earn shopping rewards",
-	"promotion_rules": "A shared code gives your friend a discount and earns you rewards. Up to ¥8 combined per order. Rewards become available 7 days after delivery, cannot be withdrawn, and may be reversed after refunds.",
+	"promotion_rules": "Friends get a discount with your invitation code, and you earn shopping rewards. Rewards become available from 00:00 Beijing time on the day after delivery, cannot be withdrawn, and may be reversed after refunds.",
 	"promotion_balance": "Available rewards (negative amounts offset future rewards)",
 	"promotion_code": "Your invitation code",
 	"promotion_copy_link": "Copy invitation link",

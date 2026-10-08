@@ -78,8 +78,8 @@ it("upgrades the exact v1.24.0 Bun trigger checksums without replay or accepting
 	const source = new URL("../../drizzle/", import.meta.url);
 	const raw = openNodeDatabase(":memory:");
 	try {
-		for (const name of (await readdir(source)).filter((name) =>
-			name.endsWith(".sql"),
+		for (const name of (await readdir(source)).filter(
+			(name) => name.endsWith(".sql") && name <= "0029_promotion_wallet.sql",
 		)) {
 			let sql = await readFile(new URL(name, source), "utf8");
 			if (
@@ -101,7 +101,7 @@ it("upgrades the exact v1.24.0 Bun trigger checksums without replay or accepting
 		const before = raw.sqlite
 			.query("SELECT * FROM users WHERE id='legacy-fixture'")
 			.get();
-		expect((await applyNodeMigrations(raw)).applied).toBe(0);
+		expect((await applyNodeMigrations(raw)).applied).toBe(1);
 		expect(
 			raw.sqlite.query("SELECT * FROM users WHERE id='legacy-fixture'").get(),
 		).toEqual(before);

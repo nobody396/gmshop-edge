@@ -22,7 +22,7 @@ Reuse the coupon reservation lifecycle. Keep rewards distinct from cash and hold
 both atomically for mixed payments. Capture only the external remainder. Expiry
 releases holds; late external payments after release require reconciliation, not
 free fulfillment. Refunds restore original tender without cashing out rewards.
-Rewards mature seven days after fulfillment and are reversed on refunds; spent
+Rewards mature at 00:00 Beijing time on the day after fulfillment and are reversed on refunds; spent
 rewards create reward-only debt, never an unsolicited debit of cash balance.
 
 Recall issuance is administrative and idempotent per campaign and customer. No
@@ -50,3 +50,8 @@ public pricing/checkout/payment/refund interfaces plus temporary D1 and Bun
 SQLite. A copied-module mutation experiment keeps production source untouched:
 baseline 5/5 passes; deleting the cap fails 2 tests; allowing recall rewards also
 fails 2 tests. Those guards remain. No new dependency was installed.
+
+
+## Next-day reward availability update
+
+Rewards mature at 00:00 Asia/Shanghai on the calendar day after delivery, not after 24 hours. The existing minute scheduler performs settlement. Migration 0030 also shortens existing pending deadlines using the original deadline minus seven days; available/reversed rewards, null deadlines, cash balances and reward amounts are unchanged. The seven-day recall coupon lifetime and CNY 8 order budget remain unchanged. Customer introductory copy omits the budget cap; the backend/admin cap remains enforced. Copy feedback uses the existing toast and localized success/failure messages, only after the clipboard operation resolves.
