@@ -3,6 +3,24 @@ import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { NodeDatabase } from "./database";
 
+// v1.24.0 Bun already accepts the original trigger SQL. Accept only these exact
+// equivalent checksums; never replay the ALTERs or weaken checks for other edits.
+const equivalentPromotionChecksums: Record<
+	string,
+	{ previous: string; current: string }
+> = {
+	"0028_invitation_promotions.sql": {
+		previous:
+			"21fe5cedd1b1136add04c9c105dfbc07823fe6c5297ae5e5ef0e8ce244734a84",
+		current: "86cfd2cc44b0a659436003e62dc4a41a6e8a9ffc9bd8cbcbdd2de5372f08d907",
+	},
+	"0029_promotion_wallet.sql": {
+		previous:
+			"8ee10f2b35f69330e5bf67c46ef65626cb476f5bb530d8d229b754873bd683ee",
+		current: "930f0b9a3cf08d92b7fca768a78ef6965e815339a89803aea769141086fee357",
+	},
+};
+
 const MIGRATION_PATTERN = /^\d+_.+\.sql$/;
 
 export type NodeMigration = {
@@ -61,7 +79,14 @@ export async function applyNodeMigrations(
 		for (const migration of migrations) {
 			const existingChecksum = appliedChecksums.get(migration.name);
 			if (existingChecksum) {
-				if (existingChecksum !== migration.checksum)
+				const equivalent = equivalentPromotionChecksums[migration.name];
+				if (
+					existingChecksum !== migration.checksum &&
+					!(
+						equivalent?.previous === existingChecksum &&
+						equivalent.current === migration.checksum
+					)
+				)
 					throw new Error(`Applied migration changed: ${migration.name}`);
 				continue;
 			}

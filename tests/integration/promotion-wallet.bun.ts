@@ -65,3 +65,55 @@ it("keeps SQLite split balance payment and refund behavior aligned with D1", asy
 		raw.sqlite.close();
 	}
 });
+
+it("upgrades the exact v1.24.0 Bun trigger checksums without replay or accepting arbitrary edits", async () => {
+	const { mkdtemp, readdir, readFile, writeFile, rm } = await import(
+		"node:fs/promises"
+	);
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const directory = await mkdtemp(
+		join(tmpdir(), "promotion-legacy-migrations-"),
+	);
+	const source = new URL("../../drizzle/", import.meta.url);
+	const raw = openNodeDatabase(":memory:");
+	try {
+		for (const name of (await readdir(source)).filter((name) =>
+			name.endsWith(".sql"),
+		)) {
+			let sql = await readFile(new URL(name, source), "utf8");
+			if (
+				[
+					"0028_invitation_promotions.sql",
+					"0029_promotion_wallet.sql",
+				].includes(name)
+			) {
+				sql = sql
+					.replace(/^-- Parenthesized CASE[^\n]*\n/, "")
+					.replace(/\(CASE\b([\s\S]*?)\bEND\)/g, "CASE$1END");
+			}
+			await writeFile(join(directory, name), sql);
+		}
+		await applyNodeMigrations(raw, directory);
+		raw.sqlite.run(
+			"INSERT INTO users(id,name,email,balance_minor,reward_balance_minor,created_at,updated_at) VALUES('legacy-fixture','Fixture','legacy@example.test','123','456',1,1)",
+		);
+		const before = raw.sqlite
+			.query("SELECT * FROM users WHERE id='legacy-fixture'")
+			.get();
+		expect((await applyNodeMigrations(raw)).applied).toBe(0);
+		expect(
+			raw.sqlite.query("SELECT * FROM users WHERE id='legacy-fixture'").get(),
+		).toEqual(before);
+		raw.sqlite.run(
+			"UPDATE node_migrations SET checksum=? WHERE name='0028_invitation_promotions.sql'",
+			["0".repeat(64)],
+		);
+		await expect(applyNodeMigrations(raw)).rejects.toThrow(
+			"Applied migration changed",
+		);
+	} finally {
+		raw.sqlite.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});

@@ -74,3 +74,5 @@ Both access products require explicit, unchecked purchase acknowledgment. The ex
 发布时确认 D1 远程 `/query` 对触发器内未加括号的 `CASE … END` 报 `incomplete input`，本地 SQLite/Miniflare 不会复现。0028/0029 的每个 CASE 表达式仅增加括号，账本条件和金额逻辑不变；没有移除任何资金约束。对应上游问题：https://github.com/cloudflare/workers-sdk/issues/4727 。
 
 修复后已使用一次性远程 D1 库，通过同一 Wrangler `migrations apply --remote` 路径从空库执行全部 28 个迁移并校验外键；测试库已删除。生产失败的 0028 已确认整批回滚（新增字段、触发器和迁移记录均不存在），已成功的 0026/0027 保留，不重跑或删除生产表。静态回归测试约束括号和 LF 换行，业务回归继续验证退款、结算和资格联动。
+
+为避免已安装 v1.24.0 的 Bun 实例升级时被“已执行迁移变更”保护误拦，仅允许这两份迁移的精确旧 SHA-256 与精确新 SHA-256 等价组合；保留原执行记录，不重放 ALTER、不改余额。额外测试从旧原文完整建库后升级，确认无迁移重放、余额不变，未知校验值依旧被拒绝。
