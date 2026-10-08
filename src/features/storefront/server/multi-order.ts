@@ -1,3 +1,8 @@
+import { agentAccessKind } from "#/features/agent-access/products";
+import {
+	agentCheckoutStatement,
+	prepareAgentCheckout,
+} from "#/features/agent-access/server/checkout";
 import {
 	assertKnownInputKeys,
 	type ProductInputDefinition,
@@ -153,6 +158,7 @@ export async function createMultiStoreOrder(
 			);
 	}
 
+	const agentCheckout = await prepareAgentCheckout(db, input, access.userId);
 	const lines: Line[] = [];
 	const capacityComponents = new Set<string>();
 	for (const item of input.items) {
@@ -226,6 +232,17 @@ export async function createMultiStoreOrder(
 	const eligible = coupon ? await eligibleLines(db, coupon.id, lines) : lines;
 	const discount = allocateDiscount(coupon, subtotal, eligible);
 	const total = subtotal - discount;
+	if (
+		agentCheckout &&
+		(discount !== 0n ||
+			lines[0]?.sellableItem.price_minor !==
+				(agentCheckout.kind === "subsite" ? "19900" : "990"))
+	)
+		throw new DomainError(
+			"agent_access_price_invalid",
+			409,
+			"Access price cannot be overridden",
+		);
 
 	const orderId = crypto.randomUUID();
 	const now = Date.now();
@@ -376,6 +393,10 @@ export async function createMultiStoreOrder(
 					now,
 				),
 		);
+		if (agentCheckout)
+			statements.push(
+				agentCheckoutStatement(db, agentCheckout, line.orderItemId, now),
+			);
 		if (capacityComponents.has(line.sellableItem.delivery_component_id))
 			statements.push(
 				...reserveSaleStatements(
@@ -549,7 +570,8 @@ async function loadSellableItem(
 		);
 	if (
 		sellableItem.delivery_component_type === "automation" &&
-		!sellableItem.definition_version_id
+		!sellableItem.definition_version_id &&
+		!agentAccessKind(sellableItemId)
 	)
 		throw new DomainError(
 			"automation_configuration_unavailable",

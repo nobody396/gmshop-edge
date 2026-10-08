@@ -12,6 +12,7 @@ import {
 	ProSchemaForm,
 } from "#/components/pro/form";
 import { Button } from "#/components/ui/button";
+import { AgentAccessDrafts } from "#/features/agent-access/components/access";
 import { ExchangeRatesTable } from "#/features/exchange-rates/pages/admin";
 import { settingsErrorMessage } from "#/features/settings/error-message";
 import {
@@ -75,6 +76,12 @@ function settingsFields(): Record<SettingsGroup, Field[]> {
 			},
 		],
 		fulfillment: [
+			{
+				key: "agent_access.enabled",
+				label: m.agent_access_enable(),
+				description: m.agent_access_enable_description(),
+				type: "switch",
+			},
 			{
 				key: "automation.artifact_retention_ms",
 				label: m.settings_artifact_retention(),
@@ -192,6 +199,7 @@ export function SystemSettingsSection({ group }: { group: SettingsGroup }) {
 						: "mt-6 min-h-0 flex-1 overflow-y-auto pe-3"
 				}
 			>
+				{group === "fulfillment" ? <AgentAccessDrafts /> : null}
 				{group !== "commerce" ? (
 					<ProSchemaForm
 						id={formId}

@@ -20,6 +20,7 @@ const hostSchema = z
 	);
 
 const definitions = {
+	"agent_access.enabled": z.boolean(),
 	"site.name": z.string().trim().min(1).max(80),
 	"site.description": z.string().trim().max(240),
 	"site.seo_title": z.string().trim().max(80),
@@ -68,6 +69,7 @@ const definitions = {
 export type SettingKey = keyof typeof definitions;
 
 const defaults: Record<SettingKey, SettingValue> = {
+	"agent_access.enabled": false,
 	"site.name": "老实人AI",
 	"site.description": "",
 	"site.seo_title": "",

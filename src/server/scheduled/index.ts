@@ -1,3 +1,4 @@
+import { reconcileAgentAccess } from "#/features/agent-access/server/fulfillment";
 import { publishAuthSecurityAlert } from "#/features/auth/server/security-alerts";
 import { publishPendingBuilds } from "#/features/builds/server/outbox";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
@@ -29,6 +30,7 @@ export async function runScheduledCommerceWork(
 	cron: string,
 	scheduledAt: number,
 ) {
+	const agentAccess = await reconcileAgentAccess(env.DB);
 	const publishBatchSize = await loadPublishBatchSize(env.DB);
 	const payments = await reconcilePendingShopPayments(
 		env.DB,
@@ -82,6 +84,7 @@ export async function runScheduledCommerceWork(
 		scheduledAt,
 	).catch(() => ({ status: "failed" }));
 	return {
+		agentAccess,
 		payments,
 		expired,
 		deliveries,

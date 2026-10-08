@@ -129,6 +129,7 @@ export interface RuntimeQueue<T = unknown> {
 }
 
 export type RuntimeEnv = {
+	AGENT_ACCESS_SIGNING_KEY?: string;
 	runtime: RuntimeKind;
 	DB?: RuntimeDatabase;
 	FILES?: RuntimeObjectStorage;

@@ -1,6 +1,7 @@
 import type { RuntimeEnv } from "#/server/runtime/types";
 
 export type CloudflareBindings = {
+	AGENT_ACCESS_SIGNING_KEY?: string;
 	DB?: D1Database;
 	FILES?: R2Bucket;
 	CACHE?: KVNamespace;
@@ -20,6 +21,7 @@ export function adaptCloudflareEnv(
 	const database = bindings.DB as RuntimeEnv["DB"];
 	return {
 		runtime: "cloudflare",
+		AGENT_ACCESS_SIGNING_KEY: bindings.AGENT_ACCESS_SIGNING_KEY,
 		DB: database,
 		FILES: bindings.FILES as RuntimeEnv["FILES"],
 		CACHE: bindings.CACHE as RuntimeEnv["CACHE"],

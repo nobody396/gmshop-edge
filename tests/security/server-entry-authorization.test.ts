@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "../..");
 
 const adminServerModules = [
+	"src/features/agent-access/server/admin.ts",
 	"src/features/access/server/admin.ts",
 	"src/features/auth/server/provider-admin.ts",
 	"src/features/builds/server/admin.ts",
@@ -35,6 +36,7 @@ const adminServerModules = [
 ] as const;
 
 const reviewedPublicServerModules = [
+	"src/features/agent-access/server/functions.ts",
 	"src/features/auth/server/session.ts",
 	"src/features/exchange-rates/server/public.ts",
 	"src/features/installation/server/functions.ts",
@@ -49,6 +51,7 @@ const reviewedPublicServerModules = [
 ] as const;
 
 const reviewedInputlessPostFunctions = new Set([
+	"prepareAgentProductsFn",
 	"exportAuditLogsFn",
 	"removeSiteLogoFn",
 	"syncTelegramBotFn",

@@ -1,3 +1,4 @@
+import { processAgentDelivery } from "#/features/agent-access/server/fulfillment";
 import { activateEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
 import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
 import {
@@ -23,6 +24,8 @@ type DeliveryContext = {
 };
 
 export async function processDelivery(db: D1Database, deliveryId: string) {
+	const agentDelivery = await processAgentDelivery(db, deliveryId);
+	if (agentDelivery) return agentDelivery;
 	const delivery = await db
 		.prepare(
 			`SELECT dr.id, dr.status, dr.delivery_type, dr.content_encrypted,

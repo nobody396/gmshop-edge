@@ -31,6 +31,20 @@ export async function openAfterSaleCase(
 			409,
 			"After-sale service is unavailable for this order",
 		);
+	if (context.userId && input.type !== "dispute") {
+		const restricted = await db
+			.prepare(
+				`SELECT 1 FROM agent_access_orders a JOIN shop_order_items oi ON oi.id=a.order_item_id WHERE oi.order_id=? AND a.policy_snapshot IS NOT NULL LIMIT 1`,
+			)
+			.bind(order.id)
+			.first();
+		if (restricted)
+			throw new DomainError(
+				"agent_access_exception_support",
+				409,
+				"Access orders do not offer personal-reason refunds; use the exception support channel for activation failures, duplicate charges or other legally required remedies",
+			);
+	}
 	if (input.orderItemId) {
 		const item = await db
 			.prepare(

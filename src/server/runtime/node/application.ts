@@ -52,6 +52,7 @@ export async function createNodeApplication(
 	const pendingTasks = new Set<Promise<unknown>>();
 	const env: RuntimeEnv = {
 		runtime: "bun",
+		AGENT_ACCESS_SIGNING_KEY: process.env.AGENT_ACCESS_SIGNING_KEY,
 		DB: database,
 		CACHE: new NodeMemoryCache(),
 		FILES: new NodeObjectStorage(layout.objects),

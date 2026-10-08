@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertAgentRefundAmount } from "#/features/agent-access/server/fulfillment";
 import { refundEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
 import { convertMinorAmount } from "#/features/exchange-rates/rates";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
@@ -25,6 +26,7 @@ export async function requestShopRefund(
 	context: { actorUserId: string; request: Request },
 ) {
 	const input = refundRequestSchema.parse(rawInput);
+	await assertAgentRefundAmount(db, input.orderId, input.amountMinor);
 	if (BigInt(input.amountMinor) === 0n)
 		throw new DomainError(
 			"refund_amount_invalid",

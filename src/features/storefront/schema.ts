@@ -64,6 +64,7 @@ const orderInputValuesSchema = z
 	.default({});
 
 const orderContactSchema = {
+	agentAccessTermsAccepted: z.boolean().optional(),
 	email: z.email().trim().toLowerCase().max(320).nullable().default(null),
 	couponCode: z.string().trim().toUpperCase().max(64).default(""),
 	idempotencyKey: z.string().trim().min(8).max(200),

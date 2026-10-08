@@ -25,6 +25,10 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Switch } from "#/components/ui/switch";
+import {
+	agentAccessKind,
+	agentAccessRefundPolicy,
+} from "#/features/agent-access/products";
 import { authClient } from "#/features/auth/auth-client";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import {
@@ -113,6 +117,9 @@ export function StorefrontCheckoutPage() {
 	const [couponCode, setCouponCode] = useState("");
 	const [paymentChannelId, setPaymentChannelId] = useState("");
 	const [termsAccepted, setTermsAccepted] = useState(true);
+	const [acceptedAgentTermsScope, setAcceptedAgentTermsScope] = useState<
+		string | null
+	>(null);
 	const [inputValues, setInputValues] = useState<
 		Record<string, Record<string, InputValue>>
 	>({});
@@ -146,6 +153,11 @@ export function StorefrontCheckoutPage() {
 			? cloud.data
 			: preview.data;
 	const items = useMemo(() => cart?.items ?? [], [cart?.items]);
+	const hasAgentAccess = items.some((item) =>
+		agentAccessKind(item.sellableItemId),
+	);
+	const agentTermsScope = `${session.data?.user.id ?? "guest"}:${items.map((item) => `${item.sellableItemId}:${item.quantity}`).join("|")}`;
+	const agentAccessTermsAccepted = acceptedAgentTermsScope === agentTermsScope;
 	const currencies = new Set(
 		items.flatMap((item) =>
 			"currency" in item ? [`${item.currency}:${item.currencyDecimals}`] : [],
@@ -340,6 +352,7 @@ export function StorefrontCheckoutPage() {
 			blocked ||
 			signInRequired ||
 			!termsAccepted ||
+			(hasAgentAccess && !agentAccessTermsAccepted) ||
 			!items.length ||
 			paymentUnavailable ||
 			(total > 0n && !paymentChannelId)
@@ -360,6 +373,7 @@ export function StorefrontCheckoutPage() {
 						: null,
 				paymentCurrency,
 				termsAccepted: true,
+				...(hasAgentAccess ? { agentAccessTermsAccepted } : {}),
 				items: items.map((item) => ({
 					sellableItemId: item.sellableItemId,
 					quantity: item.quantity,
@@ -745,6 +759,26 @@ export function StorefrontCheckoutPage() {
 							</div>
 						) : (
 							<div className="mt-auto grid gap-4">
+								{hasAgentAccess ? (
+									<label className="flex items-start gap-3 rounded-xl border p-3 text-sm leading-6">
+										<input
+											type="checkbox"
+											className="mt-1 size-4 shrink-0 accent-primary"
+											checked={agentAccessTermsAccepted}
+											onChange={(event) =>
+												setAcceptedAgentTermsScope(
+													event.target.checked ? agentTermsScope : null,
+												)
+											}
+											required
+										/>
+										<span>
+											{m.agent_access_accept_policy({
+												policy: agentAccessRefundPolicy[locale],
+											})}
+										</span>
+									</label>
+								) : null}
 								<label className="flex items-start gap-3 text-sm leading-5">
 									<input
 										checked={termsAccepted}
@@ -761,6 +795,7 @@ export function StorefrontCheckoutPage() {
 										blocked ||
 										checkout.isPending ||
 										!termsAccepted ||
+										(hasAgentAccess && !agentAccessTermsAccepted) ||
 										paymentUnavailable ||
 										(total > 0n && (channels.isPending || !paymentChannelId))
 									}

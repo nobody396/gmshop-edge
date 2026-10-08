@@ -1,0 +1,110 @@
+import { createServerFn } from "@tanstack/react-start";
+import { getRequest, setResponseHeader } from "@tanstack/react-start/server";
+import { z } from "zod";
+import { resolveStoreAccount } from "#/features/storefront/server/account";
+import { DomainError } from "#/lib/domain-error";
+import { getDb } from "#/server/db.server";
+import { type AgentAccessKind, agentAccessKind } from "../products";
+import {
+	accessURL,
+	agentOrigin,
+	callAgent,
+	requireAgentAccessEnabled,
+} from "./client";
+
+function privateResponse() {
+	setResponseHeader("Cache-Control", "no-store");
+}
+function sameOrigin(request: Request) {
+	if (request.headers.get("origin") !== new URL(request.url).origin)
+		throw new DomainError("origin_invalid", 403, "Origin is not allowed");
+}
+async function buyer() {
+	const request = getRequest();
+	privateResponse();
+	sameOrigin(request);
+	const db = getDb(request).$client;
+	const account = await resolveStoreAccount(db, request, { required: true });
+	if (!account?.user.emailVerified)
+		throw new DomainError(
+			"agent_access_email_verification",
+			403,
+			"Verify your account email first",
+		);
+	return { db, user: account.user };
+}
+export const checkAgentAccessFn = createServerFn({ method: "POST" })
+	.validator((input: { itemId: string }) =>
+		z.object({ itemId: z.uuid() }).parse(input),
+	)
+	.handler(async ({ data }) => {
+		const kind = agentAccessKind(data.itemId);
+		if (!kind) return null;
+		const { db, user } = await buyer();
+		await requireAgentAccessEnabled(db);
+		const result = await callAgent({
+			operation: "check",
+			sourceUserId: user.id,
+			email: user.email.trim().toLowerCase(),
+			kind,
+		});
+		return {
+			state: result.state,
+			url:
+				result.state === "binding_required"
+					? accessURL(result)
+					: `${agentOrigin}/auth/login`,
+		};
+	});
+const orderSchema = z.object({ orderNumber: z.string().min(1).max(100) });
+async function owned(db: D1Database, userId: string, orderNumber: string) {
+	const row = await db
+		.prepare(
+			`SELECT a.*,o.status AS order_status FROM agent_access_orders a JOIN shop_order_items oi ON oi.id=a.order_item_id JOIN shop_orders o ON o.id=oi.order_id WHERE o.order_number=? AND o.user_id=? AND a.user_id=? LIMIT 1`,
+		)
+		.bind(orderNumber, userId, userId)
+		.first<{
+			order_item_id: string;
+			kind: AgentAccessKind;
+			email: string;
+			state: string;
+			domain: string | null;
+			attempt_count: number;
+			error_code: string | null;
+			order_status: string;
+		}>();
+	if (!row) throw new DomainError("order_not_found", 404, "Order not found");
+	return row;
+}
+export const getAgentDeliveryFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof orderSchema>) => orderSchema.parse(input))
+	.handler(async ({ data }) => {
+		const { db, user } = await buyer();
+		const row = await owned(db, user.id, data.orderNumber);
+		return {
+			kind: row.kind,
+			state: row.state,
+			domain: row.domain,
+			needsSupport: row.attempt_count >= 8,
+			errorCode: row.error_code,
+			orderStatus: row.order_status,
+		};
+	});
+export const openAgentAccountFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof orderSchema>) => orderSchema.parse(input))
+	.handler(async ({ data }) => {
+		const { db, user } = await buyer();
+		const row = await owned(db, user.id, data.orderNumber);
+		if (row.state !== "active" || row.order_status !== "completed")
+			throw new DomainError("agent_access_pending", 409, "Access is not ready");
+		const result = await callAgent({
+			operation: "access",
+			sourceUserId: user.id,
+			email: row.email,
+			kind: row.kind,
+			orderItemId: row.order_item_id,
+		});
+		if (result.state !== "active")
+			throw new DomainError("agent_access_pending", 409, "Access is not ready");
+		return { url: accessURL(result) };
+	});
