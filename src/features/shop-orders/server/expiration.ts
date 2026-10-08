@@ -57,7 +57,7 @@ export async function expireStoreOrders(
 				.bind(crypto.randomUUID(), nextVersion, now, order.id, nextVersion),
 			...releaseSaleStatements(db, order.id, now),
 		]);
-		expired += Number(results[0]?.meta.changes ?? 0);
+		expired += Number(Number(results[0]?.meta.changes ?? 0) > 0);
 	}
 	return { scanned: rows.results.length, expired };
 }

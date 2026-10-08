@@ -87,9 +87,9 @@ describe("checkout presentation", () => {
 		);
 	});
 
-	it("formats the wallet balance as money instead of exposing minor units", () => {
+	it("formats the combined spending balance as money instead of exposing minor units", () => {
 		expect(checkoutPageSource).toContain(
-			"amountMinor={wallet.data.balanceMinor}",
+			"amountMinor={balanceAvailable.toString()}",
 		);
 		expect(checkoutPageSource).toContain("currency={wallet.data.currency}");
 		expect(checkoutPageSource).toContain(

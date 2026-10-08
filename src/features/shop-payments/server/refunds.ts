@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { refundEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
 import { convertMinorAmount } from "#/features/exchange-rates/rates";
+import {
+	promotionRefundSplit,
+	refundAllocatedBalance,
+} from "#/features/promotions/server/refunds";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import { DomainError } from "#/lib/domain-error";
@@ -32,10 +36,35 @@ export async function requestShopRefund(
 			"Refund amount must be positive",
 		);
 	const existing = await db
-		.prepare("SELECT id, status FROM refunds WHERE idempotency_key = ? LIMIT 1")
+		.prepare(
+			"SELECT id, status, order_id, amount_minor FROM refunds WHERE idempotency_key = ? LIMIT 1",
+		)
 		.bind(input.idempotencyKey)
-		.first<{ id: string; status: string }>();
-	if (existing) return { ...existing, duplicate: true };
+		.first<{
+			id: string;
+			status: string;
+			order_id: string;
+			amount_minor: string;
+		}>();
+	if (existing) {
+		if (
+			existing.order_id !== input.orderId ||
+			existing.amount_minor !== input.amountMinor
+		)
+			throw new DomainError(
+				"refund_idempotency_conflict",
+				409,
+				"Refund key belongs to another request",
+			);
+		return { id: existing.id, status: existing.status, duplicate: true };
+	}
+	const split = await promotionRefundSplit(
+		db,
+		input.orderId,
+		input.amountMinor,
+	);
+	if (split?.allocated && split.external === "0")
+		return refundAllocatedBalance(db, input, context, split);
 	const order = await db
 		.prepare(
 			`SELECT o.id, o.status, o.version, o.currency, o.currency_decimals,
@@ -66,7 +95,7 @@ export async function requestShopRefund(
 		);
 	const reserved = await db
 		.prepare(
-			`SELECT amount_minor, payment_amount_minor FROM refunds WHERE order_id = ?
+			`SELECT amount_minor, CASE WHEN payment_attempt_id IS NULL THEN '0' ELSE payment_amount_minor END AS payment_amount_minor FROM refunds WHERE order_id = ?
 			 AND status IN ('pending', 'processing', 'succeeded')`,
 		)
 		.bind(order.id)
@@ -93,7 +122,7 @@ export async function requestShopRefund(
 		BigInt(input.amountMinor) === available
 			? paymentAvailable.toString()
 			: convertMinorAmount({
-					amountMinor: input.amountMinor,
+					amountMinor: split?.allocated ? split.external : input.amountMinor,
 					fromCurrency: order.currency,
 					fromDecimals: order.currency_decimals,
 					toCurrency: order.payment_currency,
@@ -129,7 +158,7 @@ export async function requestShopRefund(
 				  payment_currency_decimals, order_status_before, status, reason, requested_by,
 				  failure_code, attempt_count, next_attempt_at, created_at, updated_at)
 				 SELECT ?, id, ?, ?, ?, currency, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?
-				 FROM shop_orders WHERE id = ? AND status = 'refunding' AND version = ?`,
+				 FROM shop_orders WHERE id = ? AND status = 'refunding' AND version = ? AND changes() = 1`,
 			)
 			.bind(
 				id,
@@ -177,6 +206,14 @@ export async function requestShopRefund(
 			now,
 		}),
 	];
+	if (split)
+		statements.push(
+			db
+				.prepare(
+					`UPDATE refunds SET cash_return_minor=?,reward_return_minor=?,referral_reversal_minor=? WHERE id=?`,
+				)
+				.bind(split.cash, split.reward, split.reversal, id),
+		);
 	if (!manual)
 		statements.splice(
 			3,
@@ -184,7 +221,7 @@ export async function requestShopRefund(
 			refundOutboxStatement(db, id, "refund.requested", now, now),
 		);
 	const results = await db.batch(statements);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		throw new DomainError(
 			"order_version_conflict",
 			409,
@@ -263,6 +300,11 @@ async function requestWalletShopRefund(
 			"Refund amount exceeds the refundable balance",
 		);
 	const balanceBefore = BigInt(order.balance_minor);
+	const rewardSplit = await promotionRefundSplit(
+		db,
+		input.orderId,
+		input.amountMinor,
+	);
 	const balanceAfter = balanceBefore + amount;
 	if (balanceAfter > 9_223_372_036_854_775_807n)
 		throw new DomainError(
@@ -333,9 +375,9 @@ async function requestWalletShopRefund(
 			.prepare(`INSERT INTO refunds
 		 (id, order_id, payment_attempt_id, idempotency_key, amount_minor, currency,
 		  payment_amount_minor, payment_currency, payment_currency_decimals,
-		  order_status_before, status, reason, requested_by, completed_at, created_at, updated_at)
+		  order_status_before, status, reason, requested_by, completed_at, created_at, updated_at, referral_reversal_minor)
 		 SELECT ?, id, NULL, ?, ?, currency, ?, currency, currency_decimals,
-		  ?, 'succeeded', ?, ?, ?, ?, ? FROM shop_orders WHERE id = ? AND version = ?`)
+		  ?, 'succeeded', ?, ?, ?, ?, ?, ? FROM shop_orders WHERE id = ? AND version = ?`)
 			.bind(
 				id,
 				input.idempotencyKey,
@@ -347,6 +389,7 @@ async function requestWalletShopRefund(
 				now,
 				now,
 				now,
+				rewardSplit?.reversal ?? "0",
 				order.id,
 				orderVersion,
 			),
@@ -382,7 +425,7 @@ async function requestWalletShopRefund(
 			...(await refundEntitlementGrantStatements(db, order.id, now)),
 		);
 	const results = await db.batch(statements);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		throw new DomainError(
 			"wallet_conflict",
 			409,
@@ -719,7 +762,7 @@ async function scheduleRefundCheck(
 			nextAttemptAt,
 		}),
 	]);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		return { id, status: "processing" as const, duplicate: true };
 	return { id, status: "processing" as const, duplicate: false };
 }
@@ -751,7 +794,7 @@ async function recordRefundProviderFailure(
 				{ attempt, status: "failed", nextAttemptAt },
 			),
 		]);
-		if (Number(results[0]?.meta.changes ?? 0) !== 1)
+		if (Number(results[0]?.meta.changes ?? 0) < 1)
 			return { id: refund.id, status: "failed" as const, duplicate: true };
 		return { id: refund.id, status: "retrying" as const, duplicate: false };
 	}
@@ -936,7 +979,7 @@ async function finalizeRefund(
 				.bind(now, now, refund.order_id, refund.id, attempt, now),
 		);
 	const results = await db.batch(statements);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		return { id: refund.id, status, duplicate: true };
 	return { id: refund.id, status, duplicate: false };
 }

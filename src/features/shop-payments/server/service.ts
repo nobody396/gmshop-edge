@@ -109,7 +109,7 @@ export async function createShopPayment(
 	const context = await db
 		.prepare(
 			`SELECT o.id AS order_id, o.order_number, o.status AS order_status,
-			 o.total_minor AS amount_minor, o.currency, o.currency_decimals,
+			 COALESCE((SELECT external_minor FROM order_balance_holds WHERE order_id=o.id AND state='held'),o.total_minor) AS amount_minor, o.currency, o.currency_decimals,
 			 o.contact_email,
 			 pc.id AS channel_id, pc.provider, pc.credential_encrypted,
 			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor,
@@ -134,6 +134,16 @@ export async function createShopPayment(
 		);
 	if (context.order_status !== "pending_payment")
 		throw new DomainError("order_not_payable", 409, "Order cannot be paid");
+	const balanceHold = await db
+		.prepare("SELECT state FROM order_balance_holds WHERE order_id=?")
+		.bind(input.orderId)
+		.first<{ state: string }>();
+	if (balanceHold && balanceHold.state !== "held")
+		throw new DomainError(
+			"payment_reconciliation_required",
+			409,
+			"Order balance reservation is unavailable",
+		);
 	const paymentAmountMinor = grossUpPaymentAmount(
 		context.amount_minor,
 		context.fixed_channel_pricing ? 0 : context.fee_bps,
@@ -154,8 +164,8 @@ export async function createShopPayment(
 			 (id, order_id, channel_id, idempotency_key, status, amount_minor, currency,
 			  currency_decimals, exchange_rate_id, exchange_rate, exchange_rate_direction,
 			  exchange_rate_source, exchange_rate_adjustment_bps, exchange_rate_observed_at,
-			  created_at, updated_at)
-			 VALUES (?, ?, ?, ?, 'created', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			  created_at, updated_at, order_amount_minor)
+			 VALUES (?, ?, ?, ?, 'created', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(idempotency_key) DO NOTHING`,
 		)
 		.bind(
@@ -174,6 +184,7 @@ export async function createShopPayment(
 			quote.rateObservedAt,
 			now,
 			now,
+			context.amount_minor,
 		)
 		.run();
 	if (Number(claimed.meta.changes ?? 0) !== 1) {
@@ -617,6 +628,33 @@ export async function processShopPaymentEvent(
 		event.merchantOrderId ?? null,
 	);
 	validateEventMoney(context, event);
+	if (event.type === "payment_succeeded" && context.order_id) {
+		const released = await db
+			.prepare(`SELECT order_id FROM order_balance_holds WHERE order_id=? AND state='released'
+   UNION ALL SELECT cr.order_id FROM coupon_redemptions cr JOIN coupons c ON c.id=cr.coupon_id
+   WHERE cr.order_id=? AND cr.status='released' AND c.purpose='recall' LIMIT 1`)
+			.bind(context.order_id, context.order_id)
+			.first();
+		if (released) {
+			const now = Date.now();
+			await runPaymentEventBatch(db, channelId, event, [
+				paymentEventStatement(
+					db,
+					channelId,
+					context.attempt_id,
+					event,
+					"rejected",
+					now,
+				),
+				db
+					.prepare(
+						"UPDATE payment_attempts SET failure_code='payment_reconciliation_required',updated_at=? WHERE id=?",
+					)
+					.bind(now, context.attempt_id),
+			]);
+			return { duplicate: false, status: "reconciliation_required" };
+		}
+	}
 	if (context.attempt_status === "succeeded") {
 		const result = await runPaymentEventBatch(db, channelId, event, [
 			paymentEventStatement(
@@ -784,16 +822,15 @@ export async function processShopPaymentEvent(
 				`INSERT INTO shop_order_events
 			 (id, order_id, event_type, visibility, from_status, to_status, order_version,
 			  note, actor_type, created_at)
-				 SELECT ?, id, 'payment_succeeded', 'customer', ?, 'paid', ?,
-				  NULL, 'provider', ? FROM shop_orders WHERE id = ? AND status = 'paid' AND version = ?`,
+				 SELECT ?, (SELECT id FROM shop_orders WHERE id = ? AND status = 'paid' AND version = ?), 'payment_succeeded', 'customer', ?, 'paid', ?, NULL, 'provider', ?`,
 			)
 			.bind(
 				crypto.randomUUID(),
+				context.order_id,
+				nextVersion,
 				previousOrderStatus,
 				nextVersion,
 				now,
-				context.order_id,
-				nextVersion,
 			),
 	];
 	for (const item of items.results)
@@ -840,7 +877,7 @@ export async function processShopPaymentEvent(
 	const result = await runPaymentEventBatch(db, channelId, event, statements);
 	if (result.duplicate)
 		return presentPaymentReplayReceipt(result.duplicate, event);
-	if (Number(result.results[2]?.meta.changes ?? 0) !== 1)
+	if (Number(result.results[2]?.meta.changes ?? 0) < 1)
 		throw new DomainError(
 			"order_version_conflict",
 			409,
@@ -849,7 +886,11 @@ export async function processShopPaymentEvent(
 	return { duplicate: false, status: "succeeded" };
 }
 
-export async function completeFreeStoreOrder(db: D1Database, orderId: string) {
+export async function completeFreeStoreOrder(
+	db: D1Database,
+	orderId: string,
+	balanceUserId?: string,
+) {
 	const order = await db
 		.prepare(
 			`SELECT id, status, version, total_minor FROM shop_orders
@@ -863,7 +904,15 @@ export async function completeFreeStoreOrder(db: D1Database, orderId: string) {
 			total_minor: string;
 		}>();
 	if (!order) throw new DomainError("order_not_found", 404, "Order not found");
-	if (order.total_minor !== "0")
+	const fullHold =
+		balanceUserId &&
+		(await db
+			.prepare(
+				"SELECT order_id FROM order_balance_holds WHERE order_id=? AND user_id=? AND external_minor='0' AND state IN ('held','consumed')",
+			)
+			.bind(orderId, balanceUserId)
+			.first());
+	if (order.total_minor !== "0" && !fullHold)
 		throw new DomainError("order_payment_required", 409, "Payment is required");
 	if (order.status === "paid" || order.status === "completed")
 		return { duplicate: true, status: order.status };
@@ -882,9 +931,9 @@ export async function completeFreeStoreOrder(db: D1Database, orderId: string) {
 	const statements: D1PreparedStatement[] = [
 		db
 			.prepare(
-				`UPDATE shop_orders SET status = 'paid', paid_minor = '0', paid_at = ?,
+				`UPDATE shop_orders SET status = 'paid', paid_minor = total_minor, paid_at = ?,
 				 version = ?, updated_at = ? WHERE id = ? AND status = 'pending_payment'
-				 AND version = ? AND total_minor = '0'`,
+				 AND version = ? AND (total_minor = '0' OR EXISTS (SELECT 1 FROM order_balance_holds WHERE order_id=shop_orders.id AND external_minor='0' AND state='held'))`,
 			)
 			.bind(now, version, now, order.id, order.version),
 		db
@@ -939,7 +988,7 @@ export async function completeFreeStoreOrder(db: D1Database, orderId: string) {
 	);
 	statements.push(unallocatedPaymentStatement(db, orderId));
 	const results = await db.batch(statements);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) < 1)
 		throw new DomainError(
 			"order_version_conflict",
 			409,
@@ -977,6 +1026,16 @@ export async function completeWalletStoreOrder(
 			return { duplicate: true, status: order.status };
 		throw new DomainError("order_not_payable", 409, "Order cannot be paid");
 	}
+	const held = await db
+		.prepare("SELECT order_id FROM order_balance_holds WHERE order_id=?")
+		.bind(order.id)
+		.first();
+	if (held)
+		throw new DomainError(
+			"wallet_hold_conflict",
+			409,
+			"Continue the existing split payment or start a new order",
+		);
 	const settings = await db
 		.prepare(
 			"SELECT value FROM system_settings WHERE key = 'commerce.default_currency' LIMIT 1",
@@ -1031,7 +1090,7 @@ export async function completeWalletStoreOrder(
 		 (id, user_id, direction, amount_minor, balance_before_minor, balance_after_minor,
 		  currency, source_type, source_id, idempotency_key, created_at)
 		 SELECT ?, id, 'debit', ?, ?, balance_minor, ?, 'shop_order', ?, ?, ?
-		 FROM users WHERE id = ? AND balance_version = ? AND balance_minor = ?`)
+		 FROM users WHERE id = ? AND balance_version = ? AND balance_minor = ? AND changes() = 1`)
 			.bind(
 				crypto.randomUUID(),
 				order.total_minor,
@@ -1079,7 +1138,7 @@ export async function completeWalletStoreOrder(
 	);
 	statements.push(unallocatedPaymentStatement(db, input.orderId));
 	const results = await db.batch(statements);
-	if (Number(results[0]?.meta.changes ?? 0) !== 1) {
+	if (Number(results[0]?.meta.changes ?? 0) < 1) {
 		const current = await db
 			.prepare("SELECT status FROM shop_orders WHERE id = ?")
 			.bind(order.id)

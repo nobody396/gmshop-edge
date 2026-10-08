@@ -12,6 +12,7 @@ import { createAuditStatement } from "#/server/audit";
 import { getAdminServerContext } from "#/server/context";
 
 type CouponRow = {
+	purpose: "standard" | "referral" | "recall";
 	id: string;
 	code: string;
 	name: string;
@@ -82,6 +83,12 @@ export const saveCouponFn = createServerFn({ method: "POST" })
 			: null;
 		if (data.id && !before)
 			throw new DomainError("coupon_not_found", 404, "Coupon not found");
+		if (before && before.purpose !== "standard")
+			throw new DomainError(
+				"promotion_coupon_immutable",
+				409,
+				"Promotion codes can only be enabled or disabled",
+			);
 		const conflict = await db.$client
 			.prepare(
 				"SELECT id FROM coupons WHERE code = ? AND (? IS NULL OR id <> ?) LIMIT 1",
@@ -201,7 +208,7 @@ export const deleteCouponFn = createServerFn({ method: "POST" })
 			.first<Record<string, unknown>>();
 		if (!before)
 			throw new DomainError("coupon_not_found", 404, "Coupon not found");
-		if (Number(before.redemption_count) > 0)
+		if (before.purpose !== "standard" || Number(before.redemption_count) > 0)
 			throw new DomainError(
 				"coupon_in_use",
 				409,
@@ -270,6 +277,7 @@ function presentCoupon(row: CouponRow) {
 		id: row.id,
 		code: row.code,
 		name: row.name,
+		purpose: row.purpose,
 		type: row.type,
 		currency: row.currency,
 		currencyDecimals: row.currency_decimals,

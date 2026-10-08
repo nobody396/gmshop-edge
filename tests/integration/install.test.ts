@@ -57,6 +57,8 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0020_redeem_sale_capacity.sql",
 			"0021_support_away_reply_source.sql",
 			"0022_owned_code_delivery.sql",
+			"0023_invitation_promotions.sql",
+			"0024_promotion_wallet.sql",
 		]);
 		const legacyTables = await database
 			.prepare(
@@ -72,7 +74,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 			)
 			.all<{ name: string }>();
-		expect(tables.results).toHaveLength(62);
+		expect(tables.results).toHaveLength(65);
 		expect(tables.results.map((table) => table.name)).toEqual(
 			expect.arrayContaining([
 				"telegram_web_support_conversations",
@@ -86,6 +88,9 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"supplier_exchange_records",
 				"wallet_entries",
 				"wallet_topups",
+				"order_balance_holds",
+				"promotion_rewards",
+				"reward_entries",
 				"sellable_item_channel_prices",
 				"ip_check_score_buckets",
 				"email_recipient_suppressions",
