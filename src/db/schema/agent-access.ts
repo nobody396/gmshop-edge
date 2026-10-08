@@ -14,6 +14,7 @@ export const agentAccessOrders = sqliteTable(
 		email: text("email").notNull(),
 		activeKey: text("active_key").unique(),
 		policySnapshot: text("policy_snapshot"),
+		initialPasswordEncrypted: text("initial_password_encrypted"),
 		state: text("state", {
 			enum: ["pending", "active", "revoked", "cancelled"],
 		})

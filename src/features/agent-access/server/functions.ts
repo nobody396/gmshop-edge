@@ -3,7 +3,9 @@ import { getRequest, setResponseHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { resolveStoreAccount } from "#/features/storefront/server/account";
 import { DomainError } from "#/lib/domain-error";
+import { decryptSecret } from "#/lib/secrets";
 import { getDb } from "#/server/db.server";
+import { loadRuntimeConfig } from "#/server/runtime-config";
 import { type AgentAccessKind, agentAccessKind } from "../products";
 import {
 	accessURL,
@@ -64,6 +66,7 @@ async function owned(db: D1Database, userId: string, orderNumber: string) {
 		)
 		.bind(orderNumber, userId, userId)
 		.first<{
+			initial_password_encrypted: string | null;
 			order_item_id: string;
 			kind: AgentAccessKind;
 			email: string;
@@ -82,6 +85,7 @@ export const getAgentDeliveryFn = createServerFn({ method: "POST" })
 		const { db, user } = await buyer();
 		const row = await owned(db, user.id, data.orderNumber);
 		return {
+			email: row.email,
 			kind: row.kind,
 			state: row.state,
 			domain: row.domain,
@@ -97,7 +101,15 @@ export const openAgentAccountFn = createServerFn({ method: "POST" })
 		const row = await owned(db, user.id, data.orderNumber);
 		if (row.state !== "active" || row.order_status !== "completed")
 			throw new DomainError("agent_access_pending", 409, "Access is not ready");
+		const initialPassword = row.initial_password_encrypted
+			? await decryptSecret(
+					row.initial_password_encrypted,
+					(await loadRuntimeConfig(db)).commerceSecret,
+					"agent-initial-password",
+				)
+			: undefined;
 		const result = await callAgent({
+			initialPassword,
 			operation: "access",
 			sourceUserId: user.id,
 			email: row.email,
@@ -106,5 +118,20 @@ export const openAgentAccountFn = createServerFn({ method: "POST" })
 		});
 		if (result.state !== "active")
 			throw new DomainError("agent_access_pending", 409, "Access is not ready");
-		return { url: accessURL(result) };
+		if (row.initial_password_encrypted && !result.initialPasswordValid) {
+			await db
+				.prepare(
+					"UPDATE agent_access_orders SET initial_password_encrypted=NULL WHERE order_item_id=?",
+				)
+				.bind(row.order_item_id)
+				.run();
+		}
+		return {
+			url: result.initialPasswordValid
+				? `${agentOrigin}/auth/login`
+				: accessURL(result),
+			initialPassword: result.initialPasswordValid
+				? initialPassword
+				: undefined,
+		};
 	});

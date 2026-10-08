@@ -1,5 +1,7 @@
 import { activateEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
 import { DomainError } from "#/lib/domain-error";
+import { decryptSecret, encryptSecret } from "#/lib/secrets";
+import { loadRuntimeConfig } from "#/server/runtime-config";
 import type { AgentAccessKind } from "../products";
 import { type AgentTransport, callAgent } from "./client";
 
@@ -61,7 +63,37 @@ export async function processAgentDelivery(
 		.run();
 	if (!lease.meta.changes) return { status: "processing" };
 	try {
+		const secret = (await loadRuntimeConfig(db)).commerceSecret;
+		if (!secret) throw new Error("delivery_secret_unavailable");
+		// Persist before the remote call: retry uses the same password after an unknown outcome.
+		const generated =
+			"Aa1!" +
+			Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) =>
+				b.toString(16).padStart(2, "0"),
+			).join("");
+		await db
+			.prepare(
+				"UPDATE agent_access_orders SET initial_password_encrypted=? WHERE order_item_id=? AND initial_password_encrypted IS NULL AND state='pending'",
+			)
+			.bind(
+				await encryptSecret(generated, secret, "agent-initial-password"),
+				row.order_item_id,
+			)
+			.run();
+		const encrypted = await db
+			.prepare(
+				"SELECT initial_password_encrypted FROM agent_access_orders WHERE order_item_id=?",
+			)
+			.bind(row.order_item_id)
+			.first<string>("initial_password_encrypted");
+		if (!encrypted) throw new Error("initial_password_missing");
+		const initialPassword = await decryptSecret(
+			encrypted,
+			secret,
+			"agent-initial-password",
+		);
 		const result = await transport({
+			initialPassword,
 			operation: "provision",
 			sourceUserId: row.user_id,
 			email: row.email,
@@ -70,6 +102,14 @@ export async function processAgentDelivery(
 		});
 		if (result.state !== "active" || !result.userId)
 			throw new Error("not_ready");
+		if (!result.initialPasswordValid) {
+			await db
+				.prepare(
+					"UPDATE agent_access_orders SET initial_password_encrypted=NULL WHERE order_item_id=?",
+				)
+				.bind(row.order_item_id)
+				.run();
+		}
 		const complete = Date.now();
 		await db.batch([
 			db
@@ -149,7 +189,7 @@ async function revoke(
 	if (result.state !== "revoked") throw new Error("revocation_pending");
 	await db
 		.prepare(
-			`UPDATE agent_access_orders SET state='revoked',error_code=NULL,updated_at=? WHERE order_item_id=?`,
+			`UPDATE agent_access_orders SET state='revoked',initial_password_encrypted=NULL,error_code=NULL,updated_at=? WHERE order_item_id=?`,
 		)
 		.bind(Date.now(), row.order_item_id)
 		.run();

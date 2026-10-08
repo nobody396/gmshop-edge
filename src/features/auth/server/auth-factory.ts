@@ -41,6 +41,8 @@ export type AuthEnv = {
 	AUTH_PROVIDERS?: RuntimeAuthProvider[];
 	AUTH_PROVIDER_SECRET?: string;
 	EMAIL_DELIVERY_ENABLED?: boolean;
+	AGENT_ACCESS_OTP_SIGNUP?: boolean;
+	AGENT_ACCESS_OTP_LOGIN?: boolean;
 	REQUIRE_EMAIL_VERIFICATION?: boolean;
 	SITE_NAME?: string;
 	SESSION_MAX_AGE_SECONDS?: number;
@@ -241,7 +243,12 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 					ctx.headers,
 					ctx.body,
 				);
-				if (ctx.path === "/sign-up/email" || ctx.path === "/change-email") {
+				if (
+					ctx.path === "/sign-up/email" ||
+					ctx.path === "/change-email" ||
+					ctx.path === "/sign-in/email-otp" ||
+					ctx.path === "/email-otp/send-verification-otp"
+				) {
 					const body = ctx.body as
 						| { email?: unknown; newEmail?: unknown }
 						| undefined;
@@ -256,12 +263,39 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 				if (
 					(ctx.path === "/sign-in/email-otp" ||
 						ctx.path === "/email-otp/send-verification-otp") &&
-					!emailProvider?.emailOtpEnabled
+					!(
+						emailProvider?.emailOtpEnabled ||
+						env.AGENT_ACCESS_OTP_SIGNUP ||
+						env.AGENT_ACCESS_OTP_LOGIN
+					)
 				)
 					throw APIError.from("BAD_REQUEST", {
 						code: "EMAIL_OTP_FLOW_DISABLED",
 						message: "Email code sign-in is unavailable",
 					});
+				if (
+					(env.AGENT_ACCESS_OTP_SIGNUP || env.AGENT_ACCESS_OTP_LOGIN) &&
+					["/sign-in/email-otp", "/email-otp/send-verification-otp"].includes(
+						ctx.path,
+					)
+				) {
+					const address = (ctx.body as { email?: string } | undefined)?.email
+						?.trim()
+						.toLowerCase();
+					const restricted =
+						address &&
+						(await db.$client
+							.prepare(
+								`SELECT id FROM users WHERE lower(email)=? AND (enabled=0 OR EXISTS (SELECT 1 FROM json_each(users.role_ids) assigned JOIN roles r ON r.id=assigned.value WHERE r.name<>?)) LIMIT 1`,
+							)
+							.bind(address, storefrontCustomerRoleName)
+							.first());
+					if (restricted)
+						throw APIError.from("FORBIDDEN", {
+							code: "EMAIL_OTP_FLOW_DISABLED",
+							message: "Use your existing sign-in method",
+						});
+				}
 				if (ctx.path === "/sign-in/email") {
 					const email = (ctx.body as { email?: unknown } | undefined)?.email;
 					if (typeof email === "string" && isInternalIdentityEmail(email))
@@ -366,13 +400,18 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 				? [
 						emailOTP({
 							allowedAttempts: 3,
-							disableSignUp: true,
+							disableSignUp: !env.AGENT_ACCESS_OTP_SIGNUP,
 							expiresIn: 600,
 							otpLength: 6,
 							rateLimit: { window: 60, max: 3 },
 							storeOTP: "hashed",
 							sendVerificationOTP: async ({ email, otp, type }) => {
-								if (type === "sign-in" && emailProvider?.emailOtpEnabled) {
+								if (
+									type === "sign-in" &&
+									(emailProvider?.emailOtpEnabled ||
+										env.AGENT_ACCESS_OTP_SIGNUP ||
+										env.AGENT_ACCESS_OTP_LOGIN)
+								) {
 									const locale = await loadUserEmailLocale(db.$client, email);
 									await enqueueConfiguredEmailNotification(db.$client, {
 										event: "auth.email_otp_sign_in",

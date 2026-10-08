@@ -25,6 +25,8 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Switch } from "#/components/ui/switch";
+import { AgentAccessCheckout } from "#/features/agent-access/components/access";
+import { agentAccessErrorMessage } from "#/features/agent-access/error-message";
 import {
 	agentAccessKind,
 	agentAccessRefundPolicy,
@@ -151,9 +153,8 @@ export function StorefrontCheckoutPage() {
 			? cloud.data
 			: preview.data;
 	const items = useMemo(() => cart?.items ?? [], [cart?.items]);
-	const hasAgentAccess = items.some((item) =>
-		agentAccessKind(item.sellableItemId),
-	);
+	const accessItem = items.find((item) => agentAccessKind(item.sellableItemId));
+	const hasAgentAccess = Boolean(accessItem);
 	const couponCode = hasAgentAccess ? "" : enteredCouponCode;
 	const checkoutIdempotencyScope = `${checkoutItemsKey}:${paymentChannelId || "unselected"}:${couponCode.trim().toUpperCase()}:${useBalance}:${email}:${JSON.stringify(inputValues)}`;
 	const idempotencyKey =
@@ -407,7 +408,12 @@ export function StorefrontCheckoutPage() {
 				params: { orderNumber: order.orderNumber },
 			});
 		},
-		onError: () => toast.error(m.store_checkout_failed()),
+		onError: (error) =>
+			toast.error(
+				hasAgentAccess
+					? agentAccessErrorMessage(error)
+					: m.store_checkout_failed(),
+			),
 	});
 
 	function submit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
@@ -627,39 +633,42 @@ export function StorefrontCheckoutPage() {
 							})}
 						</div>
 					</section>
-					<section className="mt-8 border-t pt-8">
-						<div className="mb-4">
-							<h2 className="font-semibold text-base">
-								{m.store_checkout_contact_title()}
-							</h2>
-							<p className="mt-1 text-muted-foreground text-sm">
-								{m.store_checkout_contact_description()}
-							</p>
-						</div>
-						<div className="grid gap-2">
-							<Label htmlFor="checkout-email">{m.store_contact_email()}</Label>
-							<Input
-								id="checkout-email"
-								onChange={(event) => setEmail(event.target.value)}
-								placeholder={m.store_email_placeholder()}
-								readOnly={accountHasPublicEmail}
-								required
-								type="email"
-								value={email}
-							/>
-						</div>
-						<div className="mt-5 grid gap-2">
-							<Label htmlFor="checkout-coupon">{m.store_coupon()}</Label>
-							<Input
-								id="checkout-coupon"
-								disabled={hasAgentAccess}
-								aria-invalid={promotion.isError}
-								onChange={(event) => setCouponCode(event.target.value)}
-								placeholder={m.store_checkout_coupon_placeholder()}
-								value={couponCode}
-							/>
-						</div>
-					</section>
+					{!hasAgentAccess ? (
+						<section className="mt-8 border-t pt-8">
+							<div className="mb-4">
+								<h2 className="font-semibold text-base">
+									{m.store_checkout_contact_title()}
+								</h2>
+								<p className="mt-1 text-muted-foreground text-sm">
+									{m.store_checkout_contact_description()}
+								</p>
+							</div>
+							<div className="grid gap-2">
+								<Label htmlFor="checkout-email">
+									{m.store_contact_email()}
+								</Label>
+								<Input
+									id="checkout-email"
+									onChange={(event) => setEmail(event.target.value)}
+									placeholder={m.store_email_placeholder()}
+									readOnly={accountHasPublicEmail}
+									required
+									type="email"
+									value={email}
+								/>
+							</div>
+							<div className="mt-5 grid gap-2">
+								<Label htmlFor="checkout-coupon">{m.store_coupon()}</Label>
+								<Input
+									id="checkout-coupon"
+									aria-invalid={promotion.isError}
+									onChange={(event) => setCouponCode(event.target.value)}
+									placeholder={m.store_checkout_coupon_placeholder()}
+									value={couponCode}
+								/>
+							</div>
+						</section>
+					) : null}
 				</div>
 				<aside className="min-w-0 border-t bg-muted/35 p-5 sm:p-8 lg:border-t-0 lg:border-l lg:p-10">
 					<div className="flex h-full flex-col gap-7 lg:sticky lg:top-26">
@@ -865,7 +874,10 @@ export function StorefrontCheckoutPage() {
 								{m.store_cart_currency_conflict()}
 							</p>
 						) : null}
-						{signInRequired ? (
+						{hasAgentAccess &&
+						(!session.data?.user || !session.data.user.emailVerified) ? (
+							<AgentAccessCheckout itemId={accessItem?.sellableItemId ?? ""} />
+						) : signInRequired ? (
 							<div className="mt-auto grid gap-4">
 								<div>
 									<p className="font-medium">
@@ -884,6 +896,11 @@ export function StorefrontCheckoutPage() {
 							</div>
 						) : (
 							<div className="mt-auto grid gap-4">
+								{hasAgentAccess ? (
+									<AgentAccessCheckout
+										itemId={accessItem?.sellableItemId ?? ""}
+									/>
+								) : null}
 								{hasAgentAccess ? (
 									<label className="flex items-start gap-3 rounded-xl border p-3 text-sm leading-6">
 										<input
