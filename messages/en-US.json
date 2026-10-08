@@ -824,7 +824,6 @@
 	"store_coupon": "Coupon code (optional)",
 	"store_payment_method": "Payment method",
 	"store_payment_channel_fee": "Payment channel fee",
-	"store_payment_amount_due": "Amount due",
 	"store_payment_fee_rate": "{rate}% fee",
 	"store_buy_now": "Buy now",
 	"store_add_to_cart": "Add to cart",

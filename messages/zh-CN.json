@@ -824,7 +824,6 @@
 	"store_coupon": "优惠码（可选）",
 	"store_payment_method": "支付方式",
 	"store_payment_channel_fee": "支付渠道手续费",
-	"store_payment_amount_due": "实际应付",
 	"store_payment_fee_rate": "手续费 {rate}%",
 	"store_buy_now": "立即购买",
 	"store_add_to_cart": "加入购物车",
