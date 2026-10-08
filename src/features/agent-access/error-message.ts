@@ -1,3 +1,4 @@
+import { signInErrorMessage } from "#/features/auth/error-message";
 import { m } from "#/paraglide/messages";
 export function agentAccessErrorMessage(error: unknown) {
 	const code =
@@ -18,4 +19,15 @@ export function agentAccessErrorMessage(error: unknown) {
 		default:
 			return m.agent_access_unavailable();
 	}
+}
+
+export function agentEmailSendErrorMessage(error: unknown) {
+	const code =
+		error && typeof error === "object" && "code" in error ? error.code : "";
+	if (code === "HUMAN_VERIFICATION_REQUIRED") return m.agent_access_reverify();
+	if (code === "EMAIL_OTP_FLOW_DISABLED")
+		return m.agent_access_original_login();
+	if (code === "EMAIL_ADDRESS_UNDELIVERABLE" || code === "TOO_MANY_REQUESTS")
+		return signInErrorMessage(error);
+	return m.agent_access_send_failed();
 }

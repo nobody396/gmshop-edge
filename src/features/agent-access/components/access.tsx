@@ -21,65 +21,97 @@ import {
 } from "../server/functions";
 import { AgentEmailVerification } from "./email-verification";
 
-export function AgentAccessCheckout({ itemId }: { itemId: string }) {
-	const session = authClient.useSession();
-	const check = useQuery({
-		queryKey: ["agent-access-eligibility", itemId, session.data?.user.id],
+export function agentEligibilityOptions(
+	itemId: string,
+	user?: { id: string; emailVerified: boolean },
+) {
+	return {
+		queryKey: ["agent-access-eligibility", itemId, user?.id],
 		queryFn: () => checkAgentAccessFn({ data: { itemId } }),
-		enabled: Boolean(
-			agentAccessKind(itemId) && session.data?.user.emailVerified,
-		),
+		enabled: Boolean(agentAccessKind(itemId) && user?.emailVerified),
 		retry: false,
 		refetchOnWindowFocus: false,
-	});
+	};
+}
+export function AgentAccessCheckout({
+	itemId,
+	compact = false,
+}: {
+	itemId: string;
+	compact?: boolean;
+}) {
+	const session = authClient.useSession();
+	const check = useQuery(agentEligibilityOptions(itemId, session.data?.user));
 	if (!agentAccessKind(itemId)) return null;
 	return (
-		<section className="my-4 grid gap-3 rounded-xl border p-4">
-			<h3 className="font-semibold">{m.agent_access_title()}</h3>
-			<p className="text-sm text-muted-foreground">
-				{m.agent_access_purchase_notice()}{" "}
-				{agentAccessRefundPolicy[getLocale()]}
-			</p>
-
+		<section
+			className={
+				compact
+					? "grid gap-3 border-t pt-5"
+					: "my-4 grid gap-3 rounded-xl border p-4"
+			}
+		>
+			<h3 className="text-sm font-medium">{m.agent_access_title()}</h3>
+			{!compact ? (
+				<p className="text-sm text-muted-foreground">
+					{m.agent_access_purchase_notice()}{" "}
+					{agentAccessRefundPolicy[getLocale()]}
+				</p>
+			) : null}
 			{!session.data?.user || !session.data.user.emailVerified ? (
 				<AgentEmailVerification itemId={itemId} />
 			) : (
-				<p className="break-all text-sm">
-					{m.agent_access_verified_email({ email: session.data.user.email })}
-				</p>
+				<>
+					<p className="break-all text-sm">
+						{m.agent_access_verified_email({ email: session.data.user.email })}
+					</p>
+					{check.isFetching ? (
+						<output className="text-sm text-muted-foreground">
+							{m.agent_access_checking()}
+						</output>
+					) : null}
+					{check.isError ? (
+						<div
+							role="alert"
+							className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+						>
+							{agentAccessErrorMessage(check.error)}
+						</div>
+					) : null}
+					{!check.isFetching &&
+					!check.isError &&
+					check.data?.state === "eligible" ? (
+						<output className="text-sm text-primary">
+							{m.agent_access_eligible()}
+						</output>
+					) : null}
+					{!check.isError && check.data?.state === "binding_required" ? (
+						<a
+							className="text-sm underline underline-offset-4"
+							href={check.data.url}
+							target="_blank"
+							rel="noreferrer"
+						>
+							{m.agent_access_bind()}
+						</a>
+					) : null}
+					{!check.isError && check.data?.state === "already_active" ? (
+						<output className="text-sm">{m.agent_access_existing()}</output>
+					) : null}
+					{check.isError || check.data?.state === "binding_required" ? (
+						<Button
+							type="button"
+							size="sm"
+							variant="outline"
+							className="w-fit"
+							disabled={check.isFetching}
+							onClick={() => void check.refetch()}
+						>
+							{m.agent_access_check()}
+						</Button>
+					) : null}
+				</>
 			)}
-
-			{session.data?.user.emailVerified ? (
-				<Button
-					type="button"
-					variant="outline"
-					disabled={check.isFetching || !session.data?.user.emailVerified}
-					onClick={() => void check.refetch()}
-				>
-					{m.agent_access_check()}
-				</Button>
-			) : null}
-			{check.isError ? (
-				<p role="alert">{agentAccessErrorMessage(check.error)}</p>
-			) : null}
-			{check.data?.state === "eligible" ? (
-				<output>{m.agent_access_eligible()}</output>
-			) : null}
-			{check.data?.state === "binding_required" ? (
-				<p>
-					<a
-						className="underline"
-						href={check.data.url}
-						target="_blank"
-						rel="noreferrer"
-					>
-						{m.agent_access_bind()}
-					</a>
-				</p>
-			) : null}
-			{check.data?.state === "already_active" ? (
-				<output>{m.agent_access_existing()}</output>
-			) : null}
 		</section>
 	);
 }

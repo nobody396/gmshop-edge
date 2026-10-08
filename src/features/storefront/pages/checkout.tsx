@@ -18,14 +18,20 @@ import {
 	useState,
 } from "react";
 import { toast } from "sonner";
-import { Checkbox as ProCheckbox } from "#/components/pro/base/fields/checkbox";
+import {
+	CheckboxControl,
+	Checkbox as ProCheckbox,
+} from "#/components/pro/base/fields/checkbox";
 import { PaymentProviderLogo } from "#/components/provider-logo";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Switch } from "#/components/ui/switch";
-import { AgentAccessCheckout } from "#/features/agent-access/components/access";
+import {
+	AgentAccessCheckout,
+	agentEligibilityOptions,
+} from "#/features/agent-access/components/access";
 import { agentAccessErrorMessage } from "#/features/agent-access/error-message";
 import {
 	agentAccessKind,
@@ -133,7 +139,7 @@ export function StorefrontCheckoutPage() {
 	>({});
 	const idempotencyKeys = useRef(new Map<string, string>());
 	const cloud = useQuery({
-		queryKey: ["storefront", "cart"],
+		queryKey: ["storefront", "cart", session.data?.user.id],
 		queryFn: () => getStoreCartFn(),
 		enabled: Boolean(session.data?.user && !buyNow),
 	});
@@ -155,15 +161,20 @@ export function StorefrontCheckoutPage() {
 	const items = useMemo(() => cart?.items ?? [], [cart?.items]);
 	const accessItem = items.find((item) => agentAccessKind(item.sellableItemId));
 	const hasAgentAccess = Boolean(accessItem);
+	const eligibility = useQuery(
+		agentEligibilityOptions(
+			accessItem?.sellableItemId ?? "",
+			session.data?.user,
+		),
+	);
+	const agentBlocked =
+		hasAgentAccess &&
+		(items.length !== 1 ||
+			accessItem?.quantity !== 1 ||
+			eligibility.status !== "success" ||
+			eligibility.isFetching ||
+			eligibility.data?.state !== "eligible");
 	const couponCode = hasAgentAccess ? "" : enteredCouponCode;
-	const checkoutIdempotencyScope = `${checkoutItemsKey}:${paymentChannelId || "unselected"}:${couponCode.trim().toUpperCase()}:${useBalance}:${email}:${JSON.stringify(inputValues)}`;
-	const idempotencyKey =
-		idempotencyKeys.current.get(checkoutIdempotencyScope) ??
-		(() => {
-			const key = crypto.randomUUID();
-			idempotencyKeys.current.set(checkoutIdempotencyScope, key);
-			return key;
-		})();
 	const agentTermsScope = `${session.data?.user.id ?? "guest"}:${items.map((item) => `${item.sellableItemId}:${item.quantity}`).join("|")}`;
 	const agentAccessTermsAccepted = acceptedAgentTermsScope === agentTermsScope;
 	const currencies = new Set(
@@ -307,7 +318,7 @@ export function StorefrontCheckoutPage() {
 					);
 	};
 	const wallet = useQuery({
-		queryKey: ["wallet"],
+		queryKey: ["wallet", session.data?.user.id],
 		queryFn: () => getWalletFn(),
 		enabled: Boolean(session.data?.user && currencyItem && total > 0n),
 	});
@@ -340,13 +351,38 @@ export function StorefrontCheckoutPage() {
 				)
 			: 0n;
 	const payableTotal = externalDue + surcharge;
+	const accessBalanceCovers = Boolean(
+		hasAgentAccess &&
+			session.data?.user &&
+			mixedBalanceSupported &&
+			useBalance &&
+			orderDue > 0n &&
+			balanceUsed === orderDue,
+	);
+	const effectivePaymentChannelId = accessBalanceCovers
+		? "wallet"
+		: paymentChannelId;
+	const accessWalletPending = Boolean(
+		hasAgentAccess &&
+			session.data?.user &&
+			useBalance &&
+			(wallet.isFetching || wallet.isError || !wallet.data),
+	);
+	const checkoutIdempotencyScope = `${checkoutItemsKey}:${effectivePaymentChannelId || "unselected"}:${couponCode.trim().toUpperCase()}:${useBalance}:${email}:${JSON.stringify(inputValues)}`;
+	const idempotencyKey =
+		idempotencyKeys.current.get(checkoutIdempotencyScope) ??
+		(() => {
+			const key = crypto.randomUUID();
+			idempotencyKeys.current.set(checkoutIdempotencyScope, key);
+			return key;
+		})();
 	const walletAvailable =
 		balanceCurrencyMatches &&
 		(useBalance
 			? balanceAvailable
 			: BigInt(wallet.data?.balanceMinor ?? "0")) >= orderDue;
 	const cartPending =
-		session.isPending ||
+		(session.isPending && !cart) ||
 		(!buyNow && Boolean(session.data?.user) && cloud.isPending) ||
 		(Boolean(buyNow || !session.data?.user) &&
 			requestedItems.length > 0 &&
@@ -357,6 +393,7 @@ export function StorefrontCheckoutPage() {
 			? cloud.isError
 			: preview.isError;
 	const paymentUnavailable =
+		!accessBalanceCovers &&
 		!signInRequired &&
 		baseTotal > 0n &&
 		!channels.isPending &&
@@ -373,11 +410,11 @@ export function StorefrontCheckoutPage() {
 		const first = channels.data?.[0];
 		if (
 			first &&
-			paymentChannelId !== "wallet" &&
+			(paymentChannelId !== "wallet" || hasAgentAccess) &&
 			!channels.data?.some((channel) => channel.id === paymentChannelId)
 		)
 			setPaymentChannelId(first.id);
-	}, [channels.data, paymentChannelId]);
+	}, [channels.data, paymentChannelId, hasAgentAccess]);
 
 	const checkout = useMutation({
 		mutationFn: checkoutStoreOrderFn,
@@ -420,13 +457,19 @@ export function StorefrontCheckoutPage() {
 		event.preventDefault();
 		if (
 			blocked ||
+			agentBlocked ||
+			accessWalletPending ||
 			couponBlocked ||
 			signInRequired ||
-			!termsAccepted ||
+			(!hasAgentAccess && !termsAccepted) ||
 			(hasAgentAccess && !agentAccessTermsAccepted) ||
 			!items.length ||
 			paymentUnavailable ||
-			(total > 0n && !paymentChannelId)
+			(total > 0n &&
+				(!effectivePaymentChannelId ||
+					(hasAgentAccess &&
+						!accessBalanceCovers &&
+						effectivePaymentChannelId === "wallet")))
 		)
 			return;
 		checkout.mutate({
@@ -438,7 +481,7 @@ export function StorefrontCheckoutPage() {
 				commerceSessionId: commerceSessionId(),
 				locale: getLocale(),
 				walletPayment:
-					paymentChannelId === "wallet" &&
+					effectivePaymentChannelId === "wallet" &&
 					!(mixedBalanceSupported && useBalance),
 				useBalance: Boolean(
 					session.data?.user &&
@@ -447,8 +490,8 @@ export function StorefrontCheckoutPage() {
 						balanceAvailable > 0n,
 				),
 				paymentChannelId:
-					paymentChannelId && paymentChannelId !== "wallet"
-						? paymentChannelId
+					effectivePaymentChannelId && effectivePaymentChannelId !== "wallet"
+						? effectivePaymentChannelId
 						: null,
 				paymentCurrency,
 				termsAccepted: true,
@@ -695,14 +738,6 @@ export function StorefrontCheckoutPage() {
 											decimals={currencyItem.currencyDecimals ?? 2}
 										/>
 									</div>
-									<div className="flex items-center justify-between font-medium">
-										<span>{m.store_payment_amount_due()}</span>
-										<StoreMoney
-											amountMinor={payableTotal.toString()}
-											currency={currencyItem.currency ?? "USD"}
-											decimals={currencyItem.currencyDecimals ?? 2}
-										/>
-									</div>
 								</div>
 							) : null}
 						</div>
@@ -721,42 +756,53 @@ export function StorefrontCheckoutPage() {
 						) : null}
 						{currencyItem ? (
 							<div className="grid gap-2 text-sm" aria-live="polite">
-								<p>
-									{m.promotion_discount()}:{" "}
-									<StoreMoney
-										amountMinor={discount.toString()}
-										currency={currencyItem.currency ?? "CNY"}
-										decimals={currencyItem.currencyDecimals ?? 2}
-									/>
-								</p>
+								{discount > 0n ? (
+									<p>
+										{m.promotion_discount()}:{" "}
+										<StoreMoney
+											amountMinor={discount.toString()}
+											currency={currencyItem.currency ?? "CNY"}
+											decimals={currencyItem.currencyDecimals ?? 2}
+										/>
+									</p>
+								) : null}
 								{session.data?.user &&
 								balanceCurrencyMatches &&
-								mixedBalanceSupported ? (
-									<label className="flex items-center gap-2">
-										<input
-											type="checkbox"
+								mixedBalanceSupported &&
+								balanceAvailable > 0n ? (
+									<label
+										htmlFor="checkout-use-balance"
+										className="flex items-center justify-between gap-3 rounded-lg bg-background/60 p-3"
+									>
+										<span>
+											{m.promotion_use_balance()}{" "}
+											<StoreMoney
+												amountMinor={balanceUsed.toString()}
+												currency="CNY"
+												decimals={2}
+											/>
+										</span>
+										<Switch
+											id="checkout-use-balance"
 											checked={useBalance}
-											onChange={(event) => setUseBalance(event.target.checked)}
-										/>
-										{m.promotion_use_balance()}{" "}
-										<StoreMoney
-											amountMinor={balanceUsed.toString()}
-											currency="CNY"
-											decimals={2}
+											onCheckedChange={setUseBalance}
+											aria-label={m.promotion_use_balance()}
 										/>
 									</label>
 								) : null}
-								<p>
-									{m.promotion_external_due()}:{" "}
-									<StoreMoney
-										amountMinor={payableTotal.toString()}
-										currency={currencyItem.currency ?? "CNY"}
-										decimals={currencyItem.currencyDecimals ?? 2}
-									/>
-								</p>
+								{balanceUsed > 0n ? (
+									<p>
+										{m.promotion_external_due()}:{" "}
+										<StoreMoney
+											amountMinor={payableTotal.toString()}
+											currency={currencyItem.currency ?? "CNY"}
+											decimals={currencyItem.currencyDecimals ?? 2}
+										/>
+									</p>
+								) : null}
 							</div>
 						) : null}
-						{total > 0n && !signInRequired ? (
+						{total > 0n && !signInRequired && !accessBalanceCovers ? (
 							<fieldset
 								className="grid gap-3"
 								disabled={channels.isPending || paymentUnavailable}
@@ -775,7 +821,7 @@ export function StorefrontCheckoutPage() {
 									</section>
 								) : null}
 								<div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3">
-									{wallet.data ? (
+									{wallet.data && !hasAgentAccess && balanceAvailable > 0n ? (
 										<label className="grid min-h-16 cursor-pointer place-items-center content-center gap-1.5 rounded-lg bg-background/70 px-3 py-2.5 text-center text-sm ring-offset-background transition hover:bg-background has-checked:bg-primary/10 has-checked:ring-2 has-checked:ring-primary has-checked:ring-offset-2 has-focus-visible:ring-2 has-focus-visible:ring-ring">
 											<input
 												checked={paymentChannelId === "wallet"}
@@ -876,7 +922,10 @@ export function StorefrontCheckoutPage() {
 						) : null}
 						{hasAgentAccess &&
 						(!session.data?.user || !session.data.user.emailVerified) ? (
-							<AgentAccessCheckout itemId={accessItem?.sellableItemId ?? ""} />
+							<AgentAccessCheckout
+								itemId={accessItem?.sellableItemId ?? ""}
+								compact
+							/>
 						) : signInRequired ? (
 							<div className="mt-auto grid gap-4">
 								<div>
@@ -898,18 +947,22 @@ export function StorefrontCheckoutPage() {
 							<div className="mt-auto grid gap-4">
 								{hasAgentAccess ? (
 									<AgentAccessCheckout
+										compact
 										itemId={accessItem?.sellableItemId ?? ""}
 									/>
 								) : null}
 								{hasAgentAccess ? (
-									<label className="flex items-start gap-3 rounded-xl border p-3 text-sm leading-6">
-										<input
-											type="checkbox"
-											className="mt-1 size-4 shrink-0 accent-primary"
+									<label
+										htmlFor="checkout-purchase-consent"
+										className="flex items-start gap-3 text-sm leading-6"
+									>
+										<CheckboxControl
+											id="checkout-purchase-consent"
+											className="mt-1"
 											checked={agentAccessTermsAccepted}
-											onChange={(event) =>
+											onCheckedChange={(checked) =>
 												setAcceptedAgentTermsScope(
-													event.target.checked ? agentTermsScope : null,
+													checked === true ? agentTermsScope : null,
 												)
 											}
 											required
@@ -920,27 +973,41 @@ export function StorefrontCheckoutPage() {
 											})}
 										</span>
 									</label>
-								) : null}
-								<label className="flex items-start gap-3 text-sm leading-5">
-									<input
-										checked={termsAccepted}
-										className="mt-1 size-4 accent-primary"
-										onChange={(event) => setTermsAccepted(event.target.checked)}
-										required
-										type="checkbox"
-									/>
-									<span>{m.store_accept_terms()}</span>
-								</label>
+								) : (
+									<label
+										htmlFor="checkout-purchase-consent"
+										className="flex items-start gap-3 text-sm leading-6"
+									>
+										<CheckboxControl
+											id="checkout-purchase-consent"
+											className="mt-1"
+											checked={termsAccepted}
+											onCheckedChange={(checked) =>
+												setTermsAccepted(checked === true)
+											}
+											required
+										/>
+										<span>{m.store_accept_terms()}</span>
+									</label>
+								)}
+
 								<Button
 									className="h-12"
 									disabled={
 										blocked ||
+										agentBlocked ||
+										accessWalletPending ||
 										couponBlocked ||
 										checkout.isPending ||
-										!termsAccepted ||
+										(!hasAgentAccess && !termsAccepted) ||
 										(hasAgentAccess && !agentAccessTermsAccepted) ||
 										paymentUnavailable ||
-										(total > 0n && (channels.isPending || !paymentChannelId))
+										(total > 0n &&
+											!accessBalanceCovers &&
+											(channels.isPending ||
+												!effectivePaymentChannelId ||
+												(hasAgentAccess &&
+													effectivePaymentChannelId === "wallet")))
 									}
 									type="submit"
 								>

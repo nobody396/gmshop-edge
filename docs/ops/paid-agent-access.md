@@ -91,3 +91,13 @@ No second auth system, OTP table, guest-order system, wallet, or password-reset 
 
 
 普通登录页另有折叠的“代理资格订单：邮箱验证码登录”入口，复用同一验证组件并安全跳回原订单。购买开关关闭时禁止验证码新注册，但仍允许已存在的普通购物账号验证登录、读取订单；停用或后台账号仍被拒绝。不修改全局普通验证码登录配置，不要求客户记住第二份商城密码。
+
+### 结账消融与 Workers 传输修复
+
+资格检查与付费交付的桥接原使用 `redirect: "error"`，实际 workerd 会在请求发出前抛 TypeError；仅用 Node fetch mock 的测试无法捕获。改成 `manual` 并保留非 2xx 拒绝，不跟随重定向、不转发签名给其他站点。新增真实 workerd 执行实际 client 模块的测试；原参数必失败，修复后正常请求成功、302 仍被拒绝。
+
+资格结账复用同一资格查询缓存，未通过、失败、检查中、已有资格或待绑定均禁用提交，服务端原有校验仍保留。一个非预勾选的确认项同时覆盖订单、购买、开通和售后；原政策快照不变。零优惠/零余额不展示；资格商品只留余额抵扣开关，足额时使用原余额结算路径、不再重复选“余额支付”，不足额时选外部差额支付。普通商品渠道定价、优惠券、奖励优先顺序、余额账本和幂等扣款不改。
+
+验证码发送成功后隐藏已消费的真人验证，直接进入输入验证码；仅失败或主动重发才重新挑战。Better Auth 自带会话刷新，删除额外整页 reload；购物车、钱包和资格查询按账号隔离，避免切换账号复用旧缓存。保留明确的邮箱不可投递/限流/真人过期提示，不把所有错误都说成“过于频繁”。
+
+The access checkout shares one eligibility query with the compact status panel and fails closed before submission. A single explicit acknowledgment retains the existing backend policy snapshot. Presentation-only balance consolidation uses the original full/mixed balance paths for fixed access SKUs; no ledger or coupon logic changes. Real workerd transport coverage replaces the previous false confidence from Node-only fetch mocks. Email code sign-in remains in place with account-scoped queries; CAPTCHA is renewed only for another send, not merely to enter the received code.
