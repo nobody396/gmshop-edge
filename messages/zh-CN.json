@@ -2225,7 +2225,7 @@
 	"promotion_dynamic_budget": "按 SKU 档位，整单封顶 ¥8",
 	"promotion_eligible_items": "仅参与活动的 SKU",
 	"invoice_pricing_unavailable": "全费用开票暂未就绪，请稍后再试，勿继续付款",
-	"agent_access_email_steps": "填写您的邮箱并验证 → 付款 → 自动开通。无需提前注册 lsrai.shop；验证后将自动创建或登录购物账号。",
+	"agent_access_email_steps": "填写您的邮箱并验证 → 付款 → 自动开通。验证后将自动创建或登录购物账号。",
 	"agent_access_verified_email": "开通账号邮箱：{email}（已验证）",
 	"agent_access_verify_continue": "验证邮箱并继续",
 	"agent_access_send_failed": "验证码发送失败或过于频繁，请稍后重试。",

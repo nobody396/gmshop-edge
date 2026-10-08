@@ -2225,7 +2225,7 @@
 	"promotion_dynamic_budget": "Per-SKU budget, order cap ¥8",
 	"promotion_eligible_items": "Participating SKUs only",
 	"invoice_pricing_unavailable": "All-inclusive invoicing is not ready. Please try again later and do not proceed with payment.",
-	"agent_access_email_steps": "Verify your email → pay → automatic activation. No lsrai.shop registration needed; verification creates or signs in to your shopping account.",
+	"agent_access_email_steps": "Verify your email → pay → automatic activation. Verification creates or signs in to your shopping account.",
 	"agent_access_verified_email": "Account email: {email} (verified)",
 	"agent_access_verify_continue": "Verify email and continue",
 	"agent_access_send_failed": "Could not send the code. Please wait and retry.",
