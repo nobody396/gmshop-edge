@@ -8,6 +8,8 @@ Check HTTP and business status before parsing invoice success fields. Error resp
 
 ## All-inclusive invoice pricing and display
 
-The order amount is the already-paid base, not the final face. The backend solves face = base + additional payment, where additional payment = round(face × 3%, 2) + optional screenshot fee (CNY 5) + round((service fee + screenshot fee) × channel rate, 2). Wallet has no new channel fee. The frontend never calculates money independently. At a CNY 670 base and 4% channel rate, the face/payment are 691.58/21.58 without a screenshot and 696.95/26.95 with one.
+The order amount is the already-paid base, not the final face. The backend solves face = base + additional payment, where additional payment = round(face × the saved application rate, 2) + optional screenshot fee (CNY 5) + round((service fee + screenshot fee) × channel rate, 2). Wallet has no new channel fee. The frontend never calculates money independently. At a CNY 670 base and 4% channel rate, the face/payment are 714.58/44.58 without a screenshot and 720.14/50.14 with one.
 
 Preview and payment status prominently show the final printed invoice amount separately from the additional payment. New previews must advertise `fees_included: true`. Prefill uses `invoice_base_amount`, never the final face. Historical statuses keep their saved amounts; paid requests are not repriced. Release the central backend and its additive base-column migration before this frontend. Local implementation does not deploy, pay, issue invoices, or send notifications.
+
+New VIP retail applications use a 6% service fee; agent shops remain at 3%, and Luoche settlement is unchanged. The backend resolves the source and returns `rate_percent`; new quotes without it fail closed. Existing applications, including unpaid requests, retain their saved rate. Historical statuses may still display 3%. No new configuration table, migration, or paid-order repricing is introduced.

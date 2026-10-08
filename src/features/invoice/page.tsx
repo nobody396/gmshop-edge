@@ -245,7 +245,9 @@ export function InvoicePage() {
 								</span>
 							</span>
 						</label>
-						<p className="text-muted-foreground text-sm">{m.invoice_hint()}</p>
+						<p className="text-muted-foreground text-sm">
+							{m.invoice_hint({ rate: String(amounts?.rate_percent ?? 6) })}
+						</p>
 						<Button className="w-full" disabled={busy} type="submit">
 							{busy
 								? m.invoice_loading()
@@ -275,7 +277,9 @@ export function InvoicePage() {
 								<dd>¥{amounts.invoice_base_amount}</dd>
 							</div>
 						)}
-						<dt>{m.invoice_fee()}</dt>
+						<dt>
+							{m.invoice_fee({ rate: String(amounts.rate_percent ?? 3) })}
+						</dt>
 						<dd>¥{amounts.invoice_fee_amount}</dd>
 						<dt>{m.invoice_screenshot_fee()}</dt>
 						<dd>¥{amounts.screenshot_fee_amount ?? "0.00"}</dd>
