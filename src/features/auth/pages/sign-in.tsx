@@ -1,3 +1,5 @@
+import { AgentEmailVerification } from "#/features/agent-access/components/email-verification";
+import { agentAccessProducts } from "#/features/agent-access/products";
 import { UserAuthForm } from "#/features/auth/components/user-auth-form";
 import { m } from "#/paraglide/messages";
 
@@ -17,6 +19,17 @@ export function SignIn({ redirectTo = "/" }: SignInProps) {
 				</p>
 			</div>
 			<UserAuthForm redirectTo={redirectTo} />
+			<details className="rounded-xl border p-4">
+				<summary className="cursor-pointer font-medium">
+					{m.agent_access_order_signin()}
+				</summary>
+				<div className="mt-4">
+					<AgentEmailVerification
+						itemId={agentAccessProducts.api.itemId}
+						redirectTo={redirectTo === "/" ? "/account/orders" : redirectTo}
+					/>
+				</div>
+			</details>
 		</div>
 	);
 }

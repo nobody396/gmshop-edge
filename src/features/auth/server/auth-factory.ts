@@ -42,6 +42,7 @@ export type AuthEnv = {
 	AUTH_PROVIDER_SECRET?: string;
 	EMAIL_DELIVERY_ENABLED?: boolean;
 	AGENT_ACCESS_OTP_SIGNUP?: boolean;
+	AGENT_ACCESS_OTP_LOGIN?: boolean;
 	REQUIRE_EMAIL_VERIFICATION?: boolean;
 	SITE_NAME?: string;
 	SESSION_MAX_AGE_SECONDS?: number;
@@ -262,14 +263,18 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 				if (
 					(ctx.path === "/sign-in/email-otp" ||
 						ctx.path === "/email-otp/send-verification-otp") &&
-					!(emailProvider?.emailOtpEnabled || env.AGENT_ACCESS_OTP_SIGNUP)
+					!(
+						emailProvider?.emailOtpEnabled ||
+						env.AGENT_ACCESS_OTP_SIGNUP ||
+						env.AGENT_ACCESS_OTP_LOGIN
+					)
 				)
 					throw APIError.from("BAD_REQUEST", {
 						code: "EMAIL_OTP_FLOW_DISABLED",
 						message: "Email code sign-in is unavailable",
 					});
 				if (
-					env.AGENT_ACCESS_OTP_SIGNUP &&
+					(env.AGENT_ACCESS_OTP_SIGNUP || env.AGENT_ACCESS_OTP_LOGIN) &&
 					["/sign-in/email-otp", "/email-otp/send-verification-otp"].includes(
 						ctx.path,
 					)
@@ -404,7 +409,8 @@ export function createAuth(db: AppDb, env: AuthEnv) {
 								if (
 									type === "sign-in" &&
 									(emailProvider?.emailOtpEnabled ||
-										env.AGENT_ACCESS_OTP_SIGNUP)
+										env.AGENT_ACCESS_OTP_SIGNUP ||
+										env.AGENT_ACCESS_OTP_LOGIN)
 								) {
 									const locale = await loadUserEmailLocale(db.$client, email);
 									await enqueueConfiguredEmailNotification(db.$client, {

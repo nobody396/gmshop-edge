@@ -7,11 +7,18 @@ import { Label } from "#/components/ui/label";
 import { authClient } from "#/features/auth/auth-client";
 import { useTurnstile } from "#/features/auth/components/turnstile";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
+import { safePostAuthRedirect } from "#/features/auth/post-auth-redirect";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 
 // Better Auth owns the OTP, verified identity and session. No guest identity table.
-export function AgentEmailVerification({ itemId }: { itemId: string }) {
+export function AgentEmailVerification({
+	itemId,
+	redirectTo,
+}: {
+	itemId: string;
+	redirectTo?: string;
+}) {
 	const session = authClient.useSession();
 	const currentEmail = session.data?.user.email;
 	const [email, setEmail] = useState(
@@ -46,12 +53,17 @@ export function AgentEmailVerification({ itemId }: { itemId: string }) {
 			);
 			if (result.error) throw new Error("invalid_code");
 			// Reload this exact purchase page: cart, quotes and consent belong to the new session.
-			window.location.reload();
+			if (redirectTo) window.location.assign(safePostAuthRedirect(redirectTo));
+			else window.location.reload();
 		},
 	});
 	return (
 		<div className="grid gap-3">
-			<p className="text-sm">{m.agent_access_email_steps()}</p>
+			<p className="text-sm">
+				{redirectTo
+					? m.agent_access_reentry_notice()
+					: m.agent_access_email_steps()}
+			</p>
 			<Label htmlFor={`access-email-${itemId}`}>
 				{m.auth_email_required()}
 			</Label>

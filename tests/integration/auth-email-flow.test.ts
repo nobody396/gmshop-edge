@@ -114,9 +114,9 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 				`INSERT INTO system_settings(key,value) VALUES ('runtime.better_auth_secret','"synthetic-auth-secret-at-least-32-characters"'),('runtime.better_auth_url','"https://shop.example"'),('agent_access.enabled','true')`,
 			)
 			.run();
-		const attempt = async (item?: string) => {
+		const attempt = async (item?: string, email = "scoped@customer.com") => {
 			const request = jsonRequest("/api/auth/email-otp/send-verification-otp", {
-				email: "scoped@customer.com",
+				email,
 				type: "sign-in",
 			});
 			if (item) request.headers.set("x-agent-access-item", item);
@@ -135,8 +135,25 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 			)
 			.run();
 		expect(
-			(await attempt("19900000-0000-4000-8000-000000000002")).status,
-		).not.toBe(200);
+			(
+				await attempt(
+					"19900000-0000-4000-8000-000000000002",
+					"paused@customer.com",
+				)
+			).status,
+		).toBe(200);
+		expect(
+			await database
+				.prepare("SELECT count(*) AS n FROM notification_deliveries")
+				.first("n"),
+		).toBe(1);
+		expect(
+			await database
+				.prepare(
+					"SELECT count(*) AS n FROM users WHERE email='scoped@customer.com'",
+				)
+				.first("n"),
+		).toBe(0);
 	});
 	it("rejects purchase OTP for privileged or disabled users without changing passwords", async () => {
 		await database
@@ -177,6 +194,41 @@ describe("authentication email flow", { timeout: 30_000 }, () => {
 				.prepare("SELECT count(*) AS n FROM notification_deliveries")
 				.first("n"),
 		).toBe(0);
+	});
+
+	it("keeps existing purchase customers able to log in by code while signup is disabled", async () => {
+		await database
+			.prepare(
+				`INSERT INTO users(id,name,email,email_verified,enabled,role_ids,created_at,updated_at) VALUES ('returning','Returning','returning@customer.com',1,1,'["00000000-0000-4000-8000-000000000050"]',1,1)`,
+			)
+			.run();
+		const auth = createEmailAuth(database, true, false, false, true);
+		expect(
+			(
+				await auth.handler(
+					jsonRequest("/api/auth/email-otp/send-verification-otp", {
+						email: "returning@customer.com",
+						type: "sign-in",
+					}),
+				)
+			).status,
+		).toBe(200);
+		const otp = (await latestEmail(database)).text.match(/\b\d{6}\b/)?.[0];
+		const response = await auth.handler(
+			jsonRequest("/api/auth/sign-in/email-otp", {
+				email: "returning@customer.com",
+				otp,
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(responseCookie(response)).toContain("session_token");
+		expect(
+			await database
+				.prepare(
+					"SELECT count(*) AS n FROM users WHERE email='returning@customer.com'",
+				)
+				.first("n"),
+		).toBe(1);
 	});
 
 	it("rejects reserved signup before creating an identity or mail", async () => {
@@ -546,6 +598,7 @@ function createEmailAuth(
 	emailDeliveryEnabled = true,
 	emailOtpEnabled = false,
 	agentAccessSignup = false,
+	agentAccessLogin = false,
 ) {
 	return createAuth(drizzle(database, { schema }), {
 		BETTER_AUTH_SECRET: "better-auth-test-secret-at-least-32-characters",
@@ -553,6 +606,7 @@ function createEmailAuth(
 		TRUSTED_ORIGINS: ["https://shop.example"],
 		EMAIL_DELIVERY_ENABLED: emailDeliveryEnabled,
 		AGENT_ACCESS_OTP_SIGNUP: agentAccessSignup,
+		AGENT_ACCESS_OTP_LOGIN: agentAccessLogin,
 		REQUIRE_EMAIL_VERIFICATION: true,
 		SITE_NAME: "Test Shop",
 		AUTH_PROVIDERS: [

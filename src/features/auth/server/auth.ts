@@ -37,14 +37,16 @@ export async function getAuth(request: Request) {
 	);
 	// Only this purchase flow may create a customer using an email OTP.
 	const accessItem = request.headers.get("x-agent-access-item") ?? "";
+	const accessFlow = Boolean(agentAccessKind(accessItem));
 	const accessSignup =
-		Boolean(agentAccessKind(accessItem)) &&
+		accessFlow &&
 		(await d1
 			.prepare(
 				"SELECT value FROM system_settings WHERE key='agent_access.enabled'",
 			)
 			.first<string>("value")) === "true";
-	const signature = `${accessSignup}:${runtime.betterAuthSecret}:${authBaseUrl}:${trustedOrigins.join(",")}:${authProviderRevisionSignature(authProviders)}:${JSON.stringify(emailPolicy)}`;
+
+	const signature = `${accessFlow}:${accessSignup}:${runtime.betterAuthSecret}:${authBaseUrl}:${trustedOrigins.join(",")}:${authProviderRevisionSignature(authProviders)}:${JSON.stringify(emailPolicy)}`;
 	const cached = authCache.get(d1);
 	if (cached?.signature === signature) return cached.auth;
 	const auth = createAuth(getDb(request), {
@@ -55,6 +57,7 @@ export async function getAuth(request: Request) {
 		AUTH_PROVIDER_SECRET: runtime.authProviderSecret,
 		EMAIL_DELIVERY_ENABLED: emailPolicy.enabled,
 		AGENT_ACCESS_OTP_SIGNUP: accessSignup,
+		AGENT_ACCESS_OTP_LOGIN: accessFlow,
 		REQUIRE_EMAIL_VERIFICATION: emailPolicy.requireVerification,
 		SITE_NAME: emailPolicy.siteName,
 		SESSION_MAX_AGE_SECONDS: emailPolicy.sessionMaxAgeSeconds,

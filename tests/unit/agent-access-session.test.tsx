@@ -46,7 +46,7 @@ import { AgentAccessDelivery } from "#/features/agent-access/components/access";
 ).IS_REACT_ACT_ENVIRONMENT = true;
 it("clears revealed initial credentials on account switch and logout", async () => {
 	const node = document.createElement("div");
-	document.body.append(node);
+	document.body.appendChild(node);
 	const root = createRoot(node);
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false } },

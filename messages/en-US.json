@@ -2191,8 +2191,6 @@
 	"agent_access_enable_description": "Off by default. Enable only after cross-system acceptance. This does not change registration or purchasing settings on the agent main site or any child shop.",
 	"agent_access_retry": "Retry the original activation",
 	"agent_access_automatic_delivery": "Automatically activated after payment; no second application",
-	"agent_access_bind_email": "Bind and verify your email in account settings",
-	"agent_access_verification_requested": "Verification requested. Check your email, then return and check eligibility again.",
 	"agent_access_accept_policy": "I have read and agree: {policy}",
 	"agent_access_exception_support": "Activation issue / dispute support",
 	"promotion_title": "Invite friends and earn shopping rewards",
@@ -2236,5 +2234,7 @@
 	"agent_access_password_notice": "Save securely and set your own password in account security after your first sign-in. Once changed, the initial password is no longer displayed. Existing accounts keep their password.",
 	"agent_access_existing_order": "You already have an access order. Continue payment or check progress in My orders instead of ordering again.",
 	"agent_access_unavailable": "Activation is temporarily unavailable. Retry later or contact support; do not pay again.",
-	"agent_access_terms_missing": "Please accept the activation and refund terms first."
+	"agent_access_terms_missing": "Please accept the activation and refund terms first.",
+	"agent_access_order_signin": "Agent access orders: email code sign-in",
+	"agent_access_reentry_notice": "Use your purchase email to sign in and view your original order; no new purchase is needed. This signs in to the shopping account. Agent accounts sign in at lsrai.shop."
 }
