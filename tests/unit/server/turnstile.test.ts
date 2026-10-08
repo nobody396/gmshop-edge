@@ -54,6 +54,16 @@ describe("Turnstile exact entry point enforcement", () => {
 			),
 		).toBeNull();
 	});
+	it("guards the purchase OTP send but leaves ordinary sign-in and payment callbacks unchanged", async () => {
+		const r = request("/api/auth/email-otp/send-verification-otp", "");
+		expect(turnstileAction(r)).toBeNull();
+		r.headers.set(
+			"x-agent-access-item",
+			"09900000-0000-4000-8000-000000000002",
+		);
+		expect(turnstileAction(r)).toBe("register");
+		expect((await verify(r, config))?.status).toBe(403);
+	});
 	it("is explicitly optional with no configuration and never exposes the secret", async () => {
 		expect(await verify(request(), {})).toBeNull();
 		expect(publicTurnstileConfig(config)).toEqual({

@@ -1,3 +1,4 @@
+import { agentAccessKind } from "#/features/agent-access/products";
 import { resolveRequestAuthBaseUrl } from "#/features/auth/server/auth-base-url";
 import { createAuth } from "#/features/auth/server/auth-factory";
 import {
@@ -34,7 +35,16 @@ export async function getAuth(request: Request) {
 		runtime.betterAuthUrl,
 		trustedOrigins,
 	);
-	const signature = `${runtime.betterAuthSecret}:${authBaseUrl}:${trustedOrigins.join(",")}:${authProviderRevisionSignature(authProviders)}:${JSON.stringify(emailPolicy)}`;
+	// Only this purchase flow may create a customer using an email OTP.
+	const accessItem = request.headers.get("x-agent-access-item") ?? "";
+	const accessSignup =
+		Boolean(agentAccessKind(accessItem)) &&
+		(await d1
+			.prepare(
+				"SELECT value FROM system_settings WHERE key='agent_access.enabled'",
+			)
+			.first<string>("value")) === "true";
+	const signature = `${accessSignup}:${runtime.betterAuthSecret}:${authBaseUrl}:${trustedOrigins.join(",")}:${authProviderRevisionSignature(authProviders)}:${JSON.stringify(emailPolicy)}`;
 	const cached = authCache.get(d1);
 	if (cached?.signature === signature) return cached.auth;
 	const auth = createAuth(getDb(request), {
@@ -44,6 +54,7 @@ export async function getAuth(request: Request) {
 		AUTH_PROVIDERS: authProviders,
 		AUTH_PROVIDER_SECRET: runtime.authProviderSecret,
 		EMAIL_DELIVERY_ENABLED: emailPolicy.enabled,
+		AGENT_ACCESS_OTP_SIGNUP: accessSignup,
 		REQUIRE_EMAIL_VERIFICATION: emailPolicy.requireVerification,
 		SITE_NAME: emailPolicy.siteName,
 		SESSION_MAX_AGE_SECONDS: emailPolicy.sessionMaxAgeSeconds,

@@ -47,7 +47,7 @@ describe("paid agent access", { timeout: 30000 }, () => {
 			.run();
 		await db
 			.prepare(
-				`INSERT INTO system_settings(key,value) VALUES ('agent_access.enabled','true'),('commerce.default_currency','"CNY"')`,
+				`INSERT INTO system_settings(key,value) VALUES ('agent_access.enabled','true'),('commerce.default_currency','"CNY"'),('runtime.data_encryption_secret','"test-access-data-secret-32-characters"')`,
 			)
 			.run();
 		await prepareAgentProducts(db);
@@ -87,6 +87,64 @@ describe("paid agent access", { timeout: 30000 }, () => {
 		if (!d) throw new Error("no delivery");
 		return { order, ...d };
 	}
+	it("persists encrypted initial credentials before remote provision and reuses them after a lost response", async () => {
+		const d = await paid();
+		let firstPassword = "";
+		remote.mockImplementation(
+			async (input: { operation: string; initialPassword?: string }) => {
+				firstPassword = input.initialPassword ?? "";
+				throw new Error("lost response");
+			},
+		);
+		await expect(processAgentDelivery(db, d.id)).rejects.toThrow();
+		expect(firstPassword).toMatch(/^Aa1![a-f0-9]{48}$/);
+		const encrypted = await db
+			.prepare(
+				"SELECT initial_password_encrypted FROM agent_access_orders WHERE order_item_id=?",
+			)
+			.bind(d.order_item_id)
+			.first<string>("initial_password_encrypted");
+		expect(encrypted).toBeTruthy();
+		expect(encrypted).not.toContain(firstPassword);
+		await db
+			.prepare(
+				"UPDATE agent_access_orders SET next_attempt_at=0 WHERE order_item_id=?",
+			)
+			.bind(d.order_item_id)
+			.run();
+		remote.mockImplementation(async (input: { initialPassword?: string }) => {
+			expect(input.initialPassword).toBe(firstPassword);
+			return { state: "active", userId: 71, initialPasswordValid: true };
+		});
+		await processAgentDelivery(db, d.id);
+		expect(
+			await db
+				.prepare(
+					"SELECT initial_password_encrypted FROM agent_access_orders WHERE order_item_id=?",
+				)
+				.bind(d.order_item_id)
+				.first("initial_password_encrypted"),
+		).toBe(encrypted);
+		expect(
+			await db
+				.prepare("SELECT status FROM shop_orders WHERE id=?")
+				.bind(d.order.id)
+				.first("status"),
+		).toBe("completed");
+	});
+	it("discards unused initial credentials when provisioning an existing account", async () => {
+		const d = await paid();
+		await processAgentDelivery(db, d.id);
+		expect(
+			await db
+				.prepare(
+					"SELECT initial_password_encrypted FROM agent_access_orders WHERE order_item_id=?",
+				)
+				.bind(d.order_item_id)
+				.first("initial_password_encrypted"),
+		).toBeNull();
+	});
+
 	it("creates only drafts, idempotently; never alters existing product price", async () => {
 		await db
 			.prepare(

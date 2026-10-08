@@ -148,6 +148,7 @@ export function StorefrontProductPage({
 			: data.sellableItems[0]);
 	const requiresSignIn =
 		selectedItem?.deliveryType === "automation" &&
+		!agentAccessKind(selectedItem.id) &&
 		!session.isPending &&
 		!session.data?.user;
 	const checkoutPath = selectedItem

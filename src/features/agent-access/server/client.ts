@@ -13,6 +13,7 @@ const responseSchema = z.object({
 		"provisioning",
 		"revoked",
 	]),
+	initialPasswordValid: z.boolean().optional(),
 	userId: z.number().int().positive().optional(),
 	domain: z
 		.string()
@@ -31,6 +32,7 @@ export type AgentRequest = {
 	email: string;
 	kind: AgentAccessKind;
 	orderItemId?: string;
+	initialPassword?: string;
 };
 export type AgentTransport = (input: AgentRequest) => Promise<AgentResult>;
 export async function requireAgentAccessEnabled(db: D1Database) {

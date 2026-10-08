@@ -17,7 +17,12 @@ export function publicTurnstileConfig(config: TurnstileConfig) {
 export function turnstileAction(request: Request): string | null {
 	if (request.method !== "POST") return null;
 	const path = new URL(request.url).pathname.replace(/\/$/, "");
-	if (path === "/api/auth/sign-up/email") return "register";
+	if (
+		path === "/api/auth/sign-up/email" ||
+		(path === "/api/auth/email-otp/send-verification-otp" &&
+			request.headers.has("x-agent-access-item"))
+	)
+		return "register";
 	if (path === "/api/support/web/conversations") return "support";
 	return null;
 }

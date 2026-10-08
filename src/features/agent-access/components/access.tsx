@@ -1,9 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/features/auth/auth-client";
-import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
+import { agentAccessErrorMessage } from "../error-message";
 import {
 	agentAccessKind,
 	agentAccessProducts,
@@ -19,23 +19,18 @@ import {
 	getAgentDeliveryFn,
 	openAgentAccountFn,
 } from "../server/functions";
+import { AgentEmailVerification } from "./email-verification";
 
 export function AgentAccessCheckout({ itemId }: { itemId: string }) {
 	const session = authClient.useSession();
-	const verification = useMutation({
-		mutationFn: async () => {
-			const email = session.data?.user.email;
-			if (!email || isInternalIdentityEmail(email))
-				throw new Error("email_required");
-			const result = await authClient.sendVerificationEmail({
-				email,
-				callbackURL: window.location.pathname,
-			});
-			if (result.error) throw new Error("verification_unavailable");
-		},
-	});
-	const check = useMutation({
-		mutationFn: () => checkAgentAccessFn({ data: { itemId } }),
+	const check = useQuery({
+		queryKey: ["agent-access-eligibility", itemId, session.data?.user.id],
+		queryFn: () => checkAgentAccessFn({ data: { itemId } }),
+		enabled: Boolean(
+			agentAccessKind(itemId) && session.data?.user.emailVerified,
+		),
+		retry: false,
+		refetchOnWindowFocus: false,
 	});
 	if (!agentAccessKind(itemId)) return null;
 	return (
@@ -46,40 +41,26 @@ export function AgentAccessCheckout({ itemId }: { itemId: string }) {
 				{agentAccessRefundPolicy[getLocale()]}
 			</p>
 
-			{session.data?.user && !session.data.user.emailVerified ? (
-				<>
-					{!isInternalIdentityEmail(session.data.user.email) ? (
-						<Button
-							type="button"
-							variant="outline"
-							disabled={verification.isPending || verification.isSuccess}
-							onClick={() => verification.mutate()}
-						>
-							{m.auth_verification_resend()}
-						</Button>
-					) : (
-						<a className="underline" href="/account">
-							{m.agent_access_bind_email()}
-						</a>
-					)}
-					{verification.isSuccess ? (
-						<output>{m.agent_access_verification_requested()}</output>
-					) : null}
-					{verification.isError ? (
-						<p role="alert">{m.agent_access_check_error()}</p>
-					) : null}
-				</>
+			{!session.data?.user || !session.data.user.emailVerified ? (
+				<AgentEmailVerification itemId={itemId} />
+			) : (
+				<p className="break-all text-sm">
+					{m.agent_access_verified_email({ email: session.data.user.email })}
+				</p>
+			)}
+
+			{session.data?.user.emailVerified ? (
+				<Button
+					type="button"
+					variant="outline"
+					disabled={check.isFetching || !session.data?.user.emailVerified}
+					onClick={() => void check.refetch()}
+				>
+					{m.agent_access_check()}
+				</Button>
 			) : null}
-			<Button
-				type="button"
-				variant="outline"
-				disabled={check.isPending}
-				onClick={() => check.mutate()}
-			>
-				{m.agent_access_check()}
-			</Button>
 			{check.isError ? (
-				<p role="alert">{m.agent_access_check_error()}</p>
+				<p role="alert">{agentAccessErrorMessage(check.error)}</p>
 			) : null}
 			{check.data?.state === "eligible" ? (
 				<output>{m.agent_access_eligible()}</output>
@@ -103,8 +84,26 @@ export function AgentAccessCheckout({ itemId }: { itemId: string }) {
 	);
 }
 export function AgentAccessDelivery({ orderNumber }: { orderNumber: string }) {
+	const session = authClient.useSession();
+	if (!session.data?.user) return <output>{m.agent_access_sign_in()}</output>;
+	return (
+		<OwnedAgentAccessDelivery
+			key={`${session.data.user.id}:${orderNumber}`}
+			orderNumber={orderNumber}
+			userId={session.data.user.id}
+		/>
+	);
+}
+// Remount on account changes so an old session's revealed password cannot linger.
+function OwnedAgentAccessDelivery({
+	orderNumber,
+	userId,
+}: {
+	orderNumber: string;
+	userId: string;
+}) {
 	const query = useQuery({
-		queryKey: ["agent-access", orderNumber],
+		queryKey: ["agent-access", userId, orderNumber],
 		queryFn: () => getAgentDeliveryFn({ data: { orderNumber } }),
 		retry: false,
 		refetchInterval: (q) =>
@@ -137,12 +136,34 @@ export function AgentAccessDelivery({ orderNumber }: { orderNumber: string }) {
 					</output>
 					{data.state === "active" && data.orderStatus === "completed" ? (
 						<>
+							<p className="break-all">
+								{m.agent_access_verified_email({ email: data.email })}
+							</p>
+							<a
+								className="underline"
+								href="https://lsrai.shop/auth/login"
+								target="_blank"
+								rel="noreferrer"
+							>
+								https://lsrai.shop/auth/login
+							</a>
 							<Button
 								disabled={access.isPending}
 								onClick={() => access.mutate()}
 							>
 								{m.agent_access_open()}
 							</Button>
+							{access.data?.initialPassword ? (
+								<div className="grid gap-2 rounded-lg border p-3">
+									<p>{m.agent_access_initial_password()}</p>
+									<code className="break-all select-all">
+										{access.data.initialPassword}
+									</code>
+									<p className="text-sm text-muted-foreground">
+										{m.agent_access_password_notice()}
+									</p>
+								</div>
+							) : null}
 							{access.data ? (
 								<a
 									className="underline"

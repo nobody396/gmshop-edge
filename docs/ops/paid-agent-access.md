@@ -76,3 +76,15 @@ Both access products require explicit, unchecked purchase acknowledgment. The ex
 修复后已使用一次性远程 D1 库，通过同一 Wrangler `migrations apply --remote` 路径从空库执行全部 28 个迁移并校验外键；测试库已删除。生产失败的 0028 已确认整批回滚（新增字段、触发器和迁移记录均不存在），已成功的 0026/0027 保留，不重跑或删除生产表。静态回归测试约束括号和 LF 换行，业务回归继续验证退款、结算和资格联动。
 
 为避免已安装 v1.24.0 的 Bun 实例升级时被“已执行迁移变更”保护误拦，仅允许这两份迁移的精确旧 SHA-256 与精确新 SHA-256 等价组合；保留原执行记录，不重放 ALTER、不改余额。额外测试从旧原文完整建库后升级，确认无迁移重放、余额不变，未知校验值依旧被拒绝。
+
+### 邮箱直购（2026-10-08） / Email-first purchase
+
+资格商品页及结账页提供邮箱验证码入口。复用 Better Auth 六位 OTP（10 分钟、3 次错误上限、D1 限流），验证后自动创建普通购物客户或登录已有购物客户。仅两个固定 SKU 且 `agent_access.enabled=true` 的请求开启此注册能力；普通验证码登录仍不创建账号。邮件发送走原事务通知队列；新入口同样保留 Turnstile。停用账号及后台角色不得借此进入；已验证会话不重复验证。lsrai.shop 公共注册、旧账号登录和子站策略保持不变。
+
+新代理账号仅在已付款交付阶段创建。初始化密码由安全随机数生成，在 GMShop 专用字段以用途隔离的 AES-GCM 密文保存后才调用签名接口；重试复用同一份，绝不重置已有账号。代理端仅保存 bcrypt 哈希。订单本人主动查看时远端再次确认密码未变更，才短暂显示初始密码；修改后不再显示。老订单保留原激活链接兼容，新订单直接登录并提示首次登录后修改密码。API Secret 仍在代理端原安全入口领取。
+
+No second auth system, OTP table, guest-order system, wallet, or password-reset service. Existing customer credentials are never overwritten. The dedicated encrypted initial-password column is not general delivery text, email, audit data, or a queue payload. Payment and one-time entitlement idempotency remain unchanged. Human checks, email delivery and payment providers must not be faked as production completion.
+
+本次消融验收：关闭仅资格购买的 OTP 注册选项，新邮箱验证码链路测试失败；移除传入初始密码初始化，代理端密码交付测试失败。恢复后通过。前端移除了资格订单重复的联系邮箱、不可用的优惠码框与游客无效检查按钮；保留验证码限流、防机器人、原账号绑定与付款幂等。没有增加第二套注册/邮件/支付服务。
+
+初始密码展示绑定当前购物会话；退出或切换账号即卸载展示组件，按用户隔离缓存。退款撤销、远端确认密码已更改时清除本单保存的初始密码密文。不得把这一展示入口改成仅凭邮箱或订单号读取。
