@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+	PaymentCreationError,
+	redactPaymentProviderText,
+} from "#/features/shop-payments/creation-error";
 import type {
 	PaymentProviderAdapter,
 	RefundPaymentInput,
@@ -93,48 +97,95 @@ export const epayPaymentProvider: PaymentProviderAdapter = {
 		params.sign_type = "MD5";
 		const form = new FormData();
 		for (const [key, value] of Object.entries(params)) form.set(key, value);
-		const response = await fetcher(epusdtUrl(credential.baseUrl, "/mapi.php"), {
-			method: "POST",
-			body: form,
-			signal: AbortSignal.timeout(15_000),
-		});
+		const sensitive = [
+			credential.secretKey,
+			credential.pid,
+			params.sign ?? "",
+			input.customerEmail,
+			input.payerIp,
+			input.successUrl,
+			input.cancelUrl,
+			input.webhookUrl,
+			merchantOrderId,
+		];
+		let response: Response;
+		try {
+			response = await fetcher(epusdtUrl(credential.baseUrl, "/mapi.php"), {
+				method: "POST",
+				body: form,
+				signal: AbortSignal.timeout(15_000),
+			});
+		} catch (error) {
+			throw new PaymentCreationError(
+				error instanceof Error &&
+					["TimeoutError", "AbortError"].includes(error.name)
+					? "payment_provider_timeout"
+					: "payment_provider_network_error",
+				{},
+			);
+		}
+		const diagnostics = { httpStatus: response.status };
 		if (!response.ok)
-			throw new DomainError(
-				"payment_provider_unavailable",
-				502,
-				"Payment provider unavailable",
+			throw new PaymentCreationError(
+				"payment_provider_http_error",
+				diagnostics,
 			);
 		let raw: unknown;
 		try {
 			raw = await response.json();
 		} catch {
-			throw new DomainError(
-				"payment_provider_invalid_response",
-				502,
-				"Payment provider returned an invalid response",
+			throw new PaymentCreationError(
+				"payment_provider_invalid_json",
+				diagnostics,
 			);
+		}
+		const envelope = z
+			.object({
+				code: z.union([z.string(), z.number()]),
+				msg: z.unknown().optional(),
+			})
+			.safeParse(raw);
+		if (
+			envelope.success &&
+			!successCodeSchema.safeParse(envelope.data.code).success
+		) {
+			throw new PaymentCreationError("payment_provider_rejected", {
+				...diagnostics,
+				providerCode: redactPaymentProviderText(envelope.data.code, sensitive),
+				providerMessage: redactPaymentProviderText(
+					envelope.data.msg,
+					sensitive,
+				),
+			});
 		}
 		const result = createResponseSchema.safeParse(raw);
 		if (!result.success)
-			throw new DomainError(
-				"payment_provider_unavailable",
-				502,
-				"Payment provider rejected the order",
+			throw new PaymentCreationError(
+				"payment_provider_invalid_response",
+				diagnostics,
 			);
 		const tradeNo = String(result.data.trade_no ?? result.data.O_id ?? "");
 		const paymentUrl =
 			result.data.payurl || result.data.payurl2 || result.data.qrcode;
 		if (!tradeNo || !paymentUrl)
-			throw new DomainError(
-				"payment_provider_invalid_response",
-				502,
-				"Payment provider returned an invalid response",
+			throw new PaymentCreationError(
+				"payment_provider_missing_checkout",
+				diagnostics,
 			);
+		let checkoutUrl: string;
+		try {
+			checkoutUrl = z
+				.url()
+				.parse(new URL(paymentUrl, credential.baseUrl).toString());
+		} catch {
+			throw new PaymentCreationError(
+				"payment_provider_invalid_checkout",
+				diagnostics,
+			);
+		}
 		return {
 			providerPaymentId: `${tradeNo}:${merchantOrderId}`,
-			checkoutUrl: z
-				.url()
-				.parse(new URL(paymentUrl, credential.baseUrl).toString()),
+			checkoutUrl,
 			expiresAt: null,
 		};
 	},
