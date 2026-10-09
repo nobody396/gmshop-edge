@@ -10,6 +10,7 @@ import { authenticateGmshopMirror } from "#/server/middleware/gmshop-mirror";
 import { handleI18nRequest } from "#/server/middleware/i18n";
 import { handleQueue } from "#/server/queue";
 import { drainPendingCommerceOutbox } from "#/server/queue/drain";
+import type { CommerceQueueMessage } from "#/server/queue/types";
 import { adaptCloudflareEnv } from "#/server/runtime/cloudflare";
 import { runWithRuntimeEnv } from "#/server/runtime/context";
 import type { RuntimeEnv } from "#/server/runtime/types";
@@ -94,6 +95,22 @@ export default {
 			handleAppRequest(request, runtimeEnv),
 		);
 	},
-	queue: handleQueue,
-	scheduled: handleScheduled,
+	async queue(
+		batch: MessageBatch<CommerceQueueMessage>,
+		env: Env,
+		context: ExecutionContext,
+	) {
+		const runtimeEnv = adaptCloudflareEnv(env, context.waitUntil.bind(context));
+		return runWithRuntimeEnv(runtimeEnv, () => handleQueue(batch, env));
+	},
+	scheduled(
+		controller: ScheduledController,
+		env: Env,
+		context: ExecutionContext,
+	) {
+		const runtimeEnv = adaptCloudflareEnv(env, context.waitUntil.bind(context));
+		return runWithRuntimeEnv(runtimeEnv, () =>
+			handleScheduled(controller, env, context),
+		);
+	},
 };
