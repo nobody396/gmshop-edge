@@ -161,6 +161,9 @@ export function StorefrontCheckoutPage() {
 	const items = useMemo(() => cart?.items ?? [], [cart?.items]);
 	const accessItem = items.find((item) => agentAccessKind(item.sellableItemId));
 	const hasAgentAccess = Boolean(accessItem);
+	const useOrderBalance = hasAgentAccess
+		? paymentChannelId === "wallet"
+		: useBalance;
 	const eligibility = useQuery(
 		agentEligibilityOptions(
 			accessItem?.sellableItemId ?? "",
@@ -300,7 +303,10 @@ export function StorefrontCheckoutPage() {
 		const afterDiscount =
 			channelSubtotal > discount ? channelSubtotal - discount : 0n;
 		const used =
-			session.data?.user && mixedBalanceSupported && useBalance
+			!hasAgentAccess &&
+			session.data?.user &&
+			mixedBalanceSupported &&
+			useBalance
 				? balanceAvailable < afterDiscount
 					? balanceAvailable
 					: afterDiscount
@@ -334,7 +340,7 @@ export function StorefrontCheckoutPage() {
 		? BigInt(wallet.data?.balanceMinor ?? "0") + (rewards > 0n ? rewards : 0n)
 		: 0n;
 	const balanceUsed =
-		session.data?.user && mixedBalanceSupported && useBalance
+		session.data?.user && mixedBalanceSupported && useOrderBalance
 			? balanceAvailable < orderDue
 				? balanceAvailable
 				: orderDue
@@ -351,24 +357,13 @@ export function StorefrontCheckoutPage() {
 				)
 			: 0n;
 	const payableTotal = externalDue + surcharge;
-	const accessBalanceCovers = Boolean(
-		hasAgentAccess &&
-			session.data?.user &&
-			mixedBalanceSupported &&
-			useBalance &&
-			orderDue > 0n &&
-			balanceUsed === orderDue,
-	);
-	const effectivePaymentChannelId = accessBalanceCovers
-		? "wallet"
-		: paymentChannelId;
 	const accessWalletPending = Boolean(
 		hasAgentAccess &&
 			session.data?.user &&
-			useBalance &&
+			paymentChannelId === "wallet" &&
 			(wallet.isFetching || wallet.isError || !wallet.data),
 	);
-	const checkoutIdempotencyScope = `${checkoutItemsKey}:${effectivePaymentChannelId || "unselected"}:${couponCode.trim().toUpperCase()}:${useBalance}:${email}:${JSON.stringify(inputValues)}`;
+	const checkoutIdempotencyScope = `${checkoutItemsKey}:${paymentChannelId || "unselected"}:${couponCode.trim().toUpperCase()}:${useOrderBalance}:${email}:${JSON.stringify(inputValues)}`;
 	const idempotencyKey =
 		idempotencyKeys.current.get(checkoutIdempotencyScope) ??
 		(() => {
@@ -378,7 +373,7 @@ export function StorefrontCheckoutPage() {
 		})();
 	const walletAvailable =
 		balanceCurrencyMatches &&
-		(useBalance
+		(hasAgentAccess || useBalance
 			? balanceAvailable
 			: BigInt(wallet.data?.balanceMinor ?? "0")) >= orderDue;
 	const cartPending =
@@ -393,7 +388,7 @@ export function StorefrontCheckoutPage() {
 			? cloud.isError
 			: preview.isError;
 	const paymentUnavailable =
-		!accessBalanceCovers &&
+		!(paymentChannelId === "wallet" && walletAvailable) &&
 		!signInRequired &&
 		baseTotal > 0n &&
 		!channels.isPending &&
@@ -408,13 +403,26 @@ export function StorefrontCheckoutPage() {
 	}, [session.data?.user.email]);
 	useEffect(() => {
 		const first = channels.data?.[0];
+		if (hasAgentAccess && !paymentChannelId) {
+			if (wallet.isPending) return;
+			if (walletAvailable) {
+				setPaymentChannelId("wallet");
+				return;
+			}
+		}
 		if (
 			first &&
-			(paymentChannelId !== "wallet" || hasAgentAccess) &&
+			paymentChannelId !== "wallet" &&
 			!channels.data?.some((channel) => channel.id === paymentChannelId)
 		)
 			setPaymentChannelId(first.id);
-	}, [channels.data, paymentChannelId, hasAgentAccess]);
+	}, [
+		channels.data,
+		paymentChannelId,
+		hasAgentAccess,
+		wallet.isPending,
+		walletAvailable,
+	]);
 
 	const checkout = useMutation({
 		mutationFn: checkoutStoreOrderFn,
@@ -466,10 +474,10 @@ export function StorefrontCheckoutPage() {
 			!items.length ||
 			paymentUnavailable ||
 			(total > 0n &&
-				(!effectivePaymentChannelId ||
+				(!paymentChannelId ||
 					(hasAgentAccess &&
-						!accessBalanceCovers &&
-						effectivePaymentChannelId === "wallet")))
+						paymentChannelId === "wallet" &&
+						!walletAvailable)))
 		)
 			return;
 		checkout.mutate({
@@ -481,17 +489,17 @@ export function StorefrontCheckoutPage() {
 				commerceSessionId: commerceSessionId(),
 				locale: getLocale(),
 				walletPayment:
-					effectivePaymentChannelId === "wallet" &&
-					!(mixedBalanceSupported && useBalance),
+					paymentChannelId === "wallet" &&
+					!(mixedBalanceSupported && useOrderBalance),
 				useBalance: Boolean(
 					session.data?.user &&
 						mixedBalanceSupported &&
-						useBalance &&
+						useOrderBalance &&
 						balanceAvailable > 0n,
 				),
 				paymentChannelId:
-					effectivePaymentChannelId && effectivePaymentChannelId !== "wallet"
-						? effectivePaymentChannelId
+					paymentChannelId && paymentChannelId !== "wallet"
+						? paymentChannelId
 						: null,
 				paymentCurrency,
 				termsAccepted: true,
@@ -766,7 +774,8 @@ export function StorefrontCheckoutPage() {
 										/>
 									</p>
 								) : null}
-								{session.data?.user &&
+								{!hasAgentAccess &&
+								session.data?.user &&
 								balanceCurrencyMatches &&
 								mixedBalanceSupported &&
 								balanceAvailable > 0n ? (
@@ -790,7 +799,7 @@ export function StorefrontCheckoutPage() {
 										/>
 									</label>
 								) : null}
-								{balanceUsed > 0n ? (
+								{!hasAgentAccess && balanceUsed > 0n ? (
 									<p>
 										{m.promotion_external_due()}:{" "}
 										<StoreMoney
@@ -802,10 +811,12 @@ export function StorefrontCheckoutPage() {
 								) : null}
 							</div>
 						) : null}
-						{total > 0n && !signInRequired && !accessBalanceCovers ? (
+						{total > 0n && !signInRequired ? (
 							<fieldset
 								className="grid gap-3"
-								disabled={channels.isPending || paymentUnavailable}
+								disabled={
+									!hasAgentAccess && (channels.isPending || paymentUnavailable)
+								}
 							>
 								<legend className="mb-4 font-medium text-muted-foreground text-sm">
 									{m.store_payment_method()}
@@ -831,25 +842,42 @@ export function StorefrontCheckoutPage() {
 											: "grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3"
 									}
 								>
-									{wallet.data && !hasAgentAccess && balanceAvailable > 0n ? (
+									{hasAgentAccess || (wallet.data && balanceAvailable > 0n) ? (
 										<label className="grid min-h-16 cursor-pointer place-items-center content-center gap-1.5 rounded-lg bg-background/70 px-3 py-2.5 text-center text-sm ring-offset-background transition hover:bg-background has-checked:bg-primary/10 has-checked:ring-2 has-checked:ring-primary has-checked:ring-offset-2 has-focus-visible:ring-2 has-focus-visible:ring-ring">
 											<input
 												checked={paymentChannelId === "wallet"}
 												className="sr-only"
-												disabled={!walletAvailable}
+												disabled={
+													!walletAvailable ||
+													(hasAgentAccess &&
+														(wallet.isFetching || wallet.isError))
+												}
 												name="payment-channel"
 												onChange={() => setPaymentChannelId("wallet")}
 												type="radio"
 												value="wallet"
 											/>
 											<span className="font-medium">{m.wallet_payment()}</span>
+											{hasAgentAccess && !walletAvailable ? (
+												<span className="text-muted-foreground text-xs">
+													{wallet.isPending
+														? m.common_loading()
+														: wallet.isError
+															? m.common_operation_failed()
+															: m.wallet_payment_insufficient()}
+												</span>
+											) : null}
 											<span className="text-muted-foreground text-xs">
 												{m.wallet_balance()}:{" "}
-												<StoreMoney
-													amountMinor={balanceAvailable.toString()}
-													currency={wallet.data.currency}
-													decimals={wallet.data.currencyDecimals}
-												/>
+												{wallet.data ? (
+													<StoreMoney
+														amountMinor={balanceAvailable.toString()}
+														currency={wallet.data.currency}
+														decimals={wallet.data.currencyDecimals}
+													/>
+												) : (
+													"—"
+												)}
 											</span>
 										</label>
 									) : null}
@@ -1013,11 +1041,9 @@ export function StorefrontCheckoutPage() {
 										(hasAgentAccess && !agentAccessTermsAccepted) ||
 										paymentUnavailable ||
 										(total > 0n &&
-											!accessBalanceCovers &&
-											(channels.isPending ||
-												!effectivePaymentChannelId ||
-												(hasAgentAccess &&
-													effectivePaymentChannelId === "wallet")))
+											(paymentChannelId === "wallet"
+												? !walletAvailable
+												: channels.isPending || !paymentChannelId))
 									}
 									type="submit"
 								>
