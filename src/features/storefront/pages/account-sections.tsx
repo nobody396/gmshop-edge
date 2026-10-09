@@ -3,7 +3,12 @@ import { PromotionAccount } from "#/features/promotions/account";
 ("use client");
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useRouter } from "@tanstack/react-router";
+import {
+	Link,
+	useHydrated,
+	useNavigate,
+	useRouter,
+} from "@tanstack/react-router";
 import {
 	ArrowRight,
 	Boxes,
@@ -1268,6 +1273,7 @@ function Empty({
 }
 
 function OrderLink({ order }: { order: Account["orders"][number] }) {
+	const hydrated = useHydrated();
 	return (
 		<Link
 			className="group flex min-h-40 flex-col rounded-3xl border bg-card p-5 transition-colors hover:border-primary/35 sm:p-6"
@@ -1302,7 +1308,11 @@ function OrderLink({ order }: { order: Account["orders"][number] }) {
 						{order.orderNumber}
 					</p>
 					<p className="mt-1 text-muted-foreground text-xs">
-						{formatDateTime(order.createdAt)}
+						{formatDateTime(
+							order.createdAt,
+							undefined,
+							hydrated ? undefined : "UTC",
+						)}
 					</p>
 				</div>
 				<p className="shrink-0 font-semibold text-primary text-xl">
