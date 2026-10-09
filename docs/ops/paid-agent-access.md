@@ -107,3 +107,9 @@ The access checkout shares one eligibility query with the compact status panel a
 真实余额支付验收发现：网页资格检查处于运行时上下文内，但原 Worker `queue` / `scheduled` 直接指向处理器，导致自动交付及补偿调用签名桥接时读不到绑定。两个后台入口现与 `fetch` 一样使用现有 `adaptCloudflareEnv` 和 `runWithRuntimeEnv`，不增加服务层、不传递客户密钥、不修改钱包/权限逻辑。回归从实际 Worker 入口经过异步边界执行实际签名客户端；删除任一入口包装即对应测试失败。已付款订单仅从原交付记录重试，不重新下单扣款。
 
 Cloudflare queue and scheduled handlers must enter the same existing runtime context as fetch. Entry-point regression tests execute the real signed bridge client after an asynchronous boundary and verify bindings do not leak outside the event. Recovery reuses the original paid order and delivery record; it must not create another charge.
+
+### 明确选择余额支付 / Explicit wallet payment
+
+根据实际验收反馈，两个资格商品的支付区始终显示“余额支付”卡片，与支付宝、USDT 并列，零余额时仍显示但禁用并注明不足。余额足额默认选择余额；用户可明确切换至外部支付全额付款。删除资格商品的余额抵扣开关、零元外部差额及自动隐藏支付方式逻辑。余额卡复用既有奖励优先的钱包结算，不传外部通道、不创建支付宝/USDT 支付单；余额变化后前端禁止提交，服务端原有余额及幂等约束继续生效。普通商品的组合支付保持不变。
+
+Access products expose one explicit wallet radio card beside external methods, including a disabled insufficient-balance state. Selecting wallet reuses the existing reward-aware balance-only checkout with no external channel. Selecting an external method charges its full quoted total with no implicit wallet deduction. Ordinary merchandise split-tender behavior is unchanged.

@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const f = vi.hoisted(() => ({
 	balance: "0",
+	channelsUnavailable: false,
 	reward: "0",
 	eligibility: "eligible",
 	checkout: vi.fn(async (_input: unknown) => ({
@@ -79,24 +80,27 @@ vi.mock("#/features/storefront/server/catalog", () => ({
 }));
 vi.mock("#/features/storefront/server/functions", () => ({
 	checkoutStoreOrderFn: f.checkout,
-	quoteCheckoutPaymentChannelsFn: async () => [
-		{
-			id: "crypto",
-			name: "USDT",
-			provider: "gmpay",
-			feeBps: 0,
-			fixedFeeMinor: "0",
-			itemPrices: {},
-		},
-		{
-			id: "alipay",
-			name: "Alipay",
-			provider: "epay",
-			feeBps: 160,
-			fixedFeeMinor: "0",
-			itemPrices: {},
-		},
-	],
+	quoteCheckoutPaymentChannelsFn: async () => {
+		if (f.channelsUnavailable) throw new Error("external_channels_unavailable");
+		return [
+			{
+				id: "crypto",
+				name: "USDT",
+				provider: "gmpay",
+				feeBps: 0,
+				fixedFeeMinor: "0",
+				itemPrices: {},
+			},
+			{
+				id: "alipay",
+				name: "Alipay",
+				provider: "epay",
+				feeBps: 160,
+				fixedFeeMinor: "0",
+				itemPrices: {},
+			},
+		];
+	},
 }));
 vi.mock("#/features/promotions/server/functions", () => ({
 	quotePromotionFn: async () => ({ discountMinor: "0" }),
@@ -148,6 +152,7 @@ vi.stubGlobal(
 );
 afterEach(() => {
 	f.balance = "0";
+	f.channelsUnavailable = false;
 	f.reward = "0";
 	f.eligibility = "eligible";
 	f.checkout.mockClear();
@@ -186,11 +191,11 @@ const pay = (node: HTMLElement) =>
 	Array.from(node.querySelectorAll("button")).find((x) =>
 		x.textContent?.includes("store_checkout_submit"),
 	);
-it("shows one unchecked consent and no zero-balance/zero-discount controls", async () =>
+it("shows one consent and a visible disabled wallet card even with zero balance", async () =>
 	fixture(async (node) => {
 		expect(node.querySelectorAll('[role="checkbox"]')).toHaveLength(1);
 		expect(node.textContent).not.toContain("promotion_use_balance");
-		expect(node.textContent).not.toContain("wallet_payment");
+		expect(node.textContent).toContain("wallet_payment");
 		expect(node.textContent).not.toContain("promotion_discount");
 		expect(pay(node)?.disabled).toBe(true);
 	}));
@@ -207,8 +212,11 @@ it("uses the existing balance path once when rewards and wallet cover access", a
 	f.balance = "600";
 	f.reward = "400";
 	await fixture(async (node) => {
-		expect(node.querySelectorAll('[role="switch"]')).toHaveLength(1);
-		expect(node.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+		expect(node.querySelectorAll('[role="switch"]')).toHaveLength(0);
+		expect(node.querySelectorAll('input[type="radio"]')).toHaveLength(3);
+		expect(
+			node.querySelector<HTMLInputElement>('input[value="wallet"]')?.checked,
+		).toBe(true);
 		await act(async () => consent(node)?.click());
 		await act(async () => node.querySelector("form")?.requestSubmit());
 		expect(f.checkout.mock.calls[0]?.[0]).toEqual(
@@ -227,19 +235,22 @@ it("uses the existing balance path once when rewards and wallet cover access", a
 		);
 	});
 });
-it("preserves external payment selection for partial balance, with one balance control", async () => {
+it("shows insufficient balance and charges full amount externally without silently using balance", async () => {
 	f.balance = "200";
 	f.reward = "300";
 	await fixture(async (node) => {
-		expect(node.querySelectorAll('[role="switch"]')).toHaveLength(1);
-		expect(node.textContent).not.toContain("wallet_payment");
-		expect(node.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+		expect(node.querySelectorAll('[role="switch"]')).toHaveLength(0);
+		expect(
+			node.querySelector<HTMLInputElement>('input[value="wallet"]')?.disabled,
+		).toBe(true);
+		expect(node.textContent).toContain("wallet_payment_insufficient");
+		expect(node.querySelectorAll('input[type="radio"]')).toHaveLength(3);
 		await act(async () => consent(node)?.click());
 		await act(async () => node.querySelector("form")?.requestSubmit());
 		expect(f.checkout.mock.calls[0]?.[0]).toEqual(
 			expect.objectContaining({
 				data: expect.objectContaining({
-					useBalance: true,
+					useBalance: false,
 					paymentChannelId: "crypto",
 				}),
 			}),
@@ -259,14 +270,14 @@ it.each([
 		expect(f.checkout).not.toHaveBeenCalled();
 	});
 });
-it("can opt out of balance and uses the original external-payment path", async () => {
+it("can choose Alipay explicitly even when wallet covers the order", async () => {
 	f.balance = "600";
 	f.reward = "400";
 	await fixture(async (node) => {
 		await act(async () =>
-			node.querySelector<HTMLElement>('[role="switch"]')?.click(),
+			node.querySelector<HTMLElement>('input[value="alipay"]')?.click(),
 		);
-		expect(node.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+		expect(node.querySelectorAll('input[type="radio"]')).toHaveLength(3);
 		await act(async () => consent(node)?.click());
 		await act(async () => node.querySelector("form")?.requestSubmit());
 		expect(f.checkout.mock.calls[0]?.[0]).toEqual(
@@ -274,9 +285,44 @@ it("can opt out of balance and uses the original external-payment path", async (
 				data: expect.objectContaining({
 					useBalance: false,
 					walletPayment: false,
-					paymentChannelId: "crypto",
+					paymentChannelId: "alipay",
 				}),
 			}),
 		);
+	});
+});
+
+it("blocks submission if balance drops after choosing wallet", async () => {
+	f.balance = "1000";
+	await fixture(async (node, client) => {
+		await act(async () => consent(node)?.click());
+		expect(pay(node)?.disabled).toBe(false);
+		f.balance = "0";
+		await act(async () => {
+			await client.refetchQueries({ queryKey: ["wallet"] });
+			await new Promise((resolve) => setTimeout(resolve, 15));
+		});
+		expect(
+			node.querySelector<HTMLInputElement>('input[value="wallet"]')?.checked,
+		).toBe(true);
+		expect(pay(node)?.disabled).toBe(true);
+		await act(async () => node.querySelector("form")?.requestSubmit());
+		expect(f.checkout).not.toHaveBeenCalled();
+	});
+});
+
+it("wallet payment remains available when external payment channels fail", async () => {
+	f.balance = "1000";
+	f.channelsUnavailable = true;
+	await fixture(async (node) => {
+		expect(
+			node.querySelector<HTMLInputElement>('input[value="wallet"]')?.disabled,
+		).toBe(false);
+		await act(async () => consent(node)?.click());
+		expect(pay(node)?.disabled).toBe(false);
+		await act(async () => node.querySelector("form")?.requestSubmit());
+		expect(f.checkout.mock.calls[0]?.[0]).toMatchObject({
+			data: { useBalance: true, paymentChannelId: null, walletPayment: false },
+		});
 	});
 });

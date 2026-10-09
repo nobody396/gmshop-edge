@@ -1715,6 +1715,7 @@
 	"wallet_balance": "余额",
 	"store_header_settings": "设置",
 	"store_header_settings_back": "返回",
+	"wallet_payment_insufficient": "余额不足",
 	"wallet_payment": "余额支付",
 	"wallet_top_up": "充值",
 	"wallet_top_up_description": "选择充值金额和支付方式，支付成功后余额将自动到账。",

@@ -1715,6 +1715,7 @@
 	"wallet_balance": "Balance",
 	"store_header_settings": "Settings",
 	"store_header_settings_back": "Back",
+	"wallet_payment_insufficient": "Insufficient balance",
 	"wallet_payment": "Balance payment",
 	"wallet_top_up": "Top up",
 	"wallet_top_up_description": "Choose an amount and payment method. Your balance is credited after payment succeeds.",
