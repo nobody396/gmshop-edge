@@ -72,7 +72,7 @@ for (const event of ["queue", "scheduled"] as const) {
 		const env = {
 			AGENT_ACCESS_SIGNING_KEY:
 				"synthetic-bridge-secret-at-least-32-characters",
-		} as Env;
+		} as unknown as Env;
 		if (event === "queue")
 			await worker.queue(
 				{ messages: [], queue: "test" } as unknown as MessageBatch<never>,
