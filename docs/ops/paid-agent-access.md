@@ -101,3 +101,9 @@ No second auth system, OTP table, guest-order system, wallet, or password-reset 
 验证码发送成功后隐藏已消费的真人验证，直接进入输入验证码；仅失败或主动重发才重新挑战。Better Auth 自带会话刷新，删除额外整页 reload；购物车、钱包和资格查询按账号隔离，避免切换账号复用旧缓存。保留明确的邮箱不可投递/限流/真人过期提示，不把所有错误都说成“过于频繁”。
 
 The access checkout shares one eligibility query with the compact status panel and fails closed before submission. A single explicit acknowledgment retains the existing backend policy snapshot. Presentation-only balance consolidation uses the original full/mixed balance paths for fixed access SKUs; no ledger or coupon logic changes. Real workerd transport coverage replaces the previous false confidence from Node-only fetch mocks. Email code sign-in remains in place with account-scoped queries; CAPTCHA is renewed only for another send, not merely to enter the received code.
+
+### Workers 后台事件上下文 / Background event context
+
+真实余额支付验收发现：网页资格检查处于运行时上下文内，但原 Worker `queue` / `scheduled` 直接指向处理器，导致自动交付及补偿调用签名桥接时读不到绑定。两个后台入口现与 `fetch` 一样使用现有 `adaptCloudflareEnv` 和 `runWithRuntimeEnv`，不增加服务层、不传递客户密钥、不修改钱包/权限逻辑。回归从实际 Worker 入口经过异步边界执行实际签名客户端；删除任一入口包装即对应测试失败。已付款订单仅从原交付记录重试，不重新下单扣款。
+
+Cloudflare queue and scheduled handlers must enter the same existing runtime context as fetch. Entry-point regression tests execute the real signed bridge client after an asynchronous boundary and verify bindings do not leak outside the event. Recovery reuses the original paid order and delivery record; it must not create another charge.
