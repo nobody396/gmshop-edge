@@ -291,7 +291,9 @@ test("only explicit Telegram callback wires sending; mobile copy and header cont
 	expect(
 		header.slice(header.indexOf("<header"), header.indexOf("<nav")),
 	).not.toMatch(/\bhidden\b/);
-	expect(header).toContain('href !== "/invoice" && "hidden lg:block"');
+	expect(header.replace(/\s+/g, " ")).toContain(
+		'href !== "/invoice" && href !== "/account" && "hidden lg:block"',
+	);
 	expect(header).toContain("<CustomerSupport />");
 });
 

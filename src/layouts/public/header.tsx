@@ -83,7 +83,11 @@ export function PublicHeader() {
 							<a
 								className={cn(
 									"whitespace-nowrap py-2 transition-colors hover:text-foreground",
-									href !== "/invoice" && "hidden lg:block",
+									href !== "/invoice" &&
+										href !== "/account" &&
+										"hidden lg:block",
+									href === "/account" &&
+										"rounded-full bg-primary px-2 font-semibold text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
 								)}
 								href={href}
 								key={href}
@@ -360,6 +364,7 @@ function publicNavigation({ signedIn }: { signedIn: boolean }) {
 	const navigation: Array<readonly [string, string]> = [
 		[m.store_nav_shop(), "/"],
 		[m.store_nav_invoice(), "/invoice"],
+		[m.store_nav_rewards(), "/account"],
 	];
 	navigation.push(
 		signedIn
