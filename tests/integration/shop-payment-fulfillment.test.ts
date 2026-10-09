@@ -38,6 +38,96 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 
 	afterEach(async () => miniflare.dispose());
 
+	it("keeps the EPay rejection reason when checkout cannot get a QR URL", async () => {
+		const credential = await encryptSecret(
+			JSON.stringify({
+				baseUrl: "https://zpay.example",
+				pid: "1000",
+				secretKey: "fixture-merchant-secret",
+				paymentMethod: "alipay",
+			}),
+			"commerce-test-secret",
+			"payment-credential",
+		);
+		await database
+			.prepare(
+				"UPDATE payment_channels SET provider='epay',credential_encrypted=? WHERE id=?",
+			)
+			.bind(credential, channelId)
+			.run();
+		const fetcher = vi.fn(async () =>
+			Response.json({ code: "error", msg: "用户IP地址格式错误" }),
+		);
+		await expect(
+			createShopPayment(
+				database,
+				{
+					orderId,
+					channelId,
+					idempotencyKey: "create-payment-rejected",
+					successUrl: "https://shop.example/orders/GM100001",
+					cancelUrl: "https://shop.example/orders/GM100001",
+					payerIp: "2001:db8::10",
+				},
+				fetcher,
+			),
+		).rejects.toMatchObject({ code: "payment_provider_rejected" });
+		const attempt = await database
+			.prepare(
+				"SELECT id,status,failure_code,checkout_url FROM payment_attempts WHERE idempotency_key=?",
+			)
+			.bind("create-payment-rejected")
+			.first<{
+				id: string;
+				status: string;
+				failure_code: string;
+				checkout_url: string | null;
+			}>();
+		expect(attempt).toMatchObject({
+			status: "failed",
+			failure_code: "payment_provider_rejected",
+			checkout_url: null,
+		});
+		const audit = await database
+			.prepare(
+				"SELECT after FROM audit_logs WHERE action='payment.creation_failed' AND target_id=?",
+			)
+			.bind(attempt?.id)
+			.first<{ after: string }>();
+		expect(JSON.parse(audit?.after ?? "{}")).toMatchObject({
+			provider: "epay",
+			payerIpVersion: "ipv6",
+			errorCode: "payment_provider_rejected",
+			httpStatus: 200,
+			providerCode: "error",
+			providerMessage: "用户IP地址格式错误",
+		});
+		expect(audit?.after).not.toContain("fixture-merchant-secret");
+		expect(audit?.after).not.toContain("2001:db8::10");
+		await expect(
+			createShopPayment(
+				database,
+				{
+					orderId,
+					channelId,
+					idempotencyKey: "create-payment-rejected",
+					successUrl: "https://shop.example/orders/GM100001",
+					cancelUrl: "https://shop.example/orders/GM100001",
+					payerIp: "2001:db8::10",
+				},
+				fetcher,
+			),
+		).resolves.toMatchObject({ status: "failed", checkoutUrl: null });
+		const auditCount = await database
+			.prepare(
+				"SELECT COUNT(*) AS count FROM audit_logs WHERE action='payment.creation_failed' AND target_id=?",
+			)
+			.bind(attempt?.id)
+			.first<{ count: number }>();
+		expect(auditCount?.count).toBe(1);
+		expect(fetcher).toHaveBeenCalledTimes(1);
+	});
+
 	it("creates a converted payment with an immutable exchange-rate snapshot", async () => {
 		const fetcher = vi.fn(
 			async (_input: RequestInfo | URL, init?: RequestInit) => {

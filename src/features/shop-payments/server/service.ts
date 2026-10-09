@@ -6,6 +6,7 @@ import {
 } from "#/features/entitlements/server/ledger";
 import { quotePaymentCurrency } from "#/features/exchange-rates/server/quote";
 import { unallocatedPaymentStatement } from "#/features/redeem-warehouse/server/sale-capacity";
+import { PaymentCreationError } from "#/features/shop-payments/creation-error";
 import { grossUpPaymentAmount } from "#/features/shop-payments/fees";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
@@ -242,13 +243,19 @@ export async function createShopPayment(
 			.run();
 		return { id: attemptId, status: "pending", ...payment };
 	} catch (error) {
-		await db
-			.prepare(
-				"UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_create_failed', updated_at = ? WHERE id = ?",
-			)
-			.bind(Date.now(), attemptId)
-			.run();
-		throw error;
+		await db.batch(
+			paymentCreationFailureStatements(
+				db,
+				attemptId,
+				context.provider,
+				input.payerIp,
+				now,
+				error,
+			),
+		);
+		throw error instanceof PaymentCreationError
+			? new DomainError(error.code, error.status, error.message)
+			: error;
 	}
 }
 
@@ -422,19 +429,56 @@ export async function createWalletTopupPayment(
 		return { topupId, id: attemptId, status: "pending", ...payment };
 	} catch (error) {
 		await db.batch([
-			db
-				.prepare(
-					"UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_create_failed', updated_at = ? WHERE id = ?",
-				)
-				.bind(Date.now(), attemptId),
+			...paymentCreationFailureStatements(
+				db,
+				attemptId,
+				context.provider,
+				input.payerIp ?? null,
+				now,
+				error,
+			),
 			db
 				.prepare(
 					"UPDATE wallet_topups SET status = 'failed', updated_at = ? WHERE id = ?",
 				)
 				.bind(Date.now(), topupId),
 		]);
-		throw error;
+		throw error instanceof PaymentCreationError
+			? new DomainError(error.code, error.status, error.message)
+			: error;
 	}
+}
+
+function paymentCreationFailureStatements(
+	db: D1Database,
+	attemptId: string,
+	provider: string,
+	payerIp: string | null,
+	startedAt: number,
+	error: unknown,
+) {
+	const now = Date.now();
+	const errorCode =
+		error instanceof DomainError ? error.code : "provider_create_failed";
+	const details = {
+		provider,
+		errorCode,
+		elapsedMs: Math.max(0, now - startedAt),
+		payerIpVersion:
+			payerIp === null ? "missing" : payerIp.includes(":") ? "ipv6" : "ipv4",
+		...(error instanceof PaymentCreationError ? error.diagnostics : {}),
+	};
+	return [
+		db
+			.prepare(
+				"UPDATE payment_attempts SET status = 'failed', failure_code = ?, updated_at = ? WHERE id = ? AND status = 'created'",
+			)
+			.bind(errorCode, now, attemptId),
+		db
+			.prepare(`INSERT INTO audit_logs (id,action,target_type,target_id,after,created_at)
+		 VALUES (?, 'payment.creation_failed', 'payment_attempt', ?, ?, ?)`)
+			.bind(crypto.randomUUID(), attemptId, JSON.stringify(details), now),
+	];
 }
 
 export async function handleShopPaymentWebhook(
