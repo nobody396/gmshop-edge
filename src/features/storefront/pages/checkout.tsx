@@ -869,15 +869,15 @@ export function StorefrontCheckoutPage() {
 											) : null}
 											<span className="text-muted-foreground text-xs">
 												{m.wallet_balance()}:{" "}
-												<StoreMoney
-													amountMinor={balanceAvailable.toString()}
-													currency={
-														wallet.data?.currency ??
-														currencyItem?.currency ??
-														"CNY"
-													}
-													decimals={wallet.data?.currencyDecimals ?? 2}
-												/>
+												{wallet.data ? (
+													<StoreMoney
+														amountMinor={balanceAvailable.toString()}
+														currency={wallet.data.currency}
+														decimals={wallet.data.currencyDecimals}
+													/>
+												) : (
+													"—"
+												)}
 											</span>
 										</label>
 									) : null}
