@@ -73,6 +73,7 @@ vi.mock("#/paraglide/messages", () => ({
 			store_header_settings: () => "Store settings",
 			store_my_preferences_description: () => "Preferences",
 			store_nav_invoice: () => "Invoice",
+			store_nav_rewards: () => "Rewards",
 			store_nav_orders: () => "Orders",
 			store_nav_shop: () => "Shop",
 		},
@@ -122,6 +123,25 @@ describe("public header settings", () => {
 
 		const invoice = container.querySelector('a[href="/invoice"]');
 		expect(invoice?.textContent).toContain("Invoice");
+	});
+
+	it.each([
+		false,
+		true,
+	])("keeps invitation rewards next to invoices for signedIn=%s, including mobile", (signedIn) => {
+		if (signedIn)
+			mocks.session.data = {
+				user: { email: "buyer@example.test", image: null, name: "Buyer" },
+			};
+		act(() => root.render(<PublicHeader />));
+		const reward = container.querySelector('nav a[href="/account"]');
+		expect(reward?.textContent).toBe("Rewards");
+		expect(reward?.previousElementSibling?.getAttribute("href")).toBe(
+			"/invoice",
+		);
+		expect(reward?.classList.contains("hidden")).toBe(false);
+		expect(reward?.classList.contains("text-primary-foreground")).toBe(true);
+		expect(reward?.classList.contains("bg-primary")).toBe(true);
 	});
 
 	it("shows online, Telegram, and an on-demand WeChat QR", () => {
