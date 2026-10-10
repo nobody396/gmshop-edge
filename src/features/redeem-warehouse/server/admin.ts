@@ -54,7 +54,7 @@ const inventoryRowSchema = z.object({
 
 const inventoryEnvelopeSchema = z.object({
 	success: z.literal(true),
-	data: z.array(inventoryRowSchema).length(7),
+	data: z.array(inventoryRowSchema).min(1).max(100),
 });
 
 const importEnvelopeSchema = z.object({
@@ -312,6 +312,22 @@ export async function generateRedeemSellableInventory(
 			}),
 		}),
 	);
+	if (
+		batch.data.sku !== data.sku ||
+		batch.data.count !== data.count ||
+		batch.data.codes.length !== data.count ||
+		new Set(batch.data.codes).size !== data.count ||
+		batch.data.codes.some(
+			(code) =>
+				!code.startsWith(`${data.sku.toLowerCase().replaceAll("_", "-")}-`),
+		)
+	) {
+		throw new DomainError(
+			"redeem_warehouse_batch_mismatch",
+			502,
+			"Redemption batch does not match the requested SKU and count",
+		);
+	}
 	const commerceSecret = context.runtime.commerceSecret;
 	const prepared = await Promise.all(
 		batch.data.codes.map(async (code) => ({
