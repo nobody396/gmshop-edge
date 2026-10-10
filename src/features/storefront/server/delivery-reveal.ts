@@ -30,7 +30,8 @@ export async function revealStoreDelivery(
 	);
 	const delivery = await db
 		.prepare(
-			`SELECT dr.content_encrypted, dr.delivery_type, ce.id AS entitlement_id,
+			`SELECT dr.content_encrypted, dr.delivery_type, dr.redeem_sku, ce.id AS entitlement_id,
+       EXISTS (SELECT 1 FROM stock_entries stock WHERE stock.order_item_id=oi.id AND stock.redeem_sku IN ('GPT_PLUS_PH','GPT_5X_PH','GPT_20X_PH')) AS has_converted_stock,
 			 sellable.policy_json, supplier_order.binding_snapshot_json
 			 FROM delivery_records dr
 			 JOIN shop_order_items oi ON oi.id = dr.order_item_id
@@ -49,6 +50,8 @@ export async function revealStoreDelivery(
 		.first<{
 			content_encrypted: string;
 			delivery_type: "stock";
+			redeem_sku: string | null;
+			has_converted_stock: number;
 			entitlement_id: string;
 			policy_json: string | null;
 			binding_snapshot_json: string | null;
@@ -86,10 +89,14 @@ export async function revealStoreDelivery(
 		delivery.content_encrypted,
 		runtime.commerceSecret,
 	);
-	const usageUrl = resolveSupplierUsageUrl(
-		delivery.policy_json,
-		delivery.binding_snapshot_json,
-	);
+	const usageUrl = delivery.redeem_sku
+		? "https://redeem.lsrai.shop"
+		: delivery.has_converted_stock
+			? null
+			: resolveSupplierUsageUrl(
+					delivery.policy_json,
+					delivery.binding_snapshot_json,
+				);
 	await consumeEntitlementAccess(db, {
 		entitlementId: delivery.entitlement_id,
 		assetType: "stock_secret",
