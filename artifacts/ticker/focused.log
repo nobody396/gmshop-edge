@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/fujunhao/laoshirenai/local/worktrees/fix-storefront-ticker-copy
+
+
+ Test Files  2 passed (2)
+      Tests  7 passed (7)
+   Start at  03:30:10
+   Duration  1.36s (transform 161ms, setup 0ms, import 485ms, tests 262ms, environment 439ms)
+
