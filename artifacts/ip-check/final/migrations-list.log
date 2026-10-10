@@ -1,0 +1,11 @@
+
+ ⛅️ wrangler 4.110.0 (update available 4.131.2)
+───────────────────────────────────────────────
+Resource location: remote 
+
+Migrations to be applied:
+┌─────────────────────────────────┐
+│ Name                            │
+├─────────────────────────────────┤
+│ 0014_ip_check_score_buckets.sql │
+└─────────────────────────────────┘

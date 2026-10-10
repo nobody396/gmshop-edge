@@ -1,0 +1,7 @@
+3:26:02 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+
+  VITE v8.1.4  ready in 382 ms
+
+  ➜  Local:   http://127.0.0.1:3017/
+3:27:18 AM [vite] (client) hmr update /@fs/Users/fujunhao/laoshirenai/local/worktrees/feat-owned-ip-check/src/features/ip-check/page.tsx
+3:27:18 AM [vite] (client) page reload main.tsx

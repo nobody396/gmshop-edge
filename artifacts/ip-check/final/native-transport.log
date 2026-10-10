@@ -1,0 +1,33 @@
+
+ RUN  v4.1.10 /Users/fujunhao/laoshirenai/local/worktrees/feat-owned-ip-check
+
+ ❯ tests/integration/ip-check-worker-transport.test.ts (4 tests | 1 failed) 219ms
+   × decodes /gzip inside the actual Workers runtime 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/ip-check-worker-transport.test.ts > decodes /gzip inside the actual Workers runtime
+AssertionError: expected 502 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 502
+
+ ❯ tests/integration/ip-check-worker-transport.test.ts:59:26
+     57| ])("decodes %s inside the actual Workers runtime", async (path) => {
+     58|  const response = await mf.dispatchFetch(`https://app.example${path}`);
+     59|  expect(response.status).toBe(200);
+       |                          ^
+     60|  expect(await response.json()).toEqual({ status: 200, data: { ok: true…
+     61| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  04:52:52
+   Duration  710ms (transform 99ms, setup 0ms, import 421ms, tests 219ms, environment 0ms)
+

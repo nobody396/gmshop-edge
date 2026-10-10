@@ -1,0 +1,101 @@
+[
+  {
+    "check": "current (IP redacted)",
+    "source": "ipquery.io",
+    "mode": "intelligence",
+    "score": 100,
+    "risk": 0,
+    "status": "clear",
+    "country": "US",
+    "asn": 3257,
+    "flags": {
+      "datacenter": false,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": null
+    },
+    "ranking": {
+      "total": 1,
+      "percentile": 0
+    },
+    "warning": null
+  },
+  {
+    "check": "1.1.1.1",
+    "source": "ipquery.io",
+    "mode": "intelligence",
+    "score": 60,
+    "risk": 33,
+    "status": "hosting",
+    "country": "AU",
+    "asn": 13335,
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": true
+    },
+    "ranking": {
+      "total": 2,
+      "percentile": 0
+    },
+    "warning": null
+  },
+  {
+    "check": "2606:4700:4700::1111",
+    "source": "ipquery.io",
+    "mode": "intelligence",
+    "score": 60,
+    "risk": 33,
+    "status": "hosting",
+    "country": "CA",
+    "asn": 13335,
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": true
+    },
+    "ranking": {
+      "total": 3,
+      "percentile": 0
+    },
+    "warning": null
+  },
+  {
+    "path": "/healthz",
+    "http": 200
+  },
+  {
+    "path": "/",
+    "http": 200
+  },
+  {
+    "path": "/ip-check",
+    "http": 200
+  },
+  {
+    "path": "/guides/claude-network-check",
+    "http": 200
+  },
+  {
+    "path": "/api/ip-check?ip=127.0.0.1",
+    "http": 400
+  },
+  {
+    "path": "/api/ip-check?ip=example.com",
+    "http": 400
+  }
+]

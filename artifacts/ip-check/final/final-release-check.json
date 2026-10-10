@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/healthz",
+    "status": 200
+  },
+  {
+    "path": "/ip-check",
+    "status": 200
+  },
+  {
+    "path": "/guides/claude-network-check",
+    "status": 200
+  },
+  {
+    "path": "/api/ip-check",
+    "source": "ipquery.io",
+    "score": 60,
+    "warning": null
+  },
+  {
+    "path": "/ip-check?ip=2606%3A4700%3A4700%3A%3A1111",
+    "source": "ipquery.io",
+    "score": 60,
+    "warning": null
+  }
+]

@@ -1,0 +1,51 @@
+[
+  {
+    "ip": "1.1.1.1",
+    "source": "ipquery.io",
+    "score": 60,
+    "asn": 13335,
+    "country": "AU",
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": true
+    }
+  },
+  {
+    "ip": "2606:4700:4700::1111",
+    "source": "ipquery.io",
+    "score": 60,
+    "asn": 13335,
+    "country": "CA",
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": true
+    }
+  },
+  {
+    "ip": "1.1.1.1",
+    "source": "proxycheck.io",
+    "score": 60,
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": null,
+      "anycast": true
+    }
+  }
+]

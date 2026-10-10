@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/fujunhao/laoshirenai/local/worktrees/feat-owned-ip-check
+
+
+ Test Files  12 passed (12)
+      Tests  101 passed (101)
+   Start at  05:37:15
+   Duration  15.37s (transform 1.78s, setup 0ms, import 4.03s, tests 10.00s, environment 556ms)
+

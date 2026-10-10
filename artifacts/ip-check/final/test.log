@@ -1,0 +1,89 @@
+$ bun run test:vitest && bun run test:bun-runtime
+$ vitest run --exclude tests/unit/server/node-data-operations.test.ts --exclude tests/unit/server/node-runtime-adapters.test.ts --exclude tests/unit/server/node-server-runtime.test.ts
+
+ RUN  v4.1.10 /Users/fujunhao/laoshirenai/local/worktrees/feat-owned-ip-check
+
+ ❯ tests/integration/install.test.ts (3 tests | 1 failed) 8181ms
+     × keeps the GMShop baseline and applies incremental migrations 2362ms
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+ ❯ tests/unit/i18n-messages.test.ts (5 tests | 1 failed) 137ms
+     × keeps message resources aligned with every static source reference 77ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/install.test.ts > GMShop installation > keeps the GMShop baseline and applies incremental migrations
+AssertionError: expected [ '0000_gmshop.sql', …(14) ] to deeply equal [ '0000_gmshop.sql', …(13) ]
+
+- Expected
++ Received
+
+@@ -11,6 +11,7 @@
+    "0009_modern_adam_destine.sql",
+    "0010_supplier_diagnostics.sql",
+    "0011_realtime_inventory_events.sql",
+    "0012_aisou_inventory.sql",
+    "0013_redeem_delivery.sql",
++   "0014_ip_check_score_buckets.sql",
+  ]
+
+ ❯ tests/integration/install.test.ts:36:17
+     34|    .filter((name) => /^\d+_.+\.sql$/.test(name))
+     35|    .sort();
+     36|   expect(files).toEqual([
+       |                 ^
+     37|    "0000_gmshop.sql",
+     38|    "0001_telegram_bot_support.sql",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/i18n-messages.test.ts > Paraglide message resources > keeps message resources aligned with every static source reference
+AssertionError: expected [ 'access_action_code', …(1988) ] to deeply equal [ 'access_action_code', …(1985) ]
+
+- Expected
++ Received
+
+@@ -711,10 +711,11 @@
+    "ip_grade_good",
+    "ip_grade_risk",
+    "ip_guide",
+    "ip_hide",
+    "ip_hosting_body",
++   "ip_hosting_label",
+    "ip_hosting_status",
+    "ip_incomplete",
+    "ip_incomplete_body",
+    "ip_intro",
+    "ip_limited",
+@@ -765,10 +766,12 @@
+    "ip_share_title",
+    "ip_shell_unix",
+    "ip_shell_windows",
+    "ip_show",
+    "ip_source",
++   "ip_suspected",
++   "ip_threats",
+    "ip_time",
+    "ip_timezone",
+    "ip_timezone_mismatch",
+    "ip_timezone_no_conflict",
+    "ip_timezone_note",
+
+ ❯ tests/unit/i18n-messages.test.ts:99:41
+     97|    ),
+     98|   ) as Record<string, string>;
+     99|   expect(Object.keys(canonical).sort()).toEqual([...referenced].sort()…
+       |                                         ^
+    100|  });
+    101| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 219 passed | 1 skipped (222)
+      Tests  2 failed | 1149 passed | 2 todo (1153)
+   Start at  04:00:13
+   Duration  700.33s (transform 10.30s, setup 0ms, import 78.32s, tests 597.64s, environment 8.59s)
+
+error: script "test:vitest" exited with code 1
+error: script "test" exited with code 1

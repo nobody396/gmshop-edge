@@ -1,0 +1,22 @@
+
+ ⛅️ wrangler 4.110.0 (update available 4.131.2)
+───────────────────────────────────────────────
+Resource location: remote 
+
+Migrations to be applied:
+┌─────────────────────────────────┐
+│ name                            │
+├─────────────────────────────────┤
+│ 0014_ip_check_score_buckets.sql │
+└─────────────────────────────────┘
+? About to apply 1 migration(s)
+Your database may not be available to serve requests during the migration, continue?
+🤖 Using fallback value in non-interactive context: yes
+🌀 Executing on remote database DB (a7094360-70af-4a34-ad7c-ca44745c08c1):
+🌀 To execute on your local development database, remove the --remote flag from your wrangler command.
+🚣 Executed 2 commands in 0.90ms
+┌─────────────────────────────────┬────────┐
+│ name                            │ status │
+├─────────────────────────────────┼────────┤
+│ 0014_ip_check_score_buckets.sql │ ✅     │
+└─────────────────────────────────┴────────┘

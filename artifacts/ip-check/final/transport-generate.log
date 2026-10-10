@@ -1,0 +1,3 @@
+$ paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy cookie custom-system-default baseLocale
+ℹ [paraglide-js] Compiling inlang project ...
+✔ [paraglide-js] Successfully compiled inlang project.

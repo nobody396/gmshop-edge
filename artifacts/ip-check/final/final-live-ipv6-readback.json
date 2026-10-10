@@ -1,0 +1,94 @@
+[
+  {
+    "path": "/api/ip-check",
+    "family": 4,
+    "source": "ipquery.io",
+    "score": 100,
+    "status": "clear",
+    "asn": 3257,
+    "flags": {
+      "datacenter": false,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": null
+    },
+    "warning": null
+  },
+  {
+    "path": "/ip-check",
+    "family": 6,
+    "source": "ipquery.io",
+    "score": 60,
+    "status": "hosting",
+    "asn": 906,
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": null
+    },
+    "warning": null
+  },
+  {
+    "check": "current-as-explicit-query",
+    "source": "ipquery.io",
+    "score": 60,
+    "status": "hosting",
+    "asn": null,
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": null
+    },
+    "warning": null
+  },
+  {
+    "check": "1.1.1.1",
+    "source": "ipquery.io",
+    "score": 60,
+    "status": "hosting",
+    "asn": 13335,
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": true
+    },
+    "warning": null
+  },
+  {
+    "check": "2606:4700:4700::1111",
+    "source": "ipquery.io",
+    "score": 60,
+    "status": "hosting",
+    "asn": 13335,
+    "flags": {
+      "datacenter": true,
+      "chinaCloud": false,
+      "vpn": false,
+      "proxy": false,
+      "tor": false,
+      "residentialProxy": false,
+      "mobile": false,
+      "anycast": true
+    },
+    "warning": null
+  }
+]

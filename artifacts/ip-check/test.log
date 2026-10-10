@@ -1,0 +1,49 @@
+$ bun run test:vitest && bun run test:bun-runtime
+$ vitest run --exclude tests/unit/server/node-data-operations.test.ts --exclude tests/unit/server/node-runtime-adapters.test.ts --exclude tests/unit/server/node-server-runtime.test.ts
+
+ RUN  v4.1.10 /Users/fujunhao/laoshirenai/local/worktrees/feat-owned-ip-check
+
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+
+ Test Files  215 passed | 1 skipped (216)
+      Tests  1064 passed | 2 todo (1066)
+   Start at  02:55:19
+   Duration  539.52s (transform 3.04s, setup 0ms, import 42.21s, tests 474.39s, environment 7.92s)
+
+$ bun test tests/unit/server/node-data-operations.test.ts tests/unit/server/node-runtime-adapters.test.ts tests/unit/server/node-server-runtime.test.ts
+bun test v1.4.2 (744846f84)
+
+tests/unit/server/node-data-operations.test.ts:
+(pass) Bun data operations > backs up and restores a validated database and object store [162.55ms]
+(pass) Bun data operations > refuses to overwrite a non-empty restore target [21.89ms]
+(pass) Bun data operations > restores into an existing empty target [107.75ms]
+(pass) Bun data operations > rejects a tampered backup without installing partial data [113.82ms]
+(pass) Bun data operations > imports a D1 SQL export and an R2 key directory [119.58ms]
+(pass) Bun data operations > rejects a migration ledger without the GMShop schema [34.38ms]
+(pass) Bun data operations > does not install a failed Cloudflare import [22.22ms]
+
+tests/unit/server/node-runtime-adapters.test.ts:
+(pass) Bun SQLite database > implements D1-style statements and atomic batches [0.77ms]
+(pass) Bun SQLite database > applies each immutable migration exactly once [1.14ms]
+(pass) Bun SQLite database > applies rebuild migrations atomically with populated foreign keys [1.02ms]
+(pass) Bun SQLite database > rejects data created by an unknown future migration [0.50ms]
+(pass) NodeMemoryCache > expires entries and evicts the least recently used value [0.49ms]
+(pass) NodeMemoryCache > bounds retained cache data by bytes [0.05ms]
+(pass) NodeObjectStorage > streams private objects with metadata and safe hashed paths [6.14ms]
+(pass) Node durable background services > reuses queue statements instead of preparing them per operation [2.88ms]
+(pass) Node durable background services > backs off empty polling and wakes immediately when a message arrives [1.81ms]
+(pass) Node durable background services > leases, retries and dead-letters persistent queue messages [4.37ms]
+(pass) Node durable background services > dead-letters malformed persisted messages [0.41ms]
+(pass) Node durable background services > does not poll while every consumer slot is occupied [0.78ms]
+(pass) Node durable background services > prevents overlapping schedules and stops services in reverse order [0.35ms]
+
+tests/unit/server/node-server-runtime.test.ts:
+(pass) Bun server runtime > keeps runtime bindings isolated across concurrent requests [0.29ms]
+(pass) Bun server runtime > migrates and opens the persistent Bun application layout [41.92ms]
+(pass) Bun server runtime > refuses to open data while an offline maintenance task holds the lock [0.49ms]
+
+ 23 pass
+ 0 fail
+ 71 expect() calls
+Ran 23 tests across 3 files. [766.00ms]
