@@ -41,3 +41,7 @@ actual rows, including re-submission of the same 30 synthetic keys.
 Typecheck, Biome, Workers and Bun builds pass. Browser checks use synthetic
 transport with the real page in Chinese desktop and English dark mobile views.
 The full local supplier-fulfillment suite timed out; release CI remains required.
+
+Wait 3.3 seconds between PH batches: the shared verifier cooldown is 3.1 seconds,
+and the vault only spaces calls within each individual batch. A fake-clock
+regression verifies no second request before the cooldown expires.

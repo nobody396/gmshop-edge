@@ -374,7 +374,13 @@ describe("supply console", { timeout: 30_000 }, () => {
 			data: Parameters<typeof restockSupply>[0];
 		}) => restockSupply(payload, testContext(db), request);
 		try {
-			const result = await restockInBatches(data, "GPT_PLUS_PH", send);
+			const result = await restockInBatches(
+				data,
+				"GPT_PLUS_PH",
+				send,
+				undefined,
+				async () => {},
+			);
 			expect(result).toMatchObject({
 				total: 30,
 				imported: 30,
@@ -387,6 +393,8 @@ describe("supply console", { timeout: 30_000 }, () => {
 				{ ...data, requestRef: "supply_ph_thirty_retry" },
 				"GPT_PLUS_PH",
 				send,
+				undefined,
+				async () => {},
 			);
 			expect(retry).toMatchObject({
 				total: 30,

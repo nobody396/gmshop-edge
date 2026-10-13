@@ -21,6 +21,8 @@ export async function restockInBatches(
 	sku: string | null,
 	send: Send,
 	progress: (value: RestockProgress) => void = () => {},
+	wait: (milliseconds: number) => Promise<void> = (milliseconds) =>
+		new Promise((resolve) => setTimeout(resolve, milliseconds)),
 ): Promise<RestockResult> {
 	// Keep batches on the client: every server request retains its own bounded
 	// warehouse timeout. Never retry an uncertain write automatically.
@@ -47,6 +49,9 @@ export async function restockInBatches(
 	};
 	progress({ ...state });
 	for (let offset = 0; offset < keys.length; offset += 5) {
+		// The PH verifier shares a 3.1-second cooldown across requests.
+		// Server-side spacing covers keys within a batch, not the next batch.
+		if (offset > 0) await wait(3_300);
 		let result: RestockResult;
 		try {
 			result = await send({

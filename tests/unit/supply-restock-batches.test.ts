@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	RestockBatchError,
-	restockInBatches,
+	restockInBatches as runBatches,
 } from "#/features/supply-console/restock-batches";
 import type { restockSupplyFn } from "#/features/supply-console/server/restock";
 
@@ -21,7 +21,27 @@ const result = (count: number) => ({
 	counts: { available: count },
 });
 
+const restockInBatches = (...args: Parameters<typeof runBatches>) =>
+	runBatches(args[0], args[1], args[2], args[3], async () => {});
+
 describe("quick restock batches", () => {
+	it("waits between batches for the shared PH verifier cooldown", async () => {
+		vi.useFakeTimers();
+		try {
+			const send = vi.fn(async ({ data }: Input) =>
+				result(data.content.split("\n").length),
+			);
+			const pending = runBatches(data(6), "GPT_PLUS_PH", send);
+			await vi.advanceTimersByTimeAsync(3299);
+			expect(send).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(1);
+			await pending;
+			expect(send).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("submits 30 PH keys as six sequential requests with distinct references", async () => {
 		let active = 0;
 		const send = vi.fn(async ({ data }: Input) => {
