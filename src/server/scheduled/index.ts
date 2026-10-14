@@ -7,6 +7,7 @@ import { fanOutPendingCommerceNotifications } from "#/features/notifications/ser
 import { publishPendingOwnerSaleAlerts } from "#/features/notifications/server/owner-sale-alerts";
 import { settlePromotionRewards } from "#/features/promotions/server/balance";
 import { runRedemptionExceptionTodos } from "#/features/redeem-warehouse/server/exception-todos";
+import { runRenewalReminders } from "#/features/renewals/server/scheduler";
 import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
 import { publishPendingRefunds } from "#/features/shop-payments/server/refunds";
 import { reconcilePendingShopPayments } from "#/features/shop-payments/server/service";
@@ -75,6 +76,9 @@ export async function runScheduledCommerceWork(
 		env.DB,
 		publishBatchSize,
 	);
+	const renewals = await runRenewalReminders(env.DB, {
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	const notifications = await publishPendingNotifications(
 		env.DB,
 		env.COMMERCE_QUEUE,
@@ -102,6 +106,7 @@ export async function runScheduledCommerceWork(
 		builds,
 		refunds,
 		notificationEvents,
+		renewals,
 		notifications,
 		telegram,
 		maintenance,

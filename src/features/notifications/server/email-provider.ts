@@ -35,6 +35,7 @@ type ProviderEmailMessage = {
 	text: string;
 	html: string;
 	idempotencyKey: string;
+	headers?: Partial<Record<string, string>>;
 };
 
 type EmailAddress = {
@@ -59,16 +60,24 @@ export async function sendProviderEmail(
 				503,
 				'Cloudflare Send Email binding "EMAIL" is unavailable',
 			);
-		const result = await config.cloudflareEmail.send({
-			from: parseCloudflareEmailAddress(message.from),
-			to: parseCloudflareEmailAddress(message.to),
-			...(message.replyTo
-				? { replyTo: parseCloudflareEmailAddress(message.replyTo) }
-				: {}),
-			subject: message.subject,
-			text: message.text,
-			...(message.html ? { html: message.html } : {}),
-		});
+		const binding = config.cloudflareEmail;
+		const headers = definedHeaders(message.headers);
+		const send = (withHeaders: boolean) =>
+			binding.send({
+				from: parseCloudflareEmailAddress(message.from),
+				to: parseCloudflareEmailAddress(message.to),
+				...(message.replyTo
+					? { replyTo: parseCloudflareEmailAddress(message.replyTo) }
+					: {}),
+				subject: message.subject,
+				text: message.text,
+				...(message.html ? { html: message.html } : {}),
+				...(withHeaders && headers ? { headers } : {}),
+			});
+		// Optional list headers must never block delivery if the binding rejects them.
+		const result = headers
+			? await send(true).catch(() => send(false))
+			: await send(false);
 		return { success: true, data: { messageId: result.messageId } };
 	}
 	const provider = createEmailProvider(config);
@@ -79,8 +88,18 @@ export async function sendProviderEmail(
 		subject: message.subject,
 		text: message.text,
 		...(message.html ? { html: message.html } : {}),
-		headers: { "Idempotency-Key": message.idempotencyKey },
+		headers: {
+			...definedHeaders(message.headers),
+			"Idempotency-Key": message.idempotencyKey,
+		},
 	});
+}
+
+function definedHeaders(headers: Partial<Record<string, string>> | undefined) {
+	const entries = Object.entries(headers ?? {}).filter(
+		(entry): entry is [string, string] => typeof entry[1] === "string",
+	);
+	return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 function createEmailProvider(config: EmailProviderConfig) {
