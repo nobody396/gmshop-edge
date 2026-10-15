@@ -27,6 +27,7 @@ export type RenewalStageStats = {
 	merged: number;
 	bounced: number;
 	skipped: number;
+	failed: number;
 	cancelled: number;
 	excluded: number;
 	clicked: number;
@@ -52,6 +53,7 @@ export async function loadRenewalStats(db: D1Database, now = Date.now()) {
 			 SUM(s.status = 'merged') AS merged,
 			 SUM(s.status = 'sent' AND nd.status IN ('bounced','rejected')) AS bounced,
 			 SUM(s.status = 'skipped') AS skipped,
+			 SUM(s.status = 'failed') AS failed,
 			 SUM(s.status = 'cancelled') AS cancelled,
 			 SUM(s.status IN ('suppressed','unsubscribed')) AS excluded,
 			 SUM(s.status = 'sent' AND s.click_count > 0) AS clicked,
@@ -76,6 +78,7 @@ export async function loadRenewalStats(db: D1Database, now = Date.now()) {
 			merged: value("merged"),
 			bounced: value("bounced"),
 			skipped: value("skipped"),
+			failed: value("failed"),
 			cancelled: value("cancelled"),
 			excluded: value("excluded"),
 			clicked: value("clicked"),

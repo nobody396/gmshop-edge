@@ -52,7 +52,7 @@ CREATE TABLE renewal_reminder_sends (
  recipient_hash TEXT NOT NULL,
  recipient_kind TEXT NOT NULL CHECK (recipient_kind IN ('order','account')),
  due_at INTEGER NOT NULL,
- status TEXT NOT NULL CHECK (status IN ('pending','sending','sent','merged','skipped','cancelled','suppressed','unsubscribed')),
+ status TEXT NOT NULL CHECK (status IN ('pending','sending','sent','merged','skipped','cancelled','suppressed','unsubscribed','failed')),
  status_reason TEXT,
  click_token TEXT,
  notification_delivery_id TEXT,

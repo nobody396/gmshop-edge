@@ -74,9 +74,14 @@ export async function sendProviderEmail(
 				...(message.html ? { html: message.html } : {}),
 				...(withHeaders && headers ? { headers } : {}),
 			});
-		// Optional list headers must never block delivery if the binding rejects them.
+		// Optional list headers must never block delivery if the binding rejects
+		// them. Only a header validation error is retried without headers: those
+		// are raised before acceptance, so the retry cannot duplicate a message.
 		const result = headers
-			? await send(true).catch(() => send(false))
+			? await send(true).catch((error: unknown) => {
+					if (isCloudflareHeaderRejection(error)) return send(false);
+					throw error;
+				})
 			: await send(false);
 		return { success: true, data: { messageId: result.messageId } };
 	}
@@ -93,6 +98,15 @@ export async function sendProviderEmail(
 			"Idempotency-Key": message.idempotencyKey,
 		},
 	});
+}
+
+/** Cloudflare Email Service header validation codes (E_HEADER_*, E_HEADERS_*). */
+export function isCloudflareHeaderRejection(error: unknown) {
+	const code =
+		error && typeof error === "object" && "code" in error
+			? (error as { code: unknown }).code
+			: undefined;
+	return typeof code === "string" && /^E_HEADERS?_[A-Z_]+$/.test(code);
 }
 
 function definedHeaders(headers: Partial<Record<string, string>> | undefined) {

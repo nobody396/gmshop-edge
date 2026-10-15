@@ -76,9 +76,6 @@ export async function runScheduledCommerceWork(
 		env.DB,
 		publishBatchSize,
 	);
-	const renewals = await runRenewalReminders(env.DB, {
-		now: scheduledAt,
-	}).catch(() => ({ status: "failed" as const }));
 	const notifications = await publishPendingNotifications(
 		env.DB,
 		env.COMMERCE_QUEUE,
@@ -93,6 +90,11 @@ export async function runScheduledCommerceWork(
 	const redemptionExceptions = await runRedemptionExceptionTodos({
 		db: env.DB,
 	}).catch(() => ({ status: "failed", changed: 0, accepted: 0 }));
+	// Renewal reminders are optional marketing work: they run last, with their
+	// own D1 budget, so they can never delay or break the jobs above.
+	const renewals = await runRenewalReminders(env.DB, {
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	return {
 		agentAccess,
 		promotionRewards,

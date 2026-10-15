@@ -2265,6 +2265,7 @@
 	"renewal_column_sent": "已发送",
 	"renewal_column_bounced": "退信",
 	"renewal_column_skipped": "已跳过",
+	"renewal_column_failed": "发送异常",
 	"renewal_column_cancelled": "已取消",
 	"renewal_column_excluded": "退订/抑制",
 	"renewal_column_clicked": "点击",

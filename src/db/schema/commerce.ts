@@ -2568,6 +2568,7 @@ export const renewalReminderSends = sqliteTable(
 				"cancelled",
 				"suppressed",
 				"unsubscribed",
+				"failed",
 			],
 		}).notNull(),
 		statusReason: text("status_reason"),

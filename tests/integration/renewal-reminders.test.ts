@@ -3,6 +3,7 @@ import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { decryptNotificationMessage } from "#/features/notifications/secrets";
+import { sendProviderEmail } from "#/features/notifications/server/email-provider";
 import { recipientHash } from "#/features/notifications/server/recipient-policy";
 import type { requestWarehouse } from "#/features/redeem-warehouse/server/warehouse-client";
 import { redeemCodeHash } from "#/features/renewals/domain";
@@ -13,7 +14,9 @@ import {
 	verifyRenewalUnsubscribe,
 } from "#/features/renewals/server/links";
 import {
+	meteredD1,
 	type RedeemLookup,
+	renewalD1Budget,
 	runRenewalReminders,
 	warehouseRedeemLookup,
 } from "#/features/renewals/server/scheduler";
@@ -442,6 +445,167 @@ describe("renewal reminders", { timeout: 120_000 }, () => {
 				.prepare("SELECT status_reason FROM renewal_reminders")
 				.first("status_reason"),
 		).toBe("repurchased");
+	});
+
+	it("cancels reminders when the order has a succeeded partial refund", async () => {
+		await seedOrder(db, {
+			id: "o1",
+			email: "buyer@customer.com",
+			content: code,
+		});
+		await runRenewalReminders(db, {
+			now: deliveredAt + 60_000,
+			force: true,
+			lookup: completedLookup(null),
+		});
+		// A partial refund restores the previous order status, so only the
+		// refunds row shows it.
+		await db
+			.prepare(
+				`INSERT INTO refunds (id, order_id, idempotency_key, amount_minor, currency,
+				 payment_amount_minor, payment_currency, payment_currency_decimals,
+				 order_status_before, status, reason, completed_at, created_at, updated_at)
+				 VALUES ('rf1', 'o1', 'rf1', '50', 'CNY', '50', 'CNY', 2, 'completed',
+				 'succeeded', 'partial', 1, 1, 1)`,
+			)
+			.run();
+		const run = await runRenewalReminders(db, {
+			now: remind3dDue,
+			force: true,
+		});
+		expect(run).toMatchObject({ cancelled: 1, sent: 0 });
+		expect(await stageStatuses(db)).toEqual({
+			remind_3d: "cancelled",
+			remind_due: "cancelled",
+			recall: "cancelled",
+		});
+		expect(
+			await db
+				.prepare("SELECT status_reason FROM renewal_reminders")
+				.first("status_reason"),
+		).toBe("refunded");
+	});
+
+	it("marks sends stuck in 'sending' as failed after 15 minutes and never resends them", async () => {
+		await seedOrder(db, {
+			id: "o1",
+			email: "buyer@customer.com",
+			content: code,
+		});
+		await runRenewalReminders(db, {
+			now: deliveredAt + 60_000,
+			force: true,
+			lookup: completedLookup(null),
+		});
+		await db
+			.prepare(
+				"UPDATE renewal_reminder_sends SET status = 'sending', updated_at = ? WHERE stage = 'remind_3d'",
+			)
+			.bind(remind3dDue - 10 * 60_000)
+			.run();
+		const early = await runRenewalReminders(db, {
+			now: remind3dDue,
+			force: true,
+		});
+		expect(early).toMatchObject({ recovered: 0, sent: 0 });
+		const late = await runRenewalReminders(db, {
+			now: remind3dDue + 6 * 60_000,
+			force: true,
+		});
+		expect(late).toMatchObject({ recovered: 1, sent: 0 });
+		expect((await stageStatuses(db)).remind_3d).toBe("failed");
+		const stats = await loadRenewalStats(db, remind3dDue + 6 * 60_000);
+		expect(
+			stats.stages.find((stage) => stage.stage === "remind_3d"),
+		).toMatchObject({ failed: 1, sent: 0 });
+	});
+
+	it("keeps each pass within its D1 budget", async () => {
+		for (const id of ["o1", "o2", "o3"])
+			await seedOrder(db, {
+				id,
+				email: `${id}@customer.com`,
+				content: code,
+			});
+		const run = await runRenewalReminders(db, {
+			now: deliveredAt + 60_000,
+			force: true,
+			lookup: completedLookup(null),
+		});
+		expect(run).toMatchObject({ status: "ran", discovered: 3, redeemed: 3 });
+		expect(run.status === "ran" && run.d1Calls).toBeLessThan(40);
+		// Discovery stops once only the reserve is left.
+		const tight = await runRenewalReminders(db, {
+			now: deliveredAt + 60_000,
+			force: true,
+			d1Budget: 155,
+		});
+		expect(tight).toMatchObject({ status: "ran" });
+		expect(renewalD1Budget).toBeLessThanOrEqual(300);
+		const meter = meteredD1(db, 2);
+		await meter.db.batch([
+			meter.db.prepare("SELECT 1"),
+			meter.db.prepare("SELECT 2"),
+		]);
+		await meter.db.prepare("SELECT ?").bind(1).first();
+		expect(meter.used()).toBe(2);
+		await expect(meter.db.prepare("SELECT 1").run()).rejects.toThrow(
+			/D1 budget/,
+		);
+	});
+
+	it("retries without list headers only for a Cloudflare header rejection", async () => {
+		const config = {
+			provider: "cloudflare_email" as const,
+			apiKey: null,
+			domain: null,
+			region: "us" as const,
+			smtpHost: null,
+			smtpPort: null,
+			smtpUser: null,
+		};
+		const message = {
+			to: "buyer@customer.com",
+			from: "Shop <no-reply@laoshirenvip.com>",
+			replyTo: "",
+			subject: "s",
+			text: "t",
+			html: "",
+			idempotencyKey: "k",
+			headers: { "List-Unsubscribe": "<https://x.test/u>" },
+		};
+		const rejected = vi.fn(async (input: { headers?: unknown }) => {
+			if (input.headers)
+				throw Object.assign(new Error("Header not allowed"), {
+					code: "E_HEADER_NOT_ALLOWED",
+				});
+			return { messageId: "m1" };
+		});
+		await expect(
+			sendProviderEmail(
+				{
+					...config,
+					cloudflareEmail: { send: rejected } as unknown as SendEmail,
+				},
+				message,
+			),
+		).resolves.toMatchObject({ data: { messageId: "m1" } });
+		expect(rejected).toHaveBeenCalledTimes(2);
+		const timeout = vi.fn(async () => {
+			throw Object.assign(new Error("timeout"), {
+				code: "E_INTERNAL_SERVER_ERROR",
+			});
+		});
+		await expect(
+			sendProviderEmail(
+				{
+					...config,
+					cloudflareEmail: { send: timeout } as unknown as SendEmail,
+				},
+				message,
+			),
+		).rejects.toThrow("timeout");
+		expect(timeout).toHaveBeenCalledTimes(1);
 	});
 
 	it("honors bounce suppression and signed unsubscribe", async () => {

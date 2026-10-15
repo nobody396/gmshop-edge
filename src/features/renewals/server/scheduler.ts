@@ -37,7 +37,22 @@ import { loadRenewalSettings } from "./settings";
 
 const runIntervalMs = 570_000;
 const lookupRetryMs = 6 * 3_600_000;
+const sendingTimeoutMs = 15 * 60_000;
 const paidStatuses = "('paid','fulfilling','completed')";
+/**
+ * Hard ceiling on D1 calls (each statement or batch) one pass may make, so the
+ * shared cron invocation stays far below the Workers subrequest/query limits.
+ */
+export const renewalD1Budget = 300;
+/** D1 calls kept back for anchors, cancellations and at least a few sends. */
+const discoveryReserve = 150;
+/** Worst-case D1 calls one due row can take (exclusion, merge, claim, enqueue). */
+const sendRowCost = 25;
+/** Full refunds, refunds in progress, and any succeeded (partial) refund row. */
+const refundedOrderCondition = (alias: string) =>
+	`(${alias}.status IN ('refunding','refunded') OR ${alias}.refunded_at IS NOT NULL
+	  OR EXISTS (SELECT 1 FROM refunds rf WHERE rf.order_id = ${alias}.id
+	   AND rf.status = 'succeeded'))`;
 
 export const renewalEmailEvents: Record<RenewalStage, string> = {
 	remind_3d: "renewal_remind_3d",
@@ -101,33 +116,39 @@ export async function runRenewalReminders(
 		discoverLimit?: number;
 		lookupLimit?: number;
 		sendLimit?: number;
+		d1Budget?: number;
 	} = {},
 ) {
 	const now = options.now ?? Date.now();
-	if (!options.force && !(await claimRun(db, now)))
+	const meter = meteredD1(db, options.d1Budget ?? renewalD1Budget);
+	const metered = meter.db;
+	if (!options.force && !(await claimRun(metered, now)))
 		return { status: "throttled" as const };
-	const settings = await loadRenewalSettings(db);
+	const settings = await loadRenewalSettings(metered);
 	if (!settings.remindersEnabled) return { status: "disabled" as const };
-	const runtime = await loadRuntimeConfig(db);
+	const runtime = await loadRuntimeConfig(metered);
+	const recovered = await recoverStuckSends(metered, now);
 	const discovered = await discoverReminders(
-		db,
+		metered,
 		runtime,
 		now,
-		options.discoverLimit ?? 100,
+		options.discoverLimit ?? 50,
+		() => meter.remaining() > discoveryReserve,
 	);
 	const lookup =
-		options.lookup ?? warehouseRedeemLookup(db, runtime.commerceSecret);
+		options.lookup ?? warehouseRedeemLookup(metered, runtime.commerceSecret);
 	const anchors = await resolveAnchors(
-		db,
+		metered,
 		lookup,
 		now,
 		options.lookupLimit ?? 100,
 	);
-	const cancelled = await cancelInvalidatedReminders(db, now);
+	const cancelled = await cancelInvalidatedReminders(metered, now);
 	const sends = isRenewalSendWindow(now)
-		? await sendDueReminders(db, runtime, now, {
+		? await sendDueReminders(metered, runtime, now, {
 				recallEnabled: settings.recallEnabled,
-				limit: options.sendLimit ?? 50,
+				limit: options.sendLimit ?? 40,
+				canContinue: () => meter.remaining() >= sendRowCost,
 			})
 		: { sent: 0, merged: 0, skipped: 0, excluded: 0, deferred: 0 };
 	return {
@@ -135,8 +156,81 @@ export async function runRenewalReminders(
 		discovered,
 		...anchors,
 		cancelled,
+		recovered,
 		...sends,
+		d1Calls: meter.used(),
 	};
+}
+
+/**
+ * Wraps a D1 binding and counts every executed statement and batch. Statements
+ * are unwrapped before reaching the real batch() so the binding sees its own
+ * objects.
+ */
+export function meteredD1(db: D1Database, budget: number) {
+	let used = 0;
+	const originals = new WeakMap<object, D1PreparedStatement>();
+	const count = () => {
+		used += 1;
+		if (used > budget)
+			throw new Error(`renewal pass exceeded its D1 budget of ${budget}`);
+	};
+	const wrap = (statement: D1PreparedStatement): D1PreparedStatement => {
+		const proxy = new Proxy(statement, {
+			get(target, key) {
+				if (key === "bind")
+					return (...values: unknown[]) => wrap(target.bind(...values));
+				if (key === "run" || key === "first" || key === "all" || key === "raw")
+					return async (...args: unknown[]) => {
+						count();
+						return await (target[key] as (...a: unknown[]) => unknown)(...args);
+					};
+				const value = Reflect.get(target, key, target);
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		});
+		originals.set(proxy, statement);
+		return proxy;
+	};
+	const metered = new Proxy(db, {
+		get(target, key) {
+			if (key === "prepare")
+				return (query: string) => wrap(target.prepare(query));
+			if (key === "batch")
+				return async (statements: D1PreparedStatement[]) => {
+					count();
+					return await target.batch(
+						statements.map(
+							(statement) => originals.get(statement) ?? statement,
+						),
+					);
+				};
+			const value = Reflect.get(target, key, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	return {
+		db: metered,
+		used: () => used,
+		remaining: () => budget - used,
+	};
+}
+
+/**
+ * A crash between claiming a send and recording it leaves the row in
+ * 'sending'. It may or may not have been enqueued, so it is never resent:
+ * after the timeout it is marked failed and shows up in the stats.
+ */
+async function recoverStuckSends(db: D1Database, now: number) {
+	const result = await db
+		.prepare(
+			`UPDATE renewal_reminder_sends SET status = 'failed',
+			 status_reason = 'stuck_sending', updated_at = ?
+			 WHERE status = 'sending' AND updated_at <= ?`,
+		)
+		.bind(now, now - sendingTimeoutMs)
+		.run();
+	return Number(result.meta.changes ?? 0);
 }
 
 async function claimRun(db: D1Database, now: number) {
@@ -177,6 +271,7 @@ async function discoverReminders(
 	runtime: RuntimeConfig,
 	now: number,
 	limit: number,
+	canContinue: () => boolean = () => true,
 ) {
 	const rows = await db
 		.prepare(
@@ -185,7 +280,7 @@ async function discoverReminders(
 			 i.sellable_item_name, i.product_name, s.reminder_cycle_days AS cycle_days,
 			 o.user_id, o.normalized_contact_email AS contact_email, o.locale,
 			 u.preferred_locale, COALESCE(o.paid_at, o.created_at) AS paid_at,
-			 (o.status IN ('refunding','refunded') OR o.refunded_at IS NOT NULL) AS refunded
+			 ${refundedOrderCondition("o")} AS refunded
 			 FROM delivery_records d
 			 JOIN shop_order_items i ON i.id = d.order_item_id
 			 JOIN shop_orders o ON o.id = i.order_id
@@ -197,10 +292,11 @@ async function discoverReminders(
 			 AND NOT EXISTS (SELECT 1 FROM renewal_reminders r WHERE r.delivery_record_id = d.id)
 			 ORDER BY d.delivered_at, d.id LIMIT ?`,
 		)
-		.bind(renewalBackfillSince, Math.max(1, Math.min(500, limit)))
+		.bind(renewalBackfillSince, Math.max(1, Math.min(100, limit)))
 		.all<DiscoveryRow>();
 	let created = 0;
 	for (const row of rows.results) {
+		if (!canContinue()) break;
 		let codes: string[] = [];
 		if (row.content_encrypted && runtime.commerceSecret)
 			try {
@@ -398,7 +494,7 @@ async function resolveAnchors(
 			 WHERE status = 'awaiting_redeem' AND next_lookup_at <= ?
 			 ORDER BY next_lookup_at, id LIMIT ?`,
 		)
-		.bind(now, Math.max(1, Math.min(500, limit)))
+		.bind(now, Math.max(1, Math.min(100, limit)))
 		.all<{
 			id: string;
 			code_hash: string;
@@ -419,6 +515,8 @@ async function resolveAnchors(
 	let redeemed = 0;
 	let abandoned = 0;
 	let waiting = 0;
+	// One batch per chunk of rows instead of one D1 call per row.
+	const pending: D1PreparedStatement[][] = [];
 	for (const row of rows.results) {
 		const item = byHash.get(row.code_hash);
 		const completedAt =
@@ -435,7 +533,7 @@ async function resolveAnchors(
 				accountEmail,
 				now,
 			);
-			await db.batch([
+			pending.push([
 				db
 					.prepare(
 						`UPDATE renewal_reminders SET status = 'scheduled', anchor_at = ?,
@@ -448,28 +546,33 @@ async function resolveAnchors(
 			]);
 			redeemed += 1;
 		} else if (now - row.delivered_at > renewalRedeemWaitMs) {
-			await db
-				.prepare(
-					`UPDATE renewal_reminders SET status = 'abandoned',
-					 status_reason = 'not_redeemed', next_lookup_at = NULL,
-					 lookup_attempts = lookup_attempts + 1, updated_at = ?
-					 WHERE id = ? AND status = 'awaiting_redeem'`,
-				)
-				.bind(now, row.id)
-				.run();
+			pending.push([
+				db
+					.prepare(
+						`UPDATE renewal_reminders SET status = 'abandoned',
+						 status_reason = 'not_redeemed', next_lookup_at = NULL,
+						 lookup_attempts = lookup_attempts + 1, updated_at = ?
+						 WHERE id = ? AND status = 'awaiting_redeem'`,
+					)
+					.bind(now, row.id),
+			]);
 			abandoned += 1;
 		} else {
-			await db
-				.prepare(
-					`UPDATE renewal_reminders SET next_lookup_at = ?,
-					 lookup_attempts = lookup_attempts + 1, updated_at = ?
-					 WHERE id = ? AND status = 'awaiting_redeem'`,
-				)
-				.bind(now + lookupRetryMs, now, row.id)
-				.run();
+			pending.push([
+				db
+					.prepare(
+						`UPDATE renewal_reminders SET next_lookup_at = ?,
+						 lookup_attempts = lookup_attempts + 1, updated_at = ?
+						 WHERE id = ? AND status = 'awaiting_redeem'`,
+					)
+					.bind(now + lookupRetryMs, now, row.id),
+			]);
 			waiting += 1;
 		}
 	}
+	// A row's statements stay in one batch so its update and sends are atomic.
+	for (let index = 0; index < pending.length; index += 25)
+		await db.batch(pending.slice(index, index + 25).flat());
 	return { redeemed, abandoned, waiting };
 }
 
@@ -479,7 +582,7 @@ export async function cancelInvalidatedReminders(db: D1Database, now: number) {
 		[
 			"refunded",
 			`EXISTS (SELECT 1 FROM shop_orders o WHERE o.id = r.order_id
-			 AND (o.status IN ('refunding','refunded') OR o.refunded_at IS NOT NULL))`,
+			 AND ${refundedOrderCondition("o")})`,
 		],
 		[
 			"revoked",
@@ -546,7 +649,11 @@ async function sendDueReminders(
 	db: D1Database,
 	runtime: RuntimeConfig,
 	now: number,
-	options: { recallEnabled: boolean; limit: number },
+	options: {
+		recallEnabled: boolean;
+		limit: number;
+		canContinue?: () => boolean;
+	},
 ) {
 	const rows = await db
 		.prepare(
@@ -559,7 +666,7 @@ async function sendDueReminders(
 			 ${options.recallEnabled ? "" : "AND s.stage <> 'recall'"}
 			 ORDER BY s.due_at, s.id LIMIT ?`,
 		)
-		.bind(now, Math.max(1, Math.min(500, options.limit * 4)))
+		.bind(now, Math.max(1, Math.min(200, options.limit * 3)))
 		.all<DueRow>();
 	const result = { sent: 0, merged: 0, skipped: 0, excluded: 0, deferred: 0 };
 	if (!rows.results.length) return result;
@@ -570,6 +677,7 @@ async function sendDueReminders(
 	const sentToday = new Map<string, string | null>();
 	for (const row of rows.results) {
 		if (result.sent >= options.limit) break;
+		if (options.canContinue && !options.canContinue()) break;
 		if (
 			isRenewalStageStale(
 				row.stage,

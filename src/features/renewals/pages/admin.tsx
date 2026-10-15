@@ -56,6 +56,7 @@ export function RenewalRemindersPage() {
 		[m.renewal_column_sent(), (row) => formatNumber(row.sent)],
 		[m.renewal_column_bounced(), (row) => formatNumber(row.bounced)],
 		[m.renewal_column_skipped(), (row) => formatNumber(row.skipped)],
+		[m.renewal_column_failed(), (row) => formatNumber(row.failed)],
 		[m.renewal_column_cancelled(), (row) => formatNumber(row.cancelled)],
 		[m.renewal_column_excluded(), (row) => formatNumber(row.excluded)],
 		[m.renewal_column_clicked(), (row) => formatNumber(row.clicked)],
