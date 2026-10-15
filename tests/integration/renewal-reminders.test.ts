@@ -447,6 +447,55 @@ describe("renewal reminders", { timeout: 120_000 }, () => {
 		).toBe("repurchased");
 	});
 
+	it("skips orders placed by staff accounts and cancels ones already scheduled", async () => {
+		await seedOrder(db, {
+			id: "o1",
+			email: "owner@shop.com",
+			content: code,
+		});
+		await db.batch([
+			db.prepare(
+				"INSERT OR IGNORE INTO roles(id,name,built_in,enabled,permissions_json,created_at,updated_at) VALUES ('staff-role','admin',1,1,'{}',1,1)",
+			),
+			db.prepare(
+				"INSERT INTO users (id, name, email, email_verified, enabled, role_ids) VALUES ('staff','Owner','owner@shop.com',1,1,'[\"staff-role\"]')",
+			),
+		]);
+		const first = await runRenewalReminders(db, {
+			now: deliveredAt + 60_000,
+			force: true,
+			lookup: completedLookup(null),
+		});
+		expect(first).toMatchObject({ discovered: 0 });
+		expect(await count(db, "renewal_reminders")).toBe(0);
+
+		// A reminder scheduled before the account became staff is cancelled.
+		await db
+			.prepare("UPDATE users SET role_ids = '[]' WHERE id = 'staff'")
+			.run();
+		await runRenewalReminders(db, {
+			now: deliveredAt + 120_000,
+			force: true,
+			lookup: completedLookup(null),
+		});
+		expect(await count(db, "renewal_reminders")).toBe(1);
+		await db
+			.prepare(
+				"UPDATE users SET role_ids = '[\"staff-role\"]' WHERE id = 'staff'",
+			)
+			.run();
+		const run = await runRenewalReminders(db, {
+			now: remind3dDue,
+			force: true,
+		});
+		expect(run).toMatchObject({ cancelled: 1, sent: 0 });
+		expect(
+			await db
+				.prepare("SELECT status_reason FROM renewal_reminders")
+				.first("status_reason"),
+		).toBe("staff");
+	});
+
 	it("cancels reminders when the order has a succeeded partial refund", async () => {
 		await seedOrder(db, {
 			id: "o1",

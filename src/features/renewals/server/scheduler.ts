@@ -54,6 +54,13 @@ const refundedOrderCondition = (alias: string) =>
 	  OR EXISTS (SELECT 1 FROM refunds rf WHERE rf.order_id = ${alias}.id
 	   AND rf.status = 'succeeded'))`;
 
+/** Orders placed by staff (any role other than customer/guest), by account or by email. */
+const staffOrderCondition = (userId: string, email: string) =>
+	`EXISTS (SELECT 1 FROM users su, json_each(su.role_ids) assigned
+	  JOIN roles sr ON sr.id = assigned.value
+	  WHERE sr.name NOT IN ('customer','guest')
+	  AND (su.id = ${userId} OR (${email} IS NOT NULL AND lower(su.email) = ${email})))`;
+
 export const renewalEmailEvents: Record<RenewalStage, string> = {
 	remind_3d: "renewal_remind_3d",
 	remind_due: "renewal_remind_due",
@@ -289,6 +296,7 @@ async function discoverReminders(
 			 WHERE d.status = 'delivered' AND d.delivered_at >= ?
 			 AND s.reminder_cycle_days IS NOT NULL
 			 AND NOT EXISTS (SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id)
+			 AND NOT ${staffOrderCondition("o.user_id", "o.normalized_contact_email")}
 			 AND NOT EXISTS (SELECT 1 FROM renewal_reminders r WHERE r.delivery_record_id = d.id)
 			 ORDER BY d.delivered_at, d.id LIMIT ?`,
 		)
@@ -584,6 +592,7 @@ export async function cancelInvalidatedReminders(db: D1Database, now: number) {
 			`EXISTS (SELECT 1 FROM shop_orders o WHERE o.id = r.order_id
 			 AND ${refundedOrderCondition("o")})`,
 		],
+		["staff", staffOrderCondition("r.user_id", "r.contact_email")],
 		[
 			"revoked",
 			`EXISTS (SELECT 1 FROM customer_entitlements ce
