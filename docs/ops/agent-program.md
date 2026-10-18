@@ -4,8 +4,8 @@
 `operations:read` permission. Mutations also require `operations:update`.
 The page displays agent accounting, fee-based rebates, owner-reviewed leaderboard
 rewards and pending withdrawals from the same agent-shop rules API as the agent
-center. Store profit is not available upstream and is deliberately not inferred
-from agent profit.
+center. The private owner API displays our actual profit in the rebate window,
+never agent retail margin, and explains every tier waiting for profit coverage.
 
 ## Server-only binding
 
@@ -33,3 +33,62 @@ Run focused agent-program security/UI tests, the agent-access integration tests,
 `bun run typecheck` and `bun run build`. No live payment/email/Telegram smoke test
 is authorized. Revert this PR to remove the page and API calls; no GMShop database
 migration is introduced. The unused Worker secret may safely remain configured.
+
+
+## Approved follow-up (2026-10-18 Beijing)
+
+Rebates count from **2026-10-19 00:00 Beijing**, or the later subsite opening,
+for 90 days plus the existing seven-day retry grace. Monthly sales and the
+leaderboard are unchanged. Both wholesale threshold and actual profit covering
+cumulative rebates are required. The panel shows our profit, each tier's gap,
+and unknown-cost/mapping order IDs; the agent-facing API exposes none of these.
+The companion rebate SMTP transport has a 20-second whole-operation deadline.
+Credit emails default on through no-reply@lsrai.shop, to the credited agent only;
+failed sends do not block credit and are not automatically retried for that credit.
+
+### Read-only profit endpoint
+
+`POST /api/internal/agent-program/order-profit` requires the server-only Worker
+secret **`AGENT_PROGRAM_PROFIT_TOKEN`** (also supported as a Bun binding). It must
+match agent-shop's **`RESELLER_PROGRAM_PROFIT_API_TOKEN`** environment variable.
+The profit URL defaults to `https://laoshirenvip.com`. Token hashes use constant-time
+comparison; an unset token returns 401. No secret values are configured by this PR.
+
+Request: `{ "downstream_order_nos": ["<local lsrai leaf order number>"] }`,
+0–500 numbers per call (an empty array is a read-only health check). The read path batches within D1's parameter budget.
+Response: `{ "ok": true, "orders": [...] }`; each row has
+`downstream_order_no`, `supplier_api_order_id`, `shop_order_id`, decimal integer strings `revenue_minor`,
+`true_cost_minor`, `profit_minor`, and `cost_known`. Responses are `no-store`.
+
+Mapping: lsrai parent orders → optional child `orders.parent_id` →
+`procurement_orders.local_order_id/local_order_no`; connection via
+`connection_id → site_connections.id` identifies GMShop. Its `local_order_no`
+exactly matches `supplier_api_orders.downstream_order_no`. Then
+`supplier_api_orders.shop_order_id → shop_orders.id → shop_order_items.order_id`.
+The caller also checks returned `supplier_api_order_id` equals its stored
+`procurement_orders.upstream_order_no` (`supplier_api_orders.id`, the supplier API UUID, distinct from
+`shop_orders.id`; not the local numeric external-reference ID). Duplicate downstream numbers across accounts
+are ambiguous and contribute zero, rather than combining different buyers.
+
+Revenue is `shop_orders.paid_minor` once per GMShop order (not list price).
+Each item's true unit cost is `unit_cost_minor × supplier FX factor × 1.01`,
+rounded **up** to a minor unit before multiplying by quantity. FX factors reuse
+`parseCostFactors` / `pricing.cost_factors` from pricing guard; the 1.01 buffer is
+fixed for this calculation. Supplier identity uses fulfilled stock
+`stock_entries.procurement_source`, supplemented by supplied
+`supplier_orders.binding_snapshot_json.normalizedApiOrigin` for Aisou. Unknown
+or mixed sources use the highest applicable factor. Missing/zero item cost,
+missing items/order, ambiguous mapping or unsupported currency marks cost unknown
+and profit zero; known negative profit stays negative. There are no writes,
+notifications, procurement requests, or new cron jobs on this endpoint.
+
+Agent-shop applies its existing parent+child refund ratio exactly once, resolves
+all batches (including an empty health check for local-only runs) before crediting anything, and fails the entire rebate run closed on
+missing token, API errors or invalid/incomplete responses. Its durable daily
+owner warning uses the existing owner notification channel. The owner UI shows
+null/unavailable profit honestly rather than inferring it from wholesale.
+
+Tests use local migrated D1, SQLite, synthetic HTTP and fake mailers only.
+No production data, true unmapped-order inventory, live email or online cross-site
+verification was read/performed. No GMShop schema migration is added; agent-shop
+adds a small daily-warning claim table through its existing AutoMigrate.

@@ -35,7 +35,7 @@ import {
 
 const rules = {
 	currency: "CNY",
-	start_date: "2026-10-18",
+	start_date: "2026-10-19",
 	rebate_enabled: true,
 	rebate_window_days: 90,
 	schedules: {},
@@ -57,6 +57,9 @@ function agent(id: number) {
 		opened_at: "2026-10-18",
 		opening_fee_paid: "99.00",
 		opening_fee_source: "manual",
+		our_profit_in_window: "45.00",
+		profit_data_state: "available",
+		unknown_profit_orders: [],
 		month: { orders: 0, sales: "0.00", profit: "0.00" },
 		last_month: { orders: 0, sales: "0.00", profit: "0.00" },
 		all_time: { orders: 0, sales: "0.00", profit: "0.00" },
@@ -207,6 +210,7 @@ vi.mock("#/components/ui/tabs", () => ({
 
 import { AgentProgramPage } from "#/features/agent-program/page";
 import { AgentDetail } from "#/features/agent-program/views";
+import { overwriteGetLocale } from "#/paraglide/runtime";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -288,4 +292,14 @@ describe("agent mutation dialog identity", () => {
 			container.querySelector('[data-form="Edit opening fee paid"]'),
 		).not.toBeNull();
 	});
+});
+
+it("renders our profit and waiting tier without inferring agent profit", () => {
+	overwriteGetLocale(() => "zh-CN");
+	act(() =>
+		root.render(<AgentDetail id={33} month="2026-10" onClose={() => {}} />),
+	);
+	expect(container.textContent).toContain("我们赚了");
+	expect(container.textContent).toContain("45.00");
+	overwriteGetLocale(() => "en-US");
 });

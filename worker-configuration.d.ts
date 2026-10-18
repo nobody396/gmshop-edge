@@ -3,6 +3,7 @@
 // Runtime types generated with workerd@1.20260708.1 2026-07-01 nodejs_compat
 interface __BaseEnv_Env {
 	AGENT_SHOP_PROGRAM_TOKEN?: string;
+	AGENT_PROGRAM_PROFIT_TOKEN?: string;
 	CACHE: KVNamespace;
 	FILES: R2Bucket;
 	DB: D1Database;

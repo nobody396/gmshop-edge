@@ -54,6 +54,7 @@ export async function createNodeApplication(
 		runtime: "bun",
 		AGENT_ACCESS_SIGNING_KEY: process.env.AGENT_ACCESS_SIGNING_KEY,
 		AGENT_SHOP_PROGRAM_TOKEN: process.env.AGENT_SHOP_PROGRAM_TOKEN,
+		AGENT_PROGRAM_PROFIT_TOKEN: process.env.AGENT_PROGRAM_PROFIT_TOKEN,
 		DB: database,
 		CACHE: new NodeMemoryCache(),
 		FILES: new NodeObjectStorage(layout.objects),

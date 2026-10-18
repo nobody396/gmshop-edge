@@ -88,6 +88,15 @@ export function AgentProgramPage() {
 				header: m.agent_program_profit(),
 				cell: ({ row }) => money(row.original.month.profit, currency),
 			},
+
+			{
+				accessorKey: "our_profit_in_window",
+				header: m.agent_program_our_profit(),
+				cell: ({ row }) =>
+					row.original.our_profit_in_window === null
+						? m.agent_program_profit_unavailable()
+						: money(row.original.our_profit_in_window, currency),
+			},
 			{
 				accessorKey: "opening_fee_paid",
 				header: m.agent_program_fee(),
@@ -166,9 +175,6 @@ export function AgentProgramPage() {
 							</div>
 						))}
 					</div>
-					<p className="text-muted-foreground text-xs">
-						{m.agent_program_our_profit()}
-					</p>
 					<Tabs defaultValue="agents">
 						<TabsList className="max-w-full overflow-x-auto">
 							<TabsTrigger value="agents">

@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { allSystemPermissionGrants } from "#/features/access/system-rbac";
-import { money, statusLabel } from "#/features/agent-program/presentation";
+import {
+	money,
+	statusLabel,
+	tierGuardLabel,
+} from "#/features/agent-program/presentation";
 import {
 	leaderboardSchema,
 	type ProgramRules,
@@ -19,7 +23,7 @@ import { ProgramRulesView } from "#/features/agent-program/views";
 
 const rules: ProgramRules = {
 	currency: "CNY",
-	start_date: "2026-10-18",
+	start_date: "2026-10-19",
 	rebate_enabled: true,
 	rebate_window_days: 90,
 	schedules: {
@@ -47,9 +51,9 @@ describe("agent management presentation", () => {
 		expect(rendered).toContain("4,000.00");
 		expect(rendered).toContain("49.00");
 		expect(rendered).toContain(
-			locale === "zh-CN" ? "2026年10月18日" : "Oct 18, 2026",
+			locale === "zh-CN" ? "2026年10月19日" : "Oct 19, 2026",
 		);
-		expect(rendered).not.toContain("2026-10-18");
+		expect(rendered).not.toContain("2026-10-19");
 		expect(rendered).toContain(locale === "zh-CN" ? "星期一" : "Monday");
 		expect(rendered).toContain(
 			locale === "zh-CN" ? "退款会扣掉" : "less refunds",
@@ -108,4 +112,24 @@ describe("agent management presentation", () => {
 		expect(result.drafts[0]?.reject_reason).toBe("");
 		expect(statusLabel(result.drafts[0]?.status ?? "")).toBe("Pending");
 	});
+});
+
+it("shows internal break-even states and exact profit gaps in both locales", () => {
+	for (const locale of ["zh-CN", "en-US"] as const) {
+		overwriteGetLocale(() => locale);
+		expect(
+			tierGuardLabel({ guard_state: "waiting_profit", profit_gap: "12.34" }),
+		).toContain("12.34");
+		expect(
+			tierGuardLabel({ guard_state: "waiting_profit", profit_gap: "12.34" }),
+		).toContain(
+			locale === "zh-CN" ? "已达门槛，等利润覆盖" : "awaiting profit coverage",
+		);
+		expect(tierGuardLabel({ guard_state: "profit_unavailable" })).toContain(
+			locale === "zh-CN" ? "暂停返还" : "rebates paused",
+		);
+		expect(tierGuardLabel({ guard_state: "credited" })).toBe(
+			locale === "zh-CN" ? "已入账" : "Credited",
+		);
+	}
 });

@@ -49,6 +49,14 @@ export const agentSchema = z.object({
 	opened_at: z.string(),
 	opening_fee_paid: money,
 	opening_fee_source: feeSourceSchema,
+	our_profit_in_window: z
+		.string()
+		.regex(/^-?\d+(?:\.\d{1,2})?$/)
+		.nullable(),
+	profit_data_state: z.enum(["available", "unavailable"]),
+	unknown_profit_orders: z.array(
+		z.object({ order_id: id, reason: z.string() }),
+	),
 	rebate: z.object({
 		eligible: z.boolean(),
 		manual_confirmation: z.boolean(),
@@ -58,7 +66,18 @@ export const agentSchema = z.object({
 		days_left: z.number().int(),
 		wholesale: money,
 		tiers: z.array(
-			tierSchema.extend({ reached: z.boolean(), credited: z.boolean() }),
+			tierSchema.extend({
+				reached: z.boolean(),
+				credited: z.boolean(),
+				guard_state: z.enum([
+					"credited",
+					"not_reached",
+					"waiting_profit",
+					"profit_unavailable",
+					"ready",
+				]),
+				profit_gap: money.optional(),
+			}),
 		),
 		credited_total: money,
 		max_total: money,

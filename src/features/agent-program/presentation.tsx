@@ -47,3 +47,23 @@ export function ProgramError({ retry }: { retry: () => void }) {
 		</div>
 	);
 }
+
+export function tierGuardLabel(
+	tier: { guard_state: string; profit_gap?: string },
+	currency = "CNY",
+) {
+	switch (tier.guard_state) {
+		case "credited":
+			return m.agent_program_credited();
+		case "not_reached":
+			return m.agent_program_not_reached();
+		case "waiting_profit":
+			return m.agent_program_waiting_profit({
+				gap: money(tier.profit_gap ?? "0", currency),
+			});
+		case "profit_unavailable":
+			return m.agent_program_profit_unavailable();
+		default:
+			return m.agent_program_reached();
+	}
+}

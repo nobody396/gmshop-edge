@@ -3,7 +3,7 @@
 老板在 `/admin/agents` 查看代理销售、已交开通费、返还、排行榜审核和待打款。
 仅启用的 `root` / `admin` 用户可用，读取需 `operations:read`，修改还需
 `operations:update`。界面和代理中心读取同一份上游规则，不另写一套规则。
-上游暂未提供本站利润，因此不把代理利润当本站利润显示。
+新增内部利润口径：显示「我们赚了」，而非代理加价利润；每档同时核对拿货门槛和我们利润是否覆盖累计返还。
 
 ## 密钥与操作边界
 
@@ -24,3 +24,23 @@ Bun 运行时支持同名注入。密钥只通过 Agent Switch 及部署环境�
 运行代理管理相关安全/UI 测试、代理开通集成测试、类型检查和 Worker 构建。
 不做真实支付、邮件、Telegram 测试。撤销本 PR 即可移除入口和调用，无 GMShop
 数据库迁移；保留未使用的 Worker secret 也不影响旧版运行。
+
+
+## 2026-10-18 追加批准
+
+- 返还从 **2026-10-19 00:00 北京时间** 与开通时间较晚者计 90 天，保留 7 天补发宽限；新订单必须仍在原窗口内。月度销售与月榜不改（首月月榜保留 10 月 18 日起）。达门槛但利润不够显示「已达门槛，等利润覆盖」及差额，自动每日重查。
+- 配套返还专用 SMTP 20 秒拨号/整连接期限，卡住也不中断后续代理，其他邮件通道保持原默认。
+- 返还入账邮件默认开启，仅发已入账代理，专用 no-reply@lsrai.shop 通道；发送失败不回滚/阻塞入账，重复任务不再发同一笔邮件；不承诺进程崩溃情况下邮件必达。
+- 代理端不暴露我们利润/缺口/成本原因，仅追加「返还以实际结算为准，达标后自动到账」。
+
+### 只读利润接口
+
+`POST /api/internal/agent-program/order-profit`，body 为 `{downstream_order_nos: [...]}`，0–500 个本地下游单号（空数组只读健康检查）；D1 内部再分批避免绑定参数超限。bearer Worker secret **`AGENT_PROGRAM_PROFIT_TOKEN`**（Bun 同名绑定）与 agent-shop 环境变量 **`RESELLER_PROGRAM_PROFIT_API_TOKEN`** 配对。缺失即401，hash恒时比较，返回 no-store；只声明名称，不配置/读取真实值。
+
+精确映射：lsrai `orders.id`（父单若拆分则取 `orders.parent_id` 下叶子子单）→ `procurement_orders.local_order_id`；`connection_id → site_connections.id` 识别 GMShop。传 `procurement_orders.local_order_no = orders.order_no`，查询本端 `supplier_api_orders.downstream_order_no → shop_order_id → shop_orders.id → shop_order_items.order_id`。调用方再验返回 `supplier_api_order_id = procurement_orders.upstream_order_no`（即 `supplier_api_orders.id`，供应商 API UUID；不同于用于成本关联的 `shop_orders.id`；也不是本地数字 external reference ID）。跨账号同名下游单不合并，视为映射不明。
+
+每单返回 `revenue_minor/true_cost_minor/profit_minor` 整数十进制字符串及 `cost_known`。收入取已付 `shop_orders.paid_minor`；商品成本取 `unit_cost_minor × pricing.cost_factors 中对应供应商因子 × 1.01`，单件向上取分再乘 quantity。复用 pricing guard 的因子解析，但 1.01 缓冲固定。供应商取已履约 `stock_entries.procurement_source`，并补充已供货 `supplier_orders.binding_snapshot_json.normalizedApiOrigin` 的爱搜来源；无法确定用最高因子。零/缺成本、无项、无单、歧义或非 CNY/两位币种均利润计0并标未知，真实亏损保留负数。本接口不写数据、不采购、不发通知、不新增定时器。
+
+agent-shop 按同一父子单退款比例缩放利润；先读完整轮所有批次再入账（纯本地订单也做空批次健康检查）。缺 token、API 故障或返回不完整整轮零返还；持久日claim保证老板通知每天一次，入队失败可重试。内部 agents/detail 提供 `our_profit_in_window`（故障为null）、各档 `guard_state/profit_gap` 和未知订单ID/原因。
+
+本轮仅本地迁移后的 D1/SQLite、synthetic HTTP、fake mailer 验证；未访问生产、未枚举真实不可映射订单、未做线上联合/邮件验证。GMShop无迁移；agent-shop沿用AutoMigrate新增小型每日通知防重表。

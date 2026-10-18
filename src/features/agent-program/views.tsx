@@ -10,6 +10,7 @@ import {
 	money,
 	ProgramError,
 	statusLabel,
+	tierGuardLabel,
 } from "#/features/agent-program/presentation";
 import {
 	amountMinor,
@@ -152,6 +153,12 @@ export function AgentDetail({
 								],
 								[m.agent_program_locked(), money(agent.locked, currency)],
 								[
+									m.agent_program_our_profit(),
+									agent.our_profit_in_window === null
+										? m.agent_program_profit_unavailable()
+										: money(agent.our_profit_in_window, currency),
+								],
+								[
 									m.agent_program_pending(),
 									money(agent.pending_withdrawal, currency),
 								],
@@ -183,6 +190,17 @@ export function AgentDetail({
 							<h3 className="font-semibold">
 								{m.agent_program_rebate_progress()}
 							</h3>
+							{agent.unknown_profit_orders.length > 0 && (
+								<p className="text-amber-700 dark:text-amber-400">
+									{m.agent_program_cost_unknown({
+										count: formatNumber(agent.unknown_profit_orders.length),
+									})}{" "}
+									#
+									{agent.unknown_profit_orders
+										.map((o) => o.order_id)
+										.join(", #")}
+								</p>
+							)}
 							{agent.rebate.manual_confirmation ? (
 								<p>{m.agent_program_manual()}</p>
 							) : !agent.rebate.eligible ? (
@@ -231,13 +249,7 @@ export function AgentDetail({
 														amount: money(tier.amount, currency),
 													})}
 												</span>
-												<strong>
-													{tier.credited
-														? m.agent_program_credited()
-														: tier.reached
-															? m.agent_program_reached()
-															: m.agent_program_not_reached()}
-												</strong>
+												<strong>{tierGuardLabel(tier, currency)}</strong>
 											</li>
 										))}
 									</ul>
@@ -334,6 +346,8 @@ export function ProgramRulesView({ rules }: { rules: ProgramRules }) {
 			<section className="space-y-2">
 				<h3 className="font-semibold">{m.agent_program_rebate_progress()}</h3>
 				<p>{m.agent_program_rules_eligibility()}</p>
+				<p>{m.agent_program_rules_guard()}</p>
+				<p>{m.agent_program_rules_email()}</p>
 				{!rules.rebate_enabled ? (
 					<p>{m.agent_program_rules_disabled()}</p>
 				) : (
