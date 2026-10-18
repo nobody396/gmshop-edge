@@ -24,6 +24,7 @@ import { Route as AdminDeliveryRouteImport } from './routes/admin/delivery'
 import { Route as AdminCouponsRouteImport } from './routes/admin/coupons'
 import { Route as AdminAutomationRouteImport } from './routes/admin/automation'
 import { Route as AdminAuthRouteImport } from './routes/admin/auth'
+import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as publicStatusRouteImport } from './routes/(public)/status'
 import { Route as publicMeRouteImport } from './routes/(public)/me'
 import { Route as publicIpCheckRouteImport } from './routes/(public)/ip-check'
@@ -203,6 +204,11 @@ const AdminAutomationRoute = AdminAutomationRouteImport.update({
 const AdminAuthRoute = AdminAuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAgentsRoute = AdminAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const publicStatusRoute = publicStatusRouteImport.update({
@@ -794,6 +800,7 @@ export interface FileRoutesByFullPath {
   '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
+  '/admin/agents': typeof AdminAgentsRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
@@ -907,6 +914,7 @@ export interface FileRoutesByTo {
   '/ip-check': typeof publicIpCheckRoute
   '/me': typeof publicMeRoute
   '/status': typeof publicStatusRoute
+  '/admin/agents': typeof AdminAgentsRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
@@ -1030,6 +1038,7 @@ export interface FileRoutesById {
   '/(public)/ip-check': typeof publicIpCheckRoute
   '/(public)/me': typeof publicMeRoute
   '/(public)/status': typeof publicStatusRoute
+  '/admin/agents': typeof AdminAgentsRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
   '/admin/coupons': typeof AdminCouponsRoute
@@ -1153,6 +1162,7 @@ export interface FileRouteTypes {
     | '/ip-check'
     | '/me'
     | '/status'
+    | '/admin/agents'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
@@ -1266,6 +1276,7 @@ export interface FileRouteTypes {
     | '/ip-check'
     | '/me'
     | '/status'
+    | '/admin/agents'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
@@ -1388,6 +1399,7 @@ export interface FileRouteTypes {
     | '/(public)/ip-check'
     | '/(public)/me'
     | '/(public)/status'
+    | '/admin/agents'
     | '/admin/auth'
     | '/admin/automation'
     | '/admin/coupons'
@@ -1633,6 +1645,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/admin/auth'
       preLoaderRoute: typeof AdminAuthRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/agents': {
+      id: '/admin/agents'
+      path: '/agents'
+      fullPath: '/admin/agents'
+      preLoaderRoute: typeof AdminAgentsRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/(public)/status': {
@@ -2620,6 +2639,7 @@ interface AdminRouteRouteChildren {
   AdminProductsRouteRoute: typeof AdminProductsRouteRouteWithChildren
   AdminSettingsRouteRoute: typeof AdminSettingsRouteRouteWithChildren
   AdminSuppliersRouteRoute: typeof AdminSuppliersRouteRouteWithChildren
+  AdminAgentsRoute: typeof AdminAgentsRoute
   AdminAuthRoute: typeof AdminAuthRoute
   AdminAutomationRoute: typeof AdminAutomationRoute
   AdminCouponsRoute: typeof AdminCouponsRoute
@@ -2637,6 +2657,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminProductsRouteRoute: AdminProductsRouteRouteWithChildren,
   AdminSettingsRouteRoute: AdminSettingsRouteRouteWithChildren,
   AdminSuppliersRouteRoute: AdminSuppliersRouteRouteWithChildren,
+  AdminAgentsRoute: AdminAgentsRoute,
   AdminAuthRoute: AdminAuthRoute,
   AdminAutomationRoute: AdminAutomationRoute,
   AdminCouponsRoute: AdminCouponsRoute,
