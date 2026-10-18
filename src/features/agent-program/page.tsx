@@ -92,10 +92,24 @@ export function AgentProgramPage() {
 			{
 				accessorKey: "our_profit_in_window",
 				header: m.agent_program_our_profit(),
-				cell: ({ row }) =>
-					row.original.our_profit_in_window === null
-						? m.agent_program_profit_unavailable()
-						: money(row.original.our_profit_in_window, currency),
+				cell: ({ row }) => (
+					<div>
+						{row.original.our_profit_in_window === null
+							? m.agent_program_profit_unavailable()
+							: money(row.original.our_profit_in_window, currency)}
+						{row.original.unknown_profit_order_count > 0 && (
+							<p className="text-xs text-muted-foreground">
+								{m.agent_program_cost_unknown({
+									count: formatNumber(row.original.unknown_profit_order_count),
+									amount: money(
+										row.original.unknown_profit_assumed_loss,
+										currency,
+									),
+								})}
+							</p>
+						)}
+					</div>
+				),
 			},
 			{
 				accessorKey: "opening_fee_paid",

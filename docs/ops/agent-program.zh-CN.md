@@ -39,8 +39,10 @@ Bun 运行时支持同名注入。密钥只通过 Agent Switch 及部署环境�
 
 精确映射：lsrai `orders.id`（父单若拆分则取 `orders.parent_id` 下叶子子单）→ `procurement_orders.local_order_id`；`connection_id → site_connections.id` 识别 GMShop。传 `procurement_orders.local_order_no = orders.order_no`，查询本端 `supplier_api_orders.downstream_order_no → shop_order_id → shop_orders.id → shop_order_items.order_id`。调用方再验返回 `supplier_api_order_id = procurement_orders.upstream_order_no`（即 `supplier_api_orders.id`，供应商 API UUID；不同于用于成本关联的 `shop_orders.id`；也不是本地数字 external reference ID）。跨账号同名下游单不合并，视为映射不明。
 
-每单返回 `revenue_minor/true_cost_minor/profit_minor` 整数十进制字符串及 `cost_known`。收入取已付 `shop_orders.paid_minor`；商品成本取 `unit_cost_minor × pricing.cost_factors 中对应供应商因子 × 1.01`，单件向上取分再乘 quantity。复用 pricing guard 的因子解析，但 1.01 缓冲固定。供应商取已履约 `stock_entries.procurement_source`，并补充已供货 `supplier_orders.binding_snapshot_json.normalizedApiOrigin` 的爱搜来源；无法确定用最高因子。零/缺成本、无项、无单、歧义或非 CNY/两位币种均利润计0并标未知，真实亏损保留负数。本接口不写数据、不采购、不发通知、不新增定时器。
+每单返回 `revenue_minor/true_cost_minor/profit_minor` 整数十进制字符串及 `cost_known`。收入取已付 `shop_orders.paid_minor`；商品成本复用经营周报 `itemCostSql`：优先已 supplied 的供应商订单总成本（缺失才回退商品快照），否则取已分配 reserved/delivered 库存成本合计（无成本才回退商品快照）。快照为单价 × quantity，实际总成本不再乘数量。复用 pricing guard 的因子解析及 `realCostMinor`，将成本合计乘 `pricing.cost_factors` 中对应供应商因子 × 固定 1.01，再向上取分。供应商取已履约 `stock_entries.procurement_source`，并补充已供货 `supplier_orders.binding_snapshot_json.normalizedApiOrigin` 的爱搜来源；无法确定用最高因子。零/缺成本、无项、无单、歧义或非 CNY/两位币种均返回利润0占位并标未知，agent-shop 必须按该计数订单净收入全额亏损计，真实亏损保留负数。本接口不写数据、不采购、不发通知、不新增定时器。
 
-agent-shop 按同一父子单退款比例缩放利润；先读完整轮所有批次再入账（纯本地订单也做空批次健康检查）。缺 token、API 故障或返回不完整整轮零返还；持久日claim保证老板通知每天一次，入队失败可重试。内部 agents/detail 提供 `our_profit_in_window`（故障为null）、各档 `guard_state/profit_gap` 和未知订单ID/原因。
+agent-shop 只扣父子单退款对应的平台收入，不缩减全部已发生成本；利润契约未暴露已确认供应商成本回收，因此不假设回收。未知成本或映射缺失计数单按净收入全损计；先读完整轮所有批次再入账（纯本地订单也做空批次健康检查）。缺 token、API 故障或返回不完整整轮零返还；持久日claim保证老板通知每天一次，入队失败可重试。内部 agents/detail 提供 `our_profit_in_window`（故障为null）、各档 `guard_state/profit_gap` 和未知订单ID/原因、`unknown_profit_order_count`、`unknown_profit_assumed_loss`（假定亏损正金额），在「我们赚了」旁展示。
 
 本轮仅本地迁移后的 D1/SQLite、synthetic HTTP、fake mailer 验证；未访问生产、未枚举真实不可映射订单、未做线上联合/邮件验证。GMShop无迁移；agent-shop沿用AutoMigrate新增小型每日通知防重表。
+
+管理 API 传输使用 `redirect: "manual"`，所有 3xx/非2xx 均失败，不转发凭据至重定向目标。代理 overview 无 reseller profile 即 403，在计算排名之前拒绝；仅返回本人排名/金额，不返回第三名差额。老板内部榜单保持不变。

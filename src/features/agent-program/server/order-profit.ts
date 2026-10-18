@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { parseCostFactors } from "#/features/ops-automation/server/pricing-guard";
+import { itemCostSql } from "#/features/ops-automation/server/item-cost";
+import {
+	parseCostFactors,
+	realCostMinor,
+} from "#/features/ops-automation/server/pricing-guard";
 import { loadSettings } from "#/features/ops-automation/server/shared";
 import {
 	BodyLimitExceededError,
@@ -21,7 +25,7 @@ type Item = {
 	currency: string;
 	currency_decimals: number;
 	item_id: string | null;
-	unit_cost_minor: string | null;
+	cost_minor: number | null;
 	quantity: number | null;
 	sources: string | null;
 	supplier_origin: string | null;
@@ -59,8 +63,8 @@ export async function handleOrderProfitRequest(
 				"pricing.cost_factors",
 			),
 		);
-		const highest = [factors["86"], factors.xiaojiu, factors.aisou].reduce(
-			(a, b) => (a > b ? a : b),
+		const highest = (["86", "xiaojiu", "aisou"] as const).reduce((a, b) =>
+			factors[a] > factors[b] ? a : b,
 		);
 		const rows: Item[] = [];
 		const nos = [...new Set(downstream_order_nos)];
@@ -69,14 +73,14 @@ export async function handleOrderProfitRequest(
 			const batch = nos.slice(i, i + 90);
 			const result = await db
 				.prepare(`SELECT api.downstream_order_no, api.id AS supplier_api_order_id, api.shop_order_id, o.paid_minor, o.currency, o.currency_decimals,
-    item.id AS item_id, item.unit_cost_minor, item.quantity,
+    item.id AS item_id, ${itemCostSql("item")} AS cost_minor, item.quantity,
     (SELECT GROUP_CONCAT(COALESCE(stock.procurement_source,
        CASE WHEN json_extract(stock_supplier.binding_snapshot_json,'$.normalizedApiOrigin')='https://aisou.pro'
        THEN 'aisou' ELSE 'unknown' END)) FROM stock_entries stock
      LEFT JOIN supplier_orders stock_supplier ON stock_supplier.id=stock.supplier_order_id AND stock_supplier.state='supplied'
      WHERE stock.order_item_id=item.id AND stock.status IN ('reserved','delivered')) AS sources,
     (SELECT json_extract(supplied.binding_snapshot_json,'$.normalizedApiOrigin') FROM supplier_orders supplied
-     WHERE supplied.order_item_id=item.id AND supplied.state='supplied' LIMIT 1) AS supplier_origin
+     WHERE supplied.order_item_id=item.id AND supplied.state='supplied' ORDER BY supplied.updated_at DESC, supplied.id DESC LIMIT 1) AS supplier_origin
     FROM supplier_api_orders api JOIN shop_orders o ON o.id=api.shop_order_id
     LEFT JOIN shop_order_items item ON item.order_id=o.id
     WHERE api.downstream_order_no IN (${batch.map(() => "?").join(",")})`)
@@ -104,9 +108,9 @@ export async function handleOrderProfitRequest(
 			for (const item of items) {
 				if (
 					!item.item_id ||
-					!item.unit_cost_minor ||
-					!/^\d+$/.test(item.unit_cost_minor) ||
-					BigInt(item.unit_cost_minor) <= 0n ||
+					item.cost_minor === null ||
+					!Number.isSafeInteger(item.cost_minor) ||
+					item.cost_minor <= 0 ||
 					!item.quantity ||
 					item.quantity < 1
 				) {
@@ -119,22 +123,24 @@ export async function handleOrderProfitRequest(
 						item.supplier_origin === "https://aisou.pro" ? "aisou" : "unknown",
 					);
 				if (sources.length === 0) sources.push("unknown");
-				const factor = sources
+				const source = sources
 					.map((source) =>
-						source === "86"
-							? factors["86"]
-							: source === "xiaojiu"
-								? factors.xiaojiu
-								: source === "aisou"
-									? factors.aisou
-									: highest,
+						source === "86" || source === "xiaojiu" || source === "aisou"
+							? source
+							: highest,
 					)
-					.reduce((a, b) => (a > b ? a : b));
-				// Fixed approved 1.01 buffer, independently of pricing guard's configurable buffer.
-				const numerator = BigInt(item.unit_cost_minor) * factor * 101n;
-				cost +=
-					((numerator + 100_000_000n - 1n) / 100_000_000n) *
-					BigInt(item.quantity);
+					.reduce((a, b) => (factors[a] > factors[b] ? a : b));
+				// Reuse accounting's fulfillment-cost precedence and pricing's rounding.
+				// The rebate guard always uses the approved 1.01 buffer.
+				const trueCost = realCostMinor(item.cost_minor, source, {
+					...factors,
+					buffer: 1_010_000n,
+				});
+				if (!Number.isSafeInteger(trueCost)) {
+					known = false;
+					continue;
+				}
+				cost += BigInt(trueCost);
 			}
 			const revenue = ids.size === 1 && first ? BigInt(first.paid_minor) : 0n;
 			return {

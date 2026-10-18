@@ -2379,7 +2379,7 @@
 	"agent_program_rules_eligibility": "仅正常分站代理参与。未交开通费不返还，其他金额由老板确认。",
 	"agent_program_waiting_profit": "已达门槛，等利润覆盖（差 {gap}）",
 	"agent_program_profit_unavailable": "利润数据不可用，暂停返还",
-	"agent_program_cost_unknown": "{count} 笔订单成本或映射未知，利润计 0",
-	"agent_program_rules_guard": "拿货达门槛且我们实际利润覆盖累计返还才入账；未覆盖则每日自动重试（90 天窗口及原宽限期内），未知成本计 0，接口故障整轮暂停。",
+	"agent_program_cost_unknown": "其中 {count} 单成本未知，按亏损计（假定亏损 {amount}）",
+	"agent_program_rules_guard": "拿货达门槛且我们实际利润覆盖累计返还才入账；未覆盖则每日自动重试（90 天窗口及原宽限期内），未知成本或映射缺失的订单按净收入全额亏损计，接口故障整轮暂停。",
 	"agent_program_rules_email": "返还入账邮件默认开启，仅通知已入账代理；发送失败不影响入账，同一笔不重复发送。"
 }

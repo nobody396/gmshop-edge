@@ -54,6 +54,8 @@ export const agentSchema = z.object({
 		.regex(/^-?\d+(?:\.\d{1,2})?$/)
 		.nullable(),
 	profit_data_state: z.enum(["available", "unavailable"]),
+	unknown_profit_order_count: z.number().int().nonnegative(),
+	unknown_profit_assumed_loss: money,
 	unknown_profit_orders: z.array(
 		z.object({ order_id: id, reason: z.string() }),
 	),

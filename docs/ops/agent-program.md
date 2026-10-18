@@ -68,21 +68,30 @@ exactly matches `supplier_api_orders.downstream_order_no`. Then
 The caller also checks returned `supplier_api_order_id` equals its stored
 `procurement_orders.upstream_order_no` (`supplier_api_orders.id`, the supplier API UUID, distinct from
 `shop_orders.id`; not the local numeric external-reference ID). Duplicate downstream numbers across accounts
-are ambiguous and contribute zero, rather than combining different buyers.
+are ambiguous and marked unknown, rather than combining different buyers.
 
 Revenue is `shop_orders.paid_minor` once per GMShop order (not list price).
-Each item's true unit cost is `unit_cost_minor × supplier FX factor × 1.01`,
-rounded **up** to a minor unit before multiplying by quantity. FX factors reuse
-`parseCostFactors` / `pricing.cost_factors` from pricing guard; the 1.01 buffer is
-fixed for this calculation. Supplier identity uses fulfilled stock
+Item cost reuses the weekly report's `itemCostSql`: the latest supplied
+supplier order total (falling back to the catalog snapshot only if missing),
+otherwise allocated reserved/delivered stock cost sum (falling back to the
+snapshot only if absent). The snapshot fallback is unit cost × quantity;
+actual totals are never multiplied by quantity again. Reuse pricing guard's
+`parseCostFactors` / `realCostMinor` to apply `pricing.cost_factors` × fixed
+1.01, rounding each item total up to a minor unit. Supplier identity uses fulfilled stock
 `stock_entries.procurement_source`, supplemented by supplied
 `supplier_orders.binding_snapshot_json.normalizedApiOrigin` for Aisou. Unknown
 or mixed sources use the highest applicable factor. Missing/zero item cost,
 missing items/order, ambiguous mapping or unsupported currency marks cost unknown
-and profit zero; known negative profit stays negative. There are no writes,
+and returns zero as an unknown-profit sentinel; agent-shop counts that order
+as a loss of its full net revenue, never as zero contribution. Known negative
+profit stays negative. There are no writes,
 notifications, procurement requests, or new cron jobs on this endpoint.
 
-Agent-shop applies its existing parent+child refund ratio exactly once, resolves
+Agent-shop subtracts refunded platform revenue while retaining full incurred
+cost. The profit contract exposes no recorded supplier-side cost recovery, so
+none is assumed. Unknown-cost or unmapped counted orders contribute negative
+net platform revenue. Internal agents/detail expose `unknown_profit_order_count`
+and positive `unknown_profit_assumed_loss`, shown beside our profit. It resolves
 all batches (including an empty health check for local-only runs) before crediting anything, and fails the entire rebate run closed on
 missing token, API errors or invalid/incomplete responses. Its durable daily
 owner warning uses the existing owner notification channel. The owner UI shows

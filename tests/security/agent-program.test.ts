@@ -95,12 +95,33 @@ describe("agent program access and transport", () => {
 			"https://lsrai.shop/api/internal/reseller-program/rules",
 			expect.objectContaining({
 				credentials: "omit",
-				redirect: "error",
+				redirect: "manual",
 				headers: {
 					authorization: "Bearer synthetic-test-token",
 					"content-type": "application/json",
 				},
 			}),
+		);
+	});
+
+	it.each([
+		301, 302, 303, 307, 308, 400, 500,
+	])("rejects upstream status %s without following redirects", async (status) => {
+		const fetch = vi.fn(
+			async () =>
+				new Response(null, {
+					status,
+					headers: { location: "https://other.test" },
+				}),
+		);
+		vi.stubGlobal("fetch", fetch);
+		await expect(
+			requestProgram("synthetic-test-token", "rules", z.unknown()),
+		).rejects.toMatchObject({ code: "agent_program_unavailable" });
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(fetch).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ redirect: "manual" }),
 		);
 	});
 	it.each([

@@ -21,7 +21,7 @@ export async function requestProgram<T>(
 			{
 				method,
 				credentials: "omit",
-				redirect: "error",
+				redirect: "manual",
 				headers: {
 					authorization: `Bearer ${token}`,
 					"content-type": "application/json",
@@ -30,9 +30,9 @@ export async function requestProgram<T>(
 				signal: AbortSignal.timeout(20000),
 			},
 		);
+		if (!response.ok) throw new Error();
 		const envelope: unknown = await response.json();
 		if (
-			!response.ok ||
 			typeof envelope !== "object" ||
 			envelope === null ||
 			!("status_code" in envelope) ||

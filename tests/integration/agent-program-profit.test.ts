@@ -90,7 +90,7 @@ describe("read-only agent profit API", () => {
 			expect(response.status).toBe(401);
 		}
 	});
-	it("calculates paid revenue minus ceil-per-unit true cost and quantity, without mutating orders", async () => {
+	it("calculates paid revenue minus rounded-up fulfillment cost, without mutating orders", async () => {
 		await order("known", "DJ-known", "5000", 2, "86");
 		const before = await db
 			.prepare("SELECT * FROM shop_orders WHERE id='known'")
@@ -105,8 +105,8 @@ describe("read-only agent profit API", () => {
 					supplier_api_order_id: "api-known",
 					shop_order_id: "known",
 					revenue_minor: "11000",
-					true_cost_minor: "10144",
-					profit_minor: "856",
+					true_cost_minor: "10143",
+					profit_minor: "857",
 					cost_known: true,
 				},
 			],
@@ -115,6 +115,29 @@ describe("read-only agent profit API", () => {
 			await db.prepare("SELECT * FROM shop_orders WHERE id='known'").first(),
 		).toEqual(before);
 		expect(result.headers.get("cache-control")).toBe("no-store");
+	});
+
+	it("prefers allocated stock cost to catalog snapshot, with configured source factor", async () => {
+		await db
+			.prepare(
+				'INSERT INTO system_settings(key,value) VALUES (\'pricing.cost_factors\',\'{"86":1.1,"xiaojiu":1,"aisou":1}\') ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+			)
+			.run();
+		await order("stock-cost", "DJ-stock-cost", "100", 2, "86");
+		await db
+			.prepare(
+				"UPDATE stock_entries SET unit_cost_minor='9000' WHERE id='stock-stock-cost'",
+			)
+			.run();
+		// Accounting sums allocated stock directly: do not multiply by item quantity again.
+		expect(await (await request(["DJ-stock-cost"])).json()).toMatchObject({
+			orders: [
+				{ true_cost_minor: "9999", profit_minor: "1001", cost_known: true },
+			],
+		});
+		await db
+			.prepare("DELETE FROM system_settings WHERE key='pricing.cost_factors'")
+			.run();
 	});
 	it("uses configured factors, highest for unknown suppliers, and fixed 1.01 buffer", async () => {
 		await db
@@ -135,7 +158,7 @@ describe("read-only agent profit API", () => {
 			],
 		});
 	});
-	it("resolves automatic supplier stock through its supplied snapshot, keeping unlinked stock conservative", async () => {
+	it("resolves supplier identity, prefers supplied cost over stock/catalog, and only uses accounting fallback", async () => {
 		await order("aisou", "DJ-aisou", "10000");
 		await db.batch([
 			db.prepare(
@@ -193,21 +216,60 @@ describe("read-only agent profit API", () => {
 				{ true_cost_minor: "22220", profit_minor: "-11220", cost_known: true },
 			],
 		});
+		// Supplied cost wins over both allocated stock and the catalog snapshot.
+		await db.batch([
+			db.prepare(
+				"UPDATE shop_order_items SET unit_cost_minor='100' WHERE id='item-aisou'",
+			),
+			db.prepare(
+				"UPDATE stock_entries SET unit_cost_minor='200' WHERE order_item_id='item-aisou'",
+			),
+			db.prepare(
+				"UPDATE supplier_orders SET total_cost_minor='15000', quoted_unit_cost_minor='15000' WHERE id='aisou-supply'",
+			),
+		]);
+		expect(await (await request(["DJ-aisou"])).json()).toMatchObject({
+			orders: [
+				{ true_cost_minor: "16665", profit_minor: "-5665", cost_known: true },
+			],
+		});
+		await db
+			.prepare(
+				"UPDATE supplier_orders SET total_cost_minor=NULL, quoted_unit_cost_minor=NULL WHERE id='aisou-supply'",
+			)
+			.run();
+		// A supplied order with no total falls back to the item snapshot, NOT allocated stock.
+		expect(await (await request(["DJ-aisou"])).json()).toMatchObject({
+			orders: [
+				{ true_cost_minor: "223", profit_minor: "10777", cost_known: true },
+			],
+		});
+		await db
+			.prepare(
+				"UPDATE shop_order_items SET unit_cost_minor=NULL WHERE id='item-aisou'",
+			)
+			.run();
+		expect(await (await request(["DJ-aisou"])).json()).toMatchObject({
+			orders: [{ profit_minor: "0", cost_known: false }],
+		});
 	});
+
 	it("flags null/zero/missing costs and unknown or ambiguous downstream numbers as zero profit", async () => {
 		await order("null", "DJ-null", null);
 		await order("zero", "DJ-zero", "0");
+		await order("unsafe", "DJ-unsafe", "9007199254740991", 1, "xiaojiu");
 		await order("dup1", "DJ-duplicate", "100");
 		await order("dup2", "DJ-duplicate", "100", 1, undefined, "other");
 		const response = await request([
 			"DJ-null",
 			"DJ-zero",
+			"DJ-unsafe",
 			"DJ-missing",
 			"DJ-duplicate",
 		]);
 		expect(await response.json()).toMatchObject({
 			ok: true,
-			orders: Array.from({ length: 4 }, () => ({
+			orders: Array.from({ length: 5 }, () => ({
 				profit_minor: "0",
 				cost_known: false,
 			})),

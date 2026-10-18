@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
 		}
 	>(),
 	detailId: 33,
+	unknownCount: 0,
 }));
 vi.mock("#/features/agent-program/server/admin", () => ({
 	listAgentsFn: vi.fn(),
@@ -60,6 +61,8 @@ function agent(id: number) {
 		our_profit_in_window: "45.00",
 		profit_data_state: "available",
 		unknown_profit_orders: [],
+		unknown_profit_order_count: state.unknownCount,
+		unknown_profit_assumed_loss: state.unknownCount ? "7.00" : "0.00",
 		month: { orders: 0, sales: "0.00", profit: "0.00" },
 		last_month: { orders: 0, sales: "0.00", profit: "0.00" },
 		all_time: { orders: 0, sales: "0.00", profit: "0.00" },
@@ -301,5 +304,36 @@ it("renders our profit and waiting tier without inferring agent profit", () => {
 	);
 	expect(container.textContent).toContain("我们赚了");
 	expect(container.textContent).toContain("45.00");
+	overwriteGetLocale(() => "en-US");
+});
+
+it.each([
+	"en-US",
+	"zh-CN",
+] as const)("shows unknown-cost losses beside our profit in %s", (locale) => {
+	state.unknownCount = 2;
+	overwriteGetLocale(() => locale);
+	act(() =>
+		root.render(<AgentDetail id={33} month="2026-10" onClose={() => {}} />),
+	);
+	const stat = Array.from(container.querySelectorAll("dt")).find(
+		(el) =>
+			el.textContent ===
+			(locale === "zh-CN" ? "我们赚了" : "Our profit (rebate window)"),
+	)?.parentElement;
+	expect(stat?.textContent).toContain(
+		locale === "zh-CN"
+			? "其中 2 单成本未知，按亏损计"
+			: "Includes 2 orders with unknown costs",
+	);
+	expect(stat?.textContent).toContain("7.00");
+	act(() => root.render(<AgentProgramPage />));
+	expect(container.textContent).toContain(
+		locale === "zh-CN"
+			? "其中 2 单成本未知，按亏损计"
+			: "Includes 2 orders with unknown costs",
+	);
+	expect(container.textContent).toContain("7.00");
+	state.unknownCount = 0;
 	overwriteGetLocale(() => "en-US");
 });

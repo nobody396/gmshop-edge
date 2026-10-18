@@ -2379,7 +2379,7 @@
 	"agent_program_rules_eligibility": "Only active subsite agents participate. An unpaid opening fee has no rebate; other fee amounts require owner confirmation.",
 	"agent_program_waiting_profit": "Threshold reached, awaiting profit coverage (gap {gap})",
 	"agent_program_profit_unavailable": "Profit unavailable; rebates paused",
-	"agent_program_cost_unknown": "{count} orders have unknown costs or mappings; counted profit is zero",
-	"agent_program_rules_guard": "Credit requires both wholesale threshold and actual profit covering cumulative rebates. Retry daily within the 90-day window and existing grace; unknown costs count as zero; profit API failures pause the entire run.",
+	"agent_program_cost_unknown": "Includes {count} orders with unknown costs, assumed loss {amount}",
+	"agent_program_rules_guard": "Credit requires both wholesale threshold and actual profit covering cumulative rebates. Retry daily within the 90-day window and existing grace; unknown costs or unmapped orders count as a loss of their full net revenue; profit API failures pause the entire run.",
 	"agent_program_rules_email": "Credit emails are enabled by default for the credited agent only; email failure never blocks credit, and each credit is emailed at most once."
 }

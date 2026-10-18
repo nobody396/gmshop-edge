@@ -1,9 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "gmshop-edge",
-	// Secret bindings: AGENT_SHOP_PROGRAM_TOKEN (owner API client),
-	// AGENT_PROGRAM_PROFIT_TOKEN (read-only profit endpoint).
-	// Never put the value in vars or this file; see docs/ops/agent-program.md.
 	"main": "src/server-entry.ts",
 	"compatibility_date": "2026-07-01",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],

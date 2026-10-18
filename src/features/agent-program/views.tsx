@@ -157,6 +157,18 @@ export function AgentDetail({
 									agent.our_profit_in_window === null
 										? m.agent_program_profit_unavailable()
 										: money(agent.our_profit_in_window, currency),
+									agent.unknown_profit_order_count > 0
+										? m.agent_program_cost_unknown({
+												count: formatNumber(agent.unknown_profit_order_count),
+												amount: money(
+													agent.unknown_profit_assumed_loss,
+													currency,
+												),
+											}) +
+											(agent.unknown_profit_orders.length
+												? ` #${agent.unknown_profit_orders.map((order) => order.order_id).join(", #")}`
+												: "")
+										: "",
 								],
 								[
 									m.agent_program_pending(),
@@ -172,10 +184,15 @@ export function AgentDetail({
 											)
 										: "—",
 								],
-							].map(([label, value]) => (
+							].map(([label, value, note]) => (
 								<div key={label} className="min-w-0 rounded-lg bg-muted/50 p-3">
 									<dt className="text-muted-foreground">{label}</dt>
 									<dd className="break-words font-medium">{value}</dd>
+									{note && (
+										<dd className="text-xs text-amber-700 dark:text-amber-400">
+											{note}
+										</dd>
+									)}
 								</div>
 							))}
 						</dl>
@@ -190,17 +207,6 @@ export function AgentDetail({
 							<h3 className="font-semibold">
 								{m.agent_program_rebate_progress()}
 							</h3>
-							{agent.unknown_profit_orders.length > 0 && (
-								<p className="text-amber-700 dark:text-amber-400">
-									{m.agent_program_cost_unknown({
-										count: formatNumber(agent.unknown_profit_orders.length),
-									})}{" "}
-									#
-									{agent.unknown_profit_orders
-										.map((o) => o.order_id)
-										.join(", #")}
-								</p>
-							)}
 							{agent.rebate.manual_confirmation ? (
 								<p>{m.agent_program_manual()}</p>
 							) : !agent.rebate.eligible ? (
