@@ -7,7 +7,9 @@ import { ProModal } from "#/components/pro/overlay";
 import { ProTable } from "#/components/pro/table";
 import { Button } from "#/components/ui/button";
 import {
+	AgentDomains,
 	money,
+	PeriodProfit,
 	ProgramError,
 	statusLabel,
 	tierGuardLabel,
@@ -117,7 +119,7 @@ export function AgentDetail({
 				}
 			}}
 			title={agent ? `${agent.label} #${agent.id}` : m.agent_program_details()}
-			description={agent?.email_masked}
+			description={agent && <span className="break-all">{agent.email}</span>}
 			className="sm:max-w-4xl"
 		>
 			<div className="space-y-6 overflow-y-auto">
@@ -130,7 +132,7 @@ export function AgentDetail({
 						<dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
 							{[
 								[m.agent_program_status(), statusLabel(agent.status)],
-								[m.agent_program_domains(), agent.domains.join(", ") || "—"],
+								[m.agent_program_account(), agent.payout_alipay_account || "—"],
 								[
 									m.agent_program_opened(),
 									formatDate(agent.opened_at, getLocale(), "Asia/Shanghai"),
@@ -152,24 +154,7 @@ export function AgentDetail({
 									money(agent.withdrawable, currency),
 								],
 								[m.agent_program_locked(), money(agent.locked, currency)],
-								[
-									m.agent_program_our_profit(),
-									agent.our_profit_in_window === null
-										? m.agent_program_profit_unavailable()
-										: money(agent.our_profit_in_window, currency),
-									agent.unknown_profit_order_count > 0
-										? m.agent_program_cost_unknown({
-												count: formatNumber(agent.unknown_profit_order_count),
-												amount: money(
-													agent.unknown_profit_assumed_loss,
-													currency,
-												),
-											}) +
-											(agent.unknown_profit_orders.length
-												? ` #${agent.unknown_profit_orders.map((order) => order.order_id).join(", #")}`
-												: "")
-										: "",
-								],
+
 								[
 									m.agent_program_pending(),
 									money(agent.pending_withdrawal, currency),
@@ -184,18 +169,33 @@ export function AgentDetail({
 											)
 										: "—",
 								],
-							].map(([label, value, note]) => (
+							].map(([label, value]) => (
 								<div key={label} className="min-w-0 rounded-lg bg-muted/50 p-3">
 									<dt className="text-muted-foreground">{label}</dt>
 									<dd className="break-words font-medium">{value}</dd>
-									{note && (
-										<dd className="text-xs text-amber-700 dark:text-amber-400">
-											{note}
-										</dd>
-									)}
 								</div>
 							))}
 						</dl>
+						<section className="space-y-2">
+							<h3 className="font-semibold">{m.agent_program_domains()}</h3>
+							<AgentDomains domains={agent.domains} />
+						</section>
+						<div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+							<section className="rounded-lg bg-muted/50 p-3">
+								<h3>{m.agent_program_our_profit_month()}</h3>
+								<PeriodProfit
+									value={agent.our_profit_month}
+									currency={currency}
+								/>
+							</section>
+							<section className="rounded-lg bg-muted/50 p-3">
+								<h3>{m.agent_program_our_profit_last_month()}</h3>
+								<PeriodProfit
+									value={agent.our_profit_last_month}
+									currency={currency}
+								/>
+							</section>
+						</div>
 						<Button
 							variant="outline"
 							disabled={mutation.isPending}
@@ -207,6 +207,22 @@ export function AgentDetail({
 							<h3 className="font-semibold">
 								{m.agent_program_rebate_progress()}
 							</h3>
+							<p>
+								{m.agent_program_our_profit_window()}:{" "}
+								{agent.our_profit_in_window === null
+									? m.agent_program_profit_fetch_unavailable()
+									: money(agent.our_profit_in_window, currency)}
+							</p>
+							{agent.unknown_profit_order_count > 0 && (
+								<p className="text-xs text-muted-foreground">
+									{m.agent_program_cost_unknown({
+										count: formatNumber(agent.unknown_profit_order_count),
+										amount: money(agent.unknown_profit_assumed_loss, currency),
+									})}
+									{agent.unknown_profit_orders.length > 0 &&
+										` #${agent.unknown_profit_orders.map((order) => order.order_id).join(", #")}`}
+								</p>
+							)}
 							{agent.rebate.manual_confirmation ? (
 								<p>{m.agent_program_manual()}</p>
 							) : !agent.rebate.eligible ? (

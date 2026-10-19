@@ -8,7 +8,9 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
 import {
+	AgentDomains,
 	money,
+	PeriodProfit,
 	ProgramError,
 	statusLabel,
 } from "#/features/agent-program/presentation";
@@ -22,8 +24,9 @@ import {
 } from "#/features/agent-program/server/admin";
 import { AgentDetail, ProgramRulesView } from "#/features/agent-program/views";
 import { PageHeader } from "#/layouts/components/page-header";
-import { formatNumber } from "#/lib/format";
+import { formatDateTime, formatNumber } from "#/lib/format";
 import { m } from "#/paraglide/messages";
+import { getLocale } from "#/paraglide/runtime";
 
 function beijingMonth() {
 	return new Intl.DateTimeFormat("sv-SE", {
@@ -59,9 +62,10 @@ export function AgentProgramPage() {
 						>
 							{row.original.label || `#${row.original.id}`}
 						</Button>
-						<div className="text-muted-foreground text-xs">
-							#{row.original.id} · {row.original.email_masked}
+						<div className="break-all text-muted-foreground text-xs">
+							#{row.original.id} · {row.original.email}
 						</div>
+						<AgentDomains domains={row.original.domains} />
 					</div>
 				),
 			},
@@ -90,25 +94,17 @@ export function AgentProgramPage() {
 			},
 
 			{
-				accessorKey: "our_profit_in_window",
+				id: "our_profit_month",
+				accessorFn: (agent) =>
+					agent.our_profit_month.profit === null
+						? undefined
+						: amountMinor(agent.our_profit_month.profit),
 				header: m.agent_program_our_profit(),
 				cell: ({ row }) => (
-					<div>
-						{row.original.our_profit_in_window === null
-							? m.agent_program_profit_unavailable()
-							: money(row.original.our_profit_in_window, currency)}
-						{row.original.unknown_profit_order_count > 0 && (
-							<p className="text-xs text-muted-foreground">
-								{m.agent_program_cost_unknown({
-									count: formatNumber(row.original.unknown_profit_order_count),
-									amount: money(
-										row.original.unknown_profit_assumed_loss,
-										currency,
-									),
-								})}
-							</p>
-						)}
-					</div>
+					<PeriodProfit
+						value={row.original.our_profit_month}
+						currency={currency}
+					/>
 				),
 			},
 			{
@@ -394,14 +390,33 @@ function Withdrawals() {
 		{
 			accessorKey: "label",
 			header: m.agent_program_agents(),
-			cell: ({ row }) => `${row.original.label} #${row.original.reseller_id}`,
+			cell: ({ row }) => (
+				<div>
+					{row.original.label} #{row.original.reseller_id}
+					<p className="break-all text-xs text-muted-foreground">
+						{row.original.email}
+					</p>
+				</div>
+			),
 		},
 		{
 			accessorKey: "amount",
 			header: m.agent_program_amount(),
 			cell: ({ row }) => money(row.original.amount, row.original.currency),
 		},
-		{ accessorKey: "account_masked", header: m.agent_program_account() },
+		{
+			accessorKey: "account",
+			header: m.agent_program_account(),
+			cell: ({ row }) => (
+				<span className="break-all">{row.original.account}</span>
+			),
+		},
+		{
+			accessorKey: "created_at",
+			header: m.agent_program_requested(),
+			cell: ({ row }) =>
+				formatDateTime(row.original.created_at, getLocale(), "Asia/Shanghai"),
+		},
 		{
 			id: "payout",
 			header: m.agent_program_mark_paid(),

@@ -39,13 +39,22 @@ const salesSchema = z.object({
 	sales: money,
 	profit: z.string().regex(/^-?\d+(?:\.\d{1,2})?$/),
 });
+const periodProfitSchema = z.object({
+	profit: salesSchema.shape.profit.nullable(),
+	unknown_order_count: z.number().int().nonnegative(),
+});
 export const agentSchema = z.object({
 	id,
 	user_id: id,
 	label: z.string(),
-	email_masked: z.string(),
+	email: z.string(),
+	payout_alipay_account: z.string(),
 	status: z.string(),
-	domains: z.array(z.string()),
+	domains: z.array(
+		z.object({ domain: z.string(), type: z.string(), status: z.string() }),
+	),
+	our_profit_month: periodProfitSchema,
+	our_profit_last_month: periodProfitSchema,
 	opened_at: z.string(),
 	opening_fee_paid: money,
 	opening_fee_source: feeSourceSchema,
@@ -150,7 +159,8 @@ export const withdrawalsSchema = z.array(
 		label: z.string(),
 		amount: money,
 		currency: z.string(),
-		account_masked: z.string(),
+		account: z.string(),
+		email: z.string(),
 		status: z.string(),
 		created_at: z.string(),
 		alipay_trade_no: z.string(),
