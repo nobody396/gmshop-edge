@@ -622,6 +622,11 @@ export const commerceEvents = sqliteTable(
 			table.createdAt,
 			table.id,
 		),
+		index("commerce_events_session_type_created_idx").on(
+			table.sessionId,
+			table.eventType,
+			table.createdAt,
+		),
 		check(
 			"commerce_events_amount_check",
 			sql`${table.amountMinor} IS NULL OR (${moneyCheck(table.amountMinor)})`,

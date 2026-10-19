@@ -6,6 +6,8 @@ CREATE UNIQUE INDEX coupons_recall_campaign_email_uidx ON coupons(campaign_key, 
 --> statement-breakpoint
 CREATE INDEX coupons_recipient_email_expiry_idx ON coupons(recipient_email,ends_at) WHERE purpose='recall' AND recipient_email IS NOT NULL;
 --> statement-breakpoint
+CREATE INDEX commerce_events_session_type_created_idx ON commerce_events(session_id,event_type,created_at);
+--> statement-breakpoint
 DROP TRIGGER coupons_promotion_insert_guard;
 --> statement-breakpoint
 CREATE TRIGGER coupons_promotion_insert_guard BEFORE INSERT ON coupons WHEN NEW.purpose <> 'standard' OR NEW.recipient_email IS NOT NULL BEGIN

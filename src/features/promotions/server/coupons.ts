@@ -139,6 +139,14 @@ export async function issueRecallEmailCoupon(
 	input: { email: string; campaignKey: string; startsAt: number },
 ) {
 	const email = input.email.trim().toLowerCase();
+	// One coupon per campaign: an account-bound coupon issued before email binding wins.
+	const accountBound = await db
+		.prepare(
+			"SELECT 1 AS found FROM coupons WHERE purpose = 'recall' AND campaign_key = ? AND recipient_email IS NULL LIMIT 1",
+		)
+		.bind(input.campaignKey)
+		.first();
+	if (accountBound) return null;
 	const eligible = await db
 		.prepare(`SELECT 1 AS found FROM shop_orders o WHERE o.paid_at IS NOT NULL
   AND o.status IN ('paid','fulfilling','completed')

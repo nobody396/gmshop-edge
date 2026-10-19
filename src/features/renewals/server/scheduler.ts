@@ -829,9 +829,12 @@ async function issueReminderRecallCoupon(
 	row: Pick<DueRow, "reminder_id" | "recipient_email" | "sellable_item_id">,
 	now: number,
 ) {
+	// Same effective budget as checkout: the ¥8 tier only applies from ¥1000.
 	const item = await db
 		.prepare(
-			"SELECT promotion_budget_minor FROM product_sellable_items WHERE id = ? LIMIT 1",
+			`SELECT CASE WHEN promotion_budget_minor = '800' AND CAST(price_minor AS INTEGER) < 100000
+			 THEN '0' ELSE promotion_budget_minor END AS promotion_budget_minor
+			 FROM product_sellable_items WHERE id = ? LIMIT 1`,
 		)
 		.bind(row.sellable_item_id)
 		.first<{ promotion_budget_minor: string }>();

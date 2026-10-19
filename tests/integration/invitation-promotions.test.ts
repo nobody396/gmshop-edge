@@ -259,6 +259,25 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		});
 		await expect(guest("buyer@example.com")).rejects.toThrow(/unavailable/);
 	});
+	it("never adds an email-bound coupon to a recall campaign that already has an account coupon", async () => {
+		const old = await emptyOrder();
+		await db
+			.prepare("UPDATE shop_orders SET status='completed',paid_at=1 WHERE id=?")
+			.bind(old)
+			.run();
+		await issueRecallCoupon(db, {
+			userId: buyer,
+			campaignKey: "upgraded",
+			startsAt: Date.now() - 1000,
+		});
+		expect(
+			await issueRecallEmailCoupon(db, {
+				email: "buyer@example.com",
+				campaignKey: "upgraded",
+				startsAt: Date.now(),
+			}),
+		).toBeNull();
+	});
 	it("releases an unpaid recall coupon but does not recycle a paid refunded coupon", async () => {
 		const old = await emptyOrder();
 		await db

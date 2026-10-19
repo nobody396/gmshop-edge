@@ -472,6 +472,31 @@ describe("renewal reminders", { timeout: 120_000 }, () => {
 		);
 	});
 
+	it("sends the recall email without a coupon when the ¥8 tier does not apply below ¥1000", async () => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET promotion_budget_minor = '800', price_minor = '99900' WHERE id = 'item-plus'",
+			)
+			.run();
+		await seedOrder(db, {
+			id: "o1",
+			email: "guest@customer.com",
+			content: code,
+		});
+		await runRenewalReminders(db, {
+			now: deliveredAt + 60_000,
+			force: true,
+			lookup: completedLookup(null),
+		});
+		await setSetting(db, "notifications.renewal_recall_enabled", true);
+		await runRenewalReminders(db, {
+			now: recallDue + 5 * 86_400_000,
+			force: true,
+		});
+		expect(await count(db, "coupons")).toBe(0);
+		expect((await recallTexts(db)).o1).not.toMatch(/BACK-|回购码/);
+	});
+
 	it("sends the recall email without a coupon when the item has no promotion budget", async () => {
 		await seedOrder(db, {
 			id: "o1",
