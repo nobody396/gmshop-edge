@@ -6,6 +6,7 @@ import {
 	formatNumber,
 } from "#/lib/format";
 import { m } from "#/paraglide/messages";
+import { getLocale } from "#/paraglide/runtime";
 
 export function money(value: string | bigint, currency = "CNY") {
 	if (!/^[A-Z]{3}$/.test(currency))
@@ -115,5 +116,29 @@ export function PeriodProfit({
 				</p>
 			)}
 		</div>
+	);
+}
+
+export function PanelDataAge({
+	updatedAt,
+	month,
+}: {
+	updatedAt: number | undefined;
+	month?: string;
+}) {
+	const time =
+		updatedAt && Number.isFinite(updatedAt)
+			? new Intl.DateTimeFormat(getLocale(), {
+					timeZone: "Asia/Shanghai",
+					hour: "2-digit",
+					minute: "2-digit",
+					hour12: false,
+				}).format(updatedAt)
+			: undefined;
+	return (
+		<span className="text-muted-foreground text-sm">
+			{month && <>{m.agent_program_displayed_month({ month })} · </>}
+			{time && m.agent_program_updated_at({ time })}
+		</span>
 	);
 }

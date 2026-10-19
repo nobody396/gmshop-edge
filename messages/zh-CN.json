@@ -2391,5 +2391,9 @@
 	"agent_program_period_cost_unknown": "其中 {count} 单成本未知，按亏损计",
 	"agent_program_domain_pending_review": "待审核",
 	"agent_program_domain_provisioning": "配置中",
-	"agent_program_requested": "申请时间（北京时间）"
+	"agent_program_requested": "申请时间（北京时间）",
+	"agent_program_updating": "更新中",
+	"agent_program_refresh": "刷新",
+	"agent_program_updated_at": "数据更新于 {time}（北京时间）",
+	"agent_program_displayed_month": "显示月份 {month}"
 }

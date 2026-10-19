@@ -4,6 +4,7 @@ export const amountSchema = z.string().regex(/^\d{1,10}(?:\.\d{1,2})?$/);
 const money = z.string().regex(/^\d{1,18}(?:\.\d{1,2})?$/);
 const id = z.number().int().positive();
 export const monthQuerySchema = z.object({
+	refresh: z.boolean().optional(),
 	month: z
 		.string()
 		.regex(/^\d{4}-(0[1-9]|1[0-2])$/)

@@ -9,11 +9,13 @@ import { Button } from "#/components/ui/button";
 import {
 	AgentDomains,
 	money,
+	PanelDataAge,
 	PeriodProfit,
 	ProgramError,
 	statusLabel,
 	tierGuardLabel,
 } from "#/features/agent-program/presentation";
+import { panelQueryPolicy } from "#/features/agent-program/queries";
 import {
 	amountMinor,
 	type FeeSource,
@@ -54,6 +56,8 @@ export function AgentDetail({
 	const client = useQueryClient();
 	const [editing, setEditing] = useState<number | null>(null);
 	const query = useQuery({
+		...panelQueryPolicy,
+		placeholderData: undefined, // Never show another agent/month in a payout detail dialog.
 		queryKey: ["agent-program", "detail", id, month],
 		enabled: id !== null,
 		queryFn: () => getAgentFn({ data: { id: id ?? 0, month } }),
@@ -123,12 +127,48 @@ export function AgentDetail({
 			className="sm:max-w-4xl"
 		>
 			<div className="space-y-6 overflow-y-auto">
-				{query.isError ? (
+				{query.isError && !agent ? (
 					<ProgramError retry={() => void query.refetch()} />
 				) : !agent ? (
 					<output>{m.agent_program_loading()}</output>
 				) : (
 					<>
+						<div
+							className="flex flex-wrap items-center gap-3"
+							aria-live="polite"
+						>
+							<PanelDataAge
+								updatedAt={query.data?.data_updated_at}
+								month={month}
+							/>
+							{query.isFetching && (
+								<span className="whitespace-nowrap text-muted-foreground text-sm">
+									{m.agent_program_updating()}
+								</span>
+							)}
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={query.isFetching}
+								onClick={() =>
+									void client
+										.fetchQuery({
+											queryKey: ["agent-program", "detail", id, month],
+											queryFn: () =>
+												getAgentFn({
+													data: { id: id ?? 0, month, refresh: true },
+												}),
+											staleTime: 0,
+										})
+										.catch(() => toast.error(m.agent_program_error()))
+								}
+							>
+								{m.agent_program_refresh()}
+							</Button>
+						</div>
+						{query.isError && (
+							<ProgramError retry={() => void query.refetch()} />
+						)}
 						<dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
 							{[
 								[m.agent_program_status(), statusLabel(agent.status)],

@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("#/features/agent-program/server/admin", () => ({
 	listAgentsFn: vi.fn(),
+	getProgramRulesFn: vi.fn(),
 	getWithdrawalsFn: vi.fn(),
 	getLeaderboardFn: vi.fn(),
 	getAgentFn: vi.fn(),
@@ -106,6 +107,8 @@ function agent(id: number) {
 	};
 }
 vi.mock("@tanstack/react-query", () => ({
+	keepPreviousData: (v: unknown) => v,
+	queryOptions: (v: unknown) => v,
 	useQueryClient: () => ({ invalidateQueries: vi.fn(async () => {}) }),
 	useMutation: (options: {
 		mutationFn: unknown;
@@ -126,7 +129,12 @@ vi.mock("@tanstack/react-query", () => ({
 		isError: false,
 		data:
 			queryKey[1] === "agents"
-				? { month: "2026-10", agents: [agent(33), agent(34)], rules }
+				? {
+						data_updated_at: Date.UTC(2026, 9, 18),
+						month: "2026-10",
+						agents: [agent(33), agent(34)],
+						rules,
+					}
 				: queryKey[1] === "withdrawals"
 					? [1, 2].map((id) => ({
 							id,
@@ -223,14 +231,6 @@ vi.mock("#/components/pro/overlay", () => ({
 			</section>
 		) : null,
 }));
-vi.mock("#/components/ui/tabs", () => ({
-	Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-	TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-	TabsTrigger: ({ children }: { children: ReactNode }) => (
-		<span>{children}</span>
-	),
-	TabsContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
 
 import { AgentProgramPage } from "#/features/agent-program/page";
 import { AgentDetail } from "#/features/agent-program/views";
@@ -262,6 +262,17 @@ function click(text: string, index = 0) {
 	if (!button) throw new Error(`missing ${text}`);
 	act(() => button.click());
 }
+function openTab(text: string) {
+	const tab = Array.from(container.querySelectorAll('[role="tab"]')).find(
+		(t) => t.textContent === text,
+	);
+	if (!tab) throw Error(`missing tab ${text}`);
+	act(() =>
+		tab.dispatchEvent(
+			new MouseEvent("mousedown", { button: 0, bubbles: true }),
+		),
+	);
+}
 function renderPage() {
 	act(() => root.render(<AgentProgramPage />));
 }
@@ -272,6 +283,7 @@ describe("agent mutation dialog identity", () => {
 		["reward", reviewLeaderboardFn, "Approve reward", "approve"],
 	] as const)("locks pending %s dismissal/replacement and ignores stale completion", async (_kind, fn, title, action) => {
 		renderPage();
+		openTab(_kind === "payout" ? "Pending payouts" : "Leaderboard");
 		click(title, 0);
 		const firstSuccess = state.mutations.get(fn)?.onSuccess;
 		state.pending.set(fn, true);
@@ -381,13 +393,15 @@ it.each([
 	expect(container.textContent).toContain(
 		locale === "zh-CN" ? "待审核" : "Pending review",
 	);
+	// The table and payouts are intentionally lazy, not simultaneously mounted.
+	expect(container.textContent).toContain("123.00");
+	expect(container.textContent).not.toContain("45.00");
+	openTab(locale === "zh-CN" ? "待打款" : "Pending payouts");
 	expect(container.textContent).toContain("full-payout@example.test");
 	expect(container.textContent).toContain("payout-owner@example.test");
 	expect(container.textContent).toContain("2026");
 	expect(container.textContent).toContain("00:00");
-	// Table must not substitute the 45.00 rebate-window value for 123.00 monthly profit.
-	expect(container.textContent).toContain("123.00");
-	expect(container.textContent).not.toContain("45.00");
+
 	act(() =>
 		root.render(<AgentDetail id={33} month="2026-10" onClose={() => {}} />),
 	);

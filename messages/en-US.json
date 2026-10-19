@@ -2391,5 +2391,9 @@
 	"agent_program_period_cost_unknown": "Includes {count} orders with unknown costs, counted as total loss",
 	"agent_program_domain_pending_review": "Pending review",
 	"agent_program_domain_provisioning": "Provisioning",
-	"agent_program_requested": "Requested at (Beijing time)"
+	"agent_program_requested": "Requested at (Beijing time)",
+	"agent_program_updating": "Updating",
+	"agent_program_refresh": "Refresh",
+	"agent_program_updated_at": "Data updated at {time} (Beijing time)",
+	"agent_program_displayed_month": "Showing {month}"
 }

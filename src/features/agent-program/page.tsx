@@ -10,15 +10,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
 import {
 	AgentDomains,
 	money,
+	PanelDataAge,
 	PeriodProfit,
 	ProgramError,
 	statusLabel,
 } from "#/features/agent-program/presentation";
+import {
+	agentsQuery,
+	beijingMonth,
+	leaderboardQuery,
+	rulesQuery,
+	withdrawalsQuery,
+} from "#/features/agent-program/queries";
 import { type Agent, amountMinor } from "#/features/agent-program/schema";
 import {
-	getLeaderboardFn,
-	getWithdrawalsFn,
-	listAgentsFn,
 	markWithdrawalPaidFn,
 	reviewLeaderboardFn,
 } from "#/features/agent-program/server/admin";
@@ -28,25 +33,29 @@ import { formatDateTime, formatNumber } from "#/lib/format";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 
-function beijingMonth() {
-	return new Intl.DateTimeFormat("sv-SE", {
-		year: "numeric",
-		month: "2-digit",
-		timeZone: "Asia/Shanghai",
-	}).format(new Date());
-}
-
 export function AgentProgramPage() {
 	const [month, setMonth] = useState(beijingMonth);
 	const [selected, setSelected] = useState<number | null>(null);
-	const agents = useQuery({
-		queryKey: ["agent-program", "agents", month],
-		queryFn: () => listAgentsFn({ data: { month } }),
-	});
-	const withdrawals = useQuery({
-		queryKey: ["agent-program", "withdrawals"],
-		queryFn: () => getWithdrawalsFn(),
-	});
+	const client = useQueryClient();
+	const [tab, setTab] = useState("agents");
+	// Start independent reads on the same render; tab CONTENT remains lazy.
+	const agents = useQuery(agentsQuery(month));
+	const leaderboard = useQuery(leaderboardQuery(month));
+	const withdrawals = useQuery(withdrawalsQuery());
+	const rules = useQuery(rulesQuery());
+	const updating =
+		agents.isFetching ||
+		leaderboard.isFetching ||
+		withdrawals.isFetching ||
+		rules.isFetching;
+	const refresh = async () => {
+		await Promise.all([
+			client.fetchQuery({ ...agentsQuery(month, true), staleTime: 0 }),
+			client.fetchQuery({ ...leaderboardQuery(month, true), staleTime: 0 }),
+			client.fetchQuery({ ...withdrawalsQuery(), staleTime: 0 }),
+			client.fetchQuery({ ...rulesQuery(true), staleTime: 0 }),
+		]).catch(() => toast.error(m.agent_program_error()));
+	};
 	const currency = agents.data?.rules.currency ?? "CNY";
 	const columns = useMemo<ColumnDef<Agent>[]>(
 		() => [
@@ -160,9 +169,32 @@ export function AgentProgramPage() {
 					</label>
 				}
 			/>
-			{agents.isError ? (
-				<ProgramError retry={() => void agents.refetch()} />
-			) : agents.isPending ? (
+			<div
+				className="flex flex-wrap items-center gap-3 text-muted-foreground text-sm"
+				aria-live="polite"
+			>
+				{agents.data && (
+					<PanelDataAge
+						updatedAt={agents.data.data_updated_at}
+						month={agents.data.month}
+					/>
+				)}
+				{updating && (
+					<span className="whitespace-nowrap">
+						{m.agent_program_updating()}
+					</span>
+				)}
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={updating}
+					onClick={() => void refresh()}
+				>
+					{m.agent_program_refresh()}
+				</Button>
+			</div>
+			{agents.isError && <ProgramError retry={() => void agents.refetch()} />}
+			{!agents.data && agents.isError ? null : agents.isPending ? (
 				<output>{m.agent_program_loading()}</output>
 			) : (
 				<>
@@ -185,7 +217,7 @@ export function AgentProgramPage() {
 							</div>
 						))}
 					</div>
-					<Tabs defaultValue="agents">
+					<Tabs value={tab} onValueChange={setTab}>
 						<TabsList className="max-w-full overflow-x-auto">
 							<TabsTrigger value="agents">
 								{m.agent_program_agents()}
@@ -209,13 +241,15 @@ export function AgentProgramPage() {
 							/>
 						</TabsContent>
 						<TabsContent value="leaderboard">
-							<Leaderboard month={month} />
+							{tab === "leaderboard" && <Leaderboard month={month} />}
 						</TabsContent>
 						<TabsContent value="withdrawals">
-							<Withdrawals />
+							{tab === "withdrawals" && <Withdrawals />}
 						</TabsContent>
 						<TabsContent value="rules">
-							<ProgramRulesView rules={agents.data.rules} />
+							{tab === "rules" && (
+								<ProgramRulesView rules={rules.data ?? agents.data.rules} />
+							)}
 						</TabsContent>
 					</Tabs>
 				</>
@@ -232,10 +266,7 @@ export function AgentProgramPage() {
 
 function Leaderboard({ month }: { month: string }) {
 	const client = useQueryClient();
-	const query = useQuery({
-		queryKey: ["agent-program", "leaderboard", month],
-		queryFn: () => getLeaderboardFn({ data: { month } }),
-	});
+	const query = useQuery(leaderboardQuery(month));
 	const [review, setReview] = useState<{
 		id: number;
 		action: "approve" | "reject";
@@ -254,7 +285,8 @@ function Leaderboard({ month }: { month: string }) {
 		},
 		onError: () => toast.error(m.agent_program_error()),
 	});
-	if (query.isError) return <ProgramError retry={() => void query.refetch()} />;
+	if (query.isError && !query.data)
+		return <ProgramError retry={() => void query.refetch()} />;
 	if (!query.data) return <output>{m.agent_program_loading()}</output>;
 	const currency = query.data.rules.currency;
 	const rankingColumns: ColumnDef<(typeof query.data.ranking)[number]>[] = [
@@ -312,6 +344,11 @@ function Leaderboard({ month }: { month: string }) {
 	];
 	return (
 		<div className="space-y-5">
+			<PanelDataAge
+				updatedAt={query.data.data_updated_at}
+				month={query.data.month}
+			/>
+			{query.isError && <ProgramError retry={() => void query.refetch()} />}
 			<ProTable
 				columns={rankingColumns}
 				data={query.data.ranking}
@@ -370,10 +407,7 @@ function Leaderboard({ month }: { month: string }) {
 
 function Withdrawals() {
 	const client = useQueryClient();
-	const query = useQuery({
-		queryKey: ["agent-program", "withdrawals"],
-		queryFn: () => getWithdrawalsFn(),
-	});
+	const query = useQuery(withdrawalsQuery());
 	const [paying, setPaying] = useState<number | null>(null);
 	const mutation = useMutation({
 		mutationFn: markWithdrawalPaidFn,
@@ -384,7 +418,8 @@ function Withdrawals() {
 		},
 		onError: () => toast.error(m.agent_program_error()),
 	});
-	if (query.isError) return <ProgramError retry={() => void query.refetch()} />;
+	if (query.isError && !query.data)
+		return <ProgramError retry={() => void query.refetch()} />;
 	if (!query.data) return <output>{m.agent_program_loading()}</output>;
 	const columns: ColumnDef<(typeof query.data)[number]>[] = [
 		{
@@ -434,6 +469,8 @@ function Withdrawals() {
 	];
 	return (
 		<>
+			<PanelDataAge updatedAt={query.dataUpdatedAt} />
+			{query.isError && <ProgramError retry={() => void query.refetch()} />}
 			<ProTable
 				columns={columns}
 				data={query.data}
