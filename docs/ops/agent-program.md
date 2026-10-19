@@ -129,3 +129,26 @@ Deploying these PRs requires the companion agent-shop owner-panel API contract
 (`email`, `payout_alipay_account`, structured `domains`, period profits,
 withdrawal `account/email`). No deployment, live production read, transfer or
 notification was performed as part of this follow-up.
+
+## Owner read freshness
+
+Independent agents, leaderboard, pending-withdrawal and rules queries start in
+parallel; SSR prefetch waits only for agents. Tab contents mount on demand.
+Previous results remain visible during refetch, with their actual displayed month,
+Beijing snapshot time and an Updating indicator. Refresh bypasses the Worker cache.
+Client query data is fresh for 60 seconds and retained in memory for 30 minutes.
+
+Owner/admin authorization still runs before every server read. Agents, details,
+leaderboard and rules use the existing KV/runtime cache for at most 60 seconds;
+withdrawals and mutation responses are not cached. Keys include endpoint, query,
+credential scope and an authoritative D1 revision. Fee edits, reward reviews and
+mark-paid rotate that revision; pending writes bypass the cache and late fills
+cannot revive a pre-mutation revision. Cache failures fall back to the origin.
+A failed final revision write or interrupted writer leaves cache reads disabled
+rather than trusting stale money; no automatic financial retry is introduced.
+
+Agent-shop separately caches only known delivered/completed GMShop order profit
+for five minutes, bounded to 10,000 order numbers. Worker Refresh does not bypass
+that cost cache; local refunds are recomputed and rebate jobs always fetch fresh
+profit. Endpoint timing logs contain route templates and `duration_ms`, never
+credentials, query values, customer details or money payloads.
