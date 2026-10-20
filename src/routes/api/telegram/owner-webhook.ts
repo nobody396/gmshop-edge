@@ -26,7 +26,12 @@ export const Route = createFileRoute("/api/telegram/owner-webhook")({
 					const body = await readBoundedRequestText(request, maximumBodyBytes);
 					const env = getEnv();
 					const result = await processOwnerAlertWebhook(
-						{ db: env.DB, cache: env.CACHE, now: Date.now() },
+						{
+							db: env.DB,
+							cache: env.CACHE,
+							now: Date.now(),
+							agentProgramToken: env.AGENT_SHOP_PROGRAM_TOKEN,
+						},
 						body,
 						request.headers.get("x-telegram-bot-api-secret-token") ?? "",
 					);

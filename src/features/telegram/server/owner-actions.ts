@@ -22,6 +22,8 @@ import { telegramRuntime } from "./sync";
 export const ownerActionTtlMs = 7 * 86_400_000;
 export const ownerWebhookPath = "/api/telegram/owner-webhook";
 const webhookRetryMs = 3_600_000;
+// Messages are only replies to input prompts (the bot runs in privacy mode).
+const allowedUpdates = ["callback_query", "message"];
 /** A claim older than this is presumed lost (crashed request) and may be retried. */
 const processingLeaseMs = 5 * 60_000;
 
@@ -31,6 +33,10 @@ export type OwnerActionContext = {
 	db: D1Database;
 	cache: KVNamespace | undefined;
 	now: number;
+	/** Bearer token for lsrai.shop's internal reseller-program API. */
+	agentProgramToken?: string;
+	/** Telegram user id of the approver, set while a handler runs. */
+	decidedBy?: string;
 };
 
 /** Returns the line appended to the message after a successful approval. */
@@ -38,19 +44,51 @@ type OwnerActionHandler = (
 	context: OwnerActionContext,
 	payload: unknown,
 	choice: number,
+	input?: string,
 ) => Promise<string>;
 
-// Loaded lazily: the handlers' modules import this one to send proposals.
-const handlers: Record<string, () => Promise<OwnerActionHandler>> = {
-	supplier_rebind: async () =>
-		(await import("#/features/suppliers/server/rebind-proposal"))
-			.approveSupplierRebind,
-	supplier_cost_cap: async () =>
-		(await import("#/features/suppliers/server/rebind-proposal"))
-			.approveSupplierCostCap,
-	pricing_raise: async () =>
-		(await import("#/features/ops-automation/server/pricing-guard"))
-			.approvePricingRaise,
+type HandlerEntry = {
+	// Loaded lazily: the handlers' modules import this one to send proposals.
+	load: () => Promise<OwnerActionHandler>;
+	/** Line shown when the owner presses the reject button. */
+	rejectedLine?: string;
+	/** The approve button asks for one line of text, validated by `pattern`. */
+	input?: {
+		prompt: string;
+		placeholder: string;
+		pattern: RegExp;
+		formatHint: string;
+	};
+};
+
+const handlers: Record<string, HandlerEntry> = {
+	supplier_rebind: {
+		load: async () =>
+			(await import("#/features/suppliers/server/rebind-proposal"))
+				.approveSupplierRebind,
+	},
+	supplier_cost_cap: {
+		load: async () =>
+			(await import("#/features/suppliers/server/rebind-proposal"))
+				.approveSupplierCostCap,
+	},
+	pricing_raise: {
+		load: async () =>
+			(await import("#/features/ops-automation/server/pricing-guard"))
+				.approvePricingRaise,
+	},
+	agent_withdrawal_paid: {
+		load: async () =>
+			(await import("#/features/agent-program/server/withdrawal-alerts"))
+				.markWithdrawalPaidFromTelegram,
+		rejectedLine: "⏸ 先不处理，提现仍是待打款",
+		input: {
+			prompt: "请回复这条消息，填写这笔转账的支付宝订单号：",
+			placeholder: "支付宝订单号",
+			pattern: /^[0-9A-Za-z_-]{6,64}$/,
+			formatHint: "支付宝订单号只能是 6–64 位数字或字母",
+		},
+	},
 };
 
 type Fetcher = typeof fetch;
@@ -155,7 +193,12 @@ type ActionRow = {
 	status: string;
 	chat_id: string | null;
 	message_id: number | null;
+	prompt_message_id: number | null;
+	prompt_choice: number | null;
 };
+
+const actionColumns = `id, kind, payload, message_text, status, chat_id,
+	message_id, prompt_message_id, prompt_choice`;
 
 export async function handleOwnerActionCallback(
 	context: OwnerActionContext & { fetcher?: Fetcher },
@@ -177,7 +220,7 @@ export async function handleOwnerActionCallback(
 			request,
 			"telegram_alert_delivery_failed",
 		).catch(() => undefined);
-	const [, id, choiceText] = match;
+	const [, id = "", choiceText] = match;
 	const chatId = String(callback.message.chat.id);
 	if (chatId !== credentials.chatId || callback.from.is_bot) {
 		await answer("无权限");
@@ -187,7 +230,154 @@ export async function handleOwnerActionCallback(
 		await answer("只有群主可以操作");
 		return { handled: true as const, status: "forbidden" };
 	}
-	const decidedBy = String(callback.from.id);
+	const row = await context.db
+		.prepare(
+			`SELECT ${actionColumns} FROM owner_action_requests
+			 WHERE id = ? AND status = 'pending' AND expires_at > ?
+			  AND chat_id = ? AND message_id = ?`,
+		)
+		.bind(id, context.now, chatId, callback.message.message_id)
+		.first<ActionRow>();
+	const input = row && choiceText !== "x" ? handlers[row.kind]?.input : null;
+	if (row && input) {
+		// Ask for the text first; the reply to this prompt runs the action.
+		const prompt = z.object({ message_id: z.number().int() }).safeParse(
+			await callTelegram(
+				credentials,
+				"sendMessage",
+				{
+					chat_id: chatId,
+					text: input.prompt,
+					reply_parameters: { message_id: callback.message.message_id },
+					reply_markup: {
+						force_reply: true,
+						selective: true,
+						input_field_placeholder: input.placeholder,
+					},
+				},
+				request,
+				"telegram_alert_delivery_failed",
+			).catch(() => null),
+		);
+		if (!prompt.success) {
+			await answer("发送失败，请再点一次");
+			return { handled: true as const, status: "failed" };
+		}
+		await context.db
+			.prepare(
+				`UPDATE owner_action_requests SET prompt_message_id = ?,
+				 prompt_choice = ?, updated_at = ? WHERE id = ? AND status = 'pending'`,
+			)
+			.bind(prompt.data.message_id, Number(choiceText), context.now, id)
+			.run();
+		await answer("请回复上面的提示");
+		return { handled: true as const, status: "awaiting_input" };
+	}
+	const result = await claimAndRun(context, credentials, {
+		id,
+		chatId,
+		messageId: callback.message.message_id,
+		decidedBy: String(callback.from.id),
+		choice: choiceText === "x" ? null : Number(choiceText),
+	});
+	await answer(
+		result.status === "approved"
+			? "已完成"
+			: result.status === "rejected"
+				? "已忽略"
+				: result.status === "stale"
+					? "这条已经处理过或已过期"
+					: "失败",
+	);
+	return { handled: true as const, status: result.status };
+}
+
+const replyMessageSchema = z.object({
+	message_id: z.number().int(),
+	chat: z.object({ id: z.number().int() }),
+	from: z.object({ id: z.number().int(), is_bot: z.boolean().optional() }),
+	text: z.string().optional(),
+	reply_to_message: z.object({ message_id: z.number().int() }).optional(),
+});
+
+/** A reply to an input prompt from the chat creator completes that action. */
+export async function handleOwnerActionReply(
+	context: OwnerActionContext & { fetcher?: Fetcher },
+	rawMessage: unknown,
+) {
+	const request = context.fetcher ?? fetch;
+	const parsed = replyMessageSchema.safeParse(rawMessage);
+	const credentials = await resolveTelegramOwnerAlertCredentials(context.db);
+	if (!parsed.success || !credentials || !parsed.data.reply_to_message)
+		return { handled: false as const };
+	const message = parsed.data;
+	const chatId = String(message.chat.id);
+	if (chatId !== credentials.chatId || message.from.is_bot)
+		return { handled: false as const };
+	const row = await context.db
+		.prepare(
+			`SELECT ${actionColumns} FROM owner_action_requests
+			 WHERE chat_id = ? AND prompt_message_id = ? AND status = 'pending'
+			  AND expires_at > ?`,
+		)
+		.bind(chatId, message.reply_to_message?.message_id, context.now)
+		.first<ActionRow>();
+	const input = row ? handlers[row.kind]?.input : null;
+	if (!row || !input || row.prompt_choice === null || !row.message_id)
+		return { handled: false as const };
+	const say = (text: string) =>
+		callTelegram(
+			credentials,
+			"sendMessage",
+			{
+				chat_id: chatId,
+				text,
+				reply_parameters: { message_id: message.message_id },
+			},
+			request,
+			"telegram_alert_delivery_failed",
+		).catch(() => undefined);
+	if (!(await isChatCreator(credentials, message.from.id, request))) {
+		await say("只有群主可以操作");
+		return { handled: true as const, status: "forbidden" };
+	}
+	const text = (message.text ?? "").trim();
+	if (!input.pattern.test(text)) {
+		await say(`格式不对：${input.formatHint}。请重新回复上面的提示。`);
+		return { handled: true as const, status: "invalid_input" };
+	}
+	const result = await claimAndRun(context, credentials, {
+		id: row.id,
+		chatId,
+		messageId: row.message_id,
+		decidedBy: String(message.from.id),
+		choice: row.prompt_choice,
+		input: text,
+	});
+	await say(
+		result.status === "approved"
+			? "已完成"
+			: result.status === "stale"
+				? "这条已经处理过或已过期"
+				: result.line,
+	);
+	return { handled: true as const, status: result.status };
+}
+
+/** Claims the request once, runs it, records the result and edits the message. */
+async function claimAndRun(
+	context: OwnerActionContext & { fetcher?: Fetcher },
+	credentials: TelegramOwnerAlertCredentials,
+	input: {
+		id: string;
+		chatId: string;
+		messageId: number;
+		decidedBy: string;
+		choice: number | null;
+		input?: string;
+	},
+) {
+	const request = context.fetcher ?? fetch;
 	const claimed = await context.db
 		.prepare(
 			`UPDATE owner_action_requests SET status = 'processing',
@@ -196,40 +386,40 @@ export async function handleOwnerActionCallback(
 			  AND (status = 'pending' OR (status = 'processing' AND decided_at < ?))`,
 		)
 		.bind(
-			decidedBy,
+			input.decidedBy,
 			context.now,
 			context.now,
-			id,
+			input.id,
 			context.now,
-			chatId,
-			callback.message.message_id,
+			input.chatId,
+			input.messageId,
 			context.now - processingLeaseMs,
 		)
 		.run();
 	const row = await context.db
-		.prepare(
-			`SELECT id, kind, payload, message_text, status, chat_id, message_id
-			 FROM owner_action_requests WHERE id = ?`,
-		)
-		.bind(id)
+		.prepare(`SELECT ${actionColumns} FROM owner_action_requests WHERE id = ?`)
+		.bind(input.id)
 		.first<ActionRow>();
-	if (Number(claimed.meta.changes ?? 0) !== 1 || !row) {
-		await answer(row ? "这条已经处理过或已过期" : "找不到这条请求");
-		return { handled: true as const, status: "stale" };
-	}
+	if (Number(claimed.meta.changes ?? 0) !== 1 || !row)
+		return { status: "stale" as const, line: "" };
 	const clock = beijingTime(context.now);
 	let status: "approved" | "rejected" | "failed";
 	let line: string;
-	if (choiceText === "x") {
+	if (input.choice === null) {
 		status = "rejected";
-		line = `❌ 已选择不处理（北京时间 ${clock}）`;
+		line = `${handlers[row.kind]?.rejectedLine ?? "❌ 已选择不处理"}（北京时间 ${clock}）`;
 	} else {
-		const loadHandler = handlers[row.kind];
+		const entry = handlers[row.kind];
 		try {
-			if (!loadHandler)
+			if (!entry)
 				throw new DomainError("owner_action_unknown_kind", 409, row.kind);
-			const handler = await loadHandler();
-			line = `${await handler(context, JSON.parse(row.payload), Number(choiceText))}（北京时间 ${clock}）`;
+			const handler = await entry.load();
+			line = `${await handler(
+				{ ...context, decidedBy: input.decidedBy },
+				JSON.parse(row.payload),
+				input.choice,
+				input.input,
+			)}（北京时间 ${clock}）`;
 			status = "approved";
 		} catch (error) {
 			status = "failed";
@@ -241,14 +431,14 @@ export async function handleOwnerActionCallback(
 			`UPDATE owner_action_requests SET status = ?, result = ?, updated_at = ?
 			 WHERE id = ? AND status = 'processing'`,
 		)
-		.bind(status, line, context.now, id)
+		.bind(status, line, context.now, input.id)
 		.run();
 	await callTelegram(
 		credentials,
 		"editMessageText",
 		{
-			chat_id: chatId,
-			message_id: callback.message.message_id,
+			chat_id: input.chatId,
+			message_id: input.messageId,
 			text: `${row.message_text}\n\n${line}`,
 			link_preview_options: { is_disabled: true },
 			reply_markup: { inline_keyboard: [] },
@@ -256,14 +446,7 @@ export async function handleOwnerActionCallback(
 		request,
 		"telegram_alert_delivery_failed",
 	).catch(() => undefined);
-	await answer(
-		status === "approved"
-			? "已完成"
-			: status === "rejected"
-				? "已忽略"
-				: "失败",
-	);
-	return { handled: true as const, status };
+	return { status, line };
 }
 
 async function isChatCreator(
@@ -321,6 +504,7 @@ export class OwnerWebhookError extends Error {
 const updateSchema = z.looseObject({
 	update_id: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 	callback_query: z.unknown().optional(),
+	message: z.unknown().optional(),
 });
 
 export async function processOwnerAlertWebhook(
@@ -362,9 +546,11 @@ export async function processOwnerAlertWebhook(
 		.run();
 	if (Number(reserved.meta.changes ?? 0) !== 1)
 		return { accepted: true, duplicate: true };
-	if (update.data.callback_query)
+	if (update.data.callback_query || update.data.message)
 		try {
-			await handleOwnerActionCallback(context, update.data.callback_query);
+			if (update.data.callback_query)
+				await handleOwnerActionCallback(context, update.data.callback_query);
+			else await handleOwnerActionReply(context, update.data.message);
 		} catch (error) {
 			// Let Telegram's retry reach us again instead of being dropped as a replay.
 			await context.db
@@ -399,7 +585,7 @@ export async function ensureOwnerAlertWebhook(
 		return { status: "origin_unavailable" as const };
 	const url = `${new URL(runtime.betterAuthUrl).origin}${ownerWebhookPath}`;
 	const fingerprint = await sha256Hex(
-		`${credentials.botToken}\0${url}\0${secret}`,
+		`${credentials.botToken}\0${url}\0${secret}\0${allowedUpdates.join(",")}`,
 	);
 	const stored = await db
 		.prepare("SELECT value FROM system_settings WHERE key = ?")
@@ -449,7 +635,7 @@ export async function ensureOwnerAlertWebhook(
 		{
 			url,
 			secret_token: secret,
-			allowed_updates: ["callback_query"],
+			allowed_updates: allowedUpdates,
 		},
 		request,
 		"telegram_owner_webhook_failed",
