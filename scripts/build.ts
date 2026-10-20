@@ -26,7 +26,13 @@ const serverOnlyClientMarkers = /AsyncLocalStorage|node:async_hooks/;
 
 async function assertClientBundleServerFree(): Promise<void> {
 	const directory = fileURLToPath(new URL("../dist/client", import.meta.url));
-	const entries = await readdir(directory, { recursive: true });
+	// No client output (e.g. a build test with a stubbed vite) means nothing to scan.
+	const entries = await readdir(directory, { recursive: true }).catch(
+		(error: NodeJS.ErrnoException) => {
+			if (error.code === "ENOENT") return [];
+			throw error;
+		},
+	);
 	const offenders: string[] = [];
 	for (const entry of entries) {
 		if (!entry.endsWith(".js")) continue;
