@@ -256,6 +256,8 @@ export const ownerActionRequests = sqliteTable(
 			.default("pending"),
 		chatId: text("chat_id"),
 		messageId: integer("message_id"),
+		promptMessageId: integer("prompt_message_id"),
+		promptChoice: integer("prompt_choice"),
 		decidedBy: text("decided_by"),
 		decidedAt: integer("decided_at", { mode: "timestamp_ms" }),
 		result: text("result"),

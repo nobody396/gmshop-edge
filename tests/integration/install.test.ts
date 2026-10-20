@@ -72,6 +72,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0037_order_pricing_channel.sql",
 			"0038_agent_subsite_prefix.sql",
 			"0039_owner_action_requests.sql",
+			"0040_owner_action_text_reply.sql",
 		]);
 		const legacyTables = await database
 			.prepare(

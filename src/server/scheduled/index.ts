@@ -1,4 +1,5 @@
 import { reconcileAgentAccess } from "#/features/agent-access/server/fulfillment";
+import { runWithdrawalAlerts } from "#/features/agent-program/server/withdrawal-alerts";
 import { publishAuthSecurityAlert } from "#/features/auth/server/security-alerts";
 import { publishPendingBuilds } from "#/features/builds/server/outbox";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
@@ -116,10 +117,16 @@ export async function runScheduledCommerceWork(
 		db: env.DB,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	const withdrawalAlerts = await runWithdrawalAlerts({
+		db: env.DB,
+		token: env.AGENT_SHOP_PROGRAM_TOKEN,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	return {
 		balanceGuard,
 		pricingGuard,
 		weeklyReport,
+		withdrawalAlerts,
 		agentAccess,
 		promotionRewards,
 		payments,

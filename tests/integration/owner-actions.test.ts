@@ -1,5 +1,6 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runWithdrawalAlerts } from "#/features/agent-program/server/withdrawal-alerts";
 import { createSupplierCredentialVault } from "#/features/suppliers/secrets";
 import { syncSupplierSource } from "#/features/suppliers/server/source-sync";
 import { upsertFeishuAlertSetting } from "#/features/telegram/server/feishu-alerts";
@@ -20,6 +21,19 @@ const botToken = "1234567890:AAtest-only-owner-alert-token_abcdefgh";
 const chatId = "-5101401750";
 const ownerId = 42;
 const memberId = 43;
+const withdrawal = {
+	id: 12,
+	reseller_id: 5,
+	label: "777 子站",
+	amount: "88.00",
+	currency: "CNY",
+	account: "agent@alipay.example",
+	email: "agent@example.com",
+	status: "pending",
+	created_at: "2026-10-19T01:00:00Z",
+	alipay_trade_no: "",
+	processed_operator: "",
+};
 const source = {
 	provider: "dujiao_next" as const,
 	normalizedApiOrigin: "https://supplier.example",
@@ -35,6 +49,8 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 	let db: D1Database;
 	let cache: KVNamespace;
 	let telegram: TelegramCall[];
+	let program: { path: string; body: unknown }[];
+	let webhookNow: number;
 	let webhookUrl: string;
 	const runtime = createInitialRuntimeConfig("https://shop.example");
 
@@ -52,8 +68,27 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 					result: { status: body.user_id === ownerId ? "creator" : "member" },
 				});
 			if (method === "sendMessage")
-				return Response.json({ ok: true, result: { message_id: 777 } });
+				return Response.json({
+					ok: true,
+					result: {
+						message_id:
+							776 +
+							telegram.filter((call) => call.method === "sendMessage").length,
+					},
+				});
 			return Response.json({ ok: true, result: true });
+		}
+		if (url.host === "lsrai.shop") {
+			program.push({
+				path: url.pathname + url.search,
+				body: init?.body ? JSON.parse(String(init.body)) : null,
+			});
+			if (url.pathname.endsWith("/mark-paid"))
+				return Response.json({
+					status_code: 0,
+					data: { id: 12, status: "paid" },
+				});
+			return Response.json({ status_code: 0, data: [withdrawal] });
 		}
 		if (url.pathname.endsWith("/categories"))
 			return Response.json({ ok: true, categories: [] });
@@ -62,6 +97,8 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 
 	beforeEach(async () => {
 		telegram = [];
+		program = [];
+		webhookNow = 1_800_011_000_000;
 		webhookUrl = "";
 		miniflare = new Miniflare({
 			modules: true,
@@ -124,23 +161,51 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 			});
 	}
 
-	async function tap(fromId: number, data: string, updateId: number) {
+	async function deliver(update: Record<string, unknown>) {
 		const credentials = await resolveTelegramOwnerAlertCredentials(db);
 		if (!credentials) throw new Error("telegram not configured");
 		const secret = (await ownerWebhookSecret(db, credentials)) ?? "";
 		return processOwnerAlertWebhook(
-			{ db, cache, now: 1_800_011_000_000, fetcher },
-			JSON.stringify({
-				update_id: updateId,
-				callback_query: {
-					id: `cb-${updateId}`,
-					data,
-					from: { id: fromId, is_bot: false },
-					message: { message_id: 777, chat: { id: Number(chatId) } },
-				},
-			}),
+			{
+				db,
+				cache,
+				now: webhookNow,
+				fetcher,
+				agentProgramToken: "program-token",
+			},
+			JSON.stringify(update),
 			secret,
 		);
+	}
+
+	function tap(fromId: number, data: string, updateId: number) {
+		return deliver({
+			update_id: updateId,
+			callback_query: {
+				id: `cb-${updateId}`,
+				data,
+				from: { id: fromId, is_bot: false },
+				message: { message_id: 777, chat: { id: Number(chatId) } },
+			},
+		});
+	}
+
+	function reply(
+		fromId: number,
+		text: string,
+		replyTo: number,
+		updateId: number,
+	) {
+		return deliver({
+			update_id: updateId,
+			message: {
+				message_id: 900 + updateId,
+				chat: { id: Number(chatId) },
+				from: { id: fromId, is_bot: false },
+				text,
+				reply_to_message: { message_id: replyTo },
+			},
+		});
 	}
 
 	async function bindingState() {
@@ -167,7 +232,7 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 			{
 				body: {
 					url: "https://shop.example/api/telegram/owner-webhook",
-					allowed_updates: ["callback_query"],
+					allowed_updates: ["callback_query", "message"],
 				},
 			},
 		]);
@@ -276,6 +341,61 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		expect(
 			telegram.filter((call) => call.method === "sendMessage"),
 		).toHaveLength(1);
+	});
+
+	it("marks a withdrawal paid after the owner replies with the Alipay trade number", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		// 10:30 Beijing on 2026-10-19.
+		const morning = Date.UTC(2026, 9, 19, 2, 30);
+		webhookNow = morning + 60_000;
+		const run = () =>
+			runWithdrawalAlerts({
+				db,
+				token: "program-token",
+				now: morning,
+				fetcher,
+			});
+		await expect(run()).resolves.toEqual({
+			status: "ran",
+			pending: 1,
+			proposed: 1,
+		});
+		await expect(run()).resolves.toEqual({ status: "done" });
+		const proposal = telegram.find((call) => call.method === "sendMessage");
+		expect(proposal?.body.text).toContain("💸 代理提现待打款 #12");
+		expect(proposal?.body.text).toContain("支付宝账号：agent@alipay.example");
+		const approve = (
+			proposal?.body.reply_markup as {
+				inline_keyboard: { callback_data: string }[][];
+			}
+		).inline_keyboard[0]?.[0]?.callback_data;
+
+		await tap(ownerId, approve ?? "", 20);
+		const prompt = telegram.filter((call) => call.method === "sendMessage")[1];
+		expect(prompt?.body.reply_markup).toMatchObject({ force_reply: true });
+		expect(program.some((call) => call.path.endsWith("/mark-paid"))).toBe(
+			false,
+		);
+
+		await reply(memberId, "2026102022001488551234567890", 778, 21);
+		await reply(ownerId, "坏", 778, 22);
+		expect(program.some((call) => call.path.endsWith("/mark-paid"))).toBe(
+			false,
+		);
+
+		await reply(ownerId, "2026102022001488551234567890", 778, 23);
+		expect(program.find((call) => call.path.endsWith("/mark-paid"))).toEqual({
+			path: "/api/internal/reseller-program/withdrawals/12/mark-paid",
+			body: {
+				alipay_trade_no: "2026102022001488551234567890",
+				operator: `telegram:${ownerId}`,
+			},
+		});
+		const edit = telegram.find((call) => call.method === "editMessageText");
+		expect(edit?.body.text).toContain("✅ 已标记打款：¥88.00");
+		await expect(
+			db.prepare("SELECT status FROM owner_action_requests").first("status"),
+		).resolves.toBe("approved");
 	});
 
 	it("rejects a forged webhook secret", async () => {

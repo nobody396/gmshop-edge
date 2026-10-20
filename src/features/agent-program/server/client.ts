@@ -8,6 +8,7 @@ export async function requestProgram<T>(
 	schema: z.ZodType<T>,
 	method: "GET" | "POST" | "PATCH" = "GET",
 	body?: unknown,
+	request: typeof fetch = fetch,
 ): Promise<T> {
 	const started = performance.now();
 	let ok = false;
@@ -19,7 +20,7 @@ export async function requestProgram<T>(
 				"Agent program is unavailable",
 			);
 		try {
-			const response = await fetch(
+			const response = await request(
 				`https://lsrai.shop/api/internal/reseller-program/${path}`,
 				{
 					method,
