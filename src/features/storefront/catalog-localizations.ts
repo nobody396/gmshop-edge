@@ -61,7 +61,8 @@ const productEnglish: Record<string, ProductLocalization> = {
 		description: `The new official X subscription (launched October 2026) includes 4 products in one plan: X Premium, Grok, Grok Bot, and Cursor. Billed monthly through an official card payment; the bill is sent to your email. 30-day subscription warranty.
 
 Before you recharge
-· No replacement: the account must not have any active membership.
+· No replacement: the account must not have any active X / Grok membership.
+· Premium, Super and Ultra only work on accounts that can claim the official 50% first-month discount: sign in to the X account, open https://x.com/i/premium_sign_up , and the tier must show “50% off for 1 month”. Otherwise use another account. Plus has no such requirement.
 · Accounts with unpaid bills that have not cancelled renewal cannot be recharged.
 · Some accounts get declined. You can retry; if it keeps failing, use another account.
 
@@ -80,15 +81,13 @@ Which tier
 Note: third-party models in Cursor (such as Claude or GPT) are not counted in the subscription and are billed separately by the official service.
 
 How delivery works
-1. After payment you automatically receive an "order CDK"; copy it from the order details.
-2. Send the order CDK to the site's live support.
-3. Support delivers the recharge code and recharge link, usually within 1–30 minutes.
-The order CDK is only used to claim your code from support; it cannot be redeemed directly.
+A recharge code and redemption link are issued automatically after payment, usually within 1 minute; view them on the order page.
 
 How to activate
-1. Open the recharge link from support.
-2. Sign in to the account you want to recharge, enter the code, and submit.
-3. Once activated, sign in to X, Grok, or Cursor to see the tier's benefits.
+1. Open the redemption link and enter the code.
+2. Install the Cookie-Editor extension in a desktop browser, sign in to grok.com with the X account to recharge, export the cookies (JSON) and paste them on the redemption page. The page has step-by-step instructions.
+3. Once activated, sign in to X or Grok to see the tier's benefits; Grok Bot uses the same X account.
+4. Cursor is not activated automatically: open https://cursor.com/unify , sign in to your Cursor account and connect this X account.
 If anything goes wrong, send a screenshot to live support.
 
 Notes
@@ -97,7 +96,7 @@ Notes
 
 After-sales
 30-day warranty against subscription drops: contact support from the order page.
-Account bans are not covered. No refunds after the code is delivered.`,
+Account bans are not covered. No refunds after the code is used.`,
 	},
 	"e5c81556-03be-43fd-bf3f-e248c16cc34d": {
 		name: "Claude Relay Compute｜Standard / Enterprise Fast Lines",
@@ -333,13 +332,15 @@ const computePolicy = (amount: string) =>
 		"Not refundable.",
 		"Each code can be redeemed once; keep it safe and do not share it.",
 	);
-const xPolicy = (tier: string) =>
+const xOffer =
+	"Only for accounts that can claim the official 50% first-month discount: sign in to X and open x.com/i/premium_sign_up; the tier must show “50% off for 1 month”. ";
+const xPolicy = (tier: string, needsOffer = true) =>
 	policy(
-		"An order CDK is issued automatically after payment; send it to live support, who delivers the recharge code and link",
-		"Order CDK issued automatically; support usually delivers the code within 1–30 minutes",
+		"24/7 automatic delivery",
+		"A recharge code and redemption link are issued automatically after payment, usually within 1 minute; view them on the order page.",
 		`X 4-in-1 ${tier}: X Premium + Grok + Grok Bot + Cursor`,
-		"30-day warranty against subscription drops; bans are not covered; no refunds after the code is delivered",
-		"No replacement: the account must have no active membership; accounts with unpaid bills that have not cancelled renewal cannot be recharged; some accounts get declined, retry or use another account",
+		"30-day warranty against subscription drops; bans are not covered; no refunds after the code is used",
+		`${needsOffer ? xOffer : ""}No replacement: the account must have no active X / Grok membership; accounts with unpaid bills that have not cancelled renewal cannot be recharged; some accounts get declined, retry or use another account`,
 	);
 const smsDelivery =
 	"A CDK and redemption link are issued automatically after payment; take your number on the number page.";
@@ -527,6 +528,7 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		name: "Plus｜1 month (official $8 tier)",
 		policy: xPolicy(
 			"Plus｜1 month (official $8 tier); base usage; Cursor is limited to Grok models; no Grok Bot",
+			false,
 		),
 	},
 	"091ab8e6-6c3f-48e5-be52-268bea8e87e9": {
