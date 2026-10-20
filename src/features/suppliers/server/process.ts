@@ -484,8 +484,45 @@ async function fulfillSupplierOrder(
 }
 
 export function supplierDeliveryContent(card: string, usageUrl: string | null) {
+	const account = mailboxAccountDelivery(card, usageUrl);
+	if (account) return account;
 	if (!usageUrl || /https:\/\/\S+/i.test(card)) return card;
 	return formatInventoryDelivery(card, usageUrl);
+}
+
+// Finished accounts arrive as "email password mailbox: mail.com". Customers
+// log in to that mailbox to receive the site's sign-in code, so spell out the
+// fields and steps instead of presenting the line as a CDK. Any other shape
+// falls back to the CDK format unchanged.
+const mailboxAccountPattern =
+	/^(\S+@\S+\.\S+)\s+(\S+)\s+mailbox:\s*([a-z0-9.-]+\.[a-z]{2,})$/i;
+
+function mailboxAccountDelivery(card: string, usageUrl: string | null) {
+	const match = mailboxAccountPattern.exec(card.trim());
+	if (!match || !usageUrl) return null;
+	const [, email, password, mailboxHost] = match;
+	if (!email || !password || !mailboxHost) return null;
+	const host = mailboxHost.toLowerCase().replace(/^www\./, "");
+	const mailbox = `https://www.${host}`;
+	const site = usageUrl.replace(/\/+$/, "");
+	const muse = new URL(site).hostname.replace(/^www\./, "") === "muse.ai";
+	const siteName = muse ? "Muse AI" : "使用网站";
+	return [
+		`账号邮箱：${email}`,
+		`邮箱密码：${password}`,
+		`邮箱网站：${mailbox}`,
+		`${siteName} 网址：${site}`,
+		"",
+		"使用步骤：",
+		`1. 打开 ${mailbox} ，用上面的「账号邮箱」和「邮箱密码」登录。这个邮箱是用来收验证码的。`,
+		`2. 新开一个页面，打开 ${site} ，输入上面的账号邮箱，点「获取验证码」。`,
+		`3. 回到 ${host} 的收件箱，找到发来的验证码（没看到就看垃圾邮件），填回${siteName === "使用网站" ? "网站" : ` ${siteName}`}，完成登录。`,
+		muse
+			? "4. 登录后进入「设置」，就能看到账户里的 10 亿 Token。"
+			: "4. 登录后进入「设置」，查看账户里的额度。",
+		"",
+		"注意：验证码和邮箱密码不要告诉任何人。遇到问题请在 24 小时内联系客服。",
+	].join("\n");
 }
 
 async function deterministicSupplierStockId(orderId: string, index: number) {
