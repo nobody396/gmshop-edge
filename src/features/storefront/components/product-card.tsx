@@ -1,7 +1,7 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
-import { Ban, Boxes, Zap } from "lucide-react";
+import { Ban, Zap } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Skeleton } from "#/components/ui/skeleton";
 import { useCurrency } from "#/features/exchange-rates/currency-context";
@@ -31,114 +31,127 @@ export function StorefrontProductCard({
 		product.listPriceMinor != null &&
 		BigInt(product.listPriceMinor) > BigInt(product.priceMinor);
 	const availability = stockLabel(displayStockQuantity);
-	let price: string = m.store_price_free();
-	if (!isFree) {
-		price = singlePrice
-			? currency.format(
-					product.priceMinor,
-					product.currency,
-					product.currencyDecimals,
-				)
-			: m.store_price_range({
-					minimum: currency.format(
-						product.priceMinor,
-						product.currency,
-						product.currencyDecimals,
-					),
-					maximum: currency.format(
-						product.maxPriceMinor,
-						product.currency,
-						product.currencyDecimals,
-					),
-				});
-	}
+	const price = isFree
+		? m.store_price_free()
+		: currency.format(
+				product.priceMinor,
+				product.currency,
+				product.currencyDecimals,
+			);
+	// Multi-option products show their lowest price as "from".
+	const priceLabel =
+		singlePrice || isFree ? price : m.store_card_from({ price });
+	const variants =
+		product.variantCount > 1
+			? m.store_card_variants_other({ count: product.variantCount })
+			: product.variantCount === 1
+				? m.store_card_variants_one()
+				: null;
+	const delivery =
+		available && !product.saleDisabled
+			? product.hasManualFulfillment && product.hasAutomaticFulfillment
+				? m.store_mixed_delivery()
+				: product.hasManualFulfillment
+					? m.store_manual_delivery()
+					: m.store_auto_delivery()
+			: null;
+	const stock =
+		displayStockQuantity != null && displayStockQuantity > 0
+			? m.store_stock({ count: displayStockQuantity })
+			: null;
 	return (
 		<article className="group min-w-0">
+			{/* Phones: one row (cover · name · price). Wider: cover row, name, price line. */}
 			<Link
-				className="flex h-full flex-col rounded-3xl bg-muted/25 p-3 transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+				className="grid h-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-2xl border border-border/70 bg-muted/25 p-3.5 transition-colors [grid-template-areas:'cover_name_price'_'cover_sub_price'] hover:border-primary/40 hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:grid-rows-[auto_auto_1fr] sm:gap-y-3 sm:p-4.5 sm:[grid-template-areas:'cover_meta'_'name_name'_'price_price']"
 				params={{ productId: product.id }}
 				to="/products/$productId"
 			>
-				<div className="relative aspect-video overflow-hidden rounded-2xl bg-muted">
+				<div className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-primary/10 [grid-area:cover] sm:size-12">
 					{product.coverUrl ? (
 						<img
-							alt={product.name}
-							className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
+							alt=""
+							className="size-full object-cover"
 							loading="lazy"
 							src={product.coverUrl}
 						/>
 					) : (
-						<div className="grid size-full place-items-center bg-linear-to-br from-primary/15 via-muted to-muted">
-							<Boxes className="size-12 text-primary/60" />
-						</div>
+						<span
+							aria-hidden="true"
+							className="grid size-full place-items-center font-bold text-primary"
+						>
+							{productMark(product.name)}
+						</span>
 					)}
-					{product.saleDisabled ? (
-						<div className="absolute start-3 top-3">
-							<Badge variant="destructive">
-								<Ban />
-								{m.store_sale_disabled()}
-							</Badge>
-						</div>
+				</div>
+				<div className="hidden min-w-0 items-center gap-2 self-center [grid-area:meta] sm:flex">
+					{product.tags[0] ? (
+						<span className="max-w-[45%] shrink-0 truncate text-muted-foreground text-xs">
+							{product.tags[0]}
+						</span>
 					) : null}
-					{product.deliveryTypes.includes("stock") && available ? (
-						<div className="absolute end-3 top-3">
+					<div className="ms-auto flex min-w-0 justify-end">
+						{product.saleDisabled ? (
+							<Badge
+								className="max-w-full [&>svg]:shrink-0"
+								variant="destructive"
+							>
+								<Ban />
+								<span className="truncate">{m.store_sale_disabled()}</span>
+							</Badge>
+						) : delivery ? (
 							<Badge
 								className={
 									product.hasAutomaticFulfillment
-										? "bg-emerald-400 text-emerald-950"
-										: "bg-amber-200 text-amber-950"
+										? "max-w-full bg-primary/10 text-primary [&>svg]:shrink-0"
+										: "max-w-full bg-amber-200 text-amber-950 [&>svg]:shrink-0"
 								}
+								title={delivery}
 							>
 								<Zap />
-								{product.hasManualFulfillment && product.hasAutomaticFulfillment
-									? m.store_mixed_delivery()
-									: product.hasManualFulfillment
-										? m.store_manual_delivery()
-										: m.store_auto_delivery()}
+								<span className="truncate">{delivery}</span>
 							</Badge>
-						</div>
-					) : null}
-				</div>
-				<div className="flex flex-1 flex-col px-2 pt-4 pb-2">
-					<div className="flex min-h-5 flex-wrap gap-x-3 gap-y-1">
-						{product.tags.slice(0, 3).map((tag) => (
-							<Badge key={tag} variant="secondary">
-								{tag}
-							</Badge>
-						))}
-					</div>
-					<div className="mt-2 font-semibold text-lg transition-colors group-hover:text-primary">
-						<span className="line-clamp-1">{product.name}</span>
-					</div>
-					<p className="mt-2 line-clamp-2 min-h-10 text-muted-foreground text-sm">
-						{product.description}
-					</p>
-					<div className="mt-auto flex items-end justify-between gap-3 pt-5">
-						<div className="flex flex-wrap items-baseline gap-2">
-							<strong className="text-primary text-xl">{price}</strong>
-							{hasDiscount && product.listPriceMinor ? (
-								<span className="text-muted-foreground text-xs line-through">
-									{currency.format(
-										product.listPriceMinor,
-										product.currency,
-										product.currencyDecimals,
-									)}
-								</span>
-							) : null}
-						</div>
-						{displayStockQuantity != null || availability ? (
-							<div className="text-right text-muted-foreground text-xs">
-								{displayStockQuantity != null ? (
-									<p className="flex items-center justify-end gap-1.5">
-										<span className="font-medium text-foreground/75">
-											{m.store_stock({ count: displayStockQuantity })}
-										</span>
-									</p>
-								) : null}
-								{availability ? <p>{availability}</p> : null}
-							</div>
 						) : null}
 					</div>
+				</div>
+				<div className="line-clamp-2 font-semibold text-[15px] leading-snug transition-colors [grid-area:name] group-hover:text-primary sm:text-base">
+					{product.name}
+				</div>
+				<p className="truncate text-muted-foreground text-xs [grid-area:sub] sm:hidden">
+					{[
+						variants,
+						product.saleDisabled ? m.store_sale_disabled() : delivery,
+						stock,
+						availability,
+					]
+						.filter(Boolean)
+						.join(" · ")}
+				</p>
+				<div className="flex flex-col items-end text-right [grid-area:price] sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-x-3 sm:gap-y-1 sm:self-end sm:text-left">
+					<div className="flex flex-col items-end sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
+						<strong className="whitespace-nowrap text-lg text-primary sm:text-xl">
+							{priceLabel}
+						</strong>
+						{hasDiscount && product.listPriceMinor ? (
+							<span className="text-muted-foreground text-xs line-through">
+								{currency.format(
+									product.listPriceMinor,
+									product.currency,
+									product.currencyDecimals,
+								)}
+							</span>
+						) : null}
+						{variants ? (
+							<span className="hidden text-muted-foreground text-xs sm:inline">
+								{variants}
+							</span>
+						) : null}
+					</div>
+					{stock || availability ? (
+						<span className="hidden text-muted-foreground text-xs sm:inline">
+							{[stock, availability].filter(Boolean).join(" · ")}
+						</span>
+					) : null}
 				</div>
 			</Link>
 		</article>
@@ -148,29 +161,22 @@ export function StorefrontProductCard({
 export function StorefrontProductCardSkeleton() {
 	return (
 		<article className="min-w-0">
-			<div className="flex h-full flex-col rounded-3xl bg-muted/25 p-3">
-				<Skeleton className="aspect-video rounded-2xl" />
-				<div className="flex flex-1 flex-col px-2 pt-4 pb-2">
-					<div className="flex min-h-5 gap-2">
-						<Skeleton className="h-5 w-16 rounded-full" />
-						<Skeleton className="h-5 w-20 rounded-full" />
-					</div>
-					<Skeleton className="mt-2 h-7 w-3/4" />
-					<div className="mt-2 grid min-h-10 content-start gap-2">
-						<Skeleton className="h-4 w-full" />
-						<Skeleton className="h-4 w-4/5" />
-					</div>
-					<div className="mt-auto flex items-end justify-between gap-3 pt-5">
-						<Skeleton className="h-7 w-24" />
-						<div className="grid justify-items-end gap-1">
-							<Skeleton className="h-3 w-14" />
-							<Skeleton className="h-3 w-12" />
-						</div>
-					</div>
+			<div className="flex h-full items-center gap-3 rounded-2xl border border-border/70 bg-muted/25 p-3.5 sm:min-h-40 sm:flex-col sm:items-stretch sm:p-4.5">
+				<Skeleton className="size-11 shrink-0 rounded-xl sm:size-12" />
+				<div className="grid min-w-0 flex-1 content-start gap-2">
+					<Skeleton className="h-5 w-3/4" />
+					<Skeleton className="h-4 w-1/3" />
 				</div>
+				<Skeleton className="h-6 w-16 sm:w-24" />
 			</div>
 		</article>
 	);
+}
+
+/** Short text mark for a product without a cover: "Claude Pro" → "C", "接码" → "接". */
+function productMark(name: string) {
+	const first = name.trim().charAt(0);
+	return first ? first.toUpperCase() : "·";
 }
 
 function stockLabel(displayStockQuantity: number | null) {

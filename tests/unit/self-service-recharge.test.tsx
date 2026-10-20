@@ -22,38 +22,28 @@ describe("homepage self-service recharge", () => {
 		container = undefined;
 	});
 
-	it("presents pre-order checks without adding a second jump action", async () => {
+	it("collapses pre-order checks into one notice strip with the guide action", async () => {
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		root = createRoot(container);
 		await act(async () => root?.render(<SelfServiceRecharge />));
 
 		const text = container.textContent ?? "";
-		expect(text).toContain("Check before ordering");
 		expect(text).toContain("Read before ordering");
-		expect(text).toContain("recharge code and the matching recharge website");
-		expect(text).toContain("30-day subscription warranty");
-		expect(text).toContain("Contact support directly");
-		expect(text).toContain("provide only what that page requests");
-		expect(text).toContain(
-			"No after-sales service is provided for recharge failures caused by purchasing the wrong product yourself.",
-		);
-		expect(text).not.toContain("no information required");
-		expect(container.querySelectorAll("li")).toHaveLength(3);
+		expect(text).toContain("get your code on the order page");
+		expect(text).toContain("Wrong purchases are not eligible");
+		expect(text).not.toContain("Alipay");
+		expect(text).not.toContain("USDT");
+		expect(container.querySelectorAll("li")).toHaveLength(0);
 		expect(container.querySelector("[data-self-service-recharge]")?.id).toBe(
 			"self-service-recharge",
 		);
 		expect(container.querySelector("a")).toBeNull();
-		expect(text).not.toContain("passwords");
-		expect(text).toContain(
-			"Confirm your account status, recharge channel, and product restrictions",
-		);
 		expect(container.querySelectorAll("section")).toHaveLength(1);
-		expect(container.querySelector("button")?.textContent).toContain(
-			"Read before ordering",
-		);
-		expect(text).not.toContain("Tell us about your account");
 		expect(container.querySelectorAll("button")).toHaveLength(1);
+		expect(container.querySelector("button")?.textContent).toContain(
+			"Not sure what to buy? Buying guide",
+		);
 		expect(
 			container
 				.querySelector("button")
@@ -61,16 +51,16 @@ describe("homepage self-service recharge", () => {
 		).toBe(true);
 	});
 
-	it("keeps the full guide inline without a separate hero jump button", () => {
+	it("keeps the guide inside the notice strip instead of a hero jump button", () => {
 		const home = readFileSync(
 			join(process.cwd(), "src/features/home/index.tsx"),
 			"utf8",
 		);
 		expect(home).not.toContain('href="#self-service-recharge"');
-		expect(home).not.toContain("store_self_service_hero_action");
-		expect(home).not.toContain("store-recharge-breathe");
 		expect(home).toContain("{hasFilters ? null : <SelfServiceRecharge />}");
 		expect(home).not.toContain("<BuyingGuide");
+		expect(home).toContain("usePublicHeaderHeight()");
+		expect(home).not.toMatch(/lg:sticky|lg:top-/);
 	});
 });
 

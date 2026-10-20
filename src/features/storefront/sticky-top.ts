@@ -34,3 +34,27 @@ export function useFitStickyTop(headerOffset: number) {
 	}, [element, headerOffset]);
 	return [top, setElement] as const;
 }
+
+/**
+ * Live height of the sticky public header, so a bar pinned under it uses the
+ * header's real size (mobile vs desktop row, safe-area padding) instead of a
+ * hard-coded breakpoint offset.
+ */
+export function usePublicHeaderHeight(fallback = 56) {
+	const [height, setHeight] = useState(fallback);
+	useEffect(() => {
+		const header = document.querySelector<HTMLElement>("[data-public-header]");
+		if (!header) return;
+		const update = () => setHeight(header.offsetHeight);
+		update();
+		const observer =
+			typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+		observer?.observe(header);
+		window.addEventListener("resize", update);
+		return () => {
+			observer?.disconnect();
+			window.removeEventListener("resize", update);
+		};
+	}, []);
+	return height;
+}
