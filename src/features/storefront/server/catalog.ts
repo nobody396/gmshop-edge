@@ -118,6 +118,9 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				  WHERE sale_item.product_id = p.id AND sale_item.enabled = 1
 				   AND sale_item.sale_disabled = 0
 				 ) THEN 1 ELSE 0 END AS effective_sale_disabled,
+				 (SELECT COUNT(*) FROM product_sellable_items variant_item
+				  WHERE variant_item.product_id = p.id AND variant_item.enabled = 1
+				   AND variant_item.sale_disabled = 0) AS variant_count,
 				 json_array(p.product_type) AS delivery_types,
 				 EXISTS (SELECT 1 FROM product_sellable_items manual_item
 				  WHERE manual_item.product_id = p.id AND manual_item.enabled = 1
@@ -192,6 +195,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 					hasManualFulfillment: Boolean(row.has_manual_fulfillment),
 					hasAutomaticFulfillment: Boolean(row.has_automatic_fulfillment),
 					salesCount: Number(row.sales_count),
+					variantCount: Number(row.variant_count),
 					deliveryTypes: JSON.parse(String(row.delivery_types)) as Array<
 						"stock" | "download" | "automation"
 					>,

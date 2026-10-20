@@ -21,10 +21,8 @@ describe("locale-preserving UI navigation", () => {
 	});
 
 	it("renders configured site names instead of hard-coded surface brands", () => {
-		for (const path of [
-			"src/layouts/public/footer.tsx",
-			"src/features/home/index.tsx",
-		]) {
+		// The homepage hero no longer repeats the brand; the header and footer carry it.
+		for (const path of ["src/layouts/public/footer.tsx"]) {
 			const source = readFileSync(resolve(path), "utf8");
 			expect(source, path).toContain("brand.name");
 		}

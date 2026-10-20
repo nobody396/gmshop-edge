@@ -42,6 +42,7 @@ const product: StorefrontCatalogProduct = {
 	hasManualFulfillment: false,
 	hasAutomaticFulfillment: true,
 	salesCount: 0,
+	variantCount: 1,
 	deliveryTypes: ["automation"],
 };
 describe("access product inventory sentinel", () => {
@@ -67,5 +68,15 @@ describe("access product inventory sentinel", () => {
 			/>,
 		);
 		expect(html).toContain("store_sold_out");
+	});
+	it("labels multi-option products with a from price and option count", () => {
+		const html = renderToStaticMarkup(
+			<StorefrontProductCard
+				product={{ ...product, maxPriceMinor: "29900", variantCount: 3 }}
+			/>,
+		);
+		expect(html).toContain("store_card_from");
+		expect(html).toContain("store_card_variants_other");
+		expect(html).toContain("store_auto_delivery");
 	});
 });

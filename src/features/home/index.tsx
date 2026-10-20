@@ -14,14 +14,13 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "#/components/ui/select";
-import { Skeleton } from "#/components/ui/skeleton";
-import { useSiteBrand } from "#/context/site-brand-provider";
 import { trackCommerceEvent } from "#/features/storefront/commerce-events";
 import {
 	StorefrontProductCard,
 	StorefrontProductCardSkeleton,
 } from "#/features/storefront/components/product-card";
 import type { storefrontListSchema } from "#/features/storefront/schema";
+import { usePublicHeaderHeight } from "#/features/storefront/sticky-top";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 import { storefrontCatalogQueryOptions } from "./catalog-query";
@@ -32,7 +31,6 @@ export function HomePage({
 }: {
 	searchParams: z.infer<typeof storefrontListSchema>;
 }) {
-	const brand = useSiteBrand();
 	const navigate = useNavigate({ from: "/" });
 	const [draftSearch, setDraftSearch] = useState(searchParams.search);
 	const locale = getLocale();
@@ -59,43 +57,52 @@ export function HomePage({
 		});
 	}
 	const hasFilters = Boolean(searchParams.search || searchParams.tag);
+	const headerHeight = usePublicHeaderHeight();
 	return (
 		<div className="min-h-[70vh]">
-			<section className="container px-4 pt-10 pb-8 sm:pt-14 sm:pb-10">
-				<div className="grid items-end gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,.85fr)]">
-					<div>
-						<p className="mb-4 font-medium text-primary text-sm">
-							{brand.name}
-						</p>
-						<h1 className="max-w-4xl text-balance font-semibold text-4xl leading-[1.05] tracking-[-0.04em] sm:text-5xl lg:text-6xl">
-							{m.store_hero_title()}
+			<section className="container px-4 pt-5 sm:pt-7">
+				<div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+					<div className="min-w-0 flex-[1_1_26rem]">
+						<h1 className="text-balance font-bold text-2xl leading-tight tracking-tight sm:text-[2rem]">
+							{m.store_home_title()}
 						</h1>
+						<p className="mt-1.5 text-muted-foreground text-sm">
+							{m.store_home_subtitle()}
+						</p>
 					</div>
-					<div className="lg:pb-1">
-						<form className="relative" onSubmit={submit}>
-							<Search className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-							<Input
-								aria-label={m.store_search_placeholder()}
-								className="h-12 rounded-xl bg-muted/45 ps-10 pe-24 text-base shadow-none"
-								value={draftSearch}
-								onChange={(event) => setDraftSearch(event.target.value)}
-								placeholder={m.store_search_placeholder()}
-							/>
-							<Button
-								className="absolute end-1 top-1 h-10 rounded-lg px-4"
-								type="submit"
-							>
-								{m.common_search()}
-							</Button>
-						</form>
-					</div>
+					<form
+						className="relative w-full min-w-0 flex-[1_1_22rem] lg:max-w-[32.5rem]"
+						onSubmit={submit}
+					>
+						<Search className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+						<Input
+							aria-label={m.store_search_placeholder()}
+							className="h-11 rounded-xl bg-muted/45 ps-10 pe-24 text-base shadow-none sm:h-12"
+							value={draftSearch}
+							onChange={(event) => setDraftSearch(event.target.value)}
+							placeholder={m.store_search_placeholder()}
+						/>
+						<Button
+							className="absolute end-1 top-1 h-9 rounded-lg px-4 sm:h-10"
+							type="submit"
+						>
+							{m.common_search()}
+						</Button>
+					</form>
 				</div>
-				<div className="mt-9 flex items-center gap-4">
-					<div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+				{hasFilters ? null : <SelfServiceRecharge />}
+			</section>
+			<div
+				className="sticky z-30 mt-3 bg-background/95 backdrop-blur-xl"
+				data-home-category-bar
+				style={{ top: headerHeight }}
+			>
+				<div className="container flex items-center gap-3 px-4 py-2">
+					<div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible">
 						<Button
 							className="shrink-0 rounded-full"
 							size="sm"
-							variant={searchParams.tag ? "ghost" : "default"}
+							variant={searchParams.tag ? "outline" : "default"}
 							onClick={() =>
 								void navigate({ search: { ...searchParams, tag: "" } })
 							}
@@ -107,7 +114,7 @@ export function HomePage({
 								className="shrink-0 rounded-full"
 								key={item.name}
 								size="sm"
-								variant={searchParams.tag === item.name ? "default" : "ghost"}
+								variant={searchParams.tag === item.name ? "default" : "outline"}
 								onClick={() =>
 									void navigate({
 										search: { ...searchParams, tag: item.name },
@@ -131,7 +138,7 @@ export function HomePage({
 					>
 						<SelectTrigger
 							aria-label={m.store_sort_label()}
-							className="shrink-0 border-0 bg-transparent shadow-none"
+							className="shrink-0 self-start"
 							size="sm"
 						>
 							<SelectValue />
@@ -151,30 +158,22 @@ export function HomePage({
 						</SelectContent>
 					</Select>
 				</div>
-			</section>
-			{hasFilters ? null : <SelfServiceRecharge />}
-			<section className="container px-4 pb-16">
-				<div className="mb-6 flex min-h-[3.25rem] items-center justify-between gap-4">
-					<div>
-						<h2 className="font-semibold text-xl">
-							{hasFilters
-								? m.store_catalog_results()
-								: m.store_catalog_featured()}
-						</h2>
-						{catalog.data ? (
-							<p className="mt-1 text-muted-foreground text-sm">
-								{m.store_catalog_count({
-									count: catalog.data.products.length,
-								})}
-							</p>
-						) : catalog.isLoading ? (
-							<Skeleton
-								className="mt-1 h-4 w-20"
-								data-skeleton-region="catalog-count"
-							/>
-						) : null}
-					</div>
-					{hasFilters ? (
+			</div>
+			<section className="container px-4 pt-3 pb-12">
+				{hasFilters ? (
+					<div className="mb-4 flex items-center justify-between gap-4">
+						<div>
+							<h2 className="font-semibold text-lg">
+								{m.store_catalog_results()}
+							</h2>
+							{catalog.data ? (
+								<p className="text-muted-foreground text-sm">
+									{m.store_catalog_count({
+										count: catalog.data.products.length,
+									})}
+								</p>
+							) : null}
+						</div>
 						<Button
 							className="rounded-full"
 							onClick={clearFilters}
@@ -183,12 +182,14 @@ export function HomePage({
 						>
 							{m.store_clear_filters()}
 						</Button>
-					) : null}
-				</div>
+					</div>
+				) : (
+					<h2 className="sr-only">{m.store_catalog_featured()}</h2>
+				)}
 				{catalog.isLoading ? (
 					<ProductGridSkeleton />
 				) : catalog.data?.products.length ? (
-					<div className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+					<div className={productGridClassName}>
 						{catalog.data.products.map((product) => (
 							<StorefrontProductCard key={product.id} product={product} />
 						))}
@@ -219,20 +220,29 @@ export function HomePage({
 						</div>
 					</div>
 				)}
+				<p className="mt-8 flex flex-wrap gap-x-2 gap-y-1 border-border/60 border-t pt-4 text-muted-foreground text-xs sm:text-sm">
+					<span>{m.store_home_footer_warranty()}</span>
+					<span aria-hidden="true">·</span>
+					<span>{m.store_home_footer_support()}</span>
+				</p>
 			</section>
 		</div>
 	);
 }
+
+/** Phones: one card per row. Wider: as many ~268px cards as fit (about four at 1240px). */
+const productGridClassName =
+	"grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(16.75rem,1fr))] sm:gap-3.5";
 
 export function ProductGridSkeleton() {
 	return (
 		<output
 			aria-busy="true"
 			aria-label={m.common_loading()}
-			className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-3"
+			className={productGridClassName}
 			data-skeleton-layout="product-grid"
 		>
-			{["a", "b", "c", "d", "e", "f"].map((key) => (
+			{["a", "b", "c", "d", "e", "f", "g", "h"].map((key) => (
 				<StorefrontProductCardSkeleton key={key} />
 			))}
 		</output>

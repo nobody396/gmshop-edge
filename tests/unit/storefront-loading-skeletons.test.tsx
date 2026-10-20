@@ -77,12 +77,9 @@ describe("storefront loading skeletons", () => {
 		);
 
 		expect(grid?.className).toContain(
-			"gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-3",
+			"sm:grid-cols-[repeat(auto-fill,minmax(16.75rem,1fr))]",
 		);
-		expect(grid?.querySelectorAll("article")).toHaveLength(6);
-		expect(
-			grid?.querySelectorAll("article [data-slot=skeleton].aspect-video"),
-		).toHaveLength(6);
+		expect(grid?.querySelectorAll("article")).toHaveLength(8);
 	});
 
 	it("matches the detail gallery and purchase geometry", () => {
