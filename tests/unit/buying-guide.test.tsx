@@ -240,6 +240,7 @@ it("offers the opened $500 tier with delivery timing and an exact SKU link", asy
 	await click("guide_gpt");
 	await click("guide_free");
 	await click("guide_fivehundred");
+	await click("guide_ph");
 	await settle();
 	expect(document.body.textContent).toContain("Delivery timing");
 	expect(
