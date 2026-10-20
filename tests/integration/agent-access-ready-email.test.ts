@@ -450,6 +450,8 @@ describe("ready email content", () => {
 		expect(text).toContain("默认在供货价上加 5%");
 		expect(text).toContain("最低不少于 3%");
 		expect(text).toContain("如有问题，请在订单页点「联系客服」");
+		expect(text).toContain("图文教程");
+		expect(text).toContain("https://lsrai.shop/guides/reseller");
 	});
 	it("drops the fallback note once the host matches the requested name", () => {
 		const { text } = renderAgentAccessReadyEmail({
