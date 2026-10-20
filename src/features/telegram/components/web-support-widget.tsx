@@ -362,14 +362,25 @@ export function WebSupportWidget() {
 					},
 				}),
 			});
-			if (!response.ok) throw new Error("start_failed");
+			if (!response.ok) {
+				const failure = (await response.json().catch(() => null)) as {
+					code?: string;
+				} | null;
+				throw new Error(
+					failure?.code === "support_busy" ? "support_busy" : "start_failed",
+				);
+			}
 			const result = (await response.json()) as { id: string; status: string };
 			await setWebSupportConversationId(result.id);
 			conversationId.current = result.id;
 			lastSequence.current = 0;
 			setStatus(result.status);
-		} catch {
-			setError(m.web_support_failed());
+		} catch (error) {
+			setError(
+				error instanceof Error && error.message === "support_busy"
+					? m.web_support_busy()
+					: m.web_support_failed(),
+			);
 		} finally {
 			challenge.reset();
 			setBusy(false);

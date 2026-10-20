@@ -29,6 +29,10 @@ import {
 	reserveSupportAwayReply,
 	supportAwayCommand,
 } from "./support-away";
+import {
+	claimSupportTopicSlot,
+	logSupportTopicLimited,
+} from "./support-topic-limit";
 import { miniAppUrl, telegramRuntime } from "./sync";
 import {
 	closeWebConversationFromTopic,
@@ -301,7 +305,11 @@ async function beginSupport(
 			ctx,
 			progress.message_id,
 			text(
-				result === "opened" ? "support_opened" : "support_unavailable",
+				result === "opened"
+					? "support_opened"
+					: result === "busy"
+						? "support_busy"
+						: "support_unavailable",
 				account.locale,
 			),
 		);
@@ -490,6 +498,11 @@ async function openSupportConversation(
 			{ message_thread_id: threadId },
 		);
 		return "opened" as const;
+	}
+	const slot = await claimSupportTopicSlot(db, `tg:${ctx.from.id}`);
+	if (!slot.allowed) {
+		logSupportTopicLimited(slot.code);
+		return "busy" as const;
 	}
 	if (existing)
 		await db
@@ -953,6 +966,7 @@ function text(
 		| "support_failed"
 		| "support_closed"
 		| "support_unavailable"
+		| "support_busy"
 		| "support_send_first"
 		| "topic_opened",
 	locale: SupportedLocale,
@@ -968,6 +982,7 @@ function text(
 		support_failed: m.telegram_support_failed,
 		support_closed: m.telegram_support_closed,
 		support_unavailable: m.telegram_support_unavailable,
+		support_busy: m.telegram_support_busy,
 		support_send_first: m.telegram_support_send_first,
 		topic_opened: m.telegram_support_topic_opened,
 	};

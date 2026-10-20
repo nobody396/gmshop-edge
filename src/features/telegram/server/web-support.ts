@@ -21,6 +21,10 @@ import {
 	completeSupportAwayReply,
 	reserveSupportAwayReply,
 } from "./support-away";
+import {
+	claimSupportTopicSlot,
+	logSupportTopicLimited,
+} from "./support-topic-limit";
 import { telegramRuntime } from "./sync";
 
 const encoder = new TextEncoder();
@@ -99,6 +103,15 @@ export async function createWebSupportConversation(
 		.bind(settings.supportChatId, input.visitorId)
 		.first();
 	if (duplicateVisitor) throw new WebSupportError("visitor_conflict", 409);
+
+	const topicSlot = await claimSupportTopicSlot(
+		db,
+		`web:${await purposeHash(runtime.dataEncryptionSecret, `email:v1:${email}`)}`,
+	);
+	if (!topicSlot.allowed) {
+		logSupportTopicLimited(topicSlot.code);
+		throw new WebSupportError("support_busy", 503);
+	}
 
 	const now = Date.now();
 	const id = crypto.randomUUID();
