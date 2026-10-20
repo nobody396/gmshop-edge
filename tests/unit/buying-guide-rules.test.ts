@@ -17,7 +17,11 @@ describe("VIP fixed buying guide", () => {
 				for (const answer of step.options) visit([...path, answer]);
 			} else if (step.kind === "result") {
 				expect(guideProducts[step.product]).toBeDefined();
-				if (["plusph", "fiveph", "twentynew"].includes(step.product))
+				if (
+					["plusph", "fiveph", "twentynew", "fivecl", "gpt500cl"].includes(
+						step.product,
+					)
+				)
 					expect(path[1]).toBe("free");
 				expect(path).not.toContain("after_expiry");
 				if (step.product === "twentyrenew") {
@@ -62,7 +66,7 @@ describe("VIP fixed buying guide", () => {
 	])("lets Free accounts choose either channel for %s, with no qualification gate", (target, ph, ios) => {
 		expect(guideStep(["gpt", "free", target])).toMatchObject({
 			id: "channel",
-			options: ["ph", "ios"],
+			options: target === "five" ? ["ph", "cl", "ios"] : ["ph", "ios"],
 		});
 		expect(guideStep(["gpt", "free", target, "ph"])).toMatchObject({
 			kind: "result",
@@ -180,7 +184,7 @@ describe("VIP fixed buying guide", () => {
 				).toBe("stop");
 	});
 	it("maps the opened $500 SKU exactly but never overwrites an active subscription", () => {
-		expect(guideStep(["gpt", "free", "fivehundred"])).toMatchObject({
+		expect(guideStep(["gpt", "free", "fivehundred", "ph"])).toMatchObject({
 			product: "gpt500",
 		});
 		expect(guideProducts.gpt500.itemId).toBe(
@@ -212,11 +216,38 @@ describe("VIP fixed buying guide", () => {
 			warning: "kyc",
 		});
 	});
-	it("skips a redundant single-choice Grok question", () =>
-		expect(guideStep(["grok"])).toMatchObject({
+	it("routes the X subscription by membership and the first-month offer", () => {
+		expect(guideStep(["x", "x_member"])).toEqual({
+			kind: "stop",
+			reason: "x_active",
+		});
+		expect(guideStep(["x", "x_none", "xplus"])).toEqual({
 			kind: "result",
-			product: "grok",
-		}));
+			product: "xplus",
+		});
+		expect(guideStep(["x", "x_none", "xpremium", "offer_no"])).toEqual({
+			kind: "stop",
+			reason: "x_no_offer",
+		});
+		expect(guideStep(["x", "x_none", "xultra", "offer_yes"])).toEqual({
+			kind: "result",
+			product: "xultra",
+		});
+	});
+	it("offers Chile only to Free accounts", () => {
+		expect(guideStep(["gpt", "free", "five", "cl"])).toEqual({
+			kind: "result",
+			product: "fivecl",
+		});
+		expect(guideStep(["gpt", "free", "fivehundred", "cl"])).toEqual({
+			kind: "result",
+			product: "gpt500cl",
+		});
+		expect(guideStep(["gpt", "free", "fivehundred"])).toMatchObject({
+			kind: "question",
+			options: ["ph", "cl"],
+		});
+	});
 	it("does not silently recommend unverified Pro downgrades", () =>
 		expect(
 			guideStep(["gpt", "pro200", "current_ios", "plus", "recharge_now"]),
@@ -264,6 +295,9 @@ it("does not apply the ChatGPT 30-day reset copy to other products", () => {
 	).toMatchObject({
 		warning: "overwrite30",
 	});
-	expect(guideStep(["grok"])).toMatchObject({ warning: "overwrite" });
-	expect(guideStep(["x", "xpremium"])).toMatchObject({ warning: "overwrite" });
+	expect(guideStep(["x", "x_none", "xplus"])).toEqual({
+		kind: "result",
+		product: "xplus",
+		warning: undefined,
+	});
 });
