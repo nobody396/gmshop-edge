@@ -52,6 +52,8 @@ type HandlerEntry = {
 	load: () => Promise<OwnerActionHandler>;
 	/** Line shown when the owner presses the reject button. */
 	rejectedLine?: string;
+	/** A failure leaves the request pending so the same button can retry it. */
+	retryOnFailure?: boolean;
 	/** The approve button asks for one line of text, validated by `pattern`. */
 	input?: {
 		prompt: string;
@@ -77,6 +79,13 @@ const handlers: Record<string, HandlerEntry> = {
 			(await import("#/features/ops-automation/server/pricing-guard"))
 				.approvePricingRaise,
 	},
+	agent_wallet_topup: {
+		load: async () =>
+			(await import("#/features/agent-program/server/wallet-topup"))
+				.approveWalletTopUp,
+		rejectedLine: "❌ 已取消，没有充值",
+		retryOnFailure: true,
+	},
 	agent_withdrawal_paid: {
 		load: async () =>
 			(await import("#/features/agent-program/server/withdrawal-alerts"))
@@ -88,6 +97,25 @@ const handlers: Record<string, HandlerEntry> = {
 			pattern: /^[0-9A-Za-z_-]{6,64}$/,
 			formatHint: "支付宝订单号只能是 6–64 位数字或字母",
 		},
+	},
+};
+
+/** Replies with this text, or `null` when the command sent its own message. */
+type OwnerCommand = (
+	context: OwnerActionContext & { fetcher?: Fetcher },
+	args: string,
+) => Promise<string | null>;
+
+// Owner commands typed in the owner-alert chat, e.g. "/topup a@b.com 300".
+const commands: Record<
+	string,
+	{ description: string; load: () => Promise<OwnerCommand> }
+> = {
+	topup: {
+		description: "代理钱包充值：/topup 邮箱 金额",
+		load: async () =>
+			(await import("#/features/agent-program/server/wallet-topup"))
+				.topUpCommand,
 	},
 };
 
@@ -110,6 +138,8 @@ export async function proposeOwnerAction(
 		fallback: string | null;
 		now: number;
 		fetcher?: Fetcher;
+		/** Defaults to `ownerActionTtlMs`. */
+		ttlMs?: number;
 	},
 ) {
 	const request = input.fetcher ?? fetch;
@@ -133,7 +163,7 @@ export async function proposeOwnerAction(
 			input.kind,
 			JSON.stringify(input.payload),
 			input.text,
-			input.now + ownerActionTtlMs,
+			input.now + (input.ttlMs ?? ownerActionTtlMs),
 			input.now,
 			input.now,
 		)
@@ -287,7 +317,7 @@ export async function handleOwnerActionCallback(
 				? "已忽略"
 				: result.status === "stale"
 					? "这条已经处理过或已过期"
-					: "失败",
+					: result.line.slice(0, 190) || "失败",
 	);
 	return { handled: true as const, status: result.status };
 }
@@ -299,6 +329,52 @@ const replyMessageSchema = z.object({
 	text: z.string().optional(),
 	reply_to_message: z.object({ message_id: z.number().int() }).optional(),
 });
+
+const commandPattern = /^\/([a-z_]+)(?:@[A-Za-z0-9_]+)?(?:\s+([\s\S]*))?$/;
+
+/** A slash command from the chat creator in the owner-alert chat. */
+export async function handleOwnerCommand(
+	context: OwnerActionContext & { fetcher?: Fetcher },
+	rawMessage: unknown,
+) {
+	const request = context.fetcher ?? fetch;
+	const parsed = replyMessageSchema.safeParse(rawMessage);
+	const credentials = await resolveTelegramOwnerAlertCredentials(context.db);
+	if (!parsed.success || !credentials) return { handled: false as const };
+	const message = parsed.data;
+	const match = commandPattern.exec((message.text ?? "").trim());
+	const command = match ? commands[match[1] ?? ""] : undefined;
+	if (
+		!match ||
+		!command ||
+		String(message.chat.id) !== credentials.chatId ||
+		message.from.is_bot
+	)
+		return { handled: false as const };
+	const say = (text: string) =>
+		callTelegram(
+			credentials,
+			"sendMessage",
+			{
+				chat_id: credentials.chatId,
+				text,
+				reply_parameters: { message_id: message.message_id },
+			},
+			request,
+			"telegram_alert_delivery_failed",
+		).catch(() => undefined);
+	if (!(await isChatCreator(credentials, message.from.id, request))) {
+		await say("只有群主可以操作");
+		return { handled: true as const, status: "forbidden" };
+	}
+	const run = await command.load();
+	const reply = await run(
+		{ ...context, decidedBy: String(message.from.id) },
+		(match[2] ?? "").trim(),
+	).catch((error) => `⚠️ ${failureReason(error)}`);
+	if (reply) await say(reply);
+	return { handled: true as const, status: "ran" };
+}
 
 /** A reply to an input prompt from the chat creator completes that action. */
 export async function handleOwnerActionReply(
@@ -426,6 +502,17 @@ async function claimAndRun(
 			line = `⚠️ 没有执行：${failureReason(error)}。请到后台处理。（北京时间 ${clock}）`;
 		}
 	}
+	if (status === "failed" && handlers[row.kind]?.retryOnFailure) {
+		await context.db
+			.prepare(
+				`UPDATE owner_action_requests SET status = 'pending', result = ?,
+				 decided_by = NULL, decided_at = NULL, updated_at = ?
+				 WHERE id = ? AND status = 'processing'`,
+			)
+			.bind(line, context.now, input.id)
+			.run();
+		return { status, line };
+	}
 	await context.db
 		.prepare(
 			`UPDATE owner_action_requests SET status = ?, result = ?, updated_at = ?
@@ -550,7 +637,10 @@ export async function processOwnerAlertWebhook(
 		try {
 			if (update.data.callback_query)
 				await handleOwnerActionCallback(context, update.data.callback_query);
-			else await handleOwnerActionReply(context, update.data.message);
+			else if (
+				!(await handleOwnerCommand(context, update.data.message)).handled
+			)
+				await handleOwnerActionReply(context, update.data.message);
 		} catch (error) {
 			// Let Telegram's retry reach us again instead of being dropped as a replay.
 			await context.db
@@ -585,7 +675,7 @@ export async function ensureOwnerAlertWebhook(
 		return { status: "origin_unavailable" as const };
 	const url = `${new URL(runtime.betterAuthUrl).origin}${ownerWebhookPath}`;
 	const fingerprint = await sha256Hex(
-		`${credentials.botToken}\0${url}\0${secret}\0${allowedUpdates.join(",")}`,
+		`${credentials.botToken}\0${url}\0${secret}\0${allowedUpdates.join(",")}\0${Object.keys(commands).join(",")}`,
 	);
 	const stored = await db
 		.prepare("SELECT value FROM system_settings WHERE key = ?")
@@ -629,6 +719,19 @@ export async function ensureOwnerAlertWebhook(
 	if (!info.success) return fail("owner_webhook_info_invalid");
 	if (info.data.url && info.data.url !== url)
 		return fail("owner_webhook_conflict");
+	await callTelegram(
+		credentials,
+		"setMyCommands",
+		{
+			scope: { type: "chat", chat_id: credentials.chatId },
+			commands: Object.entries(commands).map(([command, entry]) => ({
+				command,
+				description: entry.description,
+			})),
+		},
+		request,
+		"telegram_owner_webhook_failed",
+	);
 	await callTelegram(
 		credentials,
 		"setWebhook",

@@ -51,6 +51,7 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 	let telegram: TelegramCall[];
 	let program: { path: string; body: unknown }[];
 	let webhookNow: number;
+	let topUpFailures: number;
 	let webhookUrl: string;
 	const runtime = createInitialRuntimeConfig("https://shop.example");
 
@@ -83,6 +84,34 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 				path: url.pathname + url.search,
 				body: init?.body ? JSON.parse(String(init.body)) : null,
 			});
+			if (url.pathname.endsWith("/wallet-topups/preview"))
+				return Response.json({
+					status_code: 0,
+					data: {
+						user_id: 7,
+						email: "agent@example.com",
+						partner_type: "reseller",
+						balance: "530.00",
+					},
+				});
+			if (url.pathname.endsWith("/wallet-topups")) {
+				if (topUpFailures-- > 0)
+					return new Response("bad gateway", { status: 502 });
+				return Response.json({
+					status_code: 0,
+					data: {
+						user_id: 7,
+						email: "agent@example.com",
+						partner_type: "reseller",
+						balance: "830.00",
+						transaction_id: 95,
+						amount: "300.00",
+						balance_before: "530.00",
+						balance_after: "830.00",
+						duplicate: false,
+					},
+				});
+			}
 			if (url.pathname.endsWith("/mark-paid"))
 				return Response.json({
 					status_code: 0,
@@ -99,6 +128,7 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		telegram = [];
 		program = [];
 		webhookNow = 1_800_011_000_000;
+		topUpFailures = 0;
 		webhookUrl = "";
 		miniflare = new Miniflare({
 			modules: true,
@@ -396,6 +426,100 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		await expect(
 			db.prepare("SELECT status FROM owner_action_requests").first("status"),
 		).resolves.toBe("approved");
+	});
+
+	it("tops up a partner wallet from /topup after the owner confirms, retrying safely", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		expect(
+			telegram.find((call) => call.method === "setMyCommands")?.body,
+		).toMatchObject({
+			scope: { type: "chat", chat_id: chatId },
+			commands: [{ command: "topup" }],
+		});
+		const command = (fromId: number, text: string, updateId: number) =>
+			deliver({
+				update_id: updateId,
+				message: {
+					message_id: 950 + updateId,
+					chat: { id: Number(chatId) },
+					from: { id: fromId, is_bot: false },
+					text,
+				},
+			});
+		const said = () =>
+			telegram
+				.filter((call) => call.method === "sendMessage")
+				.map((call) => String(call.body.text));
+
+		await command(memberId, "/topup agent@example.com 300", 30);
+		await command(
+			ownerId,
+			"/topup@laoshirenai_ops_alert_bot agent@example.com",
+			31,
+		);
+		expect(said()).toEqual([
+			"只有群主可以操作",
+			"用法：/topup 邮箱 金额，例如 /topup agent@example.com 300",
+		]);
+		expect(program).toEqual([]);
+
+		await command(ownerId, "/topup Agent@Example.com 300", 32);
+		const proposal = telegram.filter(
+			(call) => call.method === "sendMessage",
+		)[2];
+		expect(proposal?.body.text).toContain(
+			"账号：agent@example.com（子站代理）",
+		);
+		expect(proposal?.body.text).toContain("充值：¥300.00 → 充值后约 ¥830.00");
+		const keyboard = (
+			proposal?.body.reply_markup as {
+				inline_keyboard: { text: string; callback_data: string }[][];
+			}
+		).inline_keyboard;
+		expect(keyboard.map((row) => row[0]?.text)).toEqual([
+			"✅ 确认充值 ¥300.00",
+			"❌ 取消",
+		]);
+		const confirm = keyboard[0]?.[0]?.callback_data ?? "";
+		const tapAt = (updateId: number) =>
+			deliver({
+				update_id: updateId,
+				callback_query: {
+					id: `cb-${updateId}`,
+					data: confirm,
+					from: { id: ownerId, is_bot: false },
+					message: { message_id: 779, chat: { id: Number(chatId) } },
+				},
+			});
+
+		topUpFailures = 1;
+		await tapAt(33);
+		await expect(
+			db.prepare("SELECT status FROM owner_action_requests").first("status"),
+		).resolves.toBe("pending");
+		expect(telegram.some((call) => call.method === "editMessageText")).toBe(
+			false,
+		);
+
+		await tapAt(34);
+		const credits = program.filter((call) =>
+			call.path.endsWith("/wallet-topups"),
+		);
+		expect(credits).toHaveLength(2);
+		const [firstBody, secondBody] = credits.map(
+			(call) => call.body as Record<string, string>,
+		);
+		expect(secondBody).toEqual(firstBody);
+		expect(firstBody).toMatchObject({
+			email: "agent@example.com",
+			amount: "300.00",
+			operator: `telegram:${ownerId}`,
+		});
+		expect(firstBody?.request_ref).toMatch(/^TG-\d{12}-[0-9a-f]{8}$/);
+		const edit = telegram.find((call) => call.method === "editMessageText");
+		expect(edit?.body.text).toContain(
+			"✅ 已充值 ¥300.00：余额 ¥530.00 → ¥830.00（流水 #95）",
+		);
 	});
 
 	it("rejects a forged webhook secret", async () => {

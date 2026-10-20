@@ -165,7 +165,8 @@ export async function callTelegram(
 		| "editMessageText"
 		| "answerCallbackQuery"
 		| "getWebhookInfo"
-		| "setWebhook",
+		| "setWebhook"
+		| "setMyCommands",
 	body: Record<string, unknown>,
 	request: Fetcher,
 	failureCode: string,
