@@ -74,10 +74,10 @@ What the 4-in-1 includes
 Grok and Cursor share one weekly usage pool.
 
 Which tier
-· Plus (official $8/month): base usage (1x). Cursor can only use Grok models; no Grok Bot. Good for trying it out.
-· Premium (official $30/month): 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits. Enough for most people.
-· Super (official $100/month): everything in Premium, 15x Plus usage. For heavy daily use.
-· Ultra (official $200/month): everything in Premium, 50x Plus usage. For intensive coding and agent tasks.
+· Plus: base usage (1x). Cursor can only use Grok models; no Grok Bot. Good for trying it out.
+· Premium: 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits. Enough for most people.
+· Super: everything in Premium, 15x Plus usage. For heavy daily use.
+· Ultra: everything in Premium, 50x Plus usage. For intensive coding and agent tasks.
 Note: third-party models in Cursor (such as Claude or GPT) are not counted in the subscription and are billed separately by the official service.
 
 How delivery works
@@ -525,28 +525,28 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: claudePolicy(claudeMaxRestrictions),
 	},
 	"b17f05d4-f109-46f2-888a-6f633519d9e7": {
-		name: "Plus｜1 month (official $8 tier)",
+		name: "Plus｜1 month",
 		policy: xPolicy(
-			"Plus｜1 month (official $8 tier); base usage; Cursor is limited to Grok models; no Grok Bot",
+			"Plus｜1 month; base usage; Cursor is limited to Grok models; no Grok Bot",
 			false,
 		),
 	},
 	"091ab8e6-6c3f-48e5-be52-268bea8e87e9": {
-		name: "Premium｜1 month (official $30 tier)",
+		name: "Premium｜1 month",
 		policy: xPolicy(
-			"Premium｜1 month (official $30 tier); 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits",
+			"Premium｜1 month; 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits",
 		),
 	},
 	"0c4fb0ae-f770-4957-87c7-95b5c53d42e8": {
-		name: "Super｜1 month (official $100 tier)",
+		name: "Super｜1 month",
 		policy: xPolicy(
-			"Super｜1 month (official $100 tier); everything in Premium, 15x Plus usage",
+			"Super｜1 month; everything in Premium, 15x Plus usage",
 		),
 	},
 	"f3abb17f-5c93-40c6-a8e2-ef80cdfca7d2": {
-		name: "Ultra｜1 month (official $200 tier)",
+		name: "Ultra｜1 month",
 		policy: xPolicy(
-			"Ultra｜1 month (official $200 tier); everything in Premium, 50x Plus usage",
+			"Ultra｜1 month; everything in Premium, 50x Plus usage",
 		),
 	},
 	"e8ff14e3-76a5-46e0-b6d3-1c217130bd99": {
