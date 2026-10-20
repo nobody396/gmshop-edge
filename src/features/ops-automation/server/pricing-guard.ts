@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { saleComponents } from "#/features/redeem-warehouse/server/sale-capacity";
+import { proposeOwnerAction } from "#/features/telegram/server/owner-actions";
+import { DomainError } from "#/lib/domain-error";
 import {
 	beijingClock,
 	claimPeriod,
@@ -158,6 +160,7 @@ export type PricingOutcome = {
 	costMinor: number;
 	plan: PricePlan;
 	applied: boolean;
+	itemId?: string;
 };
 export type AgentWarning = {
 	label: string;
@@ -268,7 +271,7 @@ export async function runPricingGuard(input: {
 		const applied = plan.auto
 			? await applyRaise(input.db, row, plan, cost, floorMinor, now)
 			: false;
-		outcomes.push({ label, costMinor: cost, plan, applied });
+		outcomes.push({ label, costMinor: cost, plan, applied, itemId: row.id });
 	}
 
 	const text = formatPricingReport(
@@ -286,10 +289,37 @@ export async function runPricingGuard(input: {
 				now,
 			)
 		: ("nothing" as const);
+	// The report lists every proposal; each also gets its own approve button.
+	let buttons = 0;
+	for (const outcome of outcomes) {
+		if (outcome.applied || !outcome.itemId) continue;
+		const row = rows.find((item) => item.id === outcome.itemId);
+		if (!row) continue;
+		const proposal = await proposeOwnerAction(input.db, {
+			kind: "pricing_raise",
+			payload: {
+				itemId: row.id,
+				version: row.version,
+				priceMinor: row.price_minor,
+				alipayMinor: row.alipay_minor,
+				costMinor: outcome.costMinor,
+				floorMinor,
+				plan: outcome.plan,
+			} satisfies PricingRaisePayload,
+			text: `📈 改价确认：${outcome.label}\n成本 ${formatYuan(outcome.costMinor)}（净利底线 ${formatYuan(floorMinor)}）\n建议 ${priceChange(outcome.plan, true)}`,
+			choices: ["✅ 按建议改价"],
+			rejectLabel: "❌ 不改",
+			fallback: null,
+			now,
+			fetcher,
+		}).catch(() => null);
+		if (proposal) buttons += 1;
+	}
 	return {
 		status: "ran" as const,
 		retried,
 		delivery,
+		buttons,
 		applied: outcomes.filter((outcome) => outcome.applied).length,
 		proposed: outcomes.filter((outcome) => !outcome.applied).length,
 		agentWarnings: agentWarnings.length,
@@ -317,7 +347,57 @@ function supplierCost(
 	return realCostMinor(Number(row.aisou_cost_minor), "aisou", factors);
 }
 
-async function loadItems(db: D1Database) {
+const planSchema = z.object({
+	usdtOld: z.number().int(),
+	usdtNew: z.number().int().positive(),
+	alipayOld: z.number().int().nullable(),
+	alipayNew: z.number().int().positive().nullable(),
+	auto: z.boolean(),
+});
+const pricingRaisePayloadSchema = z.object({
+	itemId: z.string(),
+	version: z.number().int(),
+	priceMinor: z.string(),
+	alipayMinor: z.string().nullable(),
+	costMinor: z.number().int().nonnegative(),
+	floorMinor: z.number().int().nonnegative(),
+	plan: planSchema,
+});
+type PricingRaisePayload = z.infer<typeof pricingRaisePayloadSchema>;
+
+/** Applies the proposed raise only if nobody changed the price since. */
+export async function approvePricingRaise(
+	context: { db: D1Database; now: number },
+	rawPayload: unknown,
+) {
+	const payload = pricingRaisePayloadSchema.parse(rawPayload);
+	const row = (await loadItems(context.db, payload.itemId))[0];
+	if (
+		!row ||
+		row.version !== payload.version ||
+		row.price_minor !== payload.priceMinor ||
+		row.alipay_minor !== payload.alipayMinor
+	)
+		throw new DomainError(
+			"pricing_raise_stale",
+			409,
+			"价格已经被改过或规格已下架",
+		);
+	const applied = await applyRaise(
+		context.db,
+		row,
+		payload.plan,
+		payload.costMinor,
+		payload.floorMinor,
+		context.now,
+		"pricing_guard.owner_raise",
+	);
+	if (!applied)
+		throw new DomainError("pricing_raise_stale", 409, "价格刚被改过");
+	return `✅ 已改价：${priceChange(payload.plan, false)}`;
+}
+
+async function loadItems(db: D1Database, onlyItemId?: string) {
 	const rows = await db
 		.prepare(
 			`SELECT item.id, item.product_id, product.name AS product_name,
@@ -346,10 +426,12 @@ async function loadItems(db: D1Database) {
 			 FROM product_sellable_items item
 			 JOIN products product ON product.id = item.product_id
 			 WHERE item.enabled = 1 AND item.sale_disabled = 0
+			  AND (? IS NULL OR item.id = ?)
 			  AND product.status = 'active' AND product.sale_disabled = 0
 			  AND item.currency = 'CNY' AND item.currency_decimals = 2
 			 ORDER BY product.sort_order, item.sort_order, item.id`,
 		)
+		.bind(onlyItemId ?? null, onlyItemId ?? null)
 		.all<ItemRow>();
 	return rows.results;
 }
@@ -361,6 +443,7 @@ async function applyRaise(
 	costMinor: number,
 	floorMinor: number,
 	now: number,
+	action = "pricing_guard.auto_raise",
 ) {
 	const usdt = String(plan.usdtNew);
 	// Every follow-up statement is guarded on the item update having landed.
@@ -410,10 +493,11 @@ async function applyRaise(
 		db
 			.prepare(
 				`INSERT INTO audit_logs (id, action, target_type, target_id, before, after, created_at)
-				 SELECT ?, 'pricing_guard.auto_raise', 'sellable_item', ?, ?, ?, ? WHERE ${landed}`,
+				 SELECT ?, ?, 'sellable_item', ?, ?, ?, ? WHERE ${landed}`,
 			)
 			.bind(
 				crypto.randomUUID(),
+				action,
 				row.id,
 				JSON.stringify({
 					priceMinor: row.price_minor,

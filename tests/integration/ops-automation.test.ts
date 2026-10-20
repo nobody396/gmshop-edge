@@ -5,6 +5,7 @@ import {
 	runBalanceGuard,
 } from "#/features/ops-automation/server/balance-guard";
 import {
+	approvePricingRaise,
 	parseCostFactors,
 	planPrice,
 	realCostMinor,
@@ -365,6 +366,48 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		// Once per Beijing day.
 		await expect(run(monday + hour)).resolves.toMatchObject({ status: "done" });
 		expect(messages).toHaveLength(1);
+	});
+
+	it("pricing guard applies a proposed raise only while the price is unchanged", async () => {
+		await seedPricing(db);
+		const payload = {
+			itemId: "gpt-plus",
+			version: 1,
+			priceMinor: "5300",
+			alipayMinor: "5500",
+			costMinor: 5072,
+			floorMinor: 300,
+			plan: {
+				usdtOld: 5300,
+				usdtNew: 5900,
+				alipayOld: 5500,
+				alipayNew: 6900,
+				auto: false,
+			},
+		};
+		await expect(
+			approvePricingRaise({ db, now: monday }, payload),
+		).resolves.toBe("✅ 已改价：USDT ¥53.00→¥59.00，支付宝 ¥55.00→¥69.00");
+		await expect(
+			db
+				.prepare(
+					`SELECT item.price_minor, item.version,
+					  (SELECT price_minor FROM sellable_item_channel_prices WHERE sellable_item_id = item.id AND channel_id = 'alipay') AS alipay
+					 FROM product_sellable_items item WHERE item.id = 'gpt-plus'`,
+				)
+				.first(),
+		).resolves.toEqual({ price_minor: "5900", version: 2, alipay: "6900" });
+		await expect(
+			db
+				.prepare(
+					"SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'pricing_guard.owner_raise'",
+				)
+				.first("n"),
+		).resolves.toBe(1);
+		// A second tap on an old button sees the changed version and refuses.
+		await expect(
+			approvePricingRaise({ db, now: monday }, payload),
+		).rejects.toMatchObject({ code: "pricing_raise_stale" });
 	});
 
 	it("pricing guard parks an unsent report and retries it", async () => {

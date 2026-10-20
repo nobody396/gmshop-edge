@@ -13,8 +13,11 @@ import {
 import { claimSupplierApiBudget } from "./rate-limit";
 import {
 	affordable,
+	type CostCappedBinding,
+	costCapPayload,
 	type DelistedBinding,
 	findRebindCandidates,
+	formatCostCapProposal,
 	formatRebindProposal,
 	rebindChoiceLabel,
 	rebindPayload,
@@ -120,7 +123,7 @@ export async function syncSupplierSource(input: {
 			const products = incremental
 				? mergeCatalog(previousCatalog.products, fetchedProducts)
 				: fetchedProducts;
-			const { delisted, boundKeys } = await updateBoundProducts(
+			const { delisted, boundKeys, costCapped } = await updateBoundProducts(
 				input.db,
 				input.source,
 				products,
@@ -133,6 +136,14 @@ export async function syncSupplierSource(input: {
 				products,
 			});
 			// Best effort: a failed alert must not fail the catalog sync.
+			if (costCapped.length)
+				await notifyCostCappedBindings({
+					db: input.db,
+					source: input.source,
+					costCapped,
+					now,
+					fetcher: input.fetcher,
+				}).catch(() => undefined);
 			if (delisted.length)
 				await notifyDelistedBindings({
 					db: input.db,
@@ -351,8 +362,9 @@ async function updateBoundProducts(
 		.prepare(
 			`SELECT sb.id, sb.sellable_item_id, sb.upstream_product_id,
 			        sb.upstream_sku_id, sb.upstream_product_name,
-			        sb.upstream_sku_name, sb.max_cost_minor, sb.last_error_code,
-			        psi.name AS sellable_item_name, psi.price_minor,
+			        sb.upstream_sku_name, sb.max_cost_minor, sb.reference_cost_minor,
+			        sb.last_error_code, psi.name AS sellable_item_name,
+			        psi.price_minor, psi.supplier_status, psi.fulfillment_source,
 			        p.name AS product_name
 			 FROM supplier_bindings sb
 			 JOIN product_sellable_items psi ON psi.id = sb.sellable_item_id
@@ -369,9 +381,12 @@ async function updateBoundProducts(
 			upstream_product_name: string;
 			upstream_sku_name: string;
 			max_cost_minor: string;
+			reference_cost_minor: string;
 			last_error_code: string | null;
 			sellable_item_name: string;
 			price_minor: string;
+			supplier_status: string | null;
+			fulfillment_source: string;
 			product_name: string;
 		}>();
 	const delisted: DelistedBinding[] = [];
@@ -380,6 +395,39 @@ async function updateBoundProducts(
 			(binding) => `${binding.upstream_product_id}\0${binding.upstream_sku_id}`,
 		),
 	);
+	const catalogSkus = new Map(
+		products.flatMap((product) =>
+			product.skus.map((sku) => [`${product.id}\0${sku.id}`, { product, sku }]),
+		),
+	);
+	// Read before the batch below runs, so supplier_status is still the old one.
+	const costCapped: CostCappedBinding[] = [];
+	for (const binding of bindings.results) {
+		const listed = catalogSkus.get(
+			`${binding.upstream_product_id}\0${binding.upstream_sku_id}`,
+		);
+		if (
+			listed?.product.active &&
+			listed.sku.active &&
+			binding.fulfillment_source === "supplier" &&
+			binding.supplier_status === "available" &&
+			BigInt(listed.sku.costMinor) > BigInt(binding.max_cost_minor)
+		)
+			costCapped.push({
+				bindingId: binding.id,
+				sellableItemId: binding.sellable_item_id,
+				productName: binding.product_name,
+				sellableItemName: binding.sellable_item_name,
+				upstreamProductId: binding.upstream_product_id,
+				upstreamSkuId: binding.upstream_sku_id,
+				upstreamProductName: listed.product.name,
+				previousCostMinor: binding.reference_cost_minor,
+				costMinor: listed.sku.costMinor,
+				maxCostMinor: binding.max_cost_minor,
+				priceMinor: binding.price_minor,
+				stockQuantity: listed.sku.stockQuantity,
+			});
+	}
 	for (const binding of bindings.results) {
 		if (seen.has(`${binding.upstream_product_id}\0${binding.upstream_sku_id}`))
 			continue;
@@ -426,7 +474,36 @@ async function updateBoundProducts(
 	}
 	for (let offset = 0; offset < statements.length; offset += 100)
 		await db.batch(statements.slice(offset, offset + 100));
-	return { delisted, boundKeys };
+	return { delisted, boundKeys, costCapped };
+}
+
+/** One approval per SKU that just stopped because its cost rose past the cap. */
+async function notifyCostCappedBindings(input: {
+	db: D1Database;
+	source: SupplierSourceIdentity;
+	costCapped: CostCappedBinding[];
+	now: number;
+	fetcher?: typeof fetch;
+}) {
+	for (const item of input.costCapped) {
+		const text = formatCostCapProposal(input.source.normalizedApiOrigin, item);
+		const send =
+			BigInt(item.costMinor) < BigInt(item.priceMinor)
+				? proposeOwnerAction(input.db, {
+						kind: "supplier_cost_cap",
+						payload: costCapPayload(input.source, item),
+						text,
+						choices: ["✅ 按新进价恢复销售"],
+						rejectLabel: "❌ 先不卖",
+						fallback: "请到后台「供货」调整进价上限后恢复销售。",
+						now: input.now,
+						fetcher: input.fetcher,
+					})
+				: sendOwnerAlert(input.db, `${text}\n\n新进价不低于售价，请先调价。`, {
+						fetcher: input.fetcher,
+					});
+		await send.catch(() => undefined);
+	}
 }
 
 /**
