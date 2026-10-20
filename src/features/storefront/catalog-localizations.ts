@@ -539,15 +539,11 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 	},
 	"0c4fb0ae-f770-4957-87c7-95b5c53d42e8": {
 		name: "Super｜1 month",
-		policy: xPolicy(
-			"Super｜1 month; everything in Premium, 15x Plus usage",
-		),
+		policy: xPolicy("Super｜1 month; everything in Premium, 15x Plus usage"),
 	},
 	"f3abb17f-5c93-40c6-a8e2-ef80cdfca7d2": {
 		name: "Ultra｜1 month",
-		policy: xPolicy(
-			"Ultra｜1 month; everything in Premium, 50x Plus usage",
-		),
+		policy: xPolicy("Ultra｜1 month; everything in Premium, 50x Plus usage"),
 	},
 	"e8ff14e3-76a5-46e0-b6d3-1c217130bd99": {
 		name: "Claude compute card｜¥50",
