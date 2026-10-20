@@ -72,7 +72,6 @@ const ownUsageGuideProductIds = new Set([
 	"2ee356de-fe69-4641-94c3-1dfea19b6967", // Muse AI 成品号
 	"64812c48-9026-4ef7-874d-b332d2a39b1a", // Gemini Pro 18个月 激活链接
 	"c70d10e8-b781-4782-bc98-1f034bcd069a", // Apple ID 成品号
-	"3e60e88d-a0bd-4723-bc9e-ff45f6dafa16", // X 订阅四合一（订单 CDK 换卡密）
 ]);
 const appleIdProductId = "c70d10e8-b781-4782-bc98-1f034bcd069a";
 
