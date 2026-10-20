@@ -4,6 +4,7 @@ import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import type { AgentAccessKind } from "../products";
 import { type AgentTransport, callAgent } from "./client";
+import { enqueueAgentAccessReadyEmail } from "./ready-email";
 
 type AccessOrder = {
 	order_item_id: string;
@@ -179,7 +180,17 @@ export async function processAgentDelivery(
 			.prepare("SELECT state FROM agent_access_orders WHERE order_item_id=?")
 			.bind(row.order_item_id)
 			.first<{ state: string }>();
-		return { status: actual?.state === "active" ? "delivered" : "processing" };
+		if (actual?.state !== "active") return { status: "processing" };
+		// Only this pending→active transition sends automatically; historical
+		// active orders never reach here, so a deploy cannot fan out a burst.
+		try {
+			await enqueueAgentAccessReadyEmail(db, row.order_item_id, {
+				respectOptOut: true,
+			});
+		} catch {
+			// The opening is complete; a mail-queue failure must not undo it.
+		}
+		return { status: "delivered" };
 	} catch {
 		await db
 			.prepare(

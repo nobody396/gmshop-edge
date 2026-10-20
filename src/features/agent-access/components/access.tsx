@@ -1,5 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button } from "#/components/ui/button";
+import { Input } from "#/components/ui/input";
 import { authClient } from "#/features/auth/auth-client";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
@@ -12,6 +14,7 @@ import {
 import {
 	listAgentAccessIssuesFn,
 	prepareAgentProductsFn,
+	resendAgentAccessReadyEmailFn,
 	retryAgentAccessFn,
 } from "../server/admin";
 import {
@@ -291,6 +294,7 @@ export function AgentAccessDrafts() {
 				</div>
 			))}
 			{retry.isError ? <p role="alert">{m.agent_access_support()}</p> : null}
+			<AgentAccessReadyEmailResend />
 			{Object.values(agentAccessProducts).map((p) => (
 				<a
 					className="underline"
@@ -303,5 +307,46 @@ export function AgentAccessDrafts() {
 				</a>
 			))}
 		</section>
+	);
+}
+
+function AgentAccessReadyEmailResend() {
+	const [orderNumber, setOrderNumber] = useState("");
+	const resend = useMutation({
+		mutationFn: (value: string) =>
+			resendAgentAccessReadyEmailFn({ data: { orderNumber: value } }),
+	});
+	return (
+		<form
+			className="flex flex-wrap items-center gap-3 border-t pt-3"
+			onSubmit={(event) => {
+				event.preventDefault();
+				resend.mutate(orderNumber.trim());
+			}}
+		>
+			<Input
+				aria-label={m.agent_access_ready_email_order()}
+				placeholder={m.agent_access_ready_email_order()}
+				className="max-w-sm"
+				value={orderNumber}
+				onChange={(event) => setOrderNumber(event.target.value)}
+			/>
+			<Button
+				type="submit"
+				variant="outline"
+				disabled={resend.isPending || !orderNumber.trim()}
+			>
+				{m.agent_access_ready_email_resend()}
+			</Button>
+			{resend.data ? (
+				<output className="break-all">
+					{m.agent_access_ready_email_result({
+						status: resend.data.email.status,
+						domain: resend.data.domain ?? "—",
+					})}
+				</output>
+			) : null}
+			{resend.isError ? <p role="alert">{m.agent_access_support()}</p> : null}
+		</form>
 	);
 }

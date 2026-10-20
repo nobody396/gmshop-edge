@@ -7,6 +7,7 @@ import { DomainError } from "#/lib/domain-error";
 import { createAuditStatement } from "#/server/audit";
 import { getDb } from "#/server/db.server";
 import { prepareAgentProducts } from "./products";
+import { refreshAgentAccessReadyEmail } from "./ready-email";
 
 function privateResponse() {
 	setResponseHeader("Cache-Control", "no-store");
@@ -82,3 +83,35 @@ export const listAgentAccessIssuesFn = createServerFn({
 			}>()
 	).results;
 });
+
+export const agentOrderNumberSchema = z.object({
+	orderNumber: z
+		.string()
+		.trim()
+		.regex(/^GM[A-F0-9]{32}$/),
+});
+// After a sub-site host changes on lsrai.shop: refresh the stored domain and
+// send the ready email once for that domain (never twice for the same one).
+export const resendAgentAccessReadyEmailFn = createServerFn({ method: "POST" })
+	.validator((input: { orderNumber: string }) =>
+		agentOrderNumberSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const request = getRequest();
+		privateResponse();
+		sameOrigin(request);
+		const actor = await requireAdmin(
+			request,
+			systemPermission("delivery", "update"),
+		);
+		const db = getDb(request).$client;
+		const result = await refreshAgentAccessReadyEmail(db, data.orderNumber);
+		await createAuditStatement(db, request, actor.id, {
+			action: "agent_access.ready_email_resend",
+			targetType: "order_item",
+			targetId: result.orderItemId,
+			before: { domain: result.previousDomain },
+			after: { domain: result.domain, email: result.email },
+		}).run();
+		return result;
+	});

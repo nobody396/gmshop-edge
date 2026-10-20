@@ -115,6 +115,7 @@ import { Route as ApiShopRenewalUnsubscribeRouteImport } from './routes/api/shop
 import { Route as ApiShopAutomationCallbackRouteImport } from './routes/api/shop/automation/callback'
 import { Route as ApiOpsRestockSwapRouteImport } from './routes/api/ops/restock/swap'
 import { Route as ApiOpsRestockReconcileRouteImport } from './routes/api/ops/restock/reconcile'
+import { Route as ApiOpsAgentAccessReadyEmailRouteImport } from './routes/api/ops/agent-access/ready-email'
 import { Route as ApiInternalAgentProgramOrderProfitRouteImport } from './routes/api/internal/agent-program/order-profit'
 import { Route as ApiConfigurationLogoScopeIdRouteImport } from './routes/api/configuration-logo/$scope/$id'
 import { Route as AdminProductsProductIdEditRouteImport } from './routes/admin/products/$productId/edit'
@@ -680,6 +681,12 @@ const ApiOpsRestockReconcileRoute = ApiOpsRestockReconcileRouteImport.update({
   path: '/reconcile',
   getParentRoute: () => ApiOpsRestockRoute,
 } as any)
+const ApiOpsAgentAccessReadyEmailRoute =
+  ApiOpsAgentAccessReadyEmailRouteImport.update({
+    id: '/api/ops/agent-access/ready-email',
+    path: '/api/ops/agent-access/ready-email',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiInternalAgentProgramOrderProfitRoute =
   ApiInternalAgentProgramOrderProfitRouteImport.update({
     id: '/api/internal/agent-program/order-profit',
@@ -884,6 +891,7 @@ export interface FileRoutesByFullPath {
   '/admin/products/$productId/edit': typeof AdminProductsProductIdEditRoute
   '/api/configuration-logo/$scope/$id': typeof ApiConfigurationLogoScopeIdRoute
   '/api/internal/agent-program/order-profit': typeof ApiInternalAgentProgramOrderProfitRoute
+  '/api/ops/agent-access/ready-email': typeof ApiOpsAgentAccessReadyEmailRoute
   '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/ops/restock/swap': typeof ApiOpsRestockSwapRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
@@ -999,6 +1007,7 @@ export interface FileRoutesByTo {
   '/admin/products/$productId/edit': typeof AdminProductsProductIdEditRoute
   '/api/configuration-logo/$scope/$id': typeof ApiConfigurationLogoScopeIdRoute
   '/api/internal/agent-program/order-profit': typeof ApiInternalAgentProgramOrderProfitRoute
+  '/api/ops/agent-access/ready-email': typeof ApiOpsAgentAccessReadyEmailRoute
   '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/ops/restock/swap': typeof ApiOpsRestockSwapRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
@@ -1126,6 +1135,7 @@ export interface FileRoutesById {
   '/admin/products/$productId/edit': typeof AdminProductsProductIdEditRoute
   '/api/configuration-logo/$scope/$id': typeof ApiConfigurationLogoScopeIdRoute
   '/api/internal/agent-program/order-profit': typeof ApiInternalAgentProgramOrderProfitRoute
+  '/api/ops/agent-access/ready-email': typeof ApiOpsAgentAccessReadyEmailRoute
   '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/ops/restock/swap': typeof ApiOpsRestockSwapRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
@@ -1252,6 +1262,7 @@ export interface FileRouteTypes {
     | '/admin/products/$productId/edit'
     | '/api/configuration-logo/$scope/$id'
     | '/api/internal/agent-program/order-profit'
+    | '/api/ops/agent-access/ready-email'
     | '/api/ops/restock/reconcile'
     | '/api/ops/restock/swap'
     | '/api/shop/automation/callback'
@@ -1367,6 +1378,7 @@ export interface FileRouteTypes {
     | '/admin/products/$productId/edit'
     | '/api/configuration-logo/$scope/$id'
     | '/api/internal/agent-program/order-profit'
+    | '/api/ops/agent-access/ready-email'
     | '/api/ops/restock/reconcile'
     | '/api/ops/restock/swap'
     | '/api/shop/automation/callback'
@@ -1493,6 +1505,7 @@ export interface FileRouteTypes {
     | '/admin/products/$productId/edit'
     | '/api/configuration-logo/$scope/$id'
     | '/api/internal/agent-program/order-profit'
+    | '/api/ops/agent-access/ready-email'
     | '/api/ops/restock/reconcile'
     | '/api/ops/restock/swap'
     | '/api/shop/automation/callback'
@@ -1545,6 +1558,7 @@ export interface RootRouteChildren {
   RRenewTokenRoute: typeof RRenewTokenRoute
   ApiConfigurationLogoScopeIdRoute: typeof ApiConfigurationLogoScopeIdRoute
   ApiInternalAgentProgramOrderProfitRoute: typeof ApiInternalAgentProgramOrderProfitRoute
+  ApiOpsAgentAccessReadyEmailRoute: typeof ApiOpsAgentAccessReadyEmailRoute
   ApiShopAutomationCallbackRoute: typeof ApiShopAutomationCallbackRoute
   ApiShopRenewalUnsubscribeRoute: typeof ApiShopRenewalUnsubscribeRoute
   ApiSupportWebCloseRoute: typeof ApiSupportWebCloseRoute
@@ -2310,6 +2324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOpsRestockReconcileRouteImport
       parentRoute: typeof ApiOpsRestockRoute
     }
+    '/api/ops/agent-access/ready-email': {
+      id: '/api/ops/agent-access/ready-email'
+      path: '/api/ops/agent-access/ready-email'
+      fullPath: '/api/ops/agent-access/ready-email'
+      preLoaderRoute: typeof ApiOpsAgentAccessReadyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/agent-program/order-profit': {
       id: '/api/internal/agent-program/order-profit'
       path: '/api/internal/agent-program/order-profit'
@@ -2771,6 +2792,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiConfigurationLogoScopeIdRoute: ApiConfigurationLogoScopeIdRoute,
   ApiInternalAgentProgramOrderProfitRoute:
     ApiInternalAgentProgramOrderProfitRoute,
+  ApiOpsAgentAccessReadyEmailRoute: ApiOpsAgentAccessReadyEmailRoute,
   ApiShopAutomationCallbackRoute: ApiShopAutomationCallbackRoute,
   ApiShopRenewalUnsubscribeRoute: ApiShopRenewalUnsubscribeRoute,
   ApiSupportWebCloseRoute: ApiSupportWebCloseRoute,
@@ -2801,3 +2823,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
