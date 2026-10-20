@@ -1,5 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button } from "#/components/ui/button";
+import { Input } from "#/components/ui/input";
 import { authClient } from "#/features/auth/auth-client";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
@@ -8,11 +10,11 @@ import {
 	agentAccessKind,
 	agentAccessProducts,
 	agentAccessRefundPolicy,
-	agentOwnerWeChat,
 } from "../products";
 import {
 	listAgentAccessIssuesFn,
 	prepareAgentProductsFn,
+	resendAgentAccessReadyEmailFn,
 	retryAgentAccessFn,
 } from "../server/admin";
 import {
@@ -114,30 +116,6 @@ export function AgentAccessCheckout({
 				</>
 			)}
 		</section>
-	);
-}
-// Tap opens the full-size image so phones can zoom or long-press to scan.
-export function AgentOwnerWeChat() {
-	return (
-		<div className="grid justify-items-start gap-2 border-t pt-3">
-			<p className="font-medium text-sm">{m.agent_access_wechat()}</p>
-			<a
-				href={agentOwnerWeChat.imagePath}
-				target="_blank"
-				rel="noreferrer"
-				aria-label={m.agent_access_wechat_enlarge()}
-				className="rounded-lg border bg-white p-1 focus-visible:outline-2 focus-visible:outline-ring"
-			>
-				<img
-					src={agentOwnerWeChat.imagePath}
-					alt={m.agent_access_wechat_alt()}
-					width={160}
-					height={204}
-					loading="lazy"
-					className="h-auto w-40"
-				/>
-			</a>
-		</div>
 	);
 }
 export function AgentAccessDelivery({ orderNumber }: { orderNumber: string }) {
@@ -264,7 +242,6 @@ function OwnedAgentAccessDelivery({
 							</p>
 						</>
 					) : null}
-					{data.state !== "revoked" ? <AgentOwnerWeChat /> : null}
 				</>
 			)}
 		</section>
@@ -317,6 +294,7 @@ export function AgentAccessDrafts() {
 				</div>
 			))}
 			{retry.isError ? <p role="alert">{m.agent_access_support()}</p> : null}
+			<AgentAccessReadyEmailResend />
 			{Object.values(agentAccessProducts).map((p) => (
 				<a
 					className="underline"
@@ -329,5 +307,46 @@ export function AgentAccessDrafts() {
 				</a>
 			))}
 		</section>
+	);
+}
+
+function AgentAccessReadyEmailResend() {
+	const [orderNumber, setOrderNumber] = useState("");
+	const resend = useMutation({
+		mutationFn: (value: string) =>
+			resendAgentAccessReadyEmailFn({ data: { orderNumber: value } }),
+	});
+	return (
+		<form
+			className="flex flex-wrap items-center gap-3 border-t pt-3"
+			onSubmit={(event) => {
+				event.preventDefault();
+				resend.mutate(orderNumber.trim());
+			}}
+		>
+			<Input
+				aria-label={m.agent_access_ready_email_order()}
+				placeholder={m.agent_access_ready_email_order()}
+				className="max-w-sm"
+				value={orderNumber}
+				onChange={(event) => setOrderNumber(event.target.value)}
+			/>
+			<Button
+				type="submit"
+				variant="outline"
+				disabled={resend.isPending || !orderNumber.trim()}
+			>
+				{m.agent_access_ready_email_resend()}
+			</Button>
+			{resend.data ? (
+				<output className="break-all">
+					{m.agent_access_ready_email_result({
+						status: resend.data.email.status,
+						domain: resend.data.domain ?? "—",
+					})}
+				</output>
+			) : null}
+			{resend.isError ? <p role="alert">{m.agent_access_support()}</p> : null}
+		</form>
 	);
 }

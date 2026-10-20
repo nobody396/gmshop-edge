@@ -3,6 +3,7 @@ import { m } from "#/paraglide/messages";
 export function notificationEventLabel(event: string) {
 	const labels: Record<string, () => string> = {
 		support_reply_manual: m.notifications_event_support_reply_manual,
+		agent_access_ready: m.notifications_event_agent_access_ready,
 		"auth.email_verification": m.notifications_event_verification,
 		"auth.password_reset": m.notifications_event_password_reset,
 		order_paid: m.store_account_notification_order_paid,

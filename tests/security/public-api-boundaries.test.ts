@@ -55,6 +55,13 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/ops/restock/reconcile", "GET")).toBe(false);
 		expect(publicRequest("/api/ops/restock/swap", "POST")).toBe(true);
 		expect(publicRequest("/api/ops/restock/swap", "GET")).toBe(false);
+		expect(publicRequest("/api/ops/agent-access/ready-email", "POST")).toBe(
+			true,
+		);
+		expect(publicRequest("/api/ops/agent-access/ready-email", "GET")).toBe(
+			false,
+		);
+		expect(publicRequest("/api/ops/agent-access/other", "POST")).toBe(false);
 		expect(publicRequest("/api/ops/restock", "PATCH")).toBe(false);
 		expect(publicRequest("/api/ops/restock/extra", "GET")).toBe(false);
 		expect(publicRequest("/api/ops/restock/extra", "POST")).toBe(false);

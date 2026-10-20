@@ -18,8 +18,15 @@ import { loadRuntimeConfig } from "#/server/runtime-config";
 import { recipientSuppressionReason } from "./recipient-policy";
 
 export const supportReplyEmailEvent = "support_reply_manual";
+export const agentAccessReadyEmailEvent = "agent_access_ready";
 export const supportReplyEmailSender =
 	"老实人AI VIP <no-reply@laoshirenvip.com>";
+// Events that may only leave through the approved Cloudflare sender, never a
+// fallback provider or another configured address.
+const approvedSenderEvents = new Set([
+	supportReplyEmailEvent,
+	agentAccessReadyEmailEvent,
+]);
 
 type EmailMessage = z.output<typeof emailMessageSchema>;
 type NotificationAsset = {
@@ -268,7 +275,7 @@ export async function processEmailNotification(
 		return { duplicate: true, status: row.status };
 	}
 	const configs = await loadEmailDeliveryConfigs(db, row.channel_config_id);
-	if (row.event === supportReplyEmailEvent) {
+	if (approvedSenderEvents.has(row.event)) {
 		const approved = await db
 			.prepare(
 				"SELECT id FROM notification_channel_configs WHERE id=? AND enabled=1 AND channel='email' AND provider='cloudflare_email' AND from_address=?",

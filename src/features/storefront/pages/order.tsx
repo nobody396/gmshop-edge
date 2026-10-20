@@ -28,7 +28,7 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
 import { AgentAccessDelivery } from "#/features/agent-access/components/access";
-import { isAgentAccessProduct } from "#/features/agent-access/products";
+import { agentAccessProducts } from "#/features/agent-access/products";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { DeliveryRevealContent } from "#/features/storefront/components/delivery-reveal-content";
@@ -175,7 +175,9 @@ export function StorefrontOrderPage({
 			asset.accessLimit === null || asset.accessCount < asset.accessLimit,
 	);
 	const isAgentAccessOrder = data.items.some((item) =>
-		isAgentAccessProduct(item.productId),
+		Object.values(agentAccessProducts).some(
+			(product) => product.productId === item.productId,
+		),
 	);
 	const afterSaleOptions = isAgentAccessOrder
 		? ([
@@ -529,13 +531,19 @@ export function StorefrontOrderPage({
 									growth={data.growth}
 									redirectPath={`/account/orders/${encodeURIComponent(orderNumber)}`}
 								/>
-								{isAgentAccessOrder ? (
+								{data.items.some((item) =>
+									Object.values(agentAccessProducts).some(
+										(p) => p.productId === item.productId,
+									),
+								) ? (
 									<AgentAccessDelivery orderNumber={orderNumber} />
 								) : null}
 								{data.items.some(
 									(item) =>
 										item.deliveryType === "automation" &&
-										!isAgentAccessProduct(item.productId),
+										!Object.values(agentAccessProducts).some(
+											(p) => p.productId === item.productId,
+										),
 								) ? (
 									<OrderSection title={m.store_account_entitlements()}>
 										<p className="text-muted-foreground text-sm leading-6">
