@@ -148,6 +148,14 @@ function blocks(input: ReadyEmailContent): {
 					type: "p",
 					lines: [
 						zh
+							? `图文教程（改价、店铺设置、提现、绑定自己的域名都有）：${agentOrigin}/guides/reseller`
+							: `Step-by-step guide (pricing, store settings, withdrawals, custom domain): ${agentOrigin}/guides/reseller`,
+					],
+				},
+				{
+					type: "p",
+					lines: [
+						zh
 							? "子站已赠送 API 对接：在「个人中心 → API 对接」领取 Key，对接文档也在这一页。"
 							: 'API integration is included with your sub-site: get your Key under "Personal Center → API Integration"; the documentation is on the same page.',
 					],
