@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 type WranglerConfig = {
@@ -19,6 +19,25 @@ const wranglerConfigPath = fileURLToPath(
 const generatedWranglerConfigPath = fileURLToPath(
 	new URL("../dist/server/wrangler.json", import.meta.url),
 );
+
+// Server-only runtime APIs crash the browser bundle at load time (a client
+// chunk once shipped AsyncLocalStorage and broke every product page).
+const serverOnlyClientMarkers = /AsyncLocalStorage|node:async_hooks/;
+
+async function assertClientBundleServerFree(): Promise<void> {
+	const directory = fileURLToPath(new URL("../dist/client", import.meta.url));
+	const entries = await readdir(directory, { recursive: true });
+	const offenders: string[] = [];
+	for (const entry of entries) {
+		if (!entry.endsWith(".js")) continue;
+		const source = await readFile(`${directory}/${entry}`, "utf8");
+		if (serverOnlyClientMarkers.test(source)) offenders.push(entry);
+	}
+	if (offenders.length)
+		throw new Error(
+			`Client bundle contains server-only code: ${offenders.join(", ")}`,
+		);
+}
 
 function run(command: string, arguments_: string[]): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -258,6 +277,7 @@ async function buildForWorkers(): Promise<void> {
 		"--remote",
 	]);
 	await run("vite", ["build"]);
+	await assertClientBundleServerFree();
 	await bindGeneratedStorage(databaseId, cacheId);
 }
 
@@ -265,4 +285,5 @@ if (process.argv.includes("--remote") || process.env.WORKERS_CI === "1") {
 	await buildForWorkers();
 } else {
 	await run("vite", ["build"]);
+	await assertClientBundleServerFree();
 }
