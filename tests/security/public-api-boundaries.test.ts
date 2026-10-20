@@ -90,6 +90,8 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/telegram/webhook", "POST")).toBe(true);
 		expect(publicRequest("/api/telegram/webhook", "GET")).toBe(false);
 		expect(publicRequest("/api/telegram/webhook/extra", "POST")).toBe(false);
+		expect(publicRequest("/api/telegram/owner-webhook", "POST")).toBe(true);
+		expect(publicRequest("/api/telegram/owner-webhook", "GET")).toBe(false);
 		expect(publicRequest(`/api/shop/payments/${id}/webhook`, "POST")).toBe(
 			true,
 		);

@@ -32,7 +32,7 @@ const publicPostPatterns = [
 	/^\/api\/ops\/restock\/swap$/,
 	/^\/api\/ops\/agent-access\/ready-email$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
-	/^\/api\/telegram\/webhook$/,
+	/^\/api\/telegram\/(?:webhook|owner-webhook)$/,
 	paymentWebhookPattern,
 	new RegExp(
 		`^/api/shop/automation/${uuidSegment}/artifacts/[^/]{1,255}$`,

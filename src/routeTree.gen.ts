@@ -58,6 +58,7 @@ import { Route as publicAccountIndexRouteImport } from './routes/(public)/accoun
 import { Route as RRenewTokenRouteImport } from './routes/r/renew/$token'
 import { Route as GoItemItemIdRouteImport } from './routes/go/item/$itemId'
 import { Route as ApiTelegramWebhookRouteImport } from './routes/api/telegram/webhook'
+import { Route as ApiTelegramOwnerWebhookRouteImport } from './routes/api/telegram/owner-webhook'
 import { Route as ApiShopInvoiceOrderRouteImport } from './routes/api/shop/invoice-order'
 import { Route as ApiOpsRestockRouteImport } from './routes/api/ops/restock'
 import { Route as ApiOpsRedeemRestockRouteImport } from './routes/api/ops/redeem-restock'
@@ -377,6 +378,11 @@ const GoItemItemIdRoute = GoItemItemIdRouteImport.update({
 const ApiTelegramWebhookRoute = ApiTelegramWebhookRouteImport.update({
   id: '/api/telegram/webhook',
   path: '/api/telegram/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTelegramOwnerWebhookRoute = ApiTelegramOwnerWebhookRouteImport.update({
+  id: '/api/telegram/owner-webhook',
+  path: '/api/telegram/owner-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiShopInvoiceOrderRoute = ApiShopInvoiceOrderRouteImport.update({
@@ -875,6 +881,7 @@ export interface FileRoutesByFullPath {
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
+  '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/go/item/$itemId': typeof GoItemItemIdRoute
   '/r/renew/$token': typeof RRenewTokenRoute
@@ -991,6 +998,7 @@ export interface FileRoutesByTo {
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
+  '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/go/item/$itemId': typeof GoItemItemIdRoute
   '/r/renew/$token': typeof RRenewTokenRoute
@@ -1119,6 +1127,7 @@ export interface FileRoutesById {
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
+  '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
   '/go/item/$itemId': typeof GoItemItemIdRoute
   '/r/renew/$token': typeof RRenewTokenRoute
@@ -1246,6 +1255,7 @@ export interface FileRouteTypes {
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
     | '/api/shop/invoice-order'
+    | '/api/telegram/owner-webhook'
     | '/api/telegram/webhook'
     | '/go/item/$itemId'
     | '/r/renew/$token'
@@ -1362,6 +1372,7 @@ export interface FileRouteTypes {
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
     | '/api/shop/invoice-order'
+    | '/api/telegram/owner-webhook'
     | '/api/telegram/webhook'
     | '/go/item/$itemId'
     | '/r/renew/$token'
@@ -1489,6 +1500,7 @@ export interface FileRouteTypes {
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
     | '/api/shop/invoice-order'
+    | '/api/telegram/owner-webhook'
     | '/api/telegram/webhook'
     | '/go/item/$itemId'
     | '/r/renew/$token'
@@ -1553,6 +1565,7 @@ export interface RootRouteChildren {
   ApiOpsRedeemRestockRoute: typeof ApiOpsRedeemRestockRoute
   ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
   ApiShopInvoiceOrderRoute: typeof ApiShopInvoiceOrderRoute
+  ApiTelegramOwnerWebhookRoute: typeof ApiTelegramOwnerWebhookRoute
   ApiTelegramWebhookRoute: typeof ApiTelegramWebhookRoute
   GoItemItemIdRoute: typeof GoItemItemIdRoute
   RRenewTokenRoute: typeof RRenewTokenRoute
@@ -1923,6 +1936,13 @@ declare module '@tanstack/react-router' {
       path: '/api/telegram/webhook'
       fullPath: '/api/telegram/webhook'
       preLoaderRoute: typeof ApiTelegramWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/telegram/owner-webhook': {
+      id: '/api/telegram/owner-webhook'
+      path: '/api/telegram/owner-webhook'
+      fullPath: '/api/telegram/owner-webhook'
+      preLoaderRoute: typeof ApiTelegramOwnerWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/shop/invoice-order': {
@@ -2786,6 +2806,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOpsRedeemRestockRoute: ApiOpsRedeemRestockRoute,
   ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,
   ApiShopInvoiceOrderRoute: ApiShopInvoiceOrderRoute,
+  ApiTelegramOwnerWebhookRoute: ApiTelegramOwnerWebhookRoute,
   ApiTelegramWebhookRoute: ApiTelegramWebhookRoute,
   GoItemItemIdRoute: GoItemItemIdRoute,
   RRenewTokenRoute: RRenewTokenRoute,
@@ -2823,13 +2844,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

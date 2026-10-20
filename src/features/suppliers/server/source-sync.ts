@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runTrackedTask } from "#/features/operations/server/task-runs";
+import { proposeOwnerAction } from "#/features/telegram/server/owner-actions";
 import { sendOwnerAlert } from "#/features/telegram/server/owner-alerts";
 import { DomainError } from "#/lib/domain-error";
 import type { RuntimeConfig } from "#/server/runtime-config";
@@ -10,6 +11,14 @@ import {
 	type SupplierAccountRuntimeRow,
 } from "./account-runtime";
 import { claimSupplierApiBudget } from "./rate-limit";
+import {
+	affordable,
+	type DelistedBinding,
+	findRebindCandidates,
+	formatRebindProposal,
+	rebindChoiceLabel,
+	rebindPayload,
+} from "./rebind-proposal";
 
 const CATALOG_SYNC_WINDOW_MS = 10 * 60_000;
 const CATALOG_CACHE_TTL_SECONDS = 15 * 60;
@@ -111,7 +120,7 @@ export async function syncSupplierSource(input: {
 			const products = incremental
 				? mergeCatalog(previousCatalog.products, fetchedProducts)
 				: fetchedProducts;
-			const delisted = await updateBoundProducts(
+			const { delisted, boundKeys } = await updateBoundProducts(
 				input.db,
 				input.source,
 				products,
@@ -125,14 +134,15 @@ export async function syncSupplierSource(input: {
 			});
 			// Best effort: a failed alert must not fail the catalog sync.
 			if (delisted.length)
-				await sendOwnerAlert(
-					input.db,
-					formatDelistedBindingsAlert(
-						input.source.normalizedApiOrigin,
-						delisted,
-					),
-					{ fetcher: input.fetcher },
-				).catch(() => undefined);
+				await notifyDelistedBindings({
+					db: input.db,
+					source: input.source,
+					delisted,
+					products,
+					boundKeys,
+					now,
+					fetcher: input.fetcher,
+				}).catch(() => undefined);
 			return {
 				skipped: false,
 				accountId,
@@ -340,8 +350,10 @@ async function updateBoundProducts(
 	const bindings = await db
 		.prepare(
 			`SELECT sb.id, sb.sellable_item_id, sb.upstream_product_id,
-			        sb.upstream_sku_id, sb.upstream_product_name, sb.last_error_code,
-			        psi.name AS sellable_item_name, p.name AS product_name
+			        sb.upstream_sku_id, sb.upstream_product_name,
+			        sb.upstream_sku_name, sb.max_cost_minor, sb.last_error_code,
+			        psi.name AS sellable_item_name, psi.price_minor,
+			        p.name AS product_name
 			 FROM supplier_bindings sb
 			 JOIN product_sellable_items psi ON psi.id = sb.sellable_item_id
 			 JOIN products p ON p.id = psi.product_id
@@ -355,11 +367,19 @@ async function updateBoundProducts(
 			upstream_product_id: string;
 			upstream_sku_id: string;
 			upstream_product_name: string;
+			upstream_sku_name: string;
+			max_cost_minor: string;
 			last_error_code: string | null;
 			sellable_item_name: string;
+			price_minor: string;
 			product_name: string;
 		}>();
 	const delisted: DelistedBinding[] = [];
+	const boundKeys = new Set(
+		bindings.results.map(
+			(binding) => `${binding.upstream_product_id}\0${binding.upstream_sku_id}`,
+		),
+	);
 	for (const binding of bindings.results) {
 		if (seen.has(`${binding.upstream_product_id}\0${binding.upstream_sku_id}`))
 			continue;
@@ -370,10 +390,15 @@ async function updateBoundProducts(
 			binding.last_error_code === "supplier_sku_deleted";
 		if (binding.last_error_code === "supplier_sku_missing_once")
 			delisted.push({
+				bindingId: binding.id,
+				sellableItemId: binding.sellable_item_id,
 				productName: binding.product_name,
 				sellableItemName: binding.sellable_item_name,
 				upstreamProductId: binding.upstream_product_id,
 				upstreamProductName: binding.upstream_product_name,
+				upstreamSkuName: binding.upstream_sku_name,
+				maxCostMinor: binding.max_cost_minor,
+				priceMinor: binding.price_minor,
 			});
 		statements.push(
 			db
@@ -401,15 +426,69 @@ async function updateBoundProducts(
 	}
 	for (let offset = 0; offset < statements.length; offset += 100)
 		await db.batch(statements.slice(offset, offset + 100));
-	return delisted;
+	return { delisted, boundKeys };
 }
 
-type DelistedBinding = {
-	productName: string;
-	sellableItemName: string;
-	upstreamProductId: string;
-	upstreamProductName: string;
-};
+/**
+ * One message per sync. A delisted SKU with an affordable same-name
+ * replacement gets its own approval buttons; the rest share a plain alert.
+ */
+async function notifyDelistedBindings(input: {
+	db: D1Database;
+	source: SupplierSourceIdentity;
+	delisted: DelistedBinding[];
+	products: SupplierProduct[];
+	boundKeys: Set<string>;
+	now: number;
+	fetcher?: typeof fetch;
+}) {
+	const plain: DelistedBinding[] = [];
+	for (const item of input.delisted) {
+		const candidates = findRebindCandidates(
+			item,
+			input.products,
+			input.boundKeys,
+		);
+		if (!candidates.length) {
+			plain.push(item);
+			continue;
+		}
+		const text = formatRebindProposal(
+			input.source.normalizedApiOrigin,
+			item,
+			candidates,
+		);
+		if (
+			!candidates.some((candidate) => affordable(candidate, item.maxCostMinor))
+		) {
+			await sendOwnerAlert(
+				input.db,
+				`${text}\n\n新商品进价超过上限，请先调价，再到后台「供货」切换来源。`,
+				{ fetcher: input.fetcher },
+			).catch(() => undefined);
+			continue;
+		}
+		const choices = candidates.filter((candidate) =>
+			affordable(candidate, item.maxCostMinor),
+		);
+		await proposeOwnerAction(input.db, {
+			kind: "supplier_rebind",
+			payload: rebindPayload(input.source, item, choices),
+			text,
+			choices: choices.map((_, index) => rebindChoiceLabel(choices, index)),
+			rejectLabel: "❌ 不换",
+			fallback: "请到后台「供货」切换来源后恢复销售。",
+			now: input.now,
+			fetcher: input.fetcher,
+		}).catch(() => plain.push(item));
+	}
+	if (plain.length)
+		await sendOwnerAlert(
+			input.db,
+			formatDelistedBindingsAlert(input.source.normalizedApiOrigin, plain),
+			{ fetcher: input.fetcher },
+		);
+}
 
 export function formatDelistedBindingsAlert(
 	origin: string,

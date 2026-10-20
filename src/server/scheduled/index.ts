@@ -17,6 +17,7 @@ import { reconcilePendingShopPayments } from "#/features/shop-payments/server/se
 import { publishPendingInventoryEvents } from "#/features/supplier-api/server/inventory-events";
 import { publishPendingSupplierOrders } from "#/features/suppliers/server/outbox";
 import { runTelegramMaintenance } from "#/features/telegram/server/maintenance";
+import { ensureOwnerAlertWebhook } from "#/features/telegram/server/owner-actions";
 import { runMaintenance } from "#/server/scheduled/maintenance";
 
 export { runMaintenance };
@@ -85,6 +86,9 @@ export async function runScheduledCommerceWork(
 		publishBatchSize,
 	);
 	const telegram = await runTelegramMaintenance(env.DB, scheduledAt);
+	const ownerWebhook = await ensureOwnerAlertWebhook(env.DB, {
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	const maintenance = await runMaintenance(env, cron, undefined, scheduledAt);
 	const securityAlert = await publishAuthSecurityAlert(
 		env.DB,
@@ -131,6 +135,7 @@ export async function runScheduledCommerceWork(
 		renewals,
 		notifications,
 		telegram,
+		ownerWebhook,
 		maintenance,
 		securityAlert,
 	};
