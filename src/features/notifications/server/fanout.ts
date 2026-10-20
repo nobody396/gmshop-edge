@@ -1,4 +1,3 @@
-import { agentOwnerWeChat } from "#/features/agent-access/products";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import {
 	redeemUrlForOrder,
@@ -154,11 +153,7 @@ export async function fanOutPendingCommerceNotifications(
 					),
 					await redeemUrlForOrder(db, order.id),
 				);
-			const rendered =
-				renderNotificationTemplate(template.body, values) +
-				(event === "order_paid" && (await isAgentAccessOrder(db, order.id))
-					? `\n\n${agentOwnerWeChat[locale]} ${new URL(agentOwnerWeChat.imagePath, runtime.betterAuthUrl || "https://localhost")}`
-					: "");
+			const rendered = renderNotificationTemplate(template.body, values);
 			await enqueueConfiguredEmailNotification(db, {
 				event,
 				idempotencyKey: `commerce-event:${row.id}:email:${order.normalized_contact_email}`,
@@ -186,20 +181,6 @@ export async function fanOutPendingCommerceNotifications(
 		await markOutboxPublished(db, row.id);
 	}
 	return { processed: rows.results.length, deliveries: delivered };
-}
-
-// Sub-site / API openings carry no separate activation email; the payment
-// confirmation is where their buyers get the owner's WeChat.
-async function isAgentAccessOrder(db: D1Database, orderId: string) {
-	const row = await db
-		.prepare(
-			`SELECT 1 AS found FROM agent_access_orders agent
-			 JOIN shop_order_items item ON item.id = agent.order_item_id
-			 WHERE item.order_id = ? LIMIT 1`,
-		)
-		.bind(orderId)
-		.first<{ found: number }>();
-	return row?.found === 1;
 }
 
 async function loadBuildNotificationChannel(
