@@ -1592,6 +1592,8 @@
 	"telegram_support_failed": "客服连接失败，请稍后重试。",
 	"telegram_support_closed": "客服会话已关闭，可使用 /support 再次开启。",
 	"telegram_support_unavailable": "当前暂停接受新的客服会话。",
+	"telegram_support_busy": "当前咨询较多，请几分钟后再试，或直接在订单页提交问题。",
+	"web_support_busy": "当前咨询较多，请几分钟后再试，或直接在订单页提交问题。",
 	"telegram_support_idle_closed": "客服会话因长时间无消息已关闭，可使用 /support 再次开启。",
 	"telegram_support_send_first": "请先使用 /support 开启客服会话。",
 	"telegram_welcome": "欢迎使用。可通过下方按钮打开商城，或使用 /support 联系客服。",

@@ -1592,6 +1592,8 @@
 	"telegram_support_failed": "Unable to connect to support. Please try again later.",
 	"telegram_support_closed": "This support conversation is closed. Use /support to open it again.",
 	"telegram_support_unavailable": "Support is not accepting new conversations right now.",
+	"telegram_support_busy": "Support is very busy right now. Please try again in a few minutes, or submit your question from your order page.",
+	"web_support_busy": "Support is very busy right now. Please try again in a few minutes, or submit your question from your order page.",
 	"telegram_support_idle_closed": "This support conversation was closed after a period of inactivity. Use /support to reopen it.",
 	"telegram_support_send_first": "Use /support before sending a support message.",
 	"telegram_welcome": "Welcome. Use the buttons below to open the shop, or /support to contact support.",
