@@ -45,6 +45,12 @@ const handlers: Record<string, () => Promise<OwnerActionHandler>> = {
 	supplier_rebind: async () =>
 		(await import("#/features/suppliers/server/rebind-proposal"))
 			.approveSupplierRebind,
+	supplier_cost_cap: async () =>
+		(await import("#/features/suppliers/server/rebind-proposal"))
+			.approveSupplierCostCap,
+	pricing_raise: async () =>
+		(await import("#/features/ops-automation/server/pricing-guard"))
+			.approvePricingRaise,
 };
 
 type Fetcher = typeof fetch;
@@ -62,7 +68,8 @@ export async function proposeOwnerAction(
 		text: string;
 		choices: string[];
 		rejectLabel: string;
-		fallback: string;
+		/** Appended to the plain alert without buttons; `null` sends nothing. */
+		fallback: string | null;
 		now: number;
 		fetcher?: Fetcher;
 	},
@@ -70,9 +77,10 @@ export async function proposeOwnerAction(
 	const request = input.fetcher ?? fetch;
 	const credentials = await resolveTelegramOwnerAlertCredentials(db);
 	if (!credentials || !(await ownerWebhookReady(db))) {
-		await sendOwnerAlert(db, `${input.text}\n\n${input.fallback}`, {
-			fetcher: request,
-		});
+		if (input.fallback !== null)
+			await sendOwnerAlert(db, `${input.text}\n\n${input.fallback}`, {
+				fetcher: request,
+			});
 		return null;
 	}
 	const id = crypto.randomUUID();

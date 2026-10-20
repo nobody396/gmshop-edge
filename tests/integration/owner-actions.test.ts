@@ -219,6 +219,65 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		]);
 	});
 
+	it("offers to resume at the new cost when the upstream price passes the cap", async () => {
+		await db
+			.prepare(
+				`UPDATE supplier_bindings SET upstream_product_id = '1',
+				 upstream_sku_id = '2', reference_cost_minor = '80',
+				 max_cost_minor = '80' WHERE id = 'gemini-binding'`,
+			)
+			.run();
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		await syncSupplierSource({
+			db,
+			cache,
+			runtime,
+			source,
+			trigger: "scheduled",
+			now: 1_800_010_000_000,
+			fetcher,
+		});
+		const proposal = telegram.find((call) => call.method === "sendMessage");
+		expect(proposal?.body.text).toContain("上游涨价，已自动停售");
+		expect(proposal?.body.text).toContain("进价 ¥0.80 → ¥1.00，超过上限 ¥0.80");
+		expect(proposal?.body.text).toContain("按新进价每单毛利 ¥9.00");
+		const keyboard = (
+			proposal?.body.reply_markup as {
+				inline_keyboard: { text: string; callback_data: string }[][];
+			}
+		).inline_keyboard;
+		expect(keyboard.map((row) => row[0]?.text)).toEqual([
+			"✅ 按新进价恢复销售",
+			"❌ 先不卖",
+		]);
+		expect(await bindingState()).toMatchObject({
+			max_cost_minor: "80",
+			supplier_status: "unavailable",
+		});
+		await tap(ownerId, keyboard[0]?.[0]?.callback_data ?? "", 10);
+		expect(await bindingState()).toEqual({
+			upstream_product_id: "1",
+			max_cost_minor: "100",
+			supplier_status: "available",
+		});
+		// The next sync keeps it on sale and does not ask again.
+		await syncSupplierSource({
+			db,
+			cache,
+			runtime,
+			source,
+			trigger: "scheduled",
+			now: 1_800_010_600_000,
+			fetcher,
+		});
+		expect(await bindingState()).toMatchObject({
+			supplier_status: "available",
+		});
+		expect(
+			telegram.filter((call) => call.method === "sendMessage"),
+		).toHaveLength(1);
+	});
+
 	it("rejects a forged webhook secret", async () => {
 		await expect(
 			processOwnerAlertWebhook(

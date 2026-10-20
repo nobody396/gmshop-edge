@@ -207,3 +207,121 @@ function rebindError(message: string) {
 function normalizeName(value: string) {
 	return value.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 }
+
+// ---- Cost rose past the cap: resume at the new cost ----
+
+export type CostCappedBinding = {
+	bindingId: string;
+	sellableItemId: string;
+	productName: string;
+	sellableItemName: string;
+	upstreamProductId: string;
+	upstreamSkuId: string;
+	upstreamProductName: string;
+	previousCostMinor: string;
+	costMinor: string;
+	maxCostMinor: string;
+	priceMinor: string;
+	stockQuantity: number;
+};
+
+export function formatCostCapProposal(origin: string, item: CostCappedBinding) {
+	const cost = BigInt(item.costMinor);
+	return [
+		`⚠️ 上游涨价，已自动停售（${new URL(origin).host}）：${item.productName}｜${item.sellableItemName}`,
+		`上游：${item.upstreamProductName}（编号 ${item.upstreamProductId}）`,
+		`进价 ${formatYuan(BigInt(item.previousCostMinor))} → ${formatYuan(cost)}，超过上限 ${formatYuan(BigInt(item.maxCostMinor))}`,
+		`库存 ${item.stockQuantity}，售价 ${formatYuan(BigInt(item.priceMinor))}（基础价），按新进价每单毛利 ${formatYuan(BigInt(item.priceMinor) - cost)}`,
+		`恢复销售会把进价上限改成 ${formatYuan(cost)}，售价不变。`,
+	].join("\n");
+}
+
+const costCapPayloadSchema = z.object({
+	sellableItemId: z.string(),
+	bindingId: z.string(),
+	productId: z.string(),
+	skuId: z.string(),
+	costMinor: z.string().regex(/^(0|[1-9]\d*)$/),
+	source: rebindPayloadSchema.shape.source,
+});
+
+export function costCapPayload(
+	source: SupplierSourceIdentity,
+	item: CostCappedBinding,
+): z.infer<typeof costCapPayloadSchema> {
+	return {
+		sellableItemId: item.sellableItemId,
+		bindingId: item.bindingId,
+		productId: item.upstreamProductId,
+		skuId: item.upstreamSkuId,
+		costMinor: item.costMinor,
+		source,
+	};
+}
+
+/** Raises the cap to the cost the owner saw; refuses if the cost went higher. */
+export async function approveSupplierCostCap(
+	context: OwnerActionContext,
+	rawPayload: unknown,
+) {
+	const payload = costCapPayloadSchema.parse(rawPayload);
+	const [catalog, target] = await Promise.all([
+		readCachedSupplierCatalog(context.cache, payload.source),
+		loadSwitchTarget(context.db, payload.sellableItemId),
+	]);
+	if (!catalog) throw rebindError("上游商品目录缓存不可用");
+	if (!target || target.binding_id !== payload.bindingId)
+		throw rebindError("这个规格的货源已经变过了");
+	const product = catalog.products.find(
+		(item) => item.id === payload.productId,
+	);
+	const sku = product?.skus.find((item) => item.id === payload.skuId);
+	if (!product || !sku || !product.active || !sku.active)
+		throw rebindError("上游商品已经不在售");
+	if (BigInt(sku.costMinor) > BigInt(payload.costMinor))
+		throw rebindError(
+			`进价又涨到 ${formatYuan(BigInt(sku.costMinor))}，比提醒里的高`,
+		);
+	const [updated] = await context.db.batch([
+		context.db
+			.prepare(
+				`UPDATE supplier_bindings SET max_cost_minor = ?, updated_at = ?
+				 WHERE id = ? AND enabled = 1`,
+			)
+			.bind(payload.costMinor, context.now, payload.bindingId),
+		context.db
+			.prepare(
+				`UPDATE product_sellable_items SET supplier_status = 'available',
+				 updated_at = ? WHERE id = ? AND fulfillment_source = 'supplier'
+				 AND EXISTS (SELECT 1 FROM supplier_bindings WHERE id = ?
+				  AND enabled = 1 AND max_cost_minor = ?)`,
+			)
+			.bind(
+				context.now,
+				payload.sellableItemId,
+				payload.bindingId,
+				payload.costMinor,
+			),
+		context.db
+			.prepare(
+				`INSERT INTO audit_logs
+				 (id, actor_user_id, action, target_type, target_id, request_id,
+				  ip_address, before, after, created_at)
+				 VALUES (?, NULL, 'supplier_binding.cost_cap_raised',
+				  'supplier_binding', ?, NULL, NULL, ?, ?, ?)`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				payload.bindingId,
+				JSON.stringify({ maxCostMinor: target.max_cost_minor }),
+				JSON.stringify({
+					maxCostMinor: payload.costMinor,
+					via: "telegram_owner_action",
+				}),
+				context.now,
+			),
+	]);
+	if (Number(updated?.meta.changes ?? 0) !== 1)
+		throw rebindError("这个规格的货源已经变过了");
+	return `✅ 已恢复销售：进价上限改为 ${formatYuan(BigInt(payload.costMinor))}，当前进价 ${formatYuan(BigInt(sku.costMinor))}，库存 ${sku.stockQuantity}`;
+}
