@@ -71,6 +71,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0036_recall_email_coupons.sql",
 			"0037_order_pricing_channel.sql",
 			"0038_agent_subsite_prefix.sql",
+			"0039_owner_action_requests.sql",
 		]);
 		const legacyTables = await database
 			.prepare(
@@ -86,9 +87,10 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 			)
 			.all<{ name: string }>();
-		expect(tables.results).toHaveLength(70);
+		expect(tables.results).toHaveLength(71);
 		expect(tables.results.map((table) => table.name)).toEqual(
 			expect.arrayContaining([
+				"owner_action_requests",
 				"telegram_web_support_conversations",
 				"telegram_web_support_replies",
 				"telegram_web_support_sends",

@@ -24,6 +24,9 @@ export const telegramOwnerAlertSettingKeys = {
 	chatId: "telegram.owner_alerts.chat_id",
 	lastSentAt: "telegram.owner_alerts.last_sent_at",
 	lastErrorCode: "telegram.owner_alerts.last_error_code",
+	/** Bot token + origin digest of the registered button webhook. */
+	webhookFingerprint: "telegram.owner_alerts.webhook_fingerprint",
+	webhookErrorCode: "telegram.owner_alerts.webhook_error_code",
 } as const;
 
 const botTokenPattern = /^\d{5,16}:[A-Za-z0-9_-]{30,80}$/;
@@ -153,9 +156,16 @@ export function splitTelegramText(text: string, limit = telegramMessageLimit) {
 	return parts.filter((part) => part.trim().length > 0);
 }
 
-async function callTelegram(
+export async function callTelegram(
 	credentials: TelegramOwnerAlertCredentials,
-	method: "sendMessage" | "getChat",
+	method:
+		| "sendMessage"
+		| "getChat"
+		| "getChatMember"
+		| "editMessageText"
+		| "answerCallbackQuery"
+		| "getWebhookInfo"
+		| "setWebhook",
 	body: Record<string, unknown>,
 	request: Fetcher,
 	failureCode: string,

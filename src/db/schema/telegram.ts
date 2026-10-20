@@ -234,3 +234,39 @@ export const telegramWebSupportAttachments = sqliteTable(
 		),
 	],
 );
+
+export const ownerActionRequests = sqliteTable(
+	"owner_action_requests",
+	{
+		id: text("id").primaryKey(),
+		kind: text("kind").notNull(),
+		payload: text("payload").notNull(),
+		messageText: text("message_text").notNull(),
+		status: text("status", {
+			enum: [
+				"pending",
+				"processing",
+				"approved",
+				"rejected",
+				"failed",
+				"expired",
+			],
+		})
+			.notNull()
+			.default("pending"),
+		chatId: text("chat_id"),
+		messageId: integer("message_id"),
+		decidedBy: text("decided_by"),
+		decidedAt: integer("decided_at", { mode: "timestamp_ms" }),
+		result: text("result"),
+		expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+		...timestamps,
+	},
+	(table) => [
+		index("owner_action_requests_status_idx").on(table.status, table.expiresAt),
+		check(
+			"owner_action_requests_status_check",
+			sql`${table.status} IN ('pending','processing','approved','rejected','failed','expired')`,
+		),
+	],
+);
