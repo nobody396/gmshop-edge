@@ -365,7 +365,10 @@ async function updateBoundProducts(
 			        sb.upstream_sku_name, sb.max_cost_minor, sb.reference_cost_minor,
 			        sb.last_error_code, psi.name AS sellable_item_name,
 			        psi.price_minor, psi.supplier_status, psi.fulfillment_source,
-			        p.name AS product_name
+			        p.name AS product_name,
+			        CASE WHEN psi.fulfillment_source = 'supplier' AND psi.enabled = 1
+			         AND psi.sale_disabled = 0 AND p.status = 'active'
+			         AND p.sale_disabled = 0 THEN 1 ELSE 0 END AS on_sale
 			 FROM supplier_bindings sb
 			 JOIN product_sellable_items psi ON psi.id = sb.sellable_item_id
 			 JOIN products p ON p.id = psi.product_id
@@ -388,6 +391,7 @@ async function updateBoundProducts(
 			supplier_status: string | null;
 			fulfillment_source: string;
 			product_name: string;
+			on_sale: number;
 		}>();
 	const delisted: DelistedBinding[] = [];
 	const boundKeys = new Set(
@@ -409,7 +413,7 @@ async function updateBoundProducts(
 		if (
 			listed?.product.active &&
 			listed.sku.active &&
-			binding.fulfillment_source === "supplier" &&
+			binding.on_sale === 1 &&
 			binding.supplier_status === "available" &&
 			BigInt(listed.sku.costMinor) > BigInt(binding.max_cost_minor)
 		)
@@ -436,7 +440,11 @@ async function updateBoundProducts(
 		const confirmed =
 			binding.last_error_code === "supplier_sku_missing_once" ||
 			binding.last_error_code === "supplier_sku_deleted";
-		if (binding.last_error_code === "supplier_sku_missing_once")
+		// Only SKUs on sale and fulfilled by this supplier are worth the owner's attention.
+		if (
+			binding.last_error_code === "supplier_sku_missing_once" &&
+			binding.on_sale === 1
+		)
 			delisted.push({
 				bindingId: binding.id,
 				sellableItemId: binding.sellable_item_id,

@@ -522,6 +522,25 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		);
 	});
 
+	it("stays quiet about SKUs that are not on sale or not supplier-fulfilled", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		await db
+			.prepare(
+				"UPDATE products SET status = 'draft' WHERE id = 'gemini-product'",
+			)
+			.run();
+		await syncTwice();
+		// The binding is still marked deleted and the SKU stopped, just without a message.
+		expect(
+			await db
+				.prepare(
+					"SELECT remote_status FROM supplier_bindings WHERE id = 'gemini-binding'",
+				)
+				.first("remote_status"),
+		).toBe("deleted");
+		expect(telegram.some((call) => call.method === "sendMessage")).toBe(false);
+	});
+
 	it("rejects a forged webhook secret", async () => {
 		await expect(
 			processOwnerAlertWebhook(
