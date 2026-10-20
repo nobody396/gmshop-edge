@@ -335,6 +335,9 @@ export function WebSupportWidget() {
 		if (!challenge.ready) return;
 		setBusy(true);
 		setError(null);
+		// Tracked by code, not by the thrown message: presentation modules never
+		// read thrown messages.
+		let supportBusy = false;
 		try {
 			const [identity, fingerprint] = await Promise.all([
 				getWebSupportIdentity(),
@@ -366,21 +369,16 @@ export function WebSupportWidget() {
 				const failure = (await response.json().catch(() => null)) as {
 					code?: string;
 				} | null;
-				throw new Error(
-					failure?.code === "support_busy" ? "support_busy" : "start_failed",
-				);
+				supportBusy = failure?.code === "support_busy";
+				throw new Error("start_failed");
 			}
 			const result = (await response.json()) as { id: string; status: string };
 			await setWebSupportConversationId(result.id);
 			conversationId.current = result.id;
 			lastSequence.current = 0;
 			setStatus(result.status);
-		} catch (error) {
-			setError(
-				error instanceof Error && error.message === "support_busy"
-					? m.web_support_busy()
-					: m.web_support_failed(),
-			);
+		} catch {
+			setError(supportBusy ? m.web_support_busy() : m.web_support_failed());
 		} finally {
 			challenge.reset();
 			setBusy(false);
