@@ -21,6 +21,9 @@ import { telegramRuntime } from "./sync";
 
 export const ownerActionTtlMs = 7 * 86_400_000;
 export const ownerWebhookPath = "/api/telegram/owner-webhook";
+const webhookRetryMs = 3_600_000;
+/** A claim older than this is presumed lost (crashed request) and may be retried. */
+const processingLeaseMs = 5 * 60_000;
 
 const callbackPattern = /^oa:([0-9a-f-]{36}):(\d|x)$/;
 
@@ -181,8 +184,8 @@ export async function handleOwnerActionCallback(
 		.prepare(
 			`UPDATE owner_action_requests SET status = 'processing',
 			 decided_by = ?, decided_at = ?, updated_at = ?
-			 WHERE id = ? AND status = 'pending' AND expires_at > ?
-			  AND chat_id = ? AND message_id = ?`,
+			 WHERE id = ? AND expires_at > ? AND chat_id = ? AND message_id = ?
+			  AND (status = 'pending' OR (status = 'processing' AND decided_at < ?))`,
 		)
 		.bind(
 			decidedBy,
@@ -192,6 +195,7 @@ export async function handleOwnerActionCallback(
 			context.now,
 			chatId,
 			callback.message.message_id,
+			context.now - processingLeaseMs,
 		)
 		.run();
 	const row = await context.db
@@ -351,7 +355,19 @@ export async function processOwnerAlertWebhook(
 	if (Number(reserved.meta.changes ?? 0) !== 1)
 		return { accepted: true, duplicate: true };
 	if (update.data.callback_query)
-		await handleOwnerActionCallback(context, update.data.callback_query);
+		try {
+			await handleOwnerActionCallback(context, update.data.callback_query);
+		} catch (error) {
+			// Let Telegram's retry reach us again instead of being dropped as a replay.
+			await context.db
+				.prepare(
+					`DELETE FROM replay_receipts WHERE namespace = 'telegram_owner_update'
+					 AND scope_id = ? AND external_id = ?`,
+				)
+				.bind(credentials.botToken.split(":")[0], String(update.data.update_id))
+				.run();
+			throw error;
+		}
 	return { accepted: true };
 }
 
@@ -374,13 +390,21 @@ export async function ensureOwnerAlertWebhook(
 	if (!URL.canParse(runtime.betterAuthUrl))
 		return { status: "origin_unavailable" as const };
 	const url = `${new URL(runtime.betterAuthUrl).origin}${ownerWebhookPath}`;
-	const fingerprint = await sha256Hex(`${credentials.botToken}\0${url}`);
+	const fingerprint = await sha256Hex(
+		`${credentials.botToken}\0${url}\0${secret}`,
+	);
 	const stored = await db
 		.prepare("SELECT value FROM system_settings WHERE key = ?")
 		.bind(telegramOwnerAlertSettingKeys.webhookFingerprint)
 		.first<{ value: string }>();
 	if (stored && JSON.parse(stored.value) === fingerprint)
 		return { status: "ready" as const };
+	const blocked = await db
+		.prepare("SELECT value, updated_at FROM system_settings WHERE key = ?")
+		.bind(telegramOwnerAlertSettingKeys.webhookErrorCode)
+		.first<{ value: string; updated_at: number }>();
+	if (blocked && blocked.updated_at > now - webhookRetryMs)
+		return { status: "blocked" as const, code: JSON.parse(blocked.value) };
 	const fail = async (code: string) => {
 		await db.batch([
 			upsertFeishuAlertSetting(

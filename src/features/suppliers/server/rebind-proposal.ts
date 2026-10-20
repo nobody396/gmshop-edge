@@ -70,13 +70,26 @@ export function formatRebindProposal(
 		`⚠️ 上游换了商品（${new URL(origin).host}）：${delisted.productName}｜${delisted.sellableItemName}`,
 		`旧：${delisted.upstreamProductName}（编号 ${delisted.upstreamProductId}，已下架，已自动停售）`,
 	];
-	candidates.forEach((candidate, index) => {
+	// Only choosable candidates are numbered, in the same order as the buttons.
+	const choosable = candidates.filter((candidate) =>
+		affordable(candidate, delisted.maxCostMinor),
+	);
+	const line = (candidate: RebindCandidate, tag: string, suffix = "") => {
 		const cost = BigInt(candidate.sku.costMinor);
-		const tag = candidates.length > 1 ? `新${index + 1}` : "新";
-		lines.push(
-			`${tag}：${candidate.product.name}（编号 ${candidate.product.id}）进价 ${formatYuan(cost)}，库存 ${candidate.sku.stockQuantity}，每单毛利 ${formatYuan(BigInt(delisted.priceMinor) - cost)}${affordable(candidate, delisted.maxCostMinor) ? "" : `，超过进价上限 ${formatYuan(BigInt(delisted.maxCostMinor))}`}`,
-		);
+		return `${tag}：${candidate.product.name}（编号 ${candidate.product.id}）进价 ${formatYuan(cost)}，库存 ${candidate.sku.stockQuantity}，每单毛利 ${formatYuan(BigInt(delisted.priceMinor) - cost)}${suffix}`;
+	};
+	choosable.forEach((candidate, index) => {
+		lines.push(line(candidate, choosable.length > 1 ? `新${index + 1}` : "新"));
 	});
+	for (const candidate of candidates)
+		if (!choosable.includes(candidate))
+			lines.push(
+				line(
+					candidate,
+					"另有",
+					`，超过进价上限 ${formatYuan(BigInt(delisted.maxCostMinor))}，不可选`,
+				),
+			);
 	lines.push(`售价 ${formatYuan(BigInt(delisted.priceMinor))}（基础价）`);
 	return lines.join("\n");
 }

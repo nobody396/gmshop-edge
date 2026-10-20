@@ -236,6 +236,10 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 			code: "owner_webhook_conflict",
 		});
 		expect(telegram.some((call) => call.method === "setWebhook")).toBe(false);
+		// A blocked registration is retried hourly, not on every cron tick.
+		const before = telegram.length;
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		expect(telegram.length).toBe(before);
 
 		// Without a webhook the proposal arrives as plain text, without buttons.
 		await syncTwice();
@@ -322,3 +326,51 @@ function catalogResponse() {
 		],
 	});
 }
+
+describe("rebind proposal numbering", () => {
+	it("numbers only choosable candidates, in button order", async () => {
+		const { formatRebindProposal, rebindChoiceLabel } = await import(
+			"#/features/suppliers/server/rebind-proposal"
+		);
+		const candidate = (id: string, costMinor: string) => ({
+			product: {
+				id,
+				name: "商品",
+				description: "",
+				imageUrls: [],
+				categoryNames: [],
+				active: true,
+				skus: [],
+			},
+			sku: { id, name: "SKU", costMinor, stockQuantity: 1, active: true },
+		});
+		const delisted = {
+			bindingId: "b",
+			sellableItemId: "i",
+			productName: "P",
+			sellableItemName: "I",
+			upstreamProductId: "old",
+			upstreamProductName: "商品",
+			upstreamSkuName: "SKU",
+			maxCostMinor: "150",
+			priceMinor: "1000",
+		};
+		const all = [
+			candidate("A", "200"),
+			candidate("B", "100"),
+			candidate("C", "120"),
+		];
+		const text = formatRebindProposal(
+			"https://supplier.example",
+			delisted,
+			all,
+		);
+		expect(text).toContain("新1：商品（编号 B）");
+		expect(text).toContain("新2：商品（编号 C）");
+		expect(text).toContain("另有：商品（编号 A）");
+		const choices = all.slice(1);
+		expect(
+			choices.map((_, index) => rebindChoiceLabel(choices, index)),
+		).toEqual(["✅ 换成新1", "✅ 换成新2"]);
+	});
+});
