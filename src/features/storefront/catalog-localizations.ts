@@ -176,6 +176,7 @@ Before you buy
 - The account must sign in normally and have no subscription at all: no Gemini subscription, Google One / AI plan, family-shared plan, or free trial. This cannot stack with an existing subscription; do not order if you are not eligible.
 - Activation depends on Google's review of the account, region, and eligibility at the time; the official page decides.
 - Only the link is sold. Account registration and one-on-one tutoring are not provided; beginners should buy with care.
+- Check the account's region first: sign in to the Google account to activate and open https://policies.google.com/terms — the page shows its "country version". If it is a region Gemini does not support (such as mainland China or Hong Kong), get the region corrected before ordering. A correction usually takes days, while the activation link is valid for only 24 hours.
 
 How to activate
 1. Make sure your network can reach Google services.
@@ -186,7 +187,11 @@ How to activate
 Use the link within 24 hours of delivery; do not keep it for long or share the full link.
 
 FAQ
-- "Not available in your location": related to the account's region or eligibility; do not retry repeatedly. If the region is wrong, request a correction on Google's official page; approval is up to Google.
+- "Not available in your location": check in this order:
+  1. Network: switch to a node in a region Gemini supports (US, Japan, Singapore, etc.), sign in again in a private window, then open the link. Do not use a Hong Kong node.
+  2. Account region: open https://policies.google.com/terms and check the "country version". If it is an unsupported region, submit a correction at https://policies.google.com/country-association-form, choose the supported region you actually live in, and give the reason "I currently live in this region".
+  3. Claim only after Google approves. The result and timing are up to Google; we cannot speed it up or guarantee the change.
+  4. Do not open the claim link repeatedly; it can trigger risk controls.
 - Gemini will not open or says no permission: confirm you are signed in to the right account; availability depends on region, age, and account type.
 - The page keeps loading or fails: check your network and browser extensions and retry in a private window; if it still fails, keep a screenshot and do not resubmit.
 - Whether Antigravity and similar features work follows the claimed plan; not guaranteed for every account.
