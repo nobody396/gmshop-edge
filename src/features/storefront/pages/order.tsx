@@ -50,6 +50,7 @@ import {
 	refreshStoreOrderFn,
 	retryStorePaymentFn,
 } from "#/features/storefront/server/functions";
+import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { formatDateTime, formatMinorAmountWithSymbol } from "#/lib/format";
 import { m } from "#/paraglide/messages";
 
@@ -287,7 +288,7 @@ export function StorefrontOrderPage({
 													<img
 														alt={item.productName}
 														className="aspect-video w-18 shrink-0 rounded-2xl object-cover"
-														src={item.coverUrl}
+														src={productThumbnailUrl(item.coverUrl)}
 													/>
 												) : (
 													<div className="grid aspect-video w-18 shrink-0 place-items-center rounded-2xl bg-muted">

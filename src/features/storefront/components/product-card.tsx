@@ -6,6 +6,7 @@ import { Badge } from "#/components/ui/badge";
 import { Skeleton } from "#/components/ui/skeleton";
 import { useCurrency } from "#/features/exchange-rates/currency-context";
 import type { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
+import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { m } from "#/paraglide/messages";
 
 export type StorefrontCatalogProduct = Awaited<
@@ -73,7 +74,7 @@ export function StorefrontProductCard({
 							alt=""
 							className="size-full object-cover"
 							loading="lazy"
-							src={product.coverUrl}
+							src={productThumbnailUrl(product.coverUrl)}
 						/>
 					) : (
 						<span

@@ -33,6 +33,7 @@ import {
 	setStoreCartItemFn,
 	syncStoreCartFn,
 } from "#/features/storefront/server/cart";
+import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { m } from "#/paraglide/messages";
 
 export function StorefrontCartPage() {
@@ -206,7 +207,7 @@ export function StorefrontCartPage() {
 											<img
 												alt={item.productName}
 												className="aspect-video w-24 rounded-xl object-cover"
-												src={item.coverUrl}
+												src={productThumbnailUrl(item.coverUrl)}
 											/>
 										) : (
 											<div className="grid aspect-video w-24 place-items-center rounded-xl bg-muted">

@@ -74,6 +74,7 @@ import {
 	checkoutStoreOrderFn,
 	quoteCheckoutPaymentChannelsFn,
 } from "#/features/storefront/server/functions";
+import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { getWalletFn } from "#/features/wallet/server/functions";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
@@ -628,7 +629,7 @@ export function StorefrontCheckoutPage() {
 												<img
 													alt={item.productName}
 													className="aspect-video w-18 shrink-0 rounded-md object-cover"
-													src={item.coverUrl}
+													src={productThumbnailUrl(item.coverUrl)}
 												/>
 											) : (
 												<div className="grid aspect-video w-18 shrink-0 place-items-center rounded-md bg-muted">
