@@ -15,6 +15,7 @@ import {
 	resolveDeliver,
 	retryUnsent,
 	sendOrPark,
+	settingStatement,
 } from "./shared";
 
 export const pricingGuardSettingKeys = {
@@ -23,6 +24,7 @@ export const pricingGuardSettingKeys = {
 	unsent: "ops.pricing_guard.unsent_message",
 	costFactors: "pricing.cost_factors",
 	minNetMinor: "pricing.min_net_minor",
+	costBaselines: "pricing.cost_baselines",
 } as const;
 
 export const defaultCostFactors = {
@@ -35,8 +37,10 @@ export const defaultMinNetMinor = 300;
 /** Agent supply prices below this net are flagged for review. */
 export const agentMinNetMinor = 100;
 export const pricingGuardHour = 9;
-/** Raises at or under this share apply automatically; above it they need the owner. */
-const autoRaiseLimitPercent = 5;
+/** Changes at or under this share apply automatically; above it they need the owner. */
+const autoChangeLimitPercent = 10;
+/** Supplier cost moves smaller than this are ignored until they add up. */
+const followMinDeltaMinor = 100;
 const alipayKeepPercent = 98;
 const alipayOverUsdtPercent = 102;
 
@@ -89,6 +93,22 @@ export function roundUpRetailMinor(minor: number) {
 	return (yuan + ((18 - (yuan % 10)) % 10)) * 100;
 }
 
+/** Nearest whole-yuan price ending in 8, 9 or 0; ties go up. */
+export function nearestTailMinor(minor: number) {
+	const yuan = Math.round(minor / 100);
+	for (let step = 0; ; step += 1)
+		for (const candidate of [yuan + step, yuan - step])
+			if (candidate > 0 && [8, 9, 0].includes(candidate % 10))
+				return candidate * 100;
+}
+
+/** Smallest whole-yuan price ending in 8, 9 or 0 that is ≥ minor. */
+function ceilTailMinor(minor: number) {
+	let yuan = Math.ceil(minor / 100);
+	while (![8, 9, 0].includes(yuan % 10)) yuan += 1;
+	return yuan * 100;
+}
+
 const ceilDiv = (a: number, b: number) => Math.ceil(a / b);
 
 export type PricePlan = {
@@ -96,6 +116,8 @@ export type PricePlan = {
 	usdtNew: number;
 	alipayOld: number | null;
 	alipayNew: number | null;
+	agentOld?: number | null;
+	agentNew?: number | null;
 	auto: boolean;
 };
 
@@ -127,7 +149,7 @@ export function planPrice(input: {
 				: Math.max(input.alipayMinor, roundUpRetailMinor(required));
 	}
 	const within = (oldMinor: number, newMinor: number) =>
-		(newMinor - oldMinor) * 100 <= oldMinor * autoRaiseLimitPercent;
+		(newMinor - oldMinor) * 100 <= oldMinor * autoChangeLimitPercent;
 	return {
 		usdtOld: input.usdtMinor,
 		usdtNew,
@@ -138,6 +160,65 @@ export function planPrice(input: {
 			(input.alipayMinor === null ||
 				alipayNew === null ||
 				within(input.alipayMinor, alipayNew)),
+	};
+}
+
+/**
+ * Shifts USDT, 支付宝 and agent prices by the supplier cost change so each
+ * order keeps its net, then re-applies the floors. Moves up and down.
+ */
+export function followPlan(input: {
+	usdtMinor: number;
+	alipayMinor: number | null;
+	agentMinor: number | null;
+	costMinor: number;
+	baselineMinor: number;
+	floorMinor: number;
+}): PricePlan | null {
+	const delta = input.costMinor - input.baselineMinor;
+	const need = input.costMinor + input.floorMinor;
+	// A floor may stop a drop short, but never turns it into a raise.
+	const settle = (oldMinor: number, shifted: number, required: number) => {
+		const next = shifted < required ? ceilTailMinor(required) : shifted;
+		return delta < 0 ? Math.min(next, Math.max(oldMinor, required)) : next;
+	};
+	const usdtNew = settle(
+		input.usdtMinor,
+		nearestTailMinor(input.usdtMinor + delta),
+		need,
+	);
+	let alipayNew: number | null = null;
+	if (input.alipayMinor !== null)
+		alipayNew = settle(
+			input.alipayMinor,
+			nearestTailMinor(input.alipayMinor + delta),
+			Math.max(
+				ceilDiv(need * 100, alipayKeepPercent),
+				ceilDiv(usdtNew * alipayOverUsdtPercent, 100),
+			),
+		);
+	let agentNew: number | null = null;
+	if (input.agentMinor !== null) {
+		const minimum = ceilDiv(input.costMinor + agentMinNetMinor, 100) * 100;
+		agentNew = Math.round((input.agentMinor + delta) / 100) * 100;
+		// Agents must still undercut our own USDT price.
+		if (agentNew >= usdtNew) agentNew = usdtNew - 100;
+		agentNew = Math.max(agentNew, minimum);
+	}
+	if (
+		usdtNew === input.usdtMinor &&
+		alipayNew === input.alipayMinor &&
+		agentNew === input.agentMinor
+	)
+		return null;
+	return {
+		usdtOld: input.usdtMinor,
+		usdtNew,
+		alipayOld: input.alipayMinor,
+		alipayNew,
+		agentOld: input.agentMinor,
+		agentNew,
+		auto: Math.abs(delta) * 100 <= input.baselineMinor * autoChangeLimitPercent,
 	};
 }
 
@@ -152,15 +233,19 @@ type ItemRow = {
 	alipay_price_id: string | null;
 	alipay_minor: string | null;
 	aisou_cost_minor: string | null;
+	agent_listing_id: string | null;
 	agent_price_minor: string | null;
 };
 
 export type PricingOutcome = {
 	label: string;
 	costMinor: number;
+	/** Set when the plan follows a supplier cost change. */
+	baselineMinor?: number;
 	plan: PricePlan;
 	applied: boolean;
 	itemId?: string;
+	supplierMinor?: number;
 };
 export type AgentWarning = {
 	label: string;
@@ -214,6 +299,9 @@ export async function runPricingGuard(input: {
 	)
 		return { status: "done" as const, retried };
 
+	const baselines = parseBaselines(
+		settings.get(pricingGuardSettingKeys.costBaselines),
+	);
 	const factors = parseCostFactors(
 		settings.get(pricingGuardSettingKeys.costFactors),
 	);
@@ -245,12 +333,52 @@ export async function runPricingGuard(input: {
 	const agentWarnings: AgentWarning[] = [];
 	let skipped = 0;
 	for (const row of rows) {
-		const cost = supplierCost(row, map, stats, prices, factors);
-		if (cost === null) {
+		const supplier = supplierCost(row, map, stats, prices, factors);
+		if (supplier === null) {
 			skipped += 1;
 			continue;
 		}
+		const cost = supplier.costMinor;
 		const label = `${row.product_name} · ${row.item_name}`;
+		const baseline = baselines[row.id];
+		baselines[row.id] = cost;
+		if (
+			baseline !== undefined &&
+			Math.abs(cost - baseline) >= followMinDeltaMinor
+		) {
+			const plan = followPlan({
+				usdtMinor: Number(row.price_minor),
+				alipayMinor:
+					row.alipay_minor === null ? null : Number(row.alipay_minor),
+				agentMinor:
+					row.agent_price_minor === null ? null : Number(row.agent_price_minor),
+				costMinor: cost,
+				baselineMinor: baseline,
+				floorMinor,
+			});
+			if (!plan) continue;
+			const applied = plan.auto
+				? await applyPlan(input.db, row, plan, {
+						costMinor: cost,
+						floorMinor,
+						supplierMinor: supplier.supplierMinor,
+						now,
+						action: "pricing_guard.auto_follow",
+					})
+				: false;
+			outcomes.push({
+				label,
+				costMinor: cost,
+				baselineMinor: baseline,
+				plan,
+				applied,
+				itemId: row.id,
+				supplierMinor: supplier.supplierMinor,
+			});
+			continue;
+		}
+		// Small drifts keep the old baseline so they can add up.
+		if (baseline !== undefined) baselines[row.id] = baseline;
 		if (row.agent_price_minor !== null) {
 			const agentMinor = Number(row.agent_price_minor);
 			if (agentMinor - cost < agentMinNetMinor)
@@ -269,10 +397,21 @@ export async function runPricingGuard(input: {
 		});
 		if (!plan) continue;
 		const applied = plan.auto
-			? await applyRaise(input.db, row, plan, cost, floorMinor, now)
+			? await applyPlan(input.db, row, plan, {
+					costMinor: cost,
+					floorMinor,
+					now,
+				})
 			: false;
 		outcomes.push({ label, costMinor: cost, plan, applied, itemId: row.id });
 	}
+	// Proposals also move the baseline, so an ignored button is not re-sent daily.
+	await settingStatement(
+		input.db,
+		pricingGuardSettingKeys.costBaselines,
+		baselines,
+		now,
+	).run();
 
 	const text = formatPricingReport(
 		clock.day,
@@ -304,9 +443,11 @@ export async function runPricingGuard(input: {
 				alipayMinor: row.alipay_minor,
 				costMinor: outcome.costMinor,
 				floorMinor,
+				supplierMinor: outcome.supplierMinor,
+				agentMinor: row.agent_price_minor,
 				plan: outcome.plan,
 			} satisfies PricingRaisePayload,
-			text: `📈 改价确认：${outcome.label}\n成本 ${formatYuan(outcome.costMinor)}（净利底线 ${formatYuan(floorMinor)}）\n建议 ${priceChange(outcome.plan, true)}`,
+			text: `${outcome.baselineMinor !== undefined && outcome.costMinor < outcome.baselineMinor ? "📉" : "📈"} 改价确认：${outcome.label}\n${costLine(outcome)}（净利底线 ${formatYuan(floorMinor)}）\n建议 ${priceChange(outcome.plan, true)}`,
 			choices: ["✅ 按建议改价"],
 			rejectLabel: "❌ 不改",
 			fallback: null,
@@ -341,10 +482,26 @@ function supplierCost(
 		const price = prices.find(
 			(entry) => entry.sku === sku && entry.source === source,
 		)?.priceMinor;
-		return price == null ? null : realCostMinor(price, source, factors);
+		return price == null
+			? null
+			: {
+					supplierMinor: price,
+					costMinor: realCostMinor(price, source, factors),
+				};
 	}
 	if (row.aisou_cost_minor === null) return null;
-	return realCostMinor(Number(row.aisou_cost_minor), "aisou", factors);
+	const price = Number(row.aisou_cost_minor);
+	return {
+		supplierMinor: price,
+		costMinor: realCostMinor(price, "aisou", factors),
+	};
+}
+
+const baselinesSchema = z.record(z.string(), z.number().int().nonnegative());
+
+function parseBaselines(value: unknown): Record<string, number> {
+	const parsed = baselinesSchema.safeParse(value);
+	return parsed.success ? { ...parsed.data } : {};
 }
 
 const planSchema = z.object({
@@ -352,6 +509,8 @@ const planSchema = z.object({
 	usdtNew: z.number().int().positive(),
 	alipayOld: z.number().int().nullable(),
 	alipayNew: z.number().int().positive().nullable(),
+	agentOld: z.number().int().nullable().optional(),
+	agentNew: z.number().int().positive().nullable().optional(),
 	auto: z.boolean(),
 });
 const pricingRaisePayloadSchema = z.object({
@@ -361,6 +520,8 @@ const pricingRaisePayloadSchema = z.object({
 	alipayMinor: z.string().nullable(),
 	costMinor: z.number().int().nonnegative(),
 	floorMinor: z.number().int().nonnegative(),
+	supplierMinor: z.number().int().nonnegative().optional(),
+	agentMinor: z.string().nullable().optional(),
 	plan: planSchema,
 });
 type PricingRaisePayload = z.infer<typeof pricingRaisePayloadSchema>;
@@ -376,22 +537,22 @@ export async function approvePricingRaise(
 		!row ||
 		row.version !== payload.version ||
 		row.price_minor !== payload.priceMinor ||
-		row.alipay_minor !== payload.alipayMinor
+		row.alipay_minor !== payload.alipayMinor ||
+		(payload.agentMinor !== undefined &&
+			row.agent_price_minor !== payload.agentMinor)
 	)
 		throw new DomainError(
 			"pricing_raise_stale",
 			409,
 			"价格已经被改过或规格已下架",
 		);
-	const applied = await applyRaise(
-		context.db,
-		row,
-		payload.plan,
-		payload.costMinor,
-		payload.floorMinor,
-		context.now,
-		"pricing_guard.owner_raise",
-	);
+	const applied = await applyPlan(context.db, row, payload.plan, {
+		costMinor: payload.costMinor,
+		floorMinor: payload.floorMinor,
+		supplierMinor: payload.supplierMinor,
+		now: context.now,
+		action: "pricing_guard.owner_raise",
+	});
 	if (!applied)
 		throw new DomainError("pricing_raise_stale", 409, "价格刚被改过");
 	return `✅ 已改价：${priceChange(payload.plan, false)}`;
@@ -419,6 +580,10 @@ async function loadItems(db: D1Database, onlyItemId?: string) {
 			    AND binding.provider = 'shared_stock'
 			    AND binding.normalized_api_origin = 'https://aisou.pro'
 			   ORDER BY binding.updated_at DESC LIMIT 1) AS aisou_cost_minor,
+			  (SELECT listing.id FROM supplier_export_listings listing
+			   WHERE listing.sellable_item_id = item.id AND listing.enabled = 1
+			    AND listing.currency = 'CNY' AND listing.currency_decimals = 2
+			   LIMIT 1) AS agent_listing_id,
 			  (SELECT listing.price_minor FROM supplier_export_listings listing
 			   WHERE listing.sellable_item_id = item.id AND listing.enabled = 1
 			    AND listing.currency = 'CNY' AND listing.currency_decimals = 2
@@ -436,15 +601,20 @@ async function loadItems(db: D1Database, onlyItemId?: string) {
 	return rows.results;
 }
 
-async function applyRaise(
+async function applyPlan(
 	db: D1Database,
 	row: ItemRow,
 	plan: PricePlan,
-	costMinor: number,
-	floorMinor: number,
-	now: number,
-	action = "pricing_guard.auto_raise",
+	context: {
+		costMinor: number;
+		floorMinor: number;
+		/** Supplier list price, recorded as the item cost when known. */
+		supplierMinor?: number;
+		now: number;
+		action?: string;
+	},
 ) {
+	const { now } = context;
 	const usdt = String(plan.usdtNew);
 	// Every follow-up statement is guarded on the item update having landed.
 	const landed = `EXISTS (SELECT 1 FROM product_sellable_items WHERE id = ? AND version = ? AND price_minor = ?)`;
@@ -453,33 +623,51 @@ async function applyRaise(
 		db
 			.prepare(
 				`UPDATE product_sellable_items SET price_minor = ?, version = version + 1,
-				 updated_at = ? WHERE id = ? AND version = ? AND price_minor = ?`,
+				 cost_minor = COALESCE(?, cost_minor), updated_at = ?
+				 WHERE id = ? AND version = ? AND price_minor = ?`,
 			)
-			.bind(usdt, now, row.id, row.version, row.price_minor),
+			.bind(
+				usdt,
+				context.supplierMinor === undefined
+					? null
+					: String(context.supplierMinor),
+				now,
+				row.id,
+				row.version,
+				row.price_minor,
+			),
 	];
 	if (row.usdt_price_id)
 		statements.push(
 			db
 				.prepare(
-					`UPDATE sellable_item_channel_prices SET
-					 price_minor = CASE WHEN CAST(price_minor AS INTEGER) < ? THEN ? ELSE price_minor END,
-					 updated_at = ? WHERE id = ? AND ${landed}`,
+					`UPDATE sellable_item_channel_prices SET price_minor = ?, updated_at = ?
+					 WHERE id = ? AND ${landed}`,
 				)
-				.bind(plan.usdtNew, usdt, now, row.usdt_price_id, ...landedArgs),
+				.bind(usdt, now, row.usdt_price_id, ...landedArgs),
 		);
-	if (row.alipay_price_id && plan.alipayNew !== null)
+	if (row.alipay_price_id && plan.alipayNew != null)
 		statements.push(
 			db
 				.prepare(
-					`UPDATE sellable_item_channel_prices SET
-					 price_minor = CASE WHEN CAST(price_minor AS INTEGER) < ? THEN ? ELSE price_minor END,
-					 updated_at = ? WHERE id = ? AND ${landed}`,
+					`UPDATE sellable_item_channel_prices SET price_minor = ?, updated_at = ?
+					 WHERE id = ? AND ${landed}`,
+				)
+				.bind(String(plan.alipayNew), now, row.alipay_price_id, ...landedArgs),
+		);
+	// Bumping the listing's updated_at makes lsrai.shop pick the price up.
+	if (row.agent_listing_id && plan.agentNew != null && plan.agentOld != null)
+		statements.push(
+			db
+				.prepare(
+					`UPDATE supplier_export_listings SET price_minor = ?, updated_at = ?
+					 WHERE id = ? AND price_minor = ? AND ${landed}`,
 				)
 				.bind(
-					plan.alipayNew,
-					String(plan.alipayNew),
+					String(plan.agentNew),
 					now,
-					row.alipay_price_id,
+					row.agent_listing_id,
+					String(plan.agentOld),
 					...landedArgs,
 				),
 		);
@@ -497,19 +685,21 @@ async function applyRaise(
 			)
 			.bind(
 				crypto.randomUUID(),
-				action,
+				context.action ?? "pricing_guard.auto_raise",
 				row.id,
 				JSON.stringify({
 					priceMinor: row.price_minor,
 					alipayMinor: row.alipay_minor,
+					agentMinor: row.agent_price_minor,
 					version: row.version,
 				}),
 				JSON.stringify({
 					priceMinor: usdt,
-					alipayMinor: plan.alipayNew === null ? null : String(plan.alipayNew),
+					alipayMinor: plan.alipayNew == null ? null : String(plan.alipayNew),
+					agentMinor: plan.agentNew == null ? null : String(plan.agentNew),
 					version: row.version + 1,
-					costMinor: String(costMinor),
-					minNetMinor: String(floorMinor),
+					costMinor: String(context.costMinor),
+					minNetMinor: String(context.floorMinor),
 				}),
 				now,
 				...landedArgs,
@@ -520,7 +710,14 @@ async function applyRaise(
 }
 
 function percent(oldMinor: number, newMinor: number) {
-	return `+${(Math.ceil(((newMinor - oldMinor) * 1000) / oldMinor) / 10).toFixed(1)}%`;
+	const tenths = Math.ceil((Math.abs(newMinor - oldMinor) * 1000) / oldMinor);
+	return `${newMinor < oldMinor ? "-" : "+"}${(tenths / 10).toFixed(1)}%`;
+}
+
+function costLine(outcome: PricingOutcome) {
+	return outcome.baselineMinor === undefined
+		? `成本 ${formatYuan(outcome.costMinor)}`
+		: `成本 ${formatYuan(outcome.baselineMinor)}→${formatYuan(outcome.costMinor)}`;
 }
 
 function priceChange(plan: PricePlan, withPercent: boolean) {
@@ -532,6 +729,9 @@ function priceChange(plan: PricePlan, withPercent: boolean) {
 		part("USDT", plan.usdtOld, plan.usdtNew),
 		plan.alipayOld !== null && plan.alipayNew !== null
 			? part("支付宝", plan.alipayOld, plan.alipayNew)
+			: null,
+		plan.agentOld != null && plan.agentNew != null
+			? part("代理", plan.agentOld, plan.agentNew)
 			: null,
 	]
 		.filter(Boolean)
@@ -554,7 +754,7 @@ export function formatPricingReport(
 			"自动调价（事后通知）：",
 			...applied.map(
 				(outcome) =>
-					`· ${outcome.label}：成本 ${formatYuan(outcome.costMinor)}；${priceChange(outcome.plan, false)}`,
+					`· ${outcome.label}：${costLine(outcome)}；${priceChange(outcome.plan, false)}`,
 			),
 		);
 	if (proposed.length)
@@ -563,7 +763,7 @@ export function formatPricingReport(
 			"需要你确认（未改价）：",
 			...proposed.map(
 				(outcome) =>
-					`· ${outcome.label}：成本 ${formatYuan(outcome.costMinor)}；建议 ${priceChange(outcome.plan, true)}${
+					`· ${outcome.label}：${costLine(outcome)}；建议 ${priceChange(outcome.plan, true)}${
 						outcome.plan.auto ? "（自动调价未成功，可能刚被改过）" : ""
 					}`,
 			),

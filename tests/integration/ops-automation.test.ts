@@ -6,6 +6,8 @@ import {
 } from "#/features/ops-automation/server/balance-guard";
 import {
 	approvePricingRaise,
+	followPlan,
+	nearestTailMinor,
 	parseCostFactors,
 	planPrice,
 	realCostMinor,
@@ -245,7 +247,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		expect(messages[0]).not.toContain("小九");
 	});
 
-	it("pricing guard auto-raises ≤5%, proposes >5%, never lowers and flags agent prices", async () => {
+	it("pricing guard auto-raises ≤10%, proposes >10%, never lowers below baseline-less floors and flags agent prices", async () => {
 		await seedPricing(db);
 		const messages: string[] = [];
 		const run = (now: number) =>
@@ -366,6 +368,171 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		// Once per Beijing day.
 		await expect(run(monday + hour)).resolves.toMatchObject({ status: "done" });
 		expect(messages).toHaveLength(1);
+	});
+
+	it("pricing guard follows supplier cost moves both ways", async () => {
+		const followStats = parseProcurementStats({
+			success: true,
+			data: {
+				suppliers: [{ name: "86", balance: "5000.00" }],
+				skus: ["PRO100", "PLUS", "PRO200", "GO", "NEW"].map((sku) => ({
+					sku,
+					available: 1,
+					restock_source: "86",
+				})),
+			},
+		});
+		const followPrices = parseProcurementPrices({
+			success: true,
+			data: [
+				{ sku: "PRO100", source: "86", price: "590.00" },
+				{ sku: "PLUS", source: "86", price: "120.00" },
+				{ sku: "PRO200", source: "86", price: "1280.00" },
+				{ sku: "GO", source: "86", price: "35.00" },
+				{ sku: "NEW", source: "86", price: "10.00" },
+			],
+		});
+		const factors = parseCostFactors(undefined);
+		const cost = (yuan: number) => realCostMinor(yuan * 100, "86", factors);
+		const listing = (id: string, itemId: string, price: string) =>
+			db
+				.prepare(
+					`INSERT INTO supplier_export_listings (id, sellable_item_id, price_minor, currency, currency_decimals, enabled, created_at, updated_at)
+					 VALUES (?, ?, ?, 'CNY', 2, 1, 1, 1)`,
+				)
+				.bind(id, itemId, price);
+		await db.batch([
+			product(db, "gpt", "ChatGPT"),
+			...sellable(db, "pro100", "gpt", "Pro 100", "66000", "67800"),
+			listing("l-pro100", "pro100", "64000"),
+			...sellable(db, "plus", "gpt", "Plus", "13500", "14500"),
+			listing("l-plus", "plus", "13000"),
+			...sellable(db, "pro200", "gpt", "Pro 200", "140000", "150000"),
+			...sellable(db, "go", "gpt", "Go", "4300", "4500"),
+			...sellable(db, "new", "gpt", "New", "2000", "2100"),
+			db
+				.prepare(
+					"INSERT INTO system_settings (key, value, created_at, updated_at) VALUES ('integration.supply_console_map', ?, 1, 1)",
+				)
+				.bind(
+					JSON.stringify({
+						pro100: "PRO100",
+						plus: "PLUS",
+						pro200: "PRO200",
+						go: "GO",
+						new: "NEW",
+					}),
+				),
+		]);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		await setSetting(db, "pricing.cost_baselines", {
+			pro100: cost(600),
+			plus: cost(110),
+			pro200: cost(1500),
+			go: cost(35.5),
+		});
+		const messages: string[] = [];
+		await expect(
+			runPricingGuard({
+				db,
+				now: monday,
+				readStats: async () => followStats,
+				readPrices: async () => followPrices,
+				deliver: async (text) => {
+					messages.push(text);
+				},
+			}),
+		).resolves.toMatchObject({ status: "ran", applied: 2, proposed: 1 });
+
+		const item = (id: string) =>
+			db
+				.prepare(
+					`SELECT item.price_minor, item.cost_minor,
+					  (SELECT price_minor FROM sellable_item_channel_prices WHERE sellable_item_id = item.id AND channel_id = 'alipay') AS alipay,
+					  (SELECT price_minor FROM supplier_export_listings WHERE sellable_item_id = item.id) AS agent
+					 FROM product_sellable_items item WHERE item.id = ?`,
+				)
+				.bind(id)
+				.first();
+		// Cost fell ¥10.14: every price drops by about that, each to a 8/9/0 tail.
+		await expect(item("pro100")).resolves.toEqual({
+			price_minor: "65000",
+			cost_minor: "59000",
+			alipay: "66800",
+			agent: "63000",
+		});
+		// Cost rose ¥10.14 (≤10%): prices follow up automatically.
+		await expect(item("plus")).resolves.toEqual({
+			price_minor: "14800",
+			cost_minor: "12000",
+			alipay: "15800",
+			agent: "14000",
+		});
+		// A 14.7% drop is only proposed.
+		await expect(item("pro200")).resolves.toMatchObject({
+			price_minor: "140000",
+			alipay: "150000",
+		});
+		await expect(item("go")).resolves.toMatchObject({ price_minor: "4300" });
+
+		const text = messages[0] ?? "";
+		expect(text).toContain(
+			`· ChatGPT · Pro 100：成本 ¥608.55→¥598.41；USDT ¥660.00→¥650.00，支付宝 ¥678.00→¥668.00，代理 ¥640.00→¥630.00`,
+		);
+		expect(text).toContain("需要你确认（未改价）：");
+		expect(text).toContain("USDT ¥1400.00→¥1308.00（-6.6%）");
+
+		const baselines = JSON.parse(
+			(await db
+				.prepare(
+					"SELECT value FROM system_settings WHERE key = 'pricing.cost_baselines'",
+				)
+				.first<string>("value")) ?? "{}",
+		);
+		expect(baselines).toEqual({
+			pro100: cost(590),
+			plus: cost(120),
+			pro200: cost(1280),
+			// Sub-¥1 drift keeps the old baseline so it can add up.
+			go: cost(35.5),
+			new: cost(10),
+		});
+		const audit = await db
+			.prepare(
+				"SELECT before, after FROM audit_logs WHERE action = 'pricing_guard.auto_follow' AND target_id = 'pro100'",
+			)
+			.first<{ before: string; after: string }>();
+		expect(JSON.parse(audit?.after ?? "{}")).toMatchObject({
+			priceMinor: "65000",
+			agentMinor: "63000",
+		});
+	});
+
+	it("follow plans keep agents under retail and nets above the floor", () => {
+		expect(nearestTailMinor(64986)).toBe(65000);
+		expect(nearestTailMinor(13300)).toBe(13000);
+		expect(nearestTailMinor(14514)).toBe(14800);
+		expect(
+			followPlan({
+				usdtMinor: 10000,
+				alipayMinor: null,
+				agentMinor: 9800,
+				costMinor: 9000,
+				baselineMinor: 8000,
+				floorMinor: 300,
+			}),
+		).toMatchObject({ usdtNew: 11000, agentNew: 10800, auto: false });
+		// A drop stops at cost + floor (without becoming a raise) and keeps agents ≥ cost + ¥1.
+		expect(
+			followPlan({
+				usdtMinor: 10400,
+				alipayMinor: 10900,
+				agentMinor: 10200,
+				costMinor: 9900,
+				baselineMinor: 10300,
+				floorMinor: 300,
+			}),
+		).toMatchObject({ usdtNew: 10400, alipayNew: 10800, agentNew: 10000 });
 	});
 
 	it("pricing guard applies a proposed raise only while the price is unchanged", async () => {
