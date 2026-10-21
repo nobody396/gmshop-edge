@@ -16,9 +16,24 @@ import { Select } from "../base/fields/select";
 import type { ProTableSearch, TableSize } from "./types";
 
 const TABLE_SIZE_OPTIONS = [
-	{ value: "default", label: m.pro_table_density_comfortable() },
-	{ value: "middle", label: m.pro_table_density_medium() },
-	{ value: "compact", label: m.pro_table_density_compact() },
+	{
+		value: "default",
+		get label() {
+			return m.pro_table_density_comfortable();
+		},
+	},
+	{
+		value: "middle",
+		get label() {
+			return m.pro_table_density_medium();
+		},
+	},
+	{
+		value: "compact",
+		get label() {
+			return m.pro_table_density_compact();
+		},
+	},
 ] as const;
 
 export function ProTableToolbar<TData>({

@@ -18,6 +18,7 @@ import { TelegramWidgetAutoSignIn } from "#/features/auth/components/telegram-wi
 import { GeneralError } from "#/features/errors/general-error";
 import { NotFoundError } from "#/features/errors/not-found-error";
 import { getSiteBrandFn } from "#/features/settings/server/site-brand-entry";
+import { localeCookieBootFlag } from "#/lib/i18n-runtime";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 import appCss from "../styles/global.css?url";
@@ -48,6 +49,11 @@ const THEME_INIT_SCRIPT = `(() => {
     document.documentElement.style.colorScheme = "light";
   }
 })();`;
+
+// Runs before any module so the i18n runtime can tell the visitor's own
+// language cookie apart from one written by an early getLocale() call that fell
+// back to the build-time base locale before the system-default strategy existed.
+const LOCALE_BOOT_SCRIPT = `window.${localeCookieBootFlag} = /(?:^|;\\s*)PARAGLIDE_LOCALE=/.test(document.cookie);`;
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
 	// Brand settings are low-volatility root data. Keeping the route match fresh
@@ -126,6 +132,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang={locale} suppressHydrationWarning>
 			<head>
+				<script suppressHydrationWarning>{LOCALE_BOOT_SCRIPT}</script>
 				<script suppressHydrationWarning>{THEME_INIT_SCRIPT}</script>
 				<HeadContent />
 			</head>

@@ -21,11 +21,15 @@ import { getLocale } from "#/paraglide/runtime";
 
 const chartConfig = {
 	orderCount: {
-		label: m.payment_dashboard_orders_created(),
+		get label() {
+			return m.payment_dashboard_orders_created();
+		},
 		color: "var(--chart-1)",
 	},
 	paidCount: {
-		label: m.payment_dashboard_orders_paid(),
+		get label() {
+			return m.payment_dashboard_orders_paid();
+		},
 		color: "var(--chart-3)",
 	},
 } satisfies ChartConfig;

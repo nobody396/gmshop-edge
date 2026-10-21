@@ -211,10 +211,18 @@ export function SystemAccessPage() {
 }
 
 const roleSchema = [
-	{ name: "name", label: m.common_name(), required: true },
+	{
+		name: "name",
+		get label() {
+			return m.common_name();
+		},
+		required: true,
+	},
 	{
 		name: "description",
-		label: m.access_role_description(),
+		get label() {
+			return m.access_role_description();
+		},
 		valueType: "textarea" as const,
 	},
 	{
