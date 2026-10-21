@@ -7,6 +7,7 @@ import { publishPendingNotifications } from "#/features/notifications/server/del
 import { fanOutPendingCommerceNotifications } from "#/features/notifications/server/fanout";
 import { publishPendingOwnerSaleAlerts } from "#/features/notifications/server/owner-sale-alerts";
 import { runBalanceGuard } from "#/features/ops-automation/server/balance-guard";
+import { runPriceDropNotices } from "#/features/ops-automation/server/price-drop-notice";
 import { runPricingGuard } from "#/features/ops-automation/server/pricing-guard";
 import { runWeeklyReport } from "#/features/ops-automation/server/weekly-report";
 import { settlePromotionRewards } from "#/features/promotions/server/balance";
@@ -113,6 +114,11 @@ export async function runScheduledCommerceWork(
 		db: env.DB,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	const priceDropNotices = await runPriceDropNotices({
+		db: env.DB,
+		files: env.FILES,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	const weeklyReport = await runWeeklyReport({
 		db: env.DB,
 		now: scheduledAt,
@@ -125,6 +131,7 @@ export async function runScheduledCommerceWork(
 	return {
 		balanceGuard,
 		pricingGuard,
+		priceDropNotices,
 		weeklyReport,
 		withdrawalAlerts,
 		agentAccess,
