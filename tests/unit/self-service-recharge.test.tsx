@@ -31,7 +31,7 @@ describe("homepage self-service recharge", () => {
 		const text = container.textContent ?? "";
 		expect(text).toContain("Read before ordering");
 		expect(text).toContain("get your code on the order page");
-		expect(text).toContain("Wrong purchases are not eligible");
+		expect(text).not.toContain("Wrong purchases are not eligible");
 		expect(text).not.toContain("Alipay");
 		expect(text).not.toContain("USDT");
 		expect(container.querySelectorAll("li")).toHaveLength(0);

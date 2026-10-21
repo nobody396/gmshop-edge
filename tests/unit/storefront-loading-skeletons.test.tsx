@@ -77,7 +77,7 @@ describe("storefront loading skeletons", () => {
 		);
 
 		expect(grid?.className).toContain(
-			"sm:grid-cols-[repeat(auto-fill,minmax(16.75rem,1fr))]",
+			"sm:grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))]",
 		);
 		expect(grid?.querySelectorAll("article")).toHaveLength(8);
 	});
