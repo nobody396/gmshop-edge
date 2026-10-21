@@ -232,7 +232,7 @@ export function HomePage({
 
 /** Phones: one card per row. Wider: as many ~268px cards as fit (about four at 1240px). */
 const productGridClassName =
-	"grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(16.75rem,1fr))] sm:gap-3.5";
+	"grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))] sm:gap-3";
 
 export function ProductGridSkeleton() {
 	return (

@@ -60,100 +60,109 @@ export function StorefrontProductCard({
 		displayStockQuantity != null && displayStockQuantity > 0
 			? m.store_stock({ count: displayStockQuantity })
 			: null;
+	const cover = (
+		<div className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-primary/10 sm:size-10">
+			{product.coverUrl ? (
+				<img
+					alt=""
+					className="size-full object-cover"
+					loading="lazy"
+					src={productThumbnailUrl(product.coverUrl)}
+				/>
+			) : (
+				<span
+					aria-hidden="true"
+					className="grid size-full place-items-center font-bold text-primary"
+				>
+					{productMark(product.name)}
+				</span>
+			)}
+		</div>
+	);
+	const status = product.saleDisabled ? (
+		<Badge className="max-w-full [&>svg]:shrink-0" variant="destructive">
+			<Ban />
+			<span className="truncate">{m.store_sale_disabled()}</span>
+		</Badge>
+	) : delivery ? (
+		<Badge
+			className={
+				product.hasAutomaticFulfillment
+					? "max-w-full bg-primary/10 text-primary [&>svg]:shrink-0"
+					: "max-w-full bg-amber-200 text-amber-950 [&>svg]:shrink-0"
+			}
+			title={delivery}
+		>
+			<Zap />
+			<span className="truncate">{delivery}</span>
+		</Badge>
+	) : null;
+	const listPrice =
+		hasDiscount && product.listPriceMinor ? (
+			<span className="text-muted-foreground text-xs line-through">
+				{currency.format(
+					product.listPriceMinor,
+					product.currency,
+					product.currencyDecimals,
+				)}
+			</span>
+		) : null;
 	return (
 		<article className="group min-w-0">
-			{/* Phones: one row (cover · name · price). Wider: cover row, name, price line. */}
 			<Link
-				className="grid h-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-2xl border border-border/70 bg-muted/25 p-3.5 transition-colors [grid-template-areas:'cover_name_price'_'cover_sub_price'] hover:border-primary/40 hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:grid-rows-[auto_auto_1fr] sm:gap-y-3 sm:p-4.5 sm:[grid-template-areas:'cover_meta'_'name_name'_'price_price']"
+				className="flex h-full items-center gap-3 rounded-2xl border border-border/70 bg-muted/25 p-3.5 transition-colors hover:border-primary/40 hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:flex-col sm:items-stretch sm:gap-2.5 sm:rounded-xl sm:p-3.5"
 				params={{ productId: product.id }}
 				to="/products/$productId"
 			>
-				<div className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-primary/10 [grid-area:cover] sm:size-12">
-					{product.coverUrl ? (
-						<img
-							alt=""
-							className="size-full object-cover"
-							loading="lazy"
-							src={productThumbnailUrl(product.coverUrl)}
-						/>
-					) : (
-						<span
-							aria-hidden="true"
-							className="grid size-full place-items-center font-bold text-primary"
-						>
-							{productMark(product.name)}
-						</span>
-					)}
+				{/* Phones: one row (cover · name · price). Wider: a compact card with a choose button. */}
+				<div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-none sm:items-start sm:justify-between">
+					{cover}
+					<div className="min-w-0 flex-1 sm:hidden">
+						<div className="line-clamp-2 font-semibold text-[15px] leading-snug transition-colors group-hover:text-primary">
+							{product.name}
+						</div>
+						<p className="truncate text-muted-foreground text-xs">
+							{[
+								variants,
+								product.saleDisabled ? m.store_sale_disabled() : delivery,
+								stock,
+								availability,
+							]
+								.filter(Boolean)
+								.join(" · ")}
+						</p>
+					</div>
+					<div className="hidden min-w-0 justify-end sm:flex">{status}</div>
 				</div>
-				<div className="hidden min-w-0 items-center gap-2 self-center [grid-area:meta] sm:flex">
+				<div className="flex shrink-0 flex-col items-end text-right sm:hidden">
+					<strong className="whitespace-nowrap text-lg text-primary">
+						{priceLabel}
+					</strong>
+					{listPrice}
+				</div>
+				<div className="hidden min-w-0 sm:block">
 					{product.tags[0] ? (
-						<span className="max-w-[45%] shrink-0 truncate text-muted-foreground text-xs">
+						<span className="block truncate text-muted-foreground text-xs">
 							{product.tags[0]}
 						</span>
 					) : null}
-					<div className="ms-auto flex min-w-0 justify-end">
-						{product.saleDisabled ? (
-							<Badge
-								className="max-w-full [&>svg]:shrink-0"
-								variant="destructive"
-							>
-								<Ban />
-								<span className="truncate">{m.store_sale_disabled()}</span>
-							</Badge>
-						) : delivery ? (
-							<Badge
-								className={
-									product.hasAutomaticFulfillment
-										? "max-w-full bg-primary/10 text-primary [&>svg]:shrink-0"
-										: "max-w-full bg-amber-200 text-amber-950 [&>svg]:shrink-0"
-								}
-								title={delivery}
-							>
-								<Zap />
-								<span className="truncate">{delivery}</span>
-							</Badge>
-						) : null}
+					<div className="truncate font-semibold text-sm leading-snug transition-colors group-hover:text-primary">
+						{product.name}
 					</div>
 				</div>
-				<div className="line-clamp-2 font-semibold text-[15px] leading-snug transition-colors [grid-area:name] group-hover:text-primary sm:text-base">
-					{product.name}
+				<div className="hidden flex-wrap items-baseline gap-x-2 sm:flex">
+					<strong className="whitespace-nowrap text-lg text-primary">
+						{priceLabel}
+					</strong>
+					{listPrice}
 				</div>
-				<p className="truncate text-muted-foreground text-xs [grid-area:sub] sm:hidden">
-					{[
-						variants,
-						product.saleDisabled ? m.store_sale_disabled() : delivery,
-						stock,
-						availability,
-					]
-						.filter(Boolean)
-						.join(" · ")}
-				</p>
-				<div className="flex flex-col items-end text-right [grid-area:price] sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-x-3 sm:gap-y-1 sm:self-end sm:text-left">
-					<div className="flex flex-col items-end sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
-						<strong className="whitespace-nowrap text-lg text-primary sm:text-xl">
-							{priceLabel}
-						</strong>
-						{hasDiscount && product.listPriceMinor ? (
-							<span className="text-muted-foreground text-xs line-through">
-								{currency.format(
-									product.listPriceMinor,
-									product.currency,
-									product.currencyDecimals,
-								)}
-							</span>
-						) : null}
-						{variants ? (
-							<span className="hidden text-muted-foreground text-xs sm:inline">
-								{variants}
-							</span>
-						) : null}
-					</div>
-					{stock || availability ? (
-						<span className="hidden text-muted-foreground text-xs sm:inline">
-							{[stock, availability].filter(Boolean).join(" · ")}
-						</span>
-					) : null}
+				<div className="hidden justify-between gap-2 text-muted-foreground text-xs sm:flex">
+					<span>{variants}</span>
+					<span>{[stock, availability].filter(Boolean).join(" · ")}</span>
 				</div>
+				<span className="mt-auto hidden h-8 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary text-sm transition-colors group-hover:bg-primary/20 sm:flex">
+					{m.store_card_choose()}
+				</span>
 			</Link>
 		</article>
 	);

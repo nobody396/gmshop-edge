@@ -47,9 +47,9 @@ const productEnglish: Record<string, ProductLocalization> = {
 			"ChatGPT Go, Plus, Pro, and Business (team plan) subscription recharge. Select a plan to review its delivery, coverage, and warranty terms.",
 	},
 	"afb8af99-86af-463e-a76f-fcea2edd22dd": {
-		name: "Official Codex Credits",
+		name: "ChatGPT Credits",
 		description:
-			"Official Codex credit CDKs. Not API relay balance, phone verification, or a pre-made account. Select a credit amount to review delivery and restrictions.",
+			"Official OpenAI ChatGPT credits CDK. After your plan's included usage runs out, credits keep Codex and other supported features going. Plus or Pro account required; Free accounts cannot use them. Not API relay balance, phone verification, or a pre-made account.",
 	},
 	"ba540b83-388d-45d1-9dcb-25c3da3f9956": {
 		name: "Claude Membership Recharge",
@@ -497,19 +497,19 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		),
 	},
 	"7f76a172-d963-43a4-8297-d4d7550f4670": {
-		name: "Codex｜250 credits",
+		name: "250 credits",
 		policy: codexPolicy,
 	},
 	"1572316f-0649-43d5-b86f-2c551f10833e": {
-		name: "Codex｜500 credits",
+		name: "500 credits",
 		policy: codexPolicy,
 	},
 	"902c0f18-1c50-4b75-9cc2-62e432716e0c": {
-		name: "Codex｜1,000 credits",
+		name: "1,000 credits",
 		policy: codexPolicy,
 	},
 	"ea366d71-6d3b-4e0d-8551-242a3a1ca483": {
-		name: "Codex｜2,500 credits",
+		name: "2,500 credits",
 		policy: codexPolicy,
 	},
 	"efa6e9ae-f8a6-4cf7-b99c-72e51e68dace": {
