@@ -35,7 +35,10 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { AgentAccessCheckout } from "#/features/agent-access/components/access";
 import { agentAccessKind } from "#/features/agent-access/products";
 import { authClient } from "#/features/auth/auth-client";
-import { StoreMoney } from "#/features/exchange-rates/currency-context";
+import {
+	StoreMoney,
+	useCurrency,
+} from "#/features/exchange-rates/currency-context";
 import { appleIdLoginGuidePath } from "#/features/guides/apple-id-login";
 import { addLocalCartItem } from "#/features/storefront/cart-storage";
 import { trackCommerceEvent } from "#/features/storefront/commerce-events";
@@ -55,15 +58,17 @@ import {
 import { paymentChannelLabel } from "#/features/storefront/payment-channel-label";
 import { purchaseMaximum } from "#/features/storefront/product-quantity";
 import {
-	getStorefrontProductFn,
-	listStorefrontCatalogFn,
-} from "#/features/storefront/server/catalog";
+	productPriceSummary,
+	type StorefrontProduct,
+	storefrontProductQueryOptions,
+} from "#/features/storefront/product-seo";
+import { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { useFitStickyTop } from "#/features/storefront/sticky-top";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 
-type Product = Awaited<ReturnType<typeof getStorefrontProductFn>>;
+type Product = StorefrontProduct;
 type SellableItem = Product["sellableItems"][number];
 
 // Delivered content is an account or activation link, not a card plus redeem URL;
@@ -86,11 +91,9 @@ export function StorefrontProductPage({
 }) {
 	const locale = getLocale();
 	const session = authClient.useSession();
-	const product = useQuery({
-		queryKey: ["storefront", "product", locale, productId],
-		queryFn: () => getStorefrontProductFn({ data: { locale, productId } }),
-		staleTime: 30_000,
-	});
+	const product = useQuery(
+		storefrontProductQueryOptions({ locale, productId }),
+	);
 	const relatedProducts = useQuery({
 		queryKey: [
 			"storefront",
@@ -319,6 +322,7 @@ export function StorefrontProductPage({
 					<h1 className="mt-3 text-balance font-semibold text-4xl tracking-[-0.035em] sm:text-5xl">
 						{data.name}
 					</h1>
+					<ProductPriceLine product={data} />
 					{data.id === appleIdProductId ? (
 						<a
 							className="mt-4 flex max-w-2xl items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 font-semibold text-primary text-sm leading-6 transition-colors hover:bg-primary/15 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
@@ -1125,6 +1129,31 @@ function purchaseLimitSummary(sellableItem: SellableItem) {
 					maximum: sellableItem.maximumPerCustomer,
 				});
 	return [orderLimit, customerLimit].filter(Boolean).join(" · ") || null;
+}
+
+/** Lowest purchasable price and stock state, readable before any interaction. */
+function ProductPriceLine({ product }: { product: Product }) {
+	const currency = useCurrency();
+	const summary = productPriceSummary(product);
+	if (!summary) return null;
+	const price = currency.format(
+		summary.lowMinor,
+		summary.currency,
+		summary.decimals,
+	);
+	return (
+		<p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-muted-foreground text-sm">
+			<span className="font-semibold text-base text-foreground tabular-nums">
+				{summary.lowMinor === summary.highMinor
+					? price
+					: m.store_card_from({ price })}
+			</span>
+			<span aria-hidden="true">·</span>
+			<span>
+				{summary.inStock ? m.seo_product_stock_in() : m.seo_product_stock_out()}
+			</span>
+		</p>
+	);
 }
 
 function isAvailable(sellableItem: SellableItem) {

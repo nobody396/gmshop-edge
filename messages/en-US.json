@@ -2541,5 +2541,9 @@
 	"guide_reseller_shop_hint": "Your own web shop, API included",
 	"guide_reseller_connect": "API access only",
 	"guide_reseller_connect_hint": "Connect your own card shop",
-	"store_card_choose": "Choose option"
+	"store_card_choose": "Choose option",
+	"seo_product_title_suffix": "Automatic delivery 24/7",
+	"seo_product_description_fallback": "{name}: {plans}. From {price}, delivered automatically 24/7 right after payment.",
+	"seo_product_stock_in": "In stock",
+	"seo_product_stock_out": "Temporarily out of stock"
 }

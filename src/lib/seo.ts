@@ -89,9 +89,51 @@ export function createHomeSeoHead(matches: readonly RouteLoaderMatch[]) {
 		path: "/",
 	});
 
+	const logo = stringSettingFromMatches(matches, "logoUrl") ?? "/favicon.png";
 	return {
 		meta: head.meta,
 		links: head.links,
+		scripts: [
+			jsonLdScript({
+				"@context": "https://schema.org",
+				"@graph": [
+					{
+						"@type": "Organization",
+						"@id": absoluteSiteUrl("/#organization"),
+						name: siteName,
+						url: absoluteSiteUrl("/"),
+						logo: absoluteSiteUrl(logo),
+					},
+					{
+						"@type": "WebSite",
+						"@id": absoluteSiteUrl("/#website"),
+						name: siteName,
+						url: absoluteSiteUrl("/"),
+						inLanguage: getLocale(),
+						publisher: { "@id": absoluteSiteUrl("/#organization") },
+						potentialAction: {
+							"@type": "SearchAction",
+							target: {
+								"@type": "EntryPoint",
+								urlTemplate: `${absoluteSiteUrl("/")}?search={search_term_string}`,
+							},
+							"query-input": "required name=search_term_string",
+						},
+					},
+				],
+			}),
+		],
+	};
+}
+
+/** JSON inside <script> must not be able to close the element. */
+export function jsonLdScript(value: unknown) {
+	return {
+		type: "application/ld+json",
+		children: JSON.stringify(value)
+			.replace(/</g, "\\u003c")
+			.replace(/>/g, "\\u003e")
+			.replace(/&/g, "\\u0026"),
 	};
 }
 
@@ -113,4 +155,37 @@ function stringSettingFromMatches(
 		if (typeof value === "string" && value.trim()) return value;
 	}
 	return undefined;
+}
+
+export function createArticleSeoHead(
+	matches: readonly RouteLoaderMatch[],
+	input: { title: string; description: string; path: string },
+) {
+	const siteName = siteNameFromMatches(matches);
+	const head = createDefaultSeoHead({ ...input, siteName });
+	const url = absoluteSiteUrl(input.path);
+	return {
+		meta: head.meta.map((tag) =>
+			"property" in tag && tag.property === "og:type"
+				? { property: "og:type", content: "article" }
+				: tag,
+		),
+		links: head.links,
+		scripts: [
+			jsonLdScript({
+				"@context": "https://schema.org",
+				"@type": "Article",
+				headline: input.title,
+				description: input.description,
+				url,
+				mainEntityOfPage: url,
+				inLanguage: getLocale(),
+				publisher: {
+					"@type": "Organization",
+					name: siteName,
+					url: absoluteSiteUrl("/"),
+				},
+			}),
+		],
+	};
 }
