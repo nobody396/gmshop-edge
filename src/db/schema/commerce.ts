@@ -709,6 +709,33 @@ export const shopOrders = sqliteTable(
 	],
 );
 
+export const orderAttribution = sqliteTable(
+	"order_attribution",
+	{
+		orderId: text("order_id")
+			.primaryKey()
+			.references(() => shopOrders.id, { onDelete: "cascade" }),
+		sourceCategory: text("source_category", {
+			enum: ["search", "ai", "social", "direct", "other", "unknown"],
+		}).notNull(),
+		referrerHost: text("referrer_host"),
+		utmSource: text("utm_source"),
+		utmMedium: text("utm_medium"),
+		utmCampaign: text("utm_campaign"),
+		landingPath: text("landing_path"),
+		firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`),
+	},
+	(table) => [
+		check(
+			"order_attribution_category_check",
+			sql`${table.sourceCategory} IN ('search','ai','social','direct','other','unknown')`,
+		),
+	],
+);
+
 export const shopOrderEvents = sqliteTable(
 	"shop_order_events",
 	{

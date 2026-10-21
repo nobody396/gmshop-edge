@@ -78,6 +78,10 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/ops/redeem-cutover", "POST")).toBe(true);
 		expect(publicRequest("/api/ops/redeem-cutover/extra", "POST")).toBe(false);
 		expect(publicRequest("/api/ops/redeem-cutover", "PATCH")).toBe(false);
+		// Bearer-token read-only order attribution report.
+		expect(publicRequest("/api/ops/attribution", "GET")).toBe(true);
+		expect(publicRequest("/api/ops/attribution", "POST")).toBe(false);
+		expect(publicRequest("/api/ops/attribution/extra", "GET")).toBe(false);
 	});
 
 	it("lets only the exact bearer-authenticated invoice lookup route through", () => {

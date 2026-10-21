@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireStorefrontPermission } from "#/features/access/storefront-access";
+import { recordOrderAttribution } from "#/features/attribution/server/order-attribution";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import {
@@ -56,11 +57,13 @@ export const createStoreOrderFn = createServerFn({ method: "POST" })
 					locale: account.user.preferredLocale,
 				}
 			: data;
-		return createStoreOrder(db, input, {
+		const order = await createStoreOrder(db, input, {
 			userId: account?.user.id,
 			identityEmail: account?.user.email,
 			clientIp: request.headers.get("cf-connecting-ip"),
 		});
+		if (!order.duplicate) await recordOrderAttribution(db, order.id, request);
+		return order;
 	});
 
 export const trackCommerceEventFn = createServerFn({ method: "POST" })
@@ -243,6 +246,7 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 					? undefined
 					: data.paymentChannelId,
 		});
+		if (!order.duplicate) await recordOrderAttribution(db, order.id, request);
 		if (account && "items" in data && !order.duplicate) {
 			const sellableItemIds = data.items.map((item) => item.sellableItemId);
 			await removeUserCartItems(db, account.user.id, sellableItemIds);

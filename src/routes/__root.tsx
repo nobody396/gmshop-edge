@@ -12,6 +12,7 @@ import { TooltipProvider } from "#/components/ui/tooltip";
 import { DirectionProvider } from "#/context/direction-provider";
 import { SiteBrandProvider } from "#/context/site-brand-provider";
 import { ThemeProvider } from "#/context/theme-provider";
+import { useFirstTouchAttribution } from "#/features/attribution/first-touch";
 import { TelegramMiniAppAutoSignIn } from "#/features/auth/components/telegram-mini-app-auto-sign-in";
 import { TelegramMiniAppBackButton } from "#/features/auth/components/telegram-mini-app-back-button";
 import { TelegramWidgetAutoSignIn } from "#/features/auth/components/telegram-widget-auto-sign-in";
@@ -125,6 +126,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	const brand = Route.useLoaderData();
+	useFirstTouchAttribution();
 	const locale = getLocale();
 	useEffect(() => {
 		document.documentElement.lang = locale;
