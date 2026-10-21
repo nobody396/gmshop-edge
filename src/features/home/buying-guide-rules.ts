@@ -1,3 +1,7 @@
+/** Retired product page that now redirects to the twenty-renew plan. */
+export const retiredTwentyRenewProductId =
+	"aa277f98-79b4-58cb-8b7b-1424fe930ab9";
+
 // Explicit VIP product mapping. Never infer eligibility from names or prices.
 export const guideProducts = {
 	gpt500: {

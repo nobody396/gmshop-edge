@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 	addToCart: vi.fn(() => true),
 }));
 vi.mock("@tanstack/react-query", () => ({
+	queryOptions: (options: unknown) => options,
 	useQuery: ({ queryKey }: { queryKey: string[] }) => ({
 		isLoading: false,
 		data:
@@ -50,6 +51,7 @@ vi.mock("#/features/auth/auth-client", () => ({
 }));
 vi.mock("#/features/exchange-rates/currency-context", () => ({
 	StoreMoney: () => null,
+	useCurrency: () => ({ format: () => "" }),
 }));
 vi.mock("#/features/storefront/server/catalog", () => ({
 	getStorefrontProductFn: vi.fn(),

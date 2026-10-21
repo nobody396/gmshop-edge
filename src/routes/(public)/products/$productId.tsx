@@ -1,7 +1,17 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { z } from "zod";
-import { guideProducts } from "#/features/home/buying-guide-rules";
+import { storeCurrencyConfigurationQueryOptions } from "#/features/exchange-rates/currency-context";
+import {
+	guideProducts,
+	retiredTwentyRenewProductId,
+} from "#/features/home/buying-guide-rules";
 import { StorefrontProductPage } from "#/features/storefront/pages/product";
+import {
+	createProductSeoHead,
+	storefrontProductQueryOptions,
+} from "#/features/storefront/product-seo";
+import { siteNameFromMatches } from "#/lib/seo";
+import { getLocale } from "#/paraglide/runtime";
 
 export const Route = createFileRoute("/(public)/products/$productId")({
 	validateSearch: z.object({
@@ -9,7 +19,7 @@ export const Route = createFileRoute("/(public)/products/$productId")({
 		src: z.enum(["order", "redeem"]).optional().catch(undefined),
 	}),
 	beforeLoad: ({ params }) => {
-		if (params.productId === "aa277f98-79b4-58cb-8b7b-1424fe930ab9") {
+		if (params.productId === retiredTwentyRenewProductId) {
 			throw redirect({
 				to: "/products/$productId",
 				params: { productId: guideProducts.twentyrenew.productId },
@@ -19,8 +29,41 @@ export const Route = createFileRoute("/(public)/products/$productId")({
 			});
 		}
 	},
+	// Loading on the server puts the name, plans, prices and stock into the
+	// first HTML response; unknown or unlisted products are a real 404.
+	loader: async ({ context, params }) => {
+		if (!z.uuid().safeParse(params.productId).success) throw notFound();
+		try {
+			const [product] = await Promise.all([
+				context.queryClient.ensureQueryData(
+					storefrontProductQueryOptions({
+						locale: getLocale(),
+						productId: params.productId,
+					}),
+				),
+				context.queryClient
+					.ensureQueryData(storeCurrencyConfigurationQueryOptions())
+					.catch(() => undefined),
+			]);
+			return product;
+		} catch (error) {
+			if (isProductNotFound(error)) throw notFound();
+			throw error;
+		}
+	},
+	head: ({ loaderData, matches }) =>
+		loaderData
+			? createProductSeoHead(loaderData, siteNameFromMatches(matches))
+			: {},
+	staleTime: 30_000,
 	component: ProductRoute,
 });
+
+function isProductNotFound(error: unknown) {
+	if (!error || typeof error !== "object") return false;
+	const { code, status } = error as { code?: unknown; status?: unknown };
+	return code === "product_not_found" || status === 404;
+}
 
 function ProductRoute() {
 	const { productId } = Route.useParams();

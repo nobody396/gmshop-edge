@@ -9,7 +9,9 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as OpenapiRouteImport } from './routes/openapi'
+import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as InstallRouteImport } from './routes/install'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as publicRouteRouteImport } from './routes/(public)/route'
@@ -136,9 +138,19 @@ import { Route as ApiShopOrdersOrderNumberAutomationJobIdRetryRouteImport } from
 import { Route as ApiShopOrdersOrderNumberAutomationJobIdCancelRouteImport } from './routes/api/shop/orders/$orderNumber/automation/$jobId/cancel'
 import { Route as ApiShopOrdersOrderNumberAutomationJobIdArtifactsArtifactIdRouteImport } from './routes/api/shop/orders/$orderNumber/automation/$jobId/artifacts/$artifactId'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OpenapiRoute = OpenapiRouteImport.update({
   id: '/openapi',
   path: '/openapi',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
+  id: '/llms.txt',
+  path: '/llms.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstallRoute = InstallRouteImport.update({
@@ -804,7 +816,9 @@ const ApiShopOrdersOrderNumberAutomationJobIdArtifactsArtifactIdRoute =
 export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/install': typeof InstallRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/openapi': typeof OpenapiRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/account': typeof publicAccountRouteRouteWithChildren
   '/admin/access': typeof AdminAccessRouteRouteWithChildren
   '/admin/email': typeof AdminEmailRouteRouteWithChildren
@@ -929,7 +943,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/install': typeof InstallRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/openapi': typeof OpenapiRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/register': typeof authRegisterRoute
   '/sign-in': typeof authSignInRoute
@@ -1050,7 +1066,9 @@ export interface FileRoutesById {
   '/(public)': typeof publicRouteRouteWithChildren
   '/admin': typeof AdminRouteRouteWithChildren
   '/install': typeof InstallRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/openapi': typeof OpenapiRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/(public)/account': typeof publicAccountRouteRouteWithChildren
   '/admin/access': typeof AdminAccessRouteRouteWithChildren
   '/admin/email': typeof AdminEmailRouteRouteWithChildren
@@ -1178,7 +1196,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/admin'
     | '/install'
+    | '/llms.txt'
     | '/openapi'
+    | '/sitemap.xml'
     | '/account'
     | '/admin/access'
     | '/admin/email'
@@ -1303,7 +1323,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/install'
+    | '/llms.txt'
     | '/openapi'
+    | '/sitemap.xml'
     | '/forgot-password'
     | '/register'
     | '/sign-in'
@@ -1423,7 +1445,9 @@ export interface FileRouteTypes {
     | '/(public)'
     | '/admin'
     | '/install'
+    | '/llms.txt'
     | '/openapi'
+    | '/sitemap.xml'
     | '/(public)/account'
     | '/admin/access'
     | '/admin/email'
@@ -1552,7 +1576,9 @@ export interface RootRouteChildren {
   publicRouteRoute: typeof publicRouteRouteWithChildren
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   InstallRoute: typeof InstallRoute
+  LlmsDottxtRoute: typeof LlmsDottxtRoute
   OpenapiRoute: typeof OpenapiRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   errors401Route: typeof errors401Route
   errors403Route: typeof errors403Route
   errors404Route: typeof errors404Route
@@ -1595,11 +1621,25 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/openapi': {
       id: '/openapi'
       path: '/openapi'
       fullPath: '/openapi'
       preLoaderRoute: typeof OpenapiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms.txt': {
+      id: '/llms.txt'
+      path: '/llms.txt'
+      fullPath: '/llms.txt'
+      preLoaderRoute: typeof LlmsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/install': {
@@ -2793,7 +2833,9 @@ const rootRouteChildren: RootRouteChildren = {
   publicRouteRoute: publicRouteRouteWithChildren,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   InstallRoute: InstallRoute,
+  LlmsDottxtRoute: LlmsDottxtRoute,
   OpenapiRoute: OpenapiRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   errors401Route: errors401Route,
   errors403Route: errors403Route,
   errors404Route: errors404Route,

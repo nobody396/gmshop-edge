@@ -2541,5 +2541,9 @@
 	"guide_reseller_shop_hint": "有自己的网店，含 API 对接",
 	"guide_reseller_connect": "只要 API 对接",
 	"guide_reseller_connect_hint": "接到你自己的卡网",
-	"store_card_choose": "选择规格"
+	"store_card_choose": "选择规格",
+	"seo_product_title_suffix": "24 小时自动发货",
+	"seo_product_description_fallback": "{name}：{plans}。{price} 起，24 小时自动发货，付款后自动交付卡密。",
+	"seo_product_stock_in": "有货",
+	"seo_product_stock_out": "暂时缺货"
 }

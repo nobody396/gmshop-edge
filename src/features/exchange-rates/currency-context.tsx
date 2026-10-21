@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import {
 	createContext,
 	type ReactNode,
@@ -28,12 +28,17 @@ type CurrencyContextValue = {
 
 const CurrencyContext = createContext<CurrencyContextValue | null>(null);
 
-export function CurrencyProvider({ children }: { children: ReactNode }) {
-	const configuration = useQuery({
+/** Route loaders prefetch this so server-rendered prices use the store symbol. */
+export function storeCurrencyConfigurationQueryOptions() {
+	return queryOptions({
 		queryKey: ["storefront", "currency-configuration"],
 		queryFn: () => getStoreCurrencyConfigurationFn(),
 		staleTime: 60_000,
 	});
+}
+
+export function CurrencyProvider({ children }: { children: ReactNode }) {
+	const configuration = useQuery(storeCurrencyConfigurationQueryOptions());
 	const baseCurrency = configuration.data?.baseCurrency ?? "USD";
 	const baseCurrencySymbol = configuration.data?.baseCurrencySymbol ?? "$";
 	const currencies = configuration.data?.currencies ?? [baseCurrency];
