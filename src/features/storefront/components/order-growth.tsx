@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Boxes, Gift } from "lucide-react";
 import { ReferralInvite } from "#/features/promotions/referral-invite";
 import type { OrderGrowth } from "#/features/storefront/server/order-growth";
+import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import { m } from "#/paraglide/messages";
 
@@ -82,7 +83,7 @@ export function CrossSellBlock({ items }: { items: OrderGrowth["crossSell"] }) {
 									alt=""
 									className="aspect-video w-16 shrink-0 rounded-xl object-cover"
 									loading="lazy"
-									src={item.coverUrl}
+									src={productThumbnailUrl(item.coverUrl)}
 								/>
 							) : (
 								<div className="grid aspect-video w-16 shrink-0 place-items-center rounded-xl bg-muted">
