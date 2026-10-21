@@ -26,6 +26,34 @@ defineCustomClientStrategy("custom-system-default", {
 	setLocale: () => undefined,
 });
 
+/** Window property set by the root document's inline boot script. */
+export const localeCookieBootFlag = "__gmshopLocaleCookieAtBoot";
+
+if (typeof document !== "undefined") discardPreRegistrationLocaleCookie();
+
+/**
+ * The server renders `<html lang>` from the visitor's cookie or the site's
+ * default language. A module that calls getLocale() before this strategy is
+ * registered falls through to the build-time base locale (en-US) and Paraglide
+ * persists that guess as a cookie, flipping a default-language visitor to
+ * English. When the page started without a language cookie and one now
+ * disagrees with the server-rendered language, it is that guess: drop it.
+ */
+export function discardPreRegistrationLocaleCookie(
+	doc: Pick<Document, "cookie" | "documentElement"> = document,
+	hadCookieAtBoot = (globalThis as Record<string, unknown>)[
+		localeCookieBootFlag
+	],
+) {
+	if (hadCookieAtBoot !== false) return false;
+	const cookieLocale = localeFromCookie(doc.cookie);
+	const documentLocale = supportedLocale(doc.documentElement.lang);
+	if (!cookieLocale || !documentLocale || cookieLocale === documentLocale)
+		return false;
+	doc.cookie = "PARAGLIDE_LOCALE=; path=/; max-age=0";
+	return true;
+}
+
 export function localeFromCookie(cookieHeader?: string | null) {
 	const value = cookieHeader
 		?.split(";")

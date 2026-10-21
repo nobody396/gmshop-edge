@@ -124,11 +124,36 @@ const markdownRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
 ];
 
 const alerts = {
-	note: { label: m.pro_viewer_markdownNote(), icon: InfoIcon },
-	tip: { label: m.pro_viewer_markdownTip(), icon: CircleCheckIcon },
-	important: { label: m.pro_viewer_markdownImportant(), icon: InfoIcon },
-	warning: { label: m.pro_viewer_markdownWarning(), icon: TriangleAlertIcon },
-	caution: { label: m.pro_viewer_markdownCaution(), icon: TriangleAlertIcon },
+	note: {
+		get label() {
+			return m.pro_viewer_markdownNote();
+		},
+		icon: InfoIcon,
+	},
+	tip: {
+		get label() {
+			return m.pro_viewer_markdownTip();
+		},
+		icon: CircleCheckIcon,
+	},
+	important: {
+		get label() {
+			return m.pro_viewer_markdownImportant();
+		},
+		icon: InfoIcon,
+	},
+	warning: {
+		get label() {
+			return m.pro_viewer_markdownWarning();
+		},
+		icon: TriangleAlertIcon,
+	},
+	caution: {
+		get label() {
+			return m.pro_viewer_markdownCaution();
+		},
+		icon: TriangleAlertIcon,
+	},
 } satisfies Record<string, { label: string; icon: LucideIcon }>;
 
 const alertVariants = cva("", {

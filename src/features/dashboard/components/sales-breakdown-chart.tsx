@@ -20,7 +20,9 @@ import { m } from "#/paraglide/messages";
 
 const chartConfig = {
 	amount: {
-		label: m.dashboard_sales_breakdown(),
+		get label() {
+			return m.dashboard_sales_breakdown();
+		},
 		color: "var(--chart-1)",
 	},
 } satisfies ChartConfig;
