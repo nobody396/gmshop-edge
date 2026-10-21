@@ -65,6 +65,7 @@ import { Route as ApiShopInvoiceOrderRouteImport } from './routes/api/shop/invoi
 import { Route as ApiOpsRestockRouteImport } from './routes/api/ops/restock'
 import { Route as ApiOpsRedeemRestockRouteImport } from './routes/api/ops/redeem-restock'
 import { Route as ApiOpsRedeemCutoverRouteImport } from './routes/api/ops/redeem-cutover'
+import { Route as ApiOpsAttributionRouteImport } from './routes/api/ops/attribution'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminDownloadAssetsRouteImport } from './routes/api/admin/download-assets'
 import { Route as AdminSuppliersProductsRouteImport } from './routes/admin/suppliers/products'
@@ -415,6 +416,11 @@ const ApiOpsRedeemRestockRoute = ApiOpsRedeemRestockRouteImport.update({
 const ApiOpsRedeemCutoverRoute = ApiOpsRedeemCutoverRouteImport.update({
   id: '/api/ops/redeem-cutover',
   path: '/api/ops/redeem-cutover',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOpsAttributionRoute = ApiOpsAttributionRouteImport.update({
+  id: '/api/ops/attribution',
+  path: '/api/ops/attribution',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -891,6 +897,7 @@ export interface FileRoutesByFullPath {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
@@ -1010,6 +1017,7 @@ export interface FileRoutesByTo {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
@@ -1141,6 +1149,7 @@ export interface FileRoutesById {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
@@ -1271,6 +1280,7 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
@@ -1390,6 +1400,7 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
@@ -1520,6 +1531,7 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
@@ -1587,6 +1599,7 @@ export interface RootRouteChildren {
   ApiSiteLogoRoute: typeof ApiSiteLogoRoute
   ApiAdminDownloadAssetsRoute: typeof ApiAdminDownloadAssetsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiOpsAttributionRoute: typeof ApiOpsAttributionRoute
   ApiOpsRedeemCutoverRoute: typeof ApiOpsRedeemCutoverRoute
   ApiOpsRedeemRestockRoute: typeof ApiOpsRedeemRestockRoute
   ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
@@ -2011,6 +2024,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ops/redeem-cutover'
       fullPath: '/api/ops/redeem-cutover'
       preLoaderRoute: typeof ApiOpsRedeemCutoverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/attribution': {
+      id: '/api/ops/attribution'
+      path: '/api/ops/attribution'
+      fullPath: '/api/ops/attribution'
+      preLoaderRoute: typeof ApiOpsAttributionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -2844,6 +2864,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSiteLogoRoute: ApiSiteLogoRoute,
   ApiAdminDownloadAssetsRoute: ApiAdminDownloadAssetsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiOpsAttributionRoute: ApiOpsAttributionRoute,
   ApiOpsRedeemCutoverRoute: ApiOpsRedeemCutoverRoute,
   ApiOpsRedeemRestockRoute: ApiOpsRedeemRestockRoute,
   ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,

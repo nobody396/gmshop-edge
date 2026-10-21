@@ -12,6 +12,7 @@ const publicGetPatterns = [
 	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
 	/^\/api\/ops\/redeem-cutover$/,
+	/^\/api\/ops\/attribution$/,
 	/^\/api\/support\/web\/(?:status|current)$/,
 	paymentWebhookPattern,
 	new RegExp(`^/api/configuration-logo/payment/${uuidSegment}$`, "i"),
