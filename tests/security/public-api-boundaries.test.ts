@@ -84,6 +84,29 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/ops/attribution/extra", "GET")).toBe(false);
 	});
 
+	it("lets only the exact bearer-authenticated guides ops routes through", () => {
+		expect(publicRequest("/api/ops/guides", "GET")).toBe(true);
+		expect(publicRequest("/api/ops/guides", "POST")).toBe(false);
+		expect(publicRequest("/api/ops/guides", "PUT")).toBe(false);
+		expect(publicRequest("/api/ops/guides/chatgpt-plus", "GET")).toBe(true);
+		expect(publicRequest("/api/ops/guides/chatgpt-plus", "PUT")).toBe(true);
+		expect(publicRequest("/api/ops/guides/chatgpt-plus", "POST")).toBe(false);
+		expect(publicRequest("/api/ops/guides/chatgpt-plus", "DELETE")).toBe(false);
+		expect(publicRequest("/api/ops/guides/chatgpt-plus/publish", "POST")).toBe(
+			true,
+		);
+		expect(
+			publicRequest("/api/ops/guides/chatgpt-plus/unpublish", "POST"),
+		).toBe(true);
+		expect(publicRequest("/api/ops/guides/chatgpt-plus/publish", "GET")).toBe(
+			false,
+		);
+		expect(publicRequest("/api/ops/guides/chatgpt-plus/delete", "POST")).toBe(
+			false,
+		);
+		expect(publicRequest("/api/ops/guides/a/b", "PUT")).toBe(false);
+	});
+
 	it("lets only the exact bearer-authenticated invoice lookup route through", () => {
 		expect(publicRequest("/api/shop/invoice-order", "POST")).toBe(true);
 		expect(publicRequest("/api/shop/invoice-order", "GET")).toBe(false);

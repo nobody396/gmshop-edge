@@ -3,6 +3,7 @@ import {
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
 import { handleIpCheck } from "#/features/ip-check/server/lookup";
+import { handleIndexNowKeyRequest } from "#/features/seo/server/indexnow";
 import { handleLivenessRequest } from "#/features/status/server/health";
 import { applySecurityHeaders } from "#/server/http-security";
 import { validateRequestAuthority } from "#/server/middleware/authority";
@@ -52,6 +53,8 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 				{ name: "total", durationMs: performance.now() - startedAt },
 			]),
 		);
+	const indexNowKey = handleIndexNowKeyRequest(request, env.INDEXNOW_KEY);
+	if (indexNowKey) return applySecurityHeaders(request, indexNowKey);
 	const ipCheck = await handleIpCheck(request, env);
 	if (ipCheck) return applySecurityHeaders(request, ipCheck);
 	const appStartedAt = performance.now();

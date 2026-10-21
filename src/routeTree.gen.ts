@@ -55,6 +55,7 @@ import { Route as AdminOperationsIndexRouteImport } from './routes/admin/operati
 import { Route as AdminEmailIndexRouteImport } from './routes/admin/email/index'
 import { Route as AdminAccessIndexRouteImport } from './routes/admin/access/index'
 import { Route as publicOrdersIndexRouteImport } from './routes/(public)/orders/index'
+import { Route as publicGuidesIndexRouteImport } from './routes/(public)/guides/index'
 import { Route as publicCheckoutIndexRouteImport } from './routes/(public)/checkout/index'
 import { Route as publicAccountIndexRouteImport } from './routes/(public)/account/index'
 import { Route as RRenewTokenRouteImport } from './routes/r/renew/$token'
@@ -98,6 +99,7 @@ import { Route as publicProductsProductIdRouteImport } from './routes/(public)/p
 import { Route as publicOrdersOrderNumberRouteImport } from './routes/(public)/orders/$orderNumber'
 import { Route as publicGuidesClaudeNetworkCheckRouteImport } from './routes/(public)/guides/claude-network-check'
 import { Route as publicGuidesAppleIdLoginRouteImport } from './routes/(public)/guides/apple-id-login'
+import { Route as publicGuidesSlugRouteImport } from './routes/(public)/guides/$slug'
 import { Route as publicAccountWalletRouteImport } from './routes/(public)/account/wallet'
 import { Route as publicAccountSettingsRouteImport } from './routes/(public)/account/settings'
 import { Route as publicAccountSessionsRouteImport } from './routes/(public)/account/sessions'
@@ -106,6 +108,7 @@ import { Route as publicAccountProfileRouteImport } from './routes/(public)/acco
 import { Route as publicAccountNotificationsRouteImport } from './routes/(public)/account/notifications'
 import { Route as publicAccountConnectionsRouteImport } from './routes/(public)/account/connections'
 import { Route as AdminProductsProductIdRouteRouteImport } from './routes/admin/products/$productId/route'
+import { Route as ApiOpsGuidesIndexRouteImport } from './routes/api/ops/guides/index'
 import { Route as AdminProductsProductIdIndexRouteImport } from './routes/admin/products/$productId/index'
 import { Route as publicAccountOrdersIndexRouteImport } from './routes/(public)/account/orders/index'
 import { Route as publicAccountEntitlementsIndexRouteImport } from './routes/(public)/account/entitlements/index'
@@ -125,12 +128,15 @@ import { Route as ApiConfigurationLogoScopeIdRouteImport } from './routes/api/co
 import { Route as AdminProductsProductIdEditRouteImport } from './routes/admin/products/$productId/edit'
 import { Route as publicAccountOrdersOrderNumberRouteImport } from './routes/(public)/account/orders/$orderNumber'
 import { Route as ApiSupportWebAttachmentsIndexRouteImport } from './routes/api/support/web/attachments/index'
+import { Route as ApiOpsGuidesSlugIndexRouteImport } from './routes/api/ops/guides/$slug/index'
 import { Route as ApiSupportWebRepliesAckRouteImport } from './routes/api/support/web/replies/ack'
 import { Route as ApiSupportWebAttachmentsAttachmentIdRouteImport } from './routes/api/support/web/attachments/$attachmentId'
 import { Route as ApiSuppliersDujiaoNextCallbackAccountIdRouteImport } from './routes/api/suppliers/dujiao-next/callback/$accountId'
 import { Route as ApiShopProductsProductIdCoverRouteImport } from './routes/api/shop/products/$productId/cover'
 import { Route as ApiShopPaymentsChannelIdWebhookRouteImport } from './routes/api/shop/payments/$channelId/webhook'
 import { Route as ApiShopOrdersOrderNumberAutomationRouteImport } from './routes/api/shop/orders/$orderNumber/automation'
+import { Route as ApiOpsGuidesSlugUnpublishRouteImport } from './routes/api/ops/guides/$slug/unpublish'
+import { Route as ApiOpsGuidesSlugPublishRouteImport } from './routes/api/ops/guides/$slug/publish'
 import { Route as ApiShopProductsProductIdMediaMediaIdRouteImport } from './routes/api/shop/products/$productId/media/$mediaId'
 import { Route as ApiShopOrdersOrderNumberDownloadsAssetIdRouteImport } from './routes/api/shop/orders/$orderNumber/downloads/$assetId'
 import { Route as ApiShopAutomationJobIdArtifactsFileNameRouteImport } from './routes/api/shop/automation/$jobId/artifacts/$fileName'
@@ -368,6 +374,11 @@ const publicOrdersIndexRoute = publicOrdersIndexRouteImport.update({
   path: '/orders/',
   getParentRoute: () => publicRouteRoute,
 } as any)
+const publicGuidesIndexRoute = publicGuidesIndexRouteImport.update({
+  id: '/guides/',
+  path: '/guides/',
+  getParentRoute: () => publicRouteRoute,
+} as any)
 const publicCheckoutIndexRoute = publicCheckoutIndexRouteImport.update({
   id: '/checkout/',
   path: '/checkout/',
@@ -591,6 +602,11 @@ const publicGuidesAppleIdLoginRoute =
     path: '/guides/apple-id-login',
     getParentRoute: () => publicRouteRoute,
   } as any)
+const publicGuidesSlugRoute = publicGuidesSlugRouteImport.update({
+  id: '/guides/$slug',
+  path: '/guides/$slug',
+  getParentRoute: () => publicRouteRoute,
+} as any)
 const publicAccountWalletRoute = publicAccountWalletRouteImport.update({
   id: '/wallet',
   path: '/wallet',
@@ -634,6 +650,11 @@ const AdminProductsProductIdRouteRoute =
     path: '/$productId',
     getParentRoute: () => AdminProductsRouteRoute,
   } as any)
+const ApiOpsGuidesIndexRoute = ApiOpsGuidesIndexRouteImport.update({
+  id: '/api/ops/guides/',
+  path: '/api/ops/guides/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminProductsProductIdIndexRoute =
   AdminProductsProductIdIndexRouteImport.update({
     id: '/',
@@ -741,6 +762,11 @@ const ApiSupportWebAttachmentsIndexRoute =
     path: '/api/support/web/attachments/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOpsGuidesSlugIndexRoute = ApiOpsGuidesSlugIndexRouteImport.update({
+  id: '/api/ops/guides/$slug/',
+  path: '/api/ops/guides/$slug/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSupportWebRepliesAckRoute = ApiSupportWebRepliesAckRouteImport.update({
   id: '/api/support/web/replies/ack',
   path: '/api/support/web/replies/ack',
@@ -776,6 +802,17 @@ const ApiShopOrdersOrderNumberAutomationRoute =
     path: '/api/shop/orders/$orderNumber/automation',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOpsGuidesSlugUnpublishRoute =
+  ApiOpsGuidesSlugUnpublishRouteImport.update({
+    id: '/api/ops/guides/$slug/unpublish',
+    path: '/api/ops/guides/$slug/unpublish',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiOpsGuidesSlugPublishRoute = ApiOpsGuidesSlugPublishRouteImport.update({
+  id: '/api/ops/guides/$slug/publish',
+  path: '/api/ops/guides/$slug/publish',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiShopProductsProductIdMediaMediaIdRoute =
   ApiShopProductsProductIdMediaMediaIdRouteImport.update({
     id: '/api/shop/products/$productId/media/$mediaId',
@@ -865,6 +902,7 @@ export interface FileRoutesByFullPath {
   '/account/sessions': typeof publicAccountSessionsRoute
   '/account/settings': typeof publicAccountSettingsRoute
   '/account/wallet': typeof publicAccountWalletRoute
+  '/guides/$slug': typeof publicGuidesSlugRoute
   '/guides/apple-id-login': typeof publicGuidesAppleIdLoginRoute
   '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
@@ -908,6 +946,7 @@ export interface FileRoutesByFullPath {
   '/r/renew/$token': typeof RRenewTokenRoute
   '/account/': typeof publicAccountIndexRoute
   '/checkout/': typeof publicCheckoutIndexRoute
+  '/guides/': typeof publicGuidesIndexRoute
   '/orders/': typeof publicOrdersIndexRoute
   '/admin/access/': typeof AdminAccessIndexRoute
   '/admin/email/': typeof AdminEmailIndexRoute
@@ -933,12 +972,16 @@ export interface FileRoutesByFullPath {
   '/account/entitlements/': typeof publicAccountEntitlementsIndexRoute
   '/account/orders/': typeof publicAccountOrdersIndexRoute
   '/admin/products/$productId/': typeof AdminProductsProductIdIndexRoute
+  '/api/ops/guides/': typeof ApiOpsGuidesIndexRoute
+  '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
+  '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
   '/api/shop/payments/$channelId/webhook': typeof ApiShopPaymentsChannelIdWebhookRoute
   '/api/shop/products/$productId/cover': typeof ApiShopProductsProductIdCoverRoute
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/ops/guides/$slug/': typeof ApiOpsGuidesSlugIndexRoute
   '/api/support/web/attachments/': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   '/api/shop/orders/$orderNumber/downloads/$assetId': typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
@@ -985,6 +1028,7 @@ export interface FileRoutesByTo {
   '/account/sessions': typeof publicAccountSessionsRoute
   '/account/settings': typeof publicAccountSettingsRoute
   '/account/wallet': typeof publicAccountWalletRoute
+  '/guides/$slug': typeof publicGuidesSlugRoute
   '/guides/apple-id-login': typeof publicGuidesAppleIdLoginRoute
   '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
@@ -1028,6 +1072,7 @@ export interface FileRoutesByTo {
   '/r/renew/$token': typeof RRenewTokenRoute
   '/account': typeof publicAccountIndexRoute
   '/checkout': typeof publicCheckoutIndexRoute
+  '/guides': typeof publicGuidesIndexRoute
   '/orders': typeof publicOrdersIndexRoute
   '/admin/access': typeof AdminAccessIndexRoute
   '/admin/email': typeof AdminEmailIndexRoute
@@ -1053,12 +1098,16 @@ export interface FileRoutesByTo {
   '/account/entitlements': typeof publicAccountEntitlementsIndexRoute
   '/account/orders': typeof publicAccountOrdersIndexRoute
   '/admin/products/$productId': typeof AdminProductsProductIdIndexRoute
+  '/api/ops/guides': typeof ApiOpsGuidesIndexRoute
+  '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
+  '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
   '/api/shop/payments/$channelId/webhook': typeof ApiShopPaymentsChannelIdWebhookRoute
   '/api/shop/products/$productId/cover': typeof ApiShopProductsProductIdCoverRoute
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/ops/guides/$slug': typeof ApiOpsGuidesSlugIndexRoute
   '/api/support/web/attachments': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   '/api/shop/orders/$orderNumber/downloads/$assetId': typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
@@ -1117,6 +1166,7 @@ export interface FileRoutesById {
   '/(public)/account/sessions': typeof publicAccountSessionsRoute
   '/(public)/account/settings': typeof publicAccountSettingsRoute
   '/(public)/account/wallet': typeof publicAccountWalletRoute
+  '/(public)/guides/$slug': typeof publicGuidesSlugRoute
   '/(public)/guides/apple-id-login': typeof publicGuidesAppleIdLoginRoute
   '/(public)/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/(public)/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
@@ -1160,6 +1210,7 @@ export interface FileRoutesById {
   '/r/renew/$token': typeof RRenewTokenRoute
   '/(public)/account/': typeof publicAccountIndexRoute
   '/(public)/checkout/': typeof publicCheckoutIndexRoute
+  '/(public)/guides/': typeof publicGuidesIndexRoute
   '/(public)/orders/': typeof publicOrdersIndexRoute
   '/admin/access/': typeof AdminAccessIndexRoute
   '/admin/email/': typeof AdminEmailIndexRoute
@@ -1185,12 +1236,16 @@ export interface FileRoutesById {
   '/(public)/account/entitlements/': typeof publicAccountEntitlementsIndexRoute
   '/(public)/account/orders/': typeof publicAccountOrdersIndexRoute
   '/admin/products/$productId/': typeof AdminProductsProductIdIndexRoute
+  '/api/ops/guides/': typeof ApiOpsGuidesIndexRoute
+  '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
+  '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
   '/api/shop/payments/$channelId/webhook': typeof ApiShopPaymentsChannelIdWebhookRoute
   '/api/shop/products/$productId/cover': typeof ApiShopProductsProductIdCoverRoute
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/ops/guides/$slug/': typeof ApiOpsGuidesSlugIndexRoute
   '/api/support/web/attachments/': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   '/api/shop/orders/$orderNumber/downloads/$assetId': typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
@@ -1248,6 +1303,7 @@ export interface FileRouteTypes {
     | '/account/sessions'
     | '/account/settings'
     | '/account/wallet'
+    | '/guides/$slug'
     | '/guides/apple-id-login'
     | '/guides/claude-network-check'
     | '/orders/$orderNumber'
@@ -1291,6 +1347,7 @@ export interface FileRouteTypes {
     | '/r/renew/$token'
     | '/account/'
     | '/checkout/'
+    | '/guides/'
     | '/orders/'
     | '/admin/access/'
     | '/admin/email/'
@@ -1316,12 +1373,16 @@ export interface FileRouteTypes {
     | '/account/entitlements/'
     | '/account/orders/'
     | '/admin/products/$productId/'
+    | '/api/ops/guides/'
+    | '/api/ops/guides/$slug/publish'
+    | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
     | '/api/shop/payments/$channelId/webhook'
     | '/api/shop/products/$productId/cover'
     | '/api/suppliers/dujiao-next/callback/$accountId'
     | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/ops/guides/$slug/'
     | '/api/support/web/attachments/'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
     | '/api/shop/orders/$orderNumber/downloads/$assetId'
@@ -1368,6 +1429,7 @@ export interface FileRouteTypes {
     | '/account/sessions'
     | '/account/settings'
     | '/account/wallet'
+    | '/guides/$slug'
     | '/guides/apple-id-login'
     | '/guides/claude-network-check'
     | '/orders/$orderNumber'
@@ -1411,6 +1473,7 @@ export interface FileRouteTypes {
     | '/r/renew/$token'
     | '/account'
     | '/checkout'
+    | '/guides'
     | '/orders'
     | '/admin/access'
     | '/admin/email'
@@ -1436,12 +1499,16 @@ export interface FileRouteTypes {
     | '/account/entitlements'
     | '/account/orders'
     | '/admin/products/$productId'
+    | '/api/ops/guides'
+    | '/api/ops/guides/$slug/publish'
+    | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
     | '/api/shop/payments/$channelId/webhook'
     | '/api/shop/products/$productId/cover'
     | '/api/suppliers/dujiao-next/callback/$accountId'
     | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/ops/guides/$slug'
     | '/api/support/web/attachments'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
     | '/api/shop/orders/$orderNumber/downloads/$assetId'
@@ -1499,6 +1566,7 @@ export interface FileRouteTypes {
     | '/(public)/account/sessions'
     | '/(public)/account/settings'
     | '/(public)/account/wallet'
+    | '/(public)/guides/$slug'
     | '/(public)/guides/apple-id-login'
     | '/(public)/guides/claude-network-check'
     | '/(public)/orders/$orderNumber'
@@ -1542,6 +1610,7 @@ export interface FileRouteTypes {
     | '/r/renew/$token'
     | '/(public)/account/'
     | '/(public)/checkout/'
+    | '/(public)/guides/'
     | '/(public)/orders/'
     | '/admin/access/'
     | '/admin/email/'
@@ -1567,12 +1636,16 @@ export interface FileRouteTypes {
     | '/(public)/account/entitlements/'
     | '/(public)/account/orders/'
     | '/admin/products/$productId/'
+    | '/api/ops/guides/'
+    | '/api/ops/guides/$slug/publish'
+    | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
     | '/api/shop/payments/$channelId/webhook'
     | '/api/shop/products/$productId/cover'
     | '/api/suppliers/dujiao-next/callback/$accountId'
     | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/ops/guides/$slug/'
     | '/api/support/web/attachments/'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
     | '/api/shop/orders/$orderNumber/downloads/$assetId'
@@ -1619,12 +1692,16 @@ export interface RootRouteChildren {
   ApiSupportWebMessagesRoute: typeof ApiSupportWebMessagesRoute
   ApiSupportWebStatusRoute: typeof ApiSupportWebStatusRoute
   ApiV1SupplierSplatRoute: typeof ApiV1SupplierSplatRoute
+  ApiOpsGuidesIndexRoute: typeof ApiOpsGuidesIndexRoute
+  ApiOpsGuidesSlugPublishRoute: typeof ApiOpsGuidesSlugPublishRoute
+  ApiOpsGuidesSlugUnpublishRoute: typeof ApiOpsGuidesSlugUnpublishRoute
   ApiShopOrdersOrderNumberAutomationRoute: typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
   ApiShopPaymentsChannelIdWebhookRoute: typeof ApiShopPaymentsChannelIdWebhookRoute
   ApiShopProductsProductIdCoverRoute: typeof ApiShopProductsProductIdCoverRoute
   ApiSuppliersDujiaoNextCallbackAccountIdRoute: typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   ApiSupportWebAttachmentsAttachmentIdRoute: typeof ApiSupportWebAttachmentsAttachmentIdRoute
   ApiSupportWebRepliesAckRoute: typeof ApiSupportWebRepliesAckRoute
+  ApiOpsGuidesSlugIndexRoute: typeof ApiOpsGuidesSlugIndexRoute
   ApiSupportWebAttachmentsIndexRoute: typeof ApiSupportWebAttachmentsIndexRoute
   ApiShopAutomationJobIdArtifactsFileNameRoute: typeof ApiShopAutomationJobIdArtifactsFileNameRoute
   ApiShopOrdersOrderNumberDownloadsAssetIdRoute: typeof ApiShopOrdersOrderNumberDownloadsAssetIdRoute
@@ -1956,6 +2033,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof publicOrdersIndexRouteImport
       parentRoute: typeof publicRouteRoute
     }
+    '/(public)/guides/': {
+      id: '/(public)/guides/'
+      path: '/guides'
+      fullPath: '/guides/'
+      preLoaderRoute: typeof publicGuidesIndexRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
     '/(public)/checkout/': {
       id: '/(public)/checkout/'
       path: '/checkout'
@@ -2257,6 +2341,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof publicGuidesAppleIdLoginRouteImport
       parentRoute: typeof publicRouteRoute
     }
+    '/(public)/guides/$slug': {
+      id: '/(public)/guides/$slug'
+      path: '/guides/$slug'
+      fullPath: '/guides/$slug'
+      preLoaderRoute: typeof publicGuidesSlugRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
     '/(public)/account/wallet': {
       id: '/(public)/account/wallet'
       path: '/wallet'
@@ -2312,6 +2403,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/products/$productId'
       preLoaderRoute: typeof AdminProductsProductIdRouteRouteImport
       parentRoute: typeof AdminProductsRouteRoute
+    }
+    '/api/ops/guides/': {
+      id: '/api/ops/guides/'
+      path: '/api/ops/guides'
+      fullPath: '/api/ops/guides/'
+      preLoaderRoute: typeof ApiOpsGuidesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/products/$productId/': {
       id: '/admin/products/$productId/'
@@ -2446,6 +2544,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSupportWebAttachmentsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ops/guides/$slug/': {
+      id: '/api/ops/guides/$slug/'
+      path: '/api/ops/guides/$slug'
+      fullPath: '/api/ops/guides/$slug/'
+      preLoaderRoute: typeof ApiOpsGuidesSlugIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/support/web/replies/ack': {
       id: '/api/support/web/replies/ack'
       path: '/api/support/web/replies/ack'
@@ -2486,6 +2591,20 @@ declare module '@tanstack/react-router' {
       path: '/api/shop/orders/$orderNumber/automation'
       fullPath: '/api/shop/orders/$orderNumber/automation'
       preLoaderRoute: typeof ApiShopOrdersOrderNumberAutomationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/guides/$slug/unpublish': {
+      id: '/api/ops/guides/$slug/unpublish'
+      path: '/api/ops/guides/$slug/unpublish'
+      fullPath: '/api/ops/guides/$slug/unpublish'
+      preLoaderRoute: typeof ApiOpsGuidesSlugUnpublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/guides/$slug/publish': {
+      id: '/api/ops/guides/$slug/publish'
+      path: '/api/ops/guides/$slug/publish'
+      fullPath: '/api/ops/guides/$slug/publish'
+      preLoaderRoute: typeof ApiOpsGuidesSlugPublishRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/shop/products/$productId/media/$mediaId': {
@@ -2597,12 +2716,14 @@ interface publicRouteRouteChildren {
   publicMeRoute: typeof publicMeRoute
   publicStatusRoute: typeof publicStatusRoute
   publicIndexRoute: typeof publicIndexRoute
+  publicGuidesSlugRoute: typeof publicGuidesSlugRoute
   publicGuidesAppleIdLoginRoute: typeof publicGuidesAppleIdLoginRoute
   publicGuidesClaudeNetworkCheckRoute: typeof publicGuidesClaudeNetworkCheckRoute
   publicOrdersOrderNumberRoute: typeof publicOrdersOrderNumberRoute
   publicProductsProductIdRoute: typeof publicProductsProductIdRoute
   publicUnsubscribeRenewalRoute: typeof publicUnsubscribeRenewalRoute
   publicCheckoutIndexRoute: typeof publicCheckoutIndexRoute
+  publicGuidesIndexRoute: typeof publicGuidesIndexRoute
   publicOrdersIndexRoute: typeof publicOrdersIndexRoute
 }
 
@@ -2614,12 +2735,14 @@ const publicRouteRouteChildren: publicRouteRouteChildren = {
   publicMeRoute: publicMeRoute,
   publicStatusRoute: publicStatusRoute,
   publicIndexRoute: publicIndexRoute,
+  publicGuidesSlugRoute: publicGuidesSlugRoute,
   publicGuidesAppleIdLoginRoute: publicGuidesAppleIdLoginRoute,
   publicGuidesClaudeNetworkCheckRoute: publicGuidesClaudeNetworkCheckRoute,
   publicOrdersOrderNumberRoute: publicOrdersOrderNumberRoute,
   publicProductsProductIdRoute: publicProductsProductIdRoute,
   publicUnsubscribeRenewalRoute: publicUnsubscribeRenewalRoute,
   publicCheckoutIndexRoute: publicCheckoutIndexRoute,
+  publicGuidesIndexRoute: publicGuidesIndexRoute,
   publicOrdersIndexRoute: publicOrdersIndexRoute,
 }
 
@@ -2885,6 +3008,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSupportWebMessagesRoute: ApiSupportWebMessagesRoute,
   ApiSupportWebStatusRoute: ApiSupportWebStatusRoute,
   ApiV1SupplierSplatRoute: ApiV1SupplierSplatRoute,
+  ApiOpsGuidesIndexRoute: ApiOpsGuidesIndexRoute,
+  ApiOpsGuidesSlugPublishRoute: ApiOpsGuidesSlugPublishRoute,
+  ApiOpsGuidesSlugUnpublishRoute: ApiOpsGuidesSlugUnpublishRoute,
   ApiShopOrdersOrderNumberAutomationRoute:
     ApiShopOrdersOrderNumberAutomationRouteWithChildren,
   ApiShopPaymentsChannelIdWebhookRoute: ApiShopPaymentsChannelIdWebhookRoute,
@@ -2894,6 +3020,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSupportWebAttachmentsAttachmentIdRoute:
     ApiSupportWebAttachmentsAttachmentIdRoute,
   ApiSupportWebRepliesAckRoute: ApiSupportWebRepliesAckRoute,
+  ApiOpsGuidesSlugIndexRoute: ApiOpsGuidesSlugIndexRoute,
   ApiSupportWebAttachmentsIndexRoute: ApiSupportWebAttachmentsIndexRoute,
   ApiShopAutomationJobIdArtifactsFileNameRoute:
     ApiShopAutomationJobIdArtifactsFileNameRoute,
@@ -2907,3 +3034,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

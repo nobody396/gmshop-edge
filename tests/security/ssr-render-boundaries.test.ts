@@ -48,7 +48,10 @@ describe("SSR render data boundaries", () => {
 		const homePage = read("src/features/home/index.tsx");
 
 		expect(ownersOf("queryClient.ensureQueryData(")).toEqual([
+			"src/routes/(public)/guides/$slug.tsx",
+			"src/routes/(public)/guides/index.tsx",
 			"src/routes/(public)/index.tsx",
+			"src/routes/(public)/products/$productId.tsx",
 		]);
 		expect(storefrontRoute).toContain("loader: async ({ context, deps }) =>");
 		expect(storefrontRoute).toContain(
