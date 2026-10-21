@@ -22,6 +22,12 @@ export function PublicFooter() {
 						})}
 					</p>
 					<Link
+						className="shrink-0 transition-colors hover:text-foreground"
+						to="/guides"
+					>
+						{m.public_footer_guides()}
+					</Link>
+					<Link
 						aria-label={m.public_footer_ready()}
 						className="inline-flex shrink-0 items-center gap-1.5 text-primary transition-opacity hover:opacity-70"
 						to="/status"

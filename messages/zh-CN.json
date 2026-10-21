@@ -370,6 +370,7 @@
 	"store_payment_currency": "显示与支付法币",
 	"public_footer_ready": "服务运行正常",
 	"public_footer_copyright": "© {year} {name}",
+	"public_footer_guides": "使用指南",
 	"common_select_section": "选择分区",
 	"common_settings_sections": "{title} 分区",
 	"telegram_token_preserve_description": "留空将保留已加密的 Bot Token；替换值会先通过 Telegram 验证再保存",

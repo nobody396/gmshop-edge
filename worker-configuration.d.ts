@@ -9,6 +9,7 @@ interface __BaseEnv_Env {
 	DB: D1Database;
 	EMAIL: SendEmail;
 	COMMERCE_QUEUE: Queue;
+	INDEXNOW_KEY: "c6a31b5038fd9666c1c5117f759e479c";
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

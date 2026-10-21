@@ -7,12 +7,16 @@ const paymentWebhookPattern = new RegExp(
 	"i",
 );
 const supplierApiPattern = /^\/api\/v1\/supplier(?:\/[^/]+)+$/;
+// Bearer-token guides ops API; the handler validates the slug itself.
+const opsGuidePattern = /^\/api\/ops\/guides\/[A-Za-z0-9_-]{1,120}$/;
 const publicGetPatterns = [
 	new RegExp(`^/api/support/web/attachments/${uuidSegment}$`, "i"),
 	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
 	/^\/api\/ops\/redeem-cutover$/,
 	/^\/api\/ops\/attribution$/,
+	/^\/api\/ops\/guides$/,
+	opsGuidePattern,
 	/^\/api\/support\/web\/(?:status|current)$/,
 	paymentWebhookPattern,
 	new RegExp(`^/api/configuration-logo/payment/${uuidSegment}$`, "i"),
@@ -32,6 +36,7 @@ const publicPostPatterns = [
 	/^\/api\/ops\/restock\/reconcile$/,
 	/^\/api\/ops\/restock\/swap$/,
 	/^\/api\/ops\/agent-access\/ready-email$/,
+	/^\/api\/ops\/guides\/[A-Za-z0-9_-]{1,120}\/(?:publish|unpublish)$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
 	/^\/api\/telegram\/(?:webhook|owner-webhook)$/,
 	paymentWebhookPattern,
@@ -67,6 +72,7 @@ export function isPublicApiRequest(request: Request) {
 			pathname === "/api/site-logo" ||
 			publicGetPatterns.some((pattern) => pattern.test(pathname))
 		);
+	if (request.method === "PUT") return opsGuidePattern.test(pathname);
 	if (request.method !== "POST") return false;
 	return (
 		pathname === "/api/shop/automation/callback" ||

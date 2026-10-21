@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
+	listIndexedGuides,
 	listIndexedProducts,
 	renderLlmsTxt,
 	textResponse,
@@ -13,12 +14,13 @@ export const Route = createFileRoute("/llms.txt")({
 			GET: async ({ request }) => {
 				const env = getCloudflareEnv(request);
 				const db = getDb(request).$client;
-				const [products, brand] = await Promise.all([
+				const [products, guides, brand] = await Promise.all([
 					listIndexedProducts(db),
+					listIndexedGuides(db),
 					loadSiteBrandOrDefault(db, env.CACHE as KVNamespace | undefined),
 				]);
 				return textResponse(
-					renderLlmsTxt(products, brand.name),
+					renderLlmsTxt(products, brand.name, guides),
 					"text/plain; charset=utf-8",
 				);
 			},

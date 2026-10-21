@@ -1,18 +1,31 @@
+import {
+	reservedGuideSlugs,
+	staticGuidePages,
+} from "#/features/guides/content";
+import {
+	type GuideSummary,
+	listPublishedGuides,
+} from "#/features/guides/server/store";
 import { retiredTwentyRenewProductId } from "#/features/home/buying-guide-rules";
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import { SITE_URL } from "#/lib/site-url";
 
-/** Public, indexable guide pages under /guides. */
-export const publicGuidePages = [
-	{
-		path: "/guides/apple-id-login",
-		title: "Apple ID 登录 App Store 图文教程",
-	},
-	{
-		path: "/guides/claude-network-check",
-		title: "Claude 网络自查指南：地区、IP、客户端与评分",
-	},
-] as const;
+/** Public, indexable hand-built guide pages under /guides. */
+export const publicGuidePages = staticGuidePages;
+
+/** A published, stored guide as the site index needs it. */
+export type IndexedGuide = Pick<
+	GuideSummary,
+	"slug" | "title" | "description" | "updatedAt"
+>;
+
+export async function listIndexedGuides(
+	db: D1Database,
+): Promise<IndexedGuide[]> {
+	return (await listPublishedGuides(db)).filter(
+		(guide) => !reservedGuideSlugs.has(guide.slug),
+	);
+}
 
 /** Price-difference top-up: a utility checkout, not a product to index. */
 const priceDifferenceProductId = "643ba58d-3441-4ac5-b2e4-4a4007f24cc0";
@@ -93,13 +106,22 @@ function escapeXml(value: string) {
 		.replace(/'/g, "&apos;");
 }
 
-export function renderSitemap(products: readonly IndexedProduct[]) {
+export function renderSitemap(
+	products: readonly IndexedProduct[],
+	guides: readonly IndexedGuide[] = [],
+) {
 	const entries = [
 		{ loc: `${SITE_URL}/`, lastmod: latest(products), priority: "1.0" },
 		...products.map((product) => ({
 			loc: `${SITE_URL}/products/${product.id}`,
 			lastmod: product.updatedAt,
 			priority: "0.8",
+		})),
+		{ loc: `${SITE_URL}/guides`, lastmod: latest(guides), priority: "0.6" },
+		...guides.map((guide) => ({
+			loc: `${SITE_URL}/guides/${guide.slug}`,
+			lastmod: guide.updatedAt,
+			priority: "0.6",
 		})),
 		...publicGuidePages.map((guide) => ({
 			loc: `${SITE_URL}${guide.path}`,
@@ -127,10 +149,10 @@ export function renderSitemap(products: readonly IndexedProduct[]) {
 	].join("\n");
 }
 
-function latest(products: readonly IndexedProduct[]) {
+function latest(entries: readonly { updatedAt: number }[]) {
 	let value: number | undefined;
-	for (const product of products)
-		if (!value || product.updatedAt > value) value = product.updatedAt;
+	for (const entry of entries)
+		if (!value || entry.updatedAt > value) value = entry.updatedAt;
 	return value;
 }
 
@@ -153,6 +175,7 @@ function oneLine(value: string, limit: number) {
 export function renderLlmsTxt(
 	products: readonly IndexedProduct[],
 	siteName: string,
+	guides: readonly IndexedGuide[] = [],
 ) {
 	const groups = new Map<string, IndexedProduct[]>();
 	for (const product of products) {
@@ -184,6 +207,17 @@ export function renderLlmsTxt(
 		"## 在售商品",
 		"",
 		...catalog,
+		...(guides.length
+			? [
+					"## 指南",
+					"",
+					...guides.map(
+						(guide) =>
+							`- [${guide.title}](${SITE_URL}/guides/${guide.slug})：${oneLine(guide.description, 120)}`,
+					),
+					"",
+				]
+			: []),
 		"## 购买与交付",
 		"",
 		"- 下单：在商品页选择规格并付款，付款后在订单详情页查看交付结果。",
@@ -202,6 +236,7 @@ export function renderLlmsTxt(
 		"",
 		`- [首页与全部商品](${SITE_URL}/)`,
 		`- [订单查询](${SITE_URL}/orders)：用订单号和下单邮箱查询订单、领取卡密`,
+		`- [使用指南](${SITE_URL}/guides)`,
 		...publicGuidePages.map(
 			(guide) => `- [${guide.title}](${SITE_URL}${guide.path})`,
 		),
