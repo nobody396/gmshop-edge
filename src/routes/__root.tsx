@@ -113,7 +113,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 		};
 	},
 	notFoundComponent: NotFoundError,
-	errorComponent: () => <GeneralError />,
+	errorComponent: ({ error }) => <GeneralError error={error} />,
 	shellComponent: RootDocument,
 });
 

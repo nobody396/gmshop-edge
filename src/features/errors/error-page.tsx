@@ -14,6 +14,7 @@ export function ErrorPage({
 	actions,
 	className,
 	minimal = false,
+	detail,
 }: {
 	code?: string;
 	icon: LucideIcon;
@@ -22,6 +23,7 @@ export function ErrorPage({
 	actions?: ReactNode;
 	className?: string;
 	minimal?: boolean;
+	detail?: string;
 }) {
 	return (
 		<main
@@ -64,6 +66,11 @@ export function ErrorPage({
 				<p className="mt-4 max-w-lg text-pretty text-muted-foreground leading-7">
 					{description}
 				</p>
+				{detail ? (
+					<pre className="mt-6 max-w-full whitespace-pre-wrap break-all rounded-lg bg-muted/50 px-3 py-2 text-left font-mono text-muted-foreground text-xs">
+						{detail}
+					</pre>
+				) : null}
 				{actions ? (
 					<div className="mt-8 flex w-full max-w-sm flex-col-reverse gap-3 sm:flex-row sm:justify-center [&>*]:sm:min-w-36">
 						{actions}
