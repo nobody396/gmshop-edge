@@ -14,6 +14,9 @@ export const publicGuidePages = [
 	},
 ] as const;
 
+/** Price-difference top-up: a utility checkout, not a product to index. */
+const priceDifferenceProductId = "643ba58d-3441-4ac5-b2e4-4a4007f24cc0";
+
 export type IndexedProduct = {
 	id: string;
 	name: string;
@@ -49,11 +52,12 @@ export async function listIndexedProducts(
 			   WHERE item.product_id = p.id AND item.enabled = 1
 			    AND item.fulfillment_source <> 'manual') AS manual_only
 			 FROM products p
-			 WHERE p.status = 'active' AND p.id <> ?
+			 WHERE p.status = 'active' AND p.trashed_at IS NULL AND p.sale_disabled = 0
+			  AND p.id NOT IN (?, ?)
 			 ORDER BY p.sort_order, p.created_at DESC, p.id
 			 LIMIT 500`,
 		)
-		.bind(retiredTwentyRenewProductId)
+		.bind(retiredTwentyRenewProductId, priceDifferenceProductId)
 		.all<{
 			id: string;
 			name: string;
