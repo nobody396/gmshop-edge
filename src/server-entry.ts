@@ -4,6 +4,7 @@ import {
 } from "@tanstack/react-start/server";
 import { handleIpCheck } from "#/features/ip-check/server/lookup";
 import { handleIndexNowKeyRequest } from "#/features/seo/server/indexnow";
+import { handleSiteVerificationRequest } from "#/features/seo/server/site-verification";
 import { handleLivenessRequest } from "#/features/status/server/health";
 import { applySecurityHeaders } from "#/server/http-security";
 import { validateRequestAuthority } from "#/server/middleware/authority";
@@ -55,6 +56,11 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 		);
 	const indexNowKey = handleIndexNowKeyRequest(request, env.INDEXNOW_KEY);
 	if (indexNowKey) return applySecurityHeaders(request, indexNowKey);
+	const siteVerification = await handleSiteVerificationRequest(
+		request,
+		env.CACHE as KVNamespace | undefined,
+	);
+	if (siteVerification) return applySecurityHeaders(request, siteVerification);
 	const ipCheck = await handleIpCheck(request, env);
 	if (ipCheck) return applySecurityHeaders(request, ipCheck);
 	const appStartedAt = performance.now();
