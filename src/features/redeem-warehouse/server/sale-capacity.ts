@@ -3,6 +3,7 @@ import { sha256Hex } from "#/lib/crypto";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret } from "#/lib/secrets";
 import { loadRuntimeConfig } from "#/server/runtime-config";
+import { recordBulkSale } from "./bulk-procurement";
 import {
 	loadDeliveryWarehouseToken,
 	requestWarehouse,
@@ -61,9 +62,11 @@ export async function notifyWarehouseSale(
 	requester: typeof requestWarehouse = requestWarehouse,
 ) {
 	const item = await db
-		.prepare("SELECT sellable_item_id FROM shop_order_items WHERE id=?")
+		.prepare(
+			"SELECT order_id, sellable_item_id FROM shop_order_items WHERE id=?",
+		)
 		.bind(orderItemId)
-		.first<{ sellable_item_id: string }>()
+		.first<{ order_id: string; sellable_item_id: string }>()
 		.catch(() => null);
 	const sku = item
 		? await saleComponents(db)
@@ -78,6 +81,15 @@ export async function notifyWarehouseSale(
 			coded.push({ id: entry.id, hash: await sha256Hex(code.toLowerCase()) });
 	}
 	if (coded.length === 0) return;
+	// A bulk sale is bought from AISOU in one wholesale trade by the minute cron.
+	if (item)
+		await recordBulkSale(db, {
+			orderId: item.order_id,
+			orderItemId,
+			sellableItemId: item.sellable_item_id,
+			sku,
+			codeHashes: coded.map((entry) => entry.hash),
+		}).catch(() => undefined);
 	const mark = (
 		id: string,
 		source: string,

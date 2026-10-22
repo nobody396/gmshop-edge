@@ -270,6 +270,13 @@ export const navigationGroups: readonly NavigationGroup[] = [
 						TicketPercent,
 						systemPermission("coupons", "read"),
 					),
+					entry(
+						"customer-pricing",
+						() => m.nav_customer_pricing(),
+						"/admin/pricing",
+						CircleDollarSign,
+						systemPermission("customers", "read"),
+					),
 				],
 			},
 		],

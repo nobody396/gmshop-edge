@@ -15,6 +15,7 @@ const adminServerModules = [
 	"src/features/catalog/server/editor.ts",
 	"src/features/catalog/server/workspace.ts",
 	"src/features/coupons/server/admin.ts",
+	"src/features/customer-pricing/server/admin.ts",
 	"src/features/customers/server/admin.ts",
 	"src/features/dashboard/server/admin.ts",
 	"src/features/dashboard/server/tasks.ts",
@@ -54,6 +55,8 @@ const reviewedPublicServerModules = [
 	"src/features/storefront/server/catalog.ts",
 	"src/features/storefront/server/cart.ts",
 	"src/features/storefront/server/functions.ts",
+	// Unit-price quotes: public volume steps, plus the caller's own customer prices.
+	"src/features/storefront/server/price-functions.ts",
 	"src/features/supplier-api/server/keys.ts",
 	"src/features/wallet/server/functions.ts",
 ] as const;

@@ -831,6 +831,10 @@ export const shopOrderItems = sqliteTable(
 			.default({}),
 		quantity: integer("quantity").notNull(),
 		unitPriceMinor: text("unit_price_minor").notNull(),
+		/** list | volume | customer: which price the line was sold at. */
+		priceSource: text("price_source", { enum: ["list", "volume", "customer"] })
+			.notNull()
+			.default("list"),
 		unitCostMinor: text("unit_cost_minor"),
 		discountMinor: text("discount_minor").notNull().default("0"),
 		subtotalMinor: text("subtotal_minor").notNull(),

@@ -3,6 +3,7 @@ export * from "./agent-access";
 export * from "./auth";
 export * from "./commerce";
 export * from "./content";
+export * from "./pricing";
 export * from "./promotions";
 export * from "./settings";
 export * from "./telegram";

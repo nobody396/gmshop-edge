@@ -107,6 +107,116 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 		expect(users?.count).toBe(0);
 	});
 
+	it("charges volume steps and customer prices per channel and keeps coupons off them", async () => {
+		await database.batch([
+			database
+				.prepare(
+					`INSERT INTO payment_channels
+				 (id,provider,name,currency,fee_bps,fixed_fee_minor,enabled,created_at,updated_at)
+				 VALUES (?,'epay','支付宝','CNY',160,'0',1,1,1)`,
+				)
+				.bind(channelId),
+			database
+				.prepare(
+					`INSERT INTO sellable_item_channel_prices
+				 (id,sellable_item_id,channel_id,price_minor,enabled,created_at,updated_at)
+				 VALUES ('channel-price-volume',?,?,'1200',1,1,1)`,
+				)
+				.bind(sellableItemId, channelId),
+			database
+				.prepare(
+					`INSERT INTO sellable_item_volume_prices (sellable_item_id, min_quantity, discount_minor)
+					 VALUES (?, 2, '100')`,
+				)
+				.bind(sellableItemId),
+			database.prepare(
+				`INSERT INTO users (id, name, email, email_verified, created_at, updated_at)
+				 VALUES ('vip-user', 'VIP', 'vip@example.com', 1, 1, 1)`,
+			),
+			database
+				.prepare(
+					`INSERT INTO customer_item_prices (id, user_id, sellable_item_id, min_quantity, price_minor)
+					 VALUES ('vip-price', 'vip-user', ?, 1, '800')`,
+				)
+				.bind(sellableItemId),
+		]);
+		const line = async (orderId: string) =>
+			database
+				.prepare(
+					`SELECT oi.unit_price_minor, oi.price_source, o.total_minor
+					 FROM shop_order_items oi JOIN shop_orders o ON o.id = oi.order_id WHERE o.id = ?`,
+				)
+				.bind(orderId)
+				.first<Record<string, unknown>>();
+		const order = (
+			key: string,
+			quantity: number,
+			access: { userId?: string; pricingChannelId?: string },
+			couponCode?: string,
+		) =>
+			createStoreOrder(
+				database,
+				{
+					sellableItemId,
+					quantity,
+					email: `${key}@example.com`,
+					idempotencyKey: key,
+					customerNote: "",
+					couponCode,
+				},
+				access,
+			);
+
+		expect(await line((await order("volume-base", 2, {})).id)).toEqual({
+			unit_price_minor: "900",
+			price_source: "volume",
+			total_minor: "1800",
+		});
+		expect(
+			await line(
+				(await order("volume-alipay", 2, { pricingChannelId: channelId })).id,
+			),
+		).toEqual({
+			unit_price_minor: "1100",
+			price_source: "volume",
+			total_minor: "2200",
+		});
+		expect(
+			await line((await order("vip-base", 1, { userId: "vip-user" })).id),
+		).toEqual({
+			unit_price_minor: "800",
+			price_source: "customer",
+			total_minor: "800",
+		});
+		// The agreed base price plus the channel's usual difference (1200 - 1000).
+		expect(
+			await line(
+				(
+					await order("vip-alipay", 1, {
+						userId: "vip-user",
+						pricingChannelId: channelId,
+					})
+				).id,
+			),
+		).toEqual({
+			unit_price_minor: "1000",
+			price_source: "customer",
+			total_minor: "1000",
+		});
+		await expect(order("volume-coupon", 2, {}, "SAVE25")).rejects.toMatchObject(
+			{
+				code: "coupon_not_combinable",
+			},
+		);
+		expect(
+			await line((await order("list-coupon", 1, {}, "SAVE25")).id),
+		).toEqual({
+			unit_price_minor: "1000",
+			price_source: "list",
+			total_minor: "750",
+		});
+	});
+
 	it("snapshots the fixed price selected for a payment channel", async () => {
 		await database.batch([
 			database

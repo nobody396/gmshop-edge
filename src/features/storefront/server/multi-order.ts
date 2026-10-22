@@ -23,9 +23,14 @@ import {
 	reserveSaleStatements,
 } from "#/features/redeem-warehouse/server/sale-capacity";
 import { multiStoreOrderSchema } from "#/features/storefront/schema";
+import {
+	type PriceSource,
+	resolveUnitPrice,
+} from "#/features/storefront/volume-pricing";
 import { DomainError } from "#/lib/domain-error";
 import { claimFixedWindowRateLimit } from "#/server/rate-limit";
 import { loadRuntimeConfig } from "#/server/runtime-config";
+import { type ItemPricing, loadItemPricing } from "./item-pricing";
 import { encryptOrderInput } from "./order-input-secrets";
 import {
 	SUPPLIER_SNAPSHOT_MAX_AGE_MS,
@@ -37,7 +42,9 @@ type MultiOrderInput = ReturnType<typeof multiStoreOrderSchema.parse>;
 type SellableItemContext = {
 	sellable_item_id: string;
 	sellable_item_name: string;
+	/** The selected channel's price (the base price without a channel). */
 	price_minor: string;
+	base_price_minor: string;
 	cost_minor: string | null;
 	promotion_budget_minor: string;
 	currency: string;
@@ -70,6 +77,8 @@ type SellableItemContext = {
 type Line = {
 	input: MultiOrderInput["items"][number];
 	sellableItem: SellableItemContext;
+	unitPriceMinor: string;
+	priceSource: PriceSource;
 	subtotal: bigint;
 	discount: bigint;
 	orderItemId: string;
@@ -175,6 +184,11 @@ export async function createMultiStoreOrder(
 	}
 
 	const agentCheckout = await prepareAgentCheckout(db, input, access.userId);
+	const pricing = await loadItemPricing(
+		db,
+		input.items.map((item) => item.sellableItemId),
+		access.userId,
+	);
 	const lines: Line[] = [];
 	const capacityComponents = new Set<string>();
 	for (const item of input.items) {
@@ -217,10 +231,18 @@ export async function createMultiStoreOrder(
 				? await loadDefinitions(db, sellableItem.definition_version_id)
 				: [];
 		assertKnownInputKeys(item.inputValues, definitions, "order", "order");
+		const price = linePrice(
+			sellableItem,
+			item.quantity,
+			access.pricingChannelId,
+			pricing.get(item.sellableItemId),
+		);
 		lines.push({
 			input: item,
 			sellableItem,
-			subtotal: BigInt(sellableItem.price_minor) * BigInt(item.quantity),
+			unitPriceMinor: price.unitPriceMinor,
+			priceSource: price.source,
+			subtotal: BigInt(price.unitPriceMinor) * BigInt(item.quantity),
 			discount: 0n,
 			orderItemId: crypto.randomUUID(),
 			inputs: await prepareInputs(
@@ -360,12 +382,12 @@ export async function createMultiStoreOrder(
 					  delivery_component_type, delivery_component_version,
 					  sellable_item_name, definition_version_id, input_values_json,
 					  sensitive_input_values_json, quantity,
-					  unit_price_minor, unit_cost_minor, discount_minor, subtotal_minor,
+					  unit_price_minor, price_source, unit_cost_minor, discount_minor, subtotal_minor,
 					  renewed_from_entitlement_id, duration_ms, usage_limit, access_limit,
 					  activation_trigger, exhaustion_rule, renewal_mode,
 					  show_on_order_page, account_library_enabled, email_mode, allow_resend,
 					  created_at, updated_at)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				)
 				.bind(
 					line.orderItemId,
@@ -402,7 +424,8 @@ export async function createMultiStoreOrder(
 						),
 					),
 					line.input.quantity,
-					line.sellableItem.price_minor,
+					line.unitPriceMinor,
+					line.priceSource,
 					line.sellableItem.cost_minor,
 					line.discount.toString(),
 					line.subtotal.toString(),
@@ -573,7 +596,7 @@ async function loadSellableItem(
 			  WHERE channel_price.sellable_item_id = s.id
 			   AND channel_price.channel_id = ? AND channel_price.enabled = 1
 			   AND channel.enabled = 1 LIMIT 1
-			 ), s.price_minor) AS price_minor,
+			 ), s.price_minor) AS price_minor, s.price_minor AS base_price_minor,
 			 s.cost_minor, CASE WHEN s.promotion_budget_minor='800' AND CAST(s.price_minor AS INTEGER)<100000
     THEN '0' ELSE s.promotion_budget_minor END AS promotion_budget_minor, s.currency, s.currency_decimals,
 			 s.fulfillment_source, s.supplier_status,
@@ -847,13 +870,26 @@ export async function previewStoreCoupon(
 	channelId?: string,
 ) {
 	const coupon = await loadCoupon(db, code, owner);
+	const pricing = await loadItemPricing(
+		db,
+		items.map((item) => item.id),
+		owner.userId,
+	);
 	const lines: PricingLine[] = await Promise.all(
 		items.map(async (item) => {
 			const sellableItem = await loadSellableItem(db, item.id, channelId);
+			const price = linePrice(
+				sellableItem,
+				item.quantity,
+				channelId,
+				pricing.get(item.id),
+			);
 			return {
 				orderItemId: item.id,
 				sellableItem,
-				subtotal: BigInt(sellableItem.price_minor) * BigInt(item.quantity),
+				unitPriceMinor: price.unitPriceMinor,
+				priceSource: price.source,
+				subtotal: BigInt(price.unitPriceMinor) * BigInt(item.quantity),
 				discount: 0n,
 				input: {
 					sellableItemId: item.id,
@@ -910,7 +946,22 @@ async function priceStoreCoupon(
 	coupon: CouponRow | null,
 	lines: PricingLine[],
 ) {
-	const eligible = coupon ? await eligibleLines(db, coupon.id, lines) : lines;
+	// Volume and customer prices are already the discount: coupons apply to list-price lines only.
+	const eligible = coupon
+		? (await eligibleLines(db, coupon.id, lines)).filter(
+				(line) => line.priceSource === "list",
+			)
+		: lines;
+	if (
+		coupon &&
+		eligible.length === 0 &&
+		lines.some((line) => line.priceSource !== "list")
+	)
+		throw new DomainError(
+			"coupon_not_combinable",
+			409,
+			"Coupons cannot be combined with volume or customer prices",
+		);
 	const subtotal = lines.reduce((sum, line) => sum + line.subtotal, 0n);
 	if (!coupon || coupon.purpose === "standard") {
 		const discount = allocateDiscount(coupon, subtotal, eligible);
@@ -1314,4 +1365,20 @@ async function referralRewardWithheld(
 function canonicalEmail(email: string) {
 	const [local = "", domain = ""] = email.trim().toLowerCase().split("@");
 	return `${local.split("+")[0]}@${domain}`;
+}
+
+function linePrice(
+	sellableItem: SellableItemContext,
+	quantity: number,
+	channelId: string | null | undefined,
+	pricing: ItemPricing | undefined,
+) {
+	return resolveUnitPrice({
+		listPriceMinor: sellableItem.price_minor,
+		basePriceMinor: sellableItem.base_price_minor,
+		channelId: channelId ?? null,
+		quantity,
+		volumeSteps: pricing?.volumeSteps ?? [],
+		customerSteps: pricing?.customerSteps ?? [],
+	});
 }
