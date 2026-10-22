@@ -80,7 +80,13 @@ type SellableItem = Product["sellableItems"][number];
 
 // Delivered content is an account or activation link, not a card plus redeem URL;
 // the product description carries the real instructions.
+const smsGuidePaths: Record<string, string> = {
+	"ff4ff1f6-cad4-4821-a195-39befdcc32d6": "/guides/claude-sms-us",
+	"8f78192a-3097-4ec2-a771-5aa76d1bccab": "/guides/google-sms-us",
+};
+
 const ownUsageGuideProductIds = new Set([
+	...Object.keys(smsGuidePaths),
 	"2ee356de-fe69-4641-94c3-1dfea19b6967", // Muse AI 成品号
 	"64812c48-9026-4ef7-874d-b332d2a39b1a", // Gemini Pro 18个月 激活链接
 	"c70d10e8-b781-4782-bc98-1f034bcd069a", // Apple ID 成品号
@@ -351,6 +357,15 @@ export function StorefrontProductPage({
 						{data.name}
 					</h1>
 					<ProductPriceLine product={data} />
+					{smsGuidePaths[data.id] ? (
+						<a
+							className="mt-4 flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 p-3 font-semibold text-primary text-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+							href={smsGuidePaths[data.id]}
+						>
+							<BookOpen aria-hidden="true" className="size-4 shrink-0" />
+							{m.store_sms_usage_guide()}
+						</a>
+					) : null}
 					{data.id === appleIdProductId ? (
 						<a
 							className="mt-4 flex max-w-2xl items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 font-semibold text-primary text-sm leading-6 transition-colors hover:bg-primary/15 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
