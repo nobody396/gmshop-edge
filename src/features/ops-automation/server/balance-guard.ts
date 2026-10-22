@@ -3,9 +3,11 @@ import {
 	beijingClock,
 	claimInterval,
 	type Deliver,
+	fetchProcurementPrices,
 	fetchProcurementStats,
 	formatYuan,
 	loadSettings,
+	type ProcurementPrices,
 	type ProcurementStats,
 	type RestockSource,
 	resolveDeliver,
@@ -19,7 +21,7 @@ export const balanceGuardSettingKeys = {
 	alertedDays: "ops.balance_guard.alerted_days",
 } as const;
 
-export const balanceGuardIntervalMs = 2 * 3_600_000;
+export const balanceGuardIntervalMs = 30 * 60_000;
 const weekMs = 7 * 86_400_000;
 const aisouOrigin = "https://aisou.pro";
 
@@ -114,14 +116,32 @@ export function daysLeft(balanceMinor: number, spend7dMinor: number) {
 	return spend7dMinor > 0 ? (balanceMinor * 7) / spend7dMinor : null;
 }
 
-export function assessSupplier(supplier: SupplierBalance): SupplierRisk | null {
+/** The dearest card each supplier restocks: one sale of it must always be affordable. */
+export function dearestPurchase(prices: ProcurementPrices | null) {
+	const dearest = new Map<SupplierKey, number>();
+	for (const row of prices ?? [])
+		if (row.priceMinor !== null)
+			dearest.set(
+				row.source,
+				Math.max(dearest.get(row.source) ?? 0, row.priceMinor),
+			);
+	return dearest;
+}
+
+/** Flags a supplier that cannot pay for its dearest card (else, without a price list, its average
+ * purchase) or whose 7-day spend leaves under two days of runway. */
+export function assessSupplier(
+	supplier: SupplierBalance,
+	dearestMinor: number | null = null,
+): SupplierRisk | null {
 	if (supplier.balanceMinor === null) return null;
 	const balance = supplier.balanceMinor;
 	const left = daysLeft(balance, supplier.spend7dMinor);
 	const typical =
-		supplier.purchases7d > 0
+		dearestMinor ??
+		(supplier.purchases7d > 0
 			? Math.ceil(supplier.spend7dMinor / supplier.purchases7d)
-			: null;
+			: null);
 	const lowDays = left !== null && left < 2;
 	const belowNextPurchase = typical !== null && balance < typical;
 	if (!lowDays && !belowNextPurchase) return null;
@@ -151,7 +171,7 @@ export function formatBalanceAlert(risks: SupplierRisk[], day: string) {
 				`· ${risk.label}：余额 ${formatYuan(risk.balanceMinor)}，近 7 天消耗 ${formatYuan(risk.spend7dMinor)}，约剩 ${formatDaysLeft(risk.daysLeft)}${
 					risk.typicalPurchaseMinor !== null &&
 					risk.balanceMinor < risk.typicalPurchaseMinor
-						? `（不够下一笔约 ${formatYuan(risk.typicalPurchaseMinor)} 的进货）`
+						? `（不够买一张最贵的卡，约 ${formatYuan(risk.typicalPurchaseMinor)}）`
 						: ""
 				}；建议充值 ${formatYuan(risk.suggestedTopUpMinor)}`,
 		),
@@ -168,6 +188,7 @@ export async function runBalanceGuard(input: {
 	fetcher?: typeof fetch;
 	deliver?: Deliver;
 	readStats?: () => Promise<ProcurementStats | null>;
+	readPrices?: () => Promise<ProcurementPrices | null>;
 }) {
 	const now = input.now ?? Date.now();
 	const fetcher = input.fetcher ?? fetch;
@@ -183,26 +204,51 @@ export async function runBalanceGuard(input: {
 			input.db,
 			balanceGuardSettingKeys.lastRunAt,
 			now,
-			// One minute of slack so the every-minute cron keeps a two-hour rhythm.
+			// One minute of slack so the every-minute cron keeps a 30-minute rhythm.
 			balanceGuardIntervalMs - 60_000,
 		))
 	)
 		return { status: "throttled" as const };
-	const { suppliers } = await collectSupplierBalances({
-		db: input.db,
-		now,
-		readStats:
-			input.readStats ?? (() => fetchProcurementStats(input.db, fetcher)),
-	});
+	const [{ suppliers }, prices] = await Promise.all([
+		collectSupplierBalances({
+			db: input.db,
+			now,
+			readStats:
+				input.readStats ?? (() => fetchProcurementStats(input.db, fetcher)),
+		}),
+		(
+			input.readPrices ?? (() => fetchProcurementPrices(input.db, fetcher))
+		)().catch(() => null),
+	]);
+	const dearest = dearestPurchase(prices);
 	const { day } = beijingClock(now);
 	const parsedAlerted = alertedSchema.safeParse(
 		settings.get(balanceGuardSettingKeys.alertedDays),
 	);
 	const alerted = parsedAlerted.success ? parsedAlerted.data : {};
-	const risks = suppliers
-		.map(assessSupplier)
-		.filter((risk): risk is SupplierRisk => risk !== null)
-		.filter((risk) => alerted[risk.key] !== day);
+	const atRisk = suppliers
+		.map((supplier) =>
+			assessSupplier(supplier, dearest.get(supplier.key) ?? null),
+		)
+		.filter((risk): risk is SupplierRisk => risk !== null);
+	const risks = atRisk.filter((risk) => alerted[risk.key] !== day);
+	// A supplier that recovered (topped up) is forgotten, so a second drop on the same day alerts again.
+	const recovered = Object.keys(alerted).filter(
+		(key) =>
+			suppliers.some((supplier) => supplier.key === key) &&
+			!atRisk.some((risk) => risk.key === key),
+	);
+	if (recovered.length > 0) {
+		const kept = { ...alerted };
+		for (const key of recovered) delete kept[key];
+		await settingStatement(
+			input.db,
+			balanceGuardSettingKeys.alertedDays,
+			kept,
+			now,
+		).run();
+		for (const key of recovered) delete alerted[key];
+	}
 	if (risks.length === 0)
 		return { status: "ok" as const, checked: suppliers.length, alerted: 0 };
 	const deliver = resolveDeliver(

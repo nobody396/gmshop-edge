@@ -9,6 +9,7 @@ import { publishPendingOwnerSaleAlerts } from "#/features/notifications/server/o
 import { runBalanceGuard } from "#/features/ops-automation/server/balance-guard";
 import { runPriceDropNotices } from "#/features/ops-automation/server/price-drop-notice";
 import { runPricingGuard } from "#/features/ops-automation/server/pricing-guard";
+import { runProcurementAlerts } from "#/features/ops-automation/server/procurement-alerts";
 import { runWeeklyReport } from "#/features/ops-automation/server/weekly-report";
 import { settlePromotionRewards } from "#/features/promotions/server/balance";
 import { runRedemptionExceptionTodos } from "#/features/redeem-warehouse/server/exception-todos";
@@ -110,6 +111,10 @@ export async function runScheduledCommerceWork(
 		db: env.DB,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	const procurementAlerts = await runProcurementAlerts({
+		db: env.DB,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	const pricingGuard = await runPricingGuard({
 		db: env.DB,
 		now: scheduledAt,
@@ -130,6 +135,7 @@ export async function runScheduledCommerceWork(
 	}).catch(() => ({ status: "failed" as const }));
 	return {
 		balanceGuard,
+		procurementAlerts,
 		pricingGuard,
 		priceDropNotices,
 		weeklyReport,
