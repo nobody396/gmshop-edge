@@ -60,10 +60,11 @@ export function CustomerPricingPage() {
 		queryFn: () => listPricingAdminFn(),
 	});
 	return (
-		<PageHeader
-			description={m.pricing_admin_description()}
-			title={m.nav_customer_pricing()}
-		>
+		<div className="flex min-h-0 w-full flex-1 flex-col gap-4">
+			<PageHeader
+				description={m.pricing_admin_description()}
+				title={m.nav_customer_pricing()}
+			/>
 			{pricing.isError ? (
 				<p className="text-destructive text-sm">
 					{m.pricing_admin_load_failed()}
@@ -76,7 +77,7 @@ export function CustomerPricingPage() {
 					<CustomerPricesCard data={pricing.data} />
 				</div>
 			)}
-		</PageHeader>
+		</div>
 	);
 }
 
