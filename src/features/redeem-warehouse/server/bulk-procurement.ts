@@ -305,7 +305,6 @@ async function notify(
 	let actionId: string | null = null;
 	try {
 		if (awaitingStates.includes(state)) {
-			// Without a working button webhook the text still goes out as a plain alert.
 			const proposal = await proposeOwnerAction(db, {
 				kind: "bulk_procurement",
 				payload: {
@@ -323,12 +322,20 @@ async function notify(
 							: "✅ 已充值，重新进货",
 				],
 				rejectLabel: "🚫 这批不进了（兑换时单张进货）",
-				fallback: "（按钮暂不可用：请在后台把这条批量进货单改回待处理）",
+				fallback: null,
 				now,
 				fetcher,
 			});
 			actionId = proposal?.id ?? null;
-			delivered = true;
+			// Without a working button webhook the text still goes out as a plain alert;
+			// only a message that actually went out counts.
+			delivered =
+				proposal !== null ||
+				(await sendOwnerAlert(
+					db,
+					`${message}\n\n（Telegram 按钮暂时不可用：处理好后让 Claude 把这批改回待进货即可）`,
+					{ fetcher },
+				)) !== null;
 		} else
 			delivered = (await sendOwnerAlert(db, message, { fetcher })) !== null;
 	} catch {
