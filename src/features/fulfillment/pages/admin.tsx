@@ -6,6 +6,7 @@ import {
 	CircleCheck,
 	Eye,
 	MoreHorizontal,
+	PencilLine,
 	Play,
 	RotateCcw,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
 import {
 	completeManualDeliveryFn,
 	listDeliveriesFn,
+	replaceDeliveryContentFn,
 	retryDeliveryFn,
 	revealDeliveryContentFn,
 	startManualDeliveryFn,
@@ -45,6 +47,7 @@ export function DeliveryCenterPage() {
 	const [refreshKey, setRefreshKey] = useState(0);
 	const [revealing, setRevealing] = useState<Delivery | null>(null);
 	const [completing, setCompleting] = useState<Delivery | null>(null);
+	const [replacing, setReplacing] = useState<Delivery | null>(null);
 	const [revealed, setRevealed] = useState<string | null>(null);
 	const refresh = useCallback(() => {
 		setRefreshKey((value) => value + 1);
@@ -97,6 +100,19 @@ export function DeliveryCenterPage() {
 		onSuccess: async () => {
 			setCompleting(null);
 			toast.success(m.delivery_manual_complete_success());
+			await refresh();
+		},
+		onError: showError,
+	});
+	const replaceContent = useMutation({
+		mutationFn: replaceDeliveryContentFn,
+		onSuccess: async (result) => {
+			setReplacing(null);
+			toast.success(
+				result.changed
+					? m.delivery_replace_content_success()
+					: m.delivery_replace_content_unchanged(),
+			);
 			await refresh();
 		},
 		onError: showError,
@@ -182,6 +198,13 @@ export function DeliveryCenterPage() {
 									{m.inventory_reveal()}
 								</DropdownMenuItem>
 							) : null}
+							{row.original.contentReplaceable &&
+							row.original.status === "delivered" ? (
+								<DropdownMenuItem onClick={() => setReplacing(row.original)}>
+									<PencilLine />
+									{m.delivery_replace_content()}
+								</DropdownMenuItem>
+							) : null}
 						</DropdownMenuContent>
 					</DropdownMenu>
 				),
@@ -245,6 +268,41 @@ export function DeliveryCenterPage() {
 							data: {
 								id: completing.id,
 								content: String(values.content ?? ""),
+							},
+						});
+					}}
+					onFinishFailed={showError}
+				/>
+			) : null}
+			{replacing ? (
+				<ModalForm
+					key={replacing.id}
+					open
+					onOpenChange={(open) => !open && setReplacing(null)}
+					title={m.delivery_replace_content_title()}
+					description={m.delivery_replace_content_description()}
+					schema={[
+						{
+							name: "content",
+							label: m.delivery_replace_content_new(),
+							valueType: "textarea" as const,
+							required: true,
+						},
+						{
+							name: "reason",
+							label: m.delivery_replace_content_reason(),
+							valueType: "text" as const,
+							required: true,
+						},
+						...proofFields(),
+					]}
+					onFinish={async (values) => {
+						await replaceContent.mutateAsync({
+							data: {
+								id: replacing.id,
+								content: String(values.content ?? ""),
+								reason: String(values.reason ?? ""),
+								...proof(values),
 							},
 						});
 					}}

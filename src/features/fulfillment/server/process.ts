@@ -1,6 +1,9 @@
 import { processAgentDelivery } from "#/features/agent-access/server/fulfillment";
 import { activateEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
-import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
+import {
+	decryptDeliveryContent,
+	encryptDeliveryContent,
+} from "#/features/fulfillment/secrets";
 import {
 	type ConvertibleStock,
 	convertReservedStock,
@@ -539,6 +542,78 @@ export async function completeManualDelivery(
 		orderStatus: nextStatus,
 		duplicate: false,
 	};
+}
+
+export async function replaceDeliveredContent(
+	db: D1Database,
+	deliveryId: string,
+	content: string,
+) {
+	const plaintext = content.trim();
+	if (!plaintext || plaintext.length > 64_000)
+		throw new DomainError(
+			"delivery_content_invalid",
+			400,
+			"Delivery content is required and must not exceed 64000 characters",
+		);
+	const delivery = await db
+		.prepare(
+			`SELECT id, status, redeem_sku, content_encrypted
+			 FROM delivery_records WHERE id = ? LIMIT 1`,
+		)
+		.bind(deliveryId)
+		.first<{
+			id: string;
+			status: string;
+			redeem_sku: string | null;
+			content_encrypted: string | null;
+		}>();
+	if (!delivery)
+		throw new DomainError("delivery_not_found", 404, "Delivery not found");
+	if (delivery.status !== "delivered" || !delivery.content_encrypted)
+		throw new DomainError(
+			"delivery_content_not_replaceable",
+			409,
+			"Only delivered content can be replaced",
+		);
+	// Warehouse CDKs are tracked by the redeem warehouse; swap them there instead.
+	if (delivery.redeem_sku !== null)
+		throw new DomainError(
+			"delivery_content_warehouse_managed",
+			409,
+			"Warehouse-managed delivery content cannot be replaced here",
+		);
+	const runtime = await loadRuntimeConfig(db);
+	if (!runtime.commerceSecret)
+		throw new DomainError(
+			"delivery_secret_unavailable",
+			503,
+			"Delivery configuration unavailable",
+		);
+	const previous = await decryptDeliveryContent(
+		delivery.content_encrypted,
+		runtime.commerceSecret,
+	);
+	if (previous === plaintext)
+		return { id: delivery.id, status: "delivered" as const, changed: false };
+	const encrypted = await encryptDeliveryContent(
+		plaintext,
+		runtime.commerceSecret,
+	);
+	const result = await db
+		.prepare(
+			`UPDATE delivery_records SET content_encrypted = ?, content_key_version = 1,
+			 updated_at = ? WHERE id = ? AND status = 'delivered' AND content_encrypted = ?`,
+		)
+		.bind(encrypted, Date.now(), delivery.id, delivery.content_encrypted)
+		.run();
+	if (Number(result.meta.changes ?? 0) !== 1)
+		throw new DomainError(
+			"delivery_content_replace_conflict",
+			409,
+			"Delivery content changed concurrently",
+		);
+	return { id: delivery.id, status: "delivered" as const, changed: true };
 }
 
 async function nextOrderStatus(
