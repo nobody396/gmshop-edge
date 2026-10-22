@@ -91,6 +91,7 @@ const ownUsageGuideProductIds = new Set([
 	"64812c48-9026-4ef7-874d-b332d2a39b1a", // Gemini Pro 18个月 激活链接
 	"c70d10e8-b781-4782-bc98-1f034bcd069a", // Apple ID 成品号
 	"9e8b2987-1564-417e-8441-5936c5d592fa", // Telegram Premium 礼品链接
+	"f2b92a96-290c-4ffa-aaf5-a26e7a35815d", // Claude 稳定使用（人工交付，订单码）
 ]);
 const appleIdProductId = "c70d10e8-b781-4782-bc98-1f034bcd069a";
 
