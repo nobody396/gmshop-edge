@@ -31,6 +31,21 @@ const CORE_ACTIONS: Record<string, string> = {
 };
 const LEGACY_PREFIX = "/plugin/SharedStock/api";
 
+// Some shops (86) require an e-mail contact and an order-lookup password with
+// letters and digits on every trade; the others accept both. We never look
+// orders up by password, so a fresh random one per trade is enough.
+const TRADE_CONTACT = "no-reply@laoshirenvip.com";
+const PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+
+function tradePassword() {
+	const bytes = crypto.getRandomValues(new Uint8Array(12));
+	const body = Array.from(
+		bytes,
+		(byte) => PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length],
+	).join("");
+	return `p${body}7`;
+}
+
 // One commodity = one sellable SKU. The stable cross-endpoint identifier is
 // the 对接CODE, so both productId and skuId use it. race/sku variants are not
 // modeled in this adapter version.
@@ -184,7 +199,8 @@ export class SharedStockAdapter implements SupplierAdapter {
 			const response = await this.request("/trade", {
 				shared_code: descriptor.code,
 				num: String(input.quantity),
-				contact: input.requestNo,
+				contact: TRADE_CONTACT,
+				password: tradePassword(),
 				device: "0",
 				request_no: input.requestNo,
 				...(descriptor.race ? { race: descriptor.race } : {}),

@@ -166,12 +166,12 @@ describe("supplier provider signatures", () => {
 		).toMatch(/^gm_[a-f0-9]{40}$/);
 		expect(
 			providerRequestNumber("shared_stock", "order-1", "account-a"),
-		).toMatch(/^[a-f0-9]{19}$/);
+		).toMatch(/^[a-f0-9]{10}$/);
 	});
 
-	it("fits SharedStock request_no into the upstream CHAR(19) contract", () => {
+	it("keeps SharedStock request_no short enough for the 86 shop", () => {
 		const value = providerRequestNumber("shared_stock", "order-1", "account-a");
-		expect(value).toMatch(/^[a-f0-9]{19}$/);
+		expect(value).toMatch(/^[a-f0-9]{10}$/);
 		expect(providerRequestNumber("shared_stock", "order-1", "account-a")).toBe(
 			value,
 		);
@@ -721,6 +721,11 @@ describe("SharedStock adapter", () => {
 		expect(body.get("shared_code")).toBe("GPT-PLUS");
 		expect(body.get("num")).toBe("2");
 		expect(body.get("request_no")).toBe("ss_abc123");
+		expect(body.get("contact")).toBe("no-reply@laoshirenvip.com");
+		const password = body.get("password") ?? "";
+		expect(password).toMatch(/^[a-z0-9]{14}$/);
+		expect(password).toMatch(/[a-z]/);
+		expect(password).toMatch(/\d/);
 	});
 
 	it("preserves a single multiline supplier delivery without interpreting its fields", async () => {

@@ -1033,7 +1033,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			state: "uncertain",
 			selected_account_id: "account",
 			attempt_count: 1,
-			provider_request_no: expect.stringMatching(/^[a-f0-9]{19}$/),
+			provider_request_no: expect.stringMatching(/^[a-f0-9]{10}$/),
 			account_locked_at: expect.any(Number),
 			next_retry_at: expect.any(Number),
 			upstream_order_id: failure === "non-json" ? null : "trade-123",
@@ -1056,7 +1056,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		}
 		expect(requests.filter((path) => path.endsWith("/trade"))).toHaveLength(1);
 		expect(submittedRequestNumbers).toEqual([first?.provider_request_no]);
-		expect(submittedRequestNumbers[0]).toHaveLength(19);
+		expect(submittedRequestNumbers[0]).toHaveLength(10);
 		expect(
 			await db
 				.prepare(

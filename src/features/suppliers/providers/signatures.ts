@@ -77,10 +77,11 @@ export function providerRequestNumber(
 		.update(`${provider}\n${supplierOrderId}\n${accountId}`)
 		.digest("hex");
 	if (provider === "acg") return digest.slice(0, 24);
-	// acg-faka stores request_no in CHAR(19), not an arbitrary external-ID
-	// field. Preserve 76 hash bits without a prefix. Existing locked orders
+	// acg-faka stores request_no in CHAR(19), and the 86 shop
+	// (faka.redeemgpt.com) answers HTTP 500 for anything much longer than ten
+	// characters. Keep 40 hash bits without a prefix. Existing locked orders
 	// continue using their stored request number; never regenerate it on retry.
-	if (provider === "shared_stock") return digest.slice(0, 19);
+	if (provider === "shared_stock") return digest.slice(0, 10);
 	return `gm_${digest.slice(0, 40)}`;
 }
 
