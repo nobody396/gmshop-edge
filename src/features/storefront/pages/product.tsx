@@ -77,6 +77,7 @@ const ownUsageGuideProductIds = new Set([
 	"2ee356de-fe69-4641-94c3-1dfea19b6967", // Muse AI 成品号
 	"64812c48-9026-4ef7-874d-b332d2a39b1a", // Gemini Pro 18个月 激活链接
 	"c70d10e8-b781-4782-bc98-1f034bcd069a", // Apple ID 成品号
+	"9e8b2987-1564-417e-8441-5936c5d592fa", // Telegram Premium 礼品链接
 ]);
 const appleIdProductId = "c70d10e8-b781-4782-bc98-1f034bcd069a";
 

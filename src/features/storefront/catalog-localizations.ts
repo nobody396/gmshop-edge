@@ -167,6 +167,55 @@ After-sales
 Not covered: problems after you change the password or security questions, locks caused by signing in to iCloud, changing the region, or bans for violating Apple's rules.
 No no-reason refunds after delivery.`,
 	},
+	"deecf24c-6073-472c-8114-a2b41f27e1c7": {
+		name: "Perplexity Max｜1 month｜No credits",
+		description: `One month of Perplexity Max. Delivered automatically after payment: a recharge code and a recharge link. Open the link and follow the steps to activate it yourself; no account password is needed.
+
+Included
+- Perplexity Max for 1 month: unlimited Pro searches and advanced models such as GPT and Claude.
+
+Not included
+- No credits. The monthly credits that come with an official Max plan are not included. Credits are only used by Perplexity Computer (AI agents that run multi-step tasks); everyday searches and questions do not use credits and are not affected.
+- Do not buy this if you need Computer for agent tasks.
+
+Before you buy
+- You can renew early without waiting for expiry, but the new term replaces the remaining time instead of adding to it.
+- Use one code per account. If a recharge fails, try again later; do not use several codes on the same account.
+- An unused code does not expire; you can recharge any time after receiving it.
+
+How to use
+1. After payment, view the recharge code and recharge link on the order page.
+2. Open the recharge link and enter the code and the account to activate as the page asks.
+3. Refresh Perplexity after it succeeds; Max shows once it is active.
+
+Warranty
+- 30-day warranty: if the subscription drops within 30 days, the difference for the remaining days is refunded (refund = amount paid × remaining days ÷ 30).
+- Banned accounts are not covered. Bulk-registered accounts, shared accounts, frequent IP changes and sensitive questions all make bans more likely.
+- If a recharge has a problem, contact support instead of resubmitting.`,
+	},
+	"9e8b2987-1564-417e-8441-5936c5d592fa": {
+		name: "Telegram Premium｜Gift link｜3 / 6 months",
+		description: `A Telegram Premium gift link. Delivered automatically after payment; claim it in your own Telegram to activate Premium on your account. No account password is needed.
+
+Options
+- 3 months: Telegram Premium for 3 months.
+- 6 months: Telegram Premium for 6 months, cheaper per month.
+
+How to use
+1. After payment, copy the whole gift link from the order page.
+2. Open Telegram and send the link in any private chat (your own Saved Messages is easiest).
+3. Tap the link in that chat and follow the prompt to claim it.
+Opening the link in a browser does nothing; it must be tapped inside a Telegram chat.
+
+Before you buy
+- Whoever has the link can claim it. Do not post it in a group or show it to anyone.
+- Premium goes to the Telegram account you are signed in to when you tap the link; check that it is the right account first.
+- If the account already has Premium, claim after it expires.
+
+Warranty
+- Within 24 hours of delivery, if an unclaimed link cannot be claimed, contact support for a replacement after verification.
+- Links already claimed (including by someone else after posting in a group) and banned or restricted accounts are not covered.`,
+	},
 	"64812c48-9026-4ef7-874d-b332d2a39b1a": {
 		name: "Gemini Pro｜18 months｜Activation link",
 		description: `An 18-month Gemini Pro activation link. Delivered automatically after payment; open it with your own Google account to claim. Only the link is sold; no Google account is included.
@@ -276,6 +325,16 @@ function policy(
 	restrictions: string,
 ): Policy {
 	return { delivery, deliveryTime, coverage, warranty, restrictions };
+}
+
+function telegramPremiumPolicy(term: string): Policy {
+	return policy(
+		"A Telegram Premium gift link is issued automatically after payment; tap it in your own Telegram private chat to claim, no account password needed",
+		"Automatic, usually within 1 minute; view it on the order page",
+		`Telegram Premium for ${term}; it goes to the account signed in when the link is tapped`,
+		"Within 24 hours of delivery, an unclaimed link that cannot be claimed is replaced after verification",
+		"Whoever has the link can claim it, so do not share it or post it in a group; claimed links and banned or restricted accounts are not covered",
+	);
 }
 
 const iosCoverage =
@@ -572,6 +631,24 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 	"3d992ebc-cae7-4eaa-bb1c-c9a886c73d6b": {
 		name: "Turkey Apple ID｜Aged account (over 1 year)",
 		policy: appleIdPolicy("Turkey"),
+	},
+	"1f69eef9-2806-41fd-b3f0-70c1988a14e6": {
+		name: "Perplexity Max｜1 month｜No credits",
+		policy: policy(
+			"A recharge code and recharge link are issued automatically after payment; activate it yourself, no account password needed",
+			"Automatic, usually within 1 minute; view it on the order page",
+			"Perplexity Max for 1 month with advanced models such as GPT and Claude and unlimited Pro searches; no credits (Computer agents are unavailable); early renewal replaces the remaining time instead of adding to it",
+			"30-day warranty; if the subscription drops, the remaining days are refunded",
+			"Banned accounts are not covered; use one code per account and retry later if a recharge fails instead of using several codes on the same account",
+		),
+	},
+	"bb484132-9c65-4ba4-908b-9043afdf7f77": {
+		name: "Telegram Premium｜Gift link｜3 months",
+		policy: telegramPremiumPolicy("3 months"),
+	},
+	"58c5634b-89b4-4e61-a6ae-d3c9c7da87f3": {
+		name: "Telegram Premium｜Gift link｜6 months",
+		policy: telegramPremiumPolicy("6 months"),
 	},
 	"39d831df-4919-49a4-8896-8ccfdbd33d83": {
 		name: "Gemini Pro｜18 months｜Activation link",
