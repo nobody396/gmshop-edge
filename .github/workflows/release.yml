@@ -14,8 +14,85 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Vitest files run serially (fileParallelism: false), so the suite is split
+  # across parallel runners instead of one 40-minute job.
+  vitest:
+    name: Vitest shard ${{ matrix.shard }}/6
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Restore Bun and build caches
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-1.3.14-
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Vitest shard
+        run: |
+          bun run generate-paraglide
+          bun run test:vitest --shard=${{ matrix.shard }}/6
+
+  checks:
+    name: Typecheck, lint, Bun tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Restore Bun and build caches
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-1.3.14-
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run quality gate
+        run: |
+          bun run generate-paraglide
+          bun run typecheck
+          bun run test:bun-runtime
+          bun run test:support-attachments
+          bun run test:support-email
+          bun run test:support-away
+          bun run check
+          bun run build:bun
+
   release:
     name: Create release
+    needs: [vitest, checks]
     runs-on: ubuntu-latest
     outputs:
       release-tag: ${{ steps.release-tag.outputs.value }}
@@ -44,14 +121,6 @@ jobs:
 
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
-
-      - name: Run quality gate
-        run: |
-          bun run generate-paraglide
-          bun run typecheck
-          bun run test
-          bun run check
-          bun run build:bun
 
       - name: Run semantic-release
         env:
