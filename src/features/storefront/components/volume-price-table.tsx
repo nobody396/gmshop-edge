@@ -64,9 +64,9 @@ export function VolumePriceTable({
 	quantity: number;
 }) {
 	if (!pricing) return null;
+	// Only discounted quantities are listed: the list price for fewer is already shown above.
 	const breakpoints = [
 		...new Set([
-			1,
 			...pricing.volumeSteps.map((step) => step.minQuantity),
 			...pricing.customerSteps.map((step) => step.minQuantity),
 		]),
@@ -90,7 +90,7 @@ export function VolumePriceTable({
 		};
 	});
 	const customer = pricing.customerSteps.length > 0;
-	if (rows.length < 2 && !customer) return null;
+	if (rows.length === 0) return null;
 	return (
 		<section className="mt-4 rounded-xl border border-border/70 bg-card/55 p-4">
 			<h3 className="font-semibold text-sm">
@@ -130,14 +130,16 @@ export function VolumePriceTable({
 									key={row.minimum}
 								>
 									<th className="py-1.5 pr-3 text-left font-normal" scope="row">
-										{row.last && row.minimum < item.maximumQuantity
-											? m.store_volume_range_open({ minimum: row.minimum })
-											: row.minimum === row.maximum
+										{row.last && row.minimum === 1
+											? m.store_volume_any_quantity()
+											: row.last && row.minimum < item.maximumQuantity
 												? m.store_volume_range_open({ minimum: row.minimum })
-												: m.store_volume_range({
-														minimum: row.minimum,
-														maximum: row.maximum,
-													})}
+												: row.minimum === row.maximum
+													? m.store_volume_range_open({ minimum: row.minimum })
+													: m.store_volume_range({
+															minimum: row.minimum,
+															maximum: row.maximum,
+														})}
 									</th>
 									{row.prices.map((price, index) => (
 										<td

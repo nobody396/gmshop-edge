@@ -769,6 +769,7 @@
 	"store_customer_prices_title": "你的专属价",
 	"store_volume_range": "{minimum}–{maximum} 张",
 	"store_volume_range_open": "{minimum} 张起",
+	"store_volume_any_quantity": "任意数量",
 	"store_volume_unit_price_note": "单价随购买数量自动计算，下单时按此价格结算。",
 	"store_price_badge_volume": "批量价",
 	"store_price_badge_customer": "专属价",

@@ -769,6 +769,7 @@
 	"store_customer_prices_title": "Your prices",
 	"store_volume_range": "{minimum}–{maximum}",
 	"store_volume_range_open": "{minimum}+",
+	"store_volume_any_quantity": "Any quantity",
 	"store_volume_unit_price_note": "The unit price follows the quantity and is what checkout charges.",
 	"store_price_badge_volume": "Volume price",
 	"store_price_badge_customer": "Your price",

@@ -429,8 +429,11 @@ export function StorefrontProductPage({
 															}}
 															type="button"
 														>
-															<span className="font-medium text-sm leading-snug">
+															<span className="flex flex-wrap items-center gap-1.5 font-medium text-sm leading-snug">
 																{label}
+																<PlanPriceBadge
+																	pricing={pricing.data?.[item.id]}
+																/>
 															</span>
 															<span className="flex items-baseline justify-between gap-2">
 																<span className="font-semibold text-primary text-sm">
@@ -628,41 +631,7 @@ export function StorefrontProductPage({
 							<p className="text-muted-foreground">{m.store_select_plan()}</p>
 						)}
 					</div>
-					{selectedItem ? <SkuPolicyPanel sellableItem={selectedItem} /> : null}
-					{selectedItem && agentAccessKind(selectedItem.id) ? (
-						<AgentAccessCheckout
-							key={selectedItem.id}
-							itemId={selectedItem.id}
-						/>
-					) : null}
-					{selectedItem ? (
-						<div className="mt-5 grid gap-3">
-							{delivery ? (
-								<PurchaseHighlight icon={ShieldCheck}>
-									{delivery}
-								</PurchaseHighlight>
-							) : null}
-							{requiresSignIn ? (
-								<PurchaseHighlight icon={LogIn}>
-									{m.store_account_required_description()}
-								</PurchaseHighlight>
-							) : null}
-							{entitlement ? (
-								<PurchaseHighlight icon={Clock3}>
-									{entitlement}
-								</PurchaseHighlight>
-							) : null}
-							{purchaseLimit ? (
-								<PurchaseHighlight icon={PackageCheck}>
-									{purchaseLimit}
-								</PurchaseHighlight>
-							) : null}
-							<PurchaseHighlight icon={CircleCheck}>
-								{m.store_order_access_promise()}
-							</PurchaseHighlight>
-						</div>
-					) : null}
-					<div className="mt-7 grid gap-5">
+					<div className="mt-5">
 						<div className="grid gap-2 sm:grid-cols-2">
 							{requiresSignIn && canPurchase ? (
 								<Button asChild className="h-12 rounded-xl">
@@ -719,6 +688,40 @@ export function StorefrontProductPage({
 							</Button>
 						</div>
 					</div>
+					{selectedItem ? <SkuPolicyPanel sellableItem={selectedItem} /> : null}
+					{selectedItem && agentAccessKind(selectedItem.id) ? (
+						<AgentAccessCheckout
+							key={selectedItem.id}
+							itemId={selectedItem.id}
+						/>
+					) : null}
+					{selectedItem ? (
+						<div className="mt-5 grid gap-3">
+							{delivery ? (
+								<PurchaseHighlight icon={ShieldCheck}>
+									{delivery}
+								</PurchaseHighlight>
+							) : null}
+							{requiresSignIn ? (
+								<PurchaseHighlight icon={LogIn}>
+									{m.store_account_required_description()}
+								</PurchaseHighlight>
+							) : null}
+							{entitlement ? (
+								<PurchaseHighlight icon={Clock3}>
+									{entitlement}
+								</PurchaseHighlight>
+							) : null}
+							{purchaseLimit ? (
+								<PurchaseHighlight icon={PackageCheck}>
+									{purchaseLimit}
+								</PurchaseHighlight>
+							) : null}
+							<PurchaseHighlight icon={CircleCheck}>
+								{m.store_order_access_promise()}
+							</PurchaseHighlight>
+						</div>
+					) : null}
 				</div>
 				<div className="grid min-w-0 content-start gap-3 lg:col-start-1 lg:row-start-2">
 					{longDescription ? (
@@ -1218,6 +1221,16 @@ function QuantityTotal({
 			))}
 		</p>
 	);
+}
+
+/** Marks a plan that is cheaper in bulk, or that has the signed-in customer's own price. */
+function PlanPriceBadge({ pricing }: { pricing: ItemPricing | undefined }) {
+	if (!pricing) return null;
+	if (pricing.customerSteps.length > 0)
+		return <PriceSourceBadge source="customer" />;
+	if (pricing.volumeSteps.length > 0)
+		return <PriceSourceBadge source="volume" />;
+	return null;
 }
 
 function PurchaseHighlight({
