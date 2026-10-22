@@ -15,6 +15,10 @@ import {
 	runPricingGuard,
 } from "#/features/ops-automation/server/pricing-guard";
 import {
+	formatProcurementAlert,
+	runProcurementAlerts,
+} from "#/features/ops-automation/server/procurement-alerts";
+import {
 	parseProcurementPrices,
 	parseProcurementStats,
 	yuanToMinor,
@@ -155,6 +159,73 @@ describe("ops automation pure helpers", () => {
 				purchases7d: 7,
 			}),
 		).toBeNull();
+		// The dearest card decides, not the average: ¥934 cannot buy a ¥1050 card.
+		expect(
+			assessSupplier(
+				{
+					key: "xiaojiu",
+					label: "小九",
+					balanceMinor: 93400,
+					spend7dMinor: 306600,
+					purchases7d: 19,
+				},
+				105000,
+			),
+		).toMatchObject({ typicalPurchaseMinor: 105000 });
+		expect(
+			assessSupplier({
+				key: "xiaojiu",
+				label: "小九",
+				balanceMinor: 93400,
+				spend7dMinor: 306600,
+				purchases7d: 19,
+			}),
+		).toBeNull();
+	});
+
+	it("words procurement alerts for the owner", () => {
+		const data = {
+			alerts: [],
+			waiting: [
+				{ source: "xiaojiu", sku: "GPT_20X_PH", state: "waiting", codes: 1 },
+			],
+		};
+		const base = {
+			id: 1,
+			source: "xiaojiu",
+			sku: "GPT_20X_PH",
+			product_name: "ChatGPT Pro 200｜菲区新开｜1个月",
+			code_suffix: "HW8W",
+			reason: "order_refused: insufficient_balance",
+			price_minor: 105000,
+			balance_minor: 93400,
+		};
+		expect(
+			formatProcurementAlert({ ...base, kind: "funds_needed" }, data),
+		).toBe(
+			"⚠️ 进货失败：小九余额不足\n商品：ChatGPT Pro 200｜菲区新开｜1个月（卡密 …HW8W 在等货）\n单价约 ¥1050.00，当前余额 ¥934.00，至少还差 ¥116.00\n给小九充值后，系统每分钟自动补货，不用手动买。",
+		);
+		expect(
+			formatProcurementAlert({ ...base, kind: "restocked" }, data),
+		).toContain(
+			"✅ 已自动补货：ChatGPT Pro 200｜菲区新开｜1个月\n卡密 …HW8W 可以提交了",
+		);
+		expect(
+			formatProcurementAlert(
+				{ ...base, kind: "needs_review", reason: "order uncertain: http_503" },
+				data,
+			),
+		).toContain("系统不会自动再买");
+		expect(
+			formatProcurementAlert(
+				{
+					...base,
+					kind: "supplier_refused",
+					reason: "order_refused: sku_out_of_stock",
+				},
+				data,
+			),
+		).toContain("原因：order_refused: sku_out_of_stock");
 	});
 });
 
@@ -183,6 +254,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				db,
 				now,
 				readStats: async () => stats,
+				readPrices: async () => prices,
 				deliver: async (text) => {
 					messages.push(text);
 				},
@@ -201,13 +273,15 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			"· AISOU：余额 ¥200.00，近 7 天消耗 ¥1400.00，约剩 1.0 天；建议充值 ¥1200.00",
 		);
 		expect(messages[0]).toContain("· 小九：余额 ¥30.00");
-		expect(messages[0]).toContain("不够下一笔约 ¥70.00 的进货");
-		expect(messages[0]).toContain("建议充值 ¥100.00");
+		expect(messages[0]).toContain("不够买一张最贵的卡，约 ¥140.00");
+		expect(messages[0]).toContain("建议充值 ¥200.00");
 		expect(messages[0]).not.toContain("· 86：");
 
-		// Within two hours the job is throttled; after that, today's alerts are deduped.
-		await expect(run(monday + hour)).resolves.toEqual({ status: "throttled" });
-		await expect(run(monday + 2 * hour)).resolves.toEqual({
+		// Within 30 minutes the job is throttled; after that, today's alerts are deduped.
+		await expect(run(monday + 10 * 60_000)).resolves.toEqual({
+			status: "throttled",
+		});
+		await expect(run(monday + hour)).resolves.toEqual({
 			status: "ok",
 			checked: 3,
 			alerted: 0,
@@ -219,6 +293,97 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			alerted: 2,
 		});
 		expect(messages).toHaveLength(2);
+	});
+
+	it("balance guard alerts again the same day after a supplier recovered and dropped", async () => {
+		await setSetting(db, "ops.balance_guard.enabled", true);
+		const messages: string[] = [];
+		let xiaojiuBalance = "30.00";
+		const run = (now: number) =>
+			runBalanceGuard({
+				db,
+				now,
+				readStats: async () =>
+					parseProcurementStats({
+						success: true,
+						data: {
+							suppliers: [
+								{
+									name: "xiaojiu",
+									balance: xiaojiuBalance,
+									spend_7d: "70.00",
+									purchases_7d: 1,
+								},
+							],
+							skus: [],
+						},
+					}),
+				readPrices: async () => prices,
+				deliver: async (text) => {
+					messages.push(text);
+				},
+			});
+		await run(monday);
+		expect(messages).toHaveLength(1);
+		xiaojiuBalance = "3000.00";
+		await expect(run(monday + hour)).resolves.toMatchObject({ alerted: 0 });
+		xiaojiuBalance = "100.00";
+		await expect(run(monday + 2 * hour)).resolves.toMatchObject({
+			status: "sent",
+			alerted: 1,
+		});
+		expect(messages).toHaveLength(2);
+	});
+
+	it("relays procurement alerts once and keeps the cursor on a failed send", async () => {
+		const alert = {
+			id: 7,
+			kind: "funds_needed",
+			source: "xiaojiu",
+			sku: "GPT_20X_PH",
+			product_name: "ChatGPT Pro 200｜菲区新开｜1个月",
+			code_suffix: "HW8W",
+			reason: "order_refused: insufficient_balance",
+			price_minor: 105000,
+			balance_minor: 93400,
+		};
+		const reads: number[] = [];
+		const read = async (after: number) => {
+			reads.push(after);
+			return {
+				alerts: after < 7 ? [alert] : [],
+				waiting: [
+					{ source: "xiaojiu", sku: "GPT_20X_PH", state: "waiting", codes: 1 },
+				],
+			};
+		};
+		await expect(
+			runProcurementAlerts({
+				db,
+				now: monday,
+				read,
+				deliver: async () => {
+					throw new Error("down");
+				},
+			}),
+		).rejects.toThrow("down");
+		const messages: string[] = [];
+		const deliver = async (text: string) => {
+			messages.push(text);
+		};
+		await expect(
+			runProcurementAlerts({ db, now: monday + 60_000, read, deliver }),
+		).resolves.toEqual({ status: "sent", sent: 1 });
+		await expect(
+			runProcurementAlerts({ db, now: monday + 120_000, read, deliver }),
+		).resolves.toEqual({ status: "ok", sent: 0 });
+		expect(reads).toEqual([0, 0, 7]);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toContain("至少还差 ¥116.00");
+		await setSetting(db, "ops.procurement_alerts.enabled", false);
+		await expect(
+			runProcurementAlerts({ db, now: monday + 180_000, read, deliver }),
+		).resolves.toEqual({ status: "disabled" });
 	});
 
 	it("balance guard retries a failed delivery on the next run", async () => {

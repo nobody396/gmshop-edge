@@ -337,3 +337,47 @@ export async function fetchProcurementPrices(
 		return null;
 	}
 }
+
+const alertsSchema = z.object({
+	success: z.literal(true),
+	data: z.object({
+		alerts: z.array(
+			z.object({
+				id: z.number().int().positive(),
+				kind: z.string(),
+				source: z.string(),
+				sku: z.string(),
+				product_name: z.string(),
+				code_suffix: z.string().nullable(),
+				reason: z.string().nullable(),
+				price_minor: z.number().int().nullable(),
+				balance_minor: z.number().int().nullable(),
+			}),
+		),
+		waiting: z.array(
+			z.object({
+				source: z.string(),
+				sku: z.string(),
+				state: z.string(),
+				codes: z.number().int().nonnegative(),
+			}),
+		),
+	}),
+});
+
+export type ProcurementAlerts = z.infer<typeof alertsSchema>["data"];
+
+/** Warehouse procurement alerts after `after` (an alert id); throws when unreachable so the cursor stays. */
+export async function fetchProcurementAlerts(
+	db: D1Database,
+	after: number,
+	fetcher: typeof fetch,
+): Promise<ProcurementAlerts> {
+	return alertsSchema.parse(
+		await warehouseGet(
+			db,
+			`/api/internal/procurement/alerts?after=${after}`,
+			fetcher,
+		),
+	).data;
+}
