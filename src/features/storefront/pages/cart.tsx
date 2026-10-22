@@ -33,6 +33,7 @@ import {
 	setStoreCartItemFn,
 	syncStoreCartFn,
 } from "#/features/storefront/server/cart";
+import { quoteCheckoutUnitPricesFn } from "#/features/storefront/server/price-functions";
 import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { m } from "#/paraglide/messages";
 
@@ -90,10 +91,34 @@ export function StorefrontCartPage() {
 		items.some(
 			(item) => "deliveryType" in item && item.deliveryType === "automation",
 		);
+	// Volume steps and customer prices depend on quantity, so the server quotes each line.
+	const unitPrices = useQuery({
+		queryKey: [
+			"storefront",
+			"unit-prices",
+			session.data?.user.id,
+			items.map((item) => `${item.sellableItemId}:${item.quantity}`).join(","),
+		],
+		queryFn: () =>
+			quoteCheckoutUnitPricesFn({
+				data: {
+					items: items.map((item) => ({
+						id: item.sellableItemId,
+						quantity: item.quantity,
+					})),
+				},
+			}),
+		enabled: items.length > 0 && items.length <= 100,
+		staleTime: 30_000,
+	});
+	const unitPrice = (sellableItemId: string, fallback: string) =>
+		unitPrices.data?.base[sellableItemId] ?? fallback;
 	const total = items.reduce(
 		(sum, item) =>
 			"priceMinor" in item
-				? sum + BigInt(item.priceMinor ?? "0") * BigInt(item.quantity)
+				? sum +
+					BigInt(unitPrice(item.sellableItemId, item.priceMinor ?? "0")) *
+						BigInt(item.quantity)
 				: sum,
 		0n,
 	);
@@ -271,8 +296,12 @@ export function StorefrontCartPage() {
 											<strong className="text-lg">
 												<StoreMoney
 													amountMinor={(
-														BigInt(item.priceMinor ?? "0") *
-														BigInt(item.quantity)
+														BigInt(
+															unitPrice(
+																item.sellableItemId,
+																item.priceMinor ?? "0",
+															),
+														) * BigInt(item.quantity)
 													).toString()}
 													currency={item.currency ?? "USD"}
 													decimals={item.currencyDecimals ?? 2}

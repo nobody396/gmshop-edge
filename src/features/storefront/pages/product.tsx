@@ -55,6 +55,12 @@ import {
 	StorefrontProductCard,
 	StorefrontProductCardSkeleton,
 } from "#/features/storefront/components/product-card";
+import {
+	type ItemPricing,
+	PriceSourceBadge,
+	unitPriceAt,
+	VolumePriceTable,
+} from "#/features/storefront/components/volume-price-table";
 import { paymentChannelLabel } from "#/features/storefront/payment-channel-label";
 import { purchaseMaximum } from "#/features/storefront/product-quantity";
 import {
@@ -63,6 +69,7 @@ import {
 	storefrontProductQueryOptions,
 } from "#/features/storefront/product-seo";
 import { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
+import { getProductPricingFn } from "#/features/storefront/server/price-functions";
 import { useFitStickyTop } from "#/features/storefront/sticky-top";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
@@ -120,6 +127,26 @@ export function StorefrontProductPage({
 	const [purchaseColumnTop, purchaseColumn] = useFitStickyTop(104);
 	const [selectedMediaId, setSelectedMediaId] = useState<string>();
 	const [quantity, setQuantity] = useState(1);
+	// Volume steps are public; customer prices need the session, so they are
+	// fetched apart from the cached product.
+	const pricing = useQuery({
+		queryKey: [
+			"storefront",
+			"product-pricing",
+			productId,
+			session.data?.user.id ?? "guest",
+		],
+		queryFn: () =>
+			getProductPricingFn({
+				data: {
+					sellableItemIds: (product.data?.sellableItems ?? []).map(
+						(item) => item.id,
+					),
+				},
+			}),
+		enabled: Boolean(product.data?.sellableItems.length) && !session.isPending,
+		staleTime: 30_000,
+	});
 	useEffect(() => {
 		if (product.data?.id)
 			trackCommerceEvent({
@@ -517,7 +544,22 @@ export function StorefrontProductPage({
 					) : null}
 					<div className="mt-7">
 						{selectedItem ? (
-							<SellableItemSummary sellableItem={selectedItem} />
+							<>
+								<SellableItemSummary
+									pricing={pricing.data?.[selectedItem.id]}
+									quantity={quantity}
+									sellableItem={selectedItem}
+								/>
+								<VolumePriceTable
+									item={{
+										...selectedItem,
+										maximumQuantity:
+											maximumQuantity ?? selectedItem.maximumQuantity,
+									}}
+									pricing={pricing.data?.[selectedItem.id]}
+									quantity={quantity}
+								/>
+							</>
 						) : (
 							<p className="text-muted-foreground">{m.store_select_plan()}</p>
 						)}
@@ -1005,7 +1047,15 @@ function RelatedProductsLoadingSkeleton() {
 	);
 }
 
-function SellableItemSummary({ sellableItem }: { sellableItem: SellableItem }) {
+function SellableItemSummary({
+	sellableItem,
+	pricing,
+	quantity,
+}: {
+	sellableItem: SellableItem;
+	pricing: ItemPricing | undefined;
+	quantity: number;
+}) {
 	const isFree = BigInt(sellableItem.priceMinor) === 0n;
 	const hasDiscount =
 		sellableItem.listPriceMinor != null &&
@@ -1020,6 +1070,7 @@ function SellableItemSummary({ sellableItem }: { sellableItem: SellableItem }) {
 					{sellableItem.channelPrices.map((channel) => {
 						const alipay =
 							channel.provider === "epay" || channel.name.includes("支付宝");
+						const unit = unitPriceAt(sellableItem, pricing, quantity, channel);
 						return (
 							<div
 								className={cn(
@@ -1037,30 +1088,44 @@ function SellableItemSummary({ sellableItem }: { sellableItem: SellableItem }) {
 									>
 										{paymentChannelLabel(channel.name)}
 									</span>
-									{channel.feeBps > 0 ? (
+									{unit.source !== "list" ? (
+										<PriceSourceBadge source={unit.source} />
+									) : channel.feeBps > 0 ? (
 										<span className="text-muted-foreground text-[11px]">
 											{m.store_payment_price_fee_included()}
 										</span>
 									) : null}
 								</div>
-								<strong
-									className={cn(
-										"mt-1 block text-3xl text-primary tracking-tight",
-										alipay && "text-amber-700 dark:text-amber-300",
-									)}
-								>
-									<StoreMoney
-										amountMinor={channel.priceMinor}
-										currency={sellableItem.currency}
-										decimals={sellableItem.currencyDecimals}
-									/>
-								</strong>
+								<div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+									<strong
+										className={cn(
+											"block text-3xl text-primary tracking-tight",
+											alipay && "text-amber-700 dark:text-amber-300",
+										)}
+									>
+										<StoreMoney
+											amountMinor={unit.unitPriceMinor}
+											currency={sellableItem.currency}
+											decimals={sellableItem.currencyDecimals}
+										/>
+									</strong>
+									{unit.source !== "list" ? (
+										<span className="text-muted-foreground text-sm line-through">
+											<StoreMoney
+												amountMinor={channel.priceMinor}
+												currency={sellableItem.currency}
+												decimals={sellableItem.currencyDecimals}
+											/>
+										</span>
+									) : null}
+								</div>
 							</div>
 						);
 					})}
 				</div>
 			</div>
 		);
+	const unit = unitPriceAt(sellableItem, pricing, quantity, null);
 	return (
 		<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
 			<strong className="text-4xl text-primary tracking-tight">
@@ -1068,13 +1133,24 @@ function SellableItemSummary({ sellableItem }: { sellableItem: SellableItem }) {
 					m.store_price_free()
 				) : (
 					<StoreMoney
-						amountMinor={sellableItem.priceMinor}
+						amountMinor={unit.unitPriceMinor}
 						currency={sellableItem.currency}
 						decimals={sellableItem.currencyDecimals}
 					/>
 				)}
 			</strong>
-			{hasDiscount && sellableItem.listPriceMinor ? (
+			{unit.source !== "list" ? (
+				<>
+					<span className="text-muted-foreground text-sm line-through">
+						<StoreMoney
+							amountMinor={sellableItem.priceMinor}
+							currency={sellableItem.currency}
+							decimals={sellableItem.currencyDecimals}
+						/>
+					</span>
+					<PriceSourceBadge source={unit.source} />
+				</>
+			) : hasDiscount && sellableItem.listPriceMinor ? (
 				<span className="text-muted-foreground text-sm line-through">
 					<StoreMoney
 						amountMinor={sellableItem.listPriceMinor}

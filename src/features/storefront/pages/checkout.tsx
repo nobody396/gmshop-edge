@@ -74,6 +74,7 @@ import {
 	checkoutStoreOrderFn,
 	quoteCheckoutPaymentChannelsFn,
 } from "#/features/storefront/server/functions";
+import { quoteCheckoutUnitPricesFn } from "#/features/storefront/server/price-functions";
 import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { getWalletFn } from "#/features/wallet/server/functions";
 import { m } from "#/paraglide/messages";
@@ -229,10 +230,43 @@ export function StorefrontCheckoutPage() {
 		})),
 	});
 	const currencyItem = items.find((item) => "currency" in item);
+	// Volume steps and the customer's own prices depend on quantity and account,
+	// so the server quotes every line's unit price; list prices are the fallback.
+	const unitPrices = useQuery({
+		queryKey: [
+			"storefront",
+			"unit-prices",
+			session.data?.user.id,
+			items.map((item) => `${item.sellableItemId}:${item.quantity}`).join(","),
+		],
+		queryFn: () =>
+			quoteCheckoutUnitPricesFn({
+				data: {
+					items: items.map((item) => ({
+						id: item.sellableItemId,
+						quantity: item.quantity,
+					})),
+				},
+			}),
+		enabled: items.length > 0 && items.length <= 100,
+		staleTime: 30_000,
+	});
+	const basePrice = (sellableItemId: string, fallback: string) =>
+		unitPrices.data?.base[sellableItemId] ?? fallback;
+	const channelPrice = (
+		channel: { id: string; itemPrices: Record<string, string> },
+		sellableItemId: string,
+		fallback: string,
+	) =>
+		unitPrices.data?.channels[channel.id]?.[sellableItemId] ??
+		channel.itemPrices[sellableItemId] ??
+		basePrice(sellableItemId, fallback);
 	const baseTotal = items.reduce(
 		(sum, item) =>
 			"priceMinor" in item
-				? sum + BigInt(item.priceMinor ?? "0") * BigInt(item.quantity)
+				? sum +
+					BigInt(basePrice(item.sellableItemId, item.priceMinor ?? "0")) *
+						BigInt(item.quantity)
 				: sum,
 		0n,
 	);
@@ -258,7 +292,9 @@ export function StorefrontCheckoutPage() {
 			items.every((item) => selectedChannel.itemPrices[item.sellableItemId]),
 	);
 	const selectedPrice = (sellableItemId: string, fallback: string) =>
-		selectedChannel?.itemPrices[sellableItemId] ?? fallback;
+		selectedChannel
+			? channelPrice(selectedChannel, sellableItemId, fallback)
+			: basePrice(sellableItemId, fallback);
 	const total = items.reduce(
 		(sum, item) =>
 			"priceMinor" in item
@@ -308,7 +344,11 @@ export function StorefrontCheckoutPage() {
 				"priceMinor" in item
 					? sum +
 						BigInt(
-							channel.itemPrices[item.sellableItemId] ?? item.priceMinor ?? "0",
+							channelPrice(
+								channel,
+								item.sellableItemId,
+								item.priceMinor ?? "0",
+							),
 						) *
 							BigInt(item.quantity)
 					: sum,

@@ -434,7 +434,12 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 			telegram.find((call) => call.method === "setMyCommands")?.body,
 		).toMatchObject({
 			scope: { type: "chat", chat_id: chatId },
-			commands: [{ command: "topup" }],
+			commands: [
+				{ command: "vip" },
+				{ command: "vipprice" },
+				{ command: "vipdel" },
+				{ command: "topup" },
+			],
 		});
 		const command = (fromId: number, text: string, updateId: number) =>
 			deliver({

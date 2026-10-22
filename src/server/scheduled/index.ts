@@ -2,6 +2,7 @@ import { reconcileAgentAccess } from "#/features/agent-access/server/fulfillment
 import { runWithdrawalAlerts } from "#/features/agent-program/server/withdrawal-alerts";
 import { publishAuthSecurityAlert } from "#/features/auth/server/security-alerts";
 import { publishPendingBuilds } from "#/features/builds/server/outbox";
+import { runCustomerPriceGuard } from "#/features/customer-pricing/server/telegram";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import { publishPendingNotifications } from "#/features/notifications/server/delivery";
 import { fanOutPendingCommerceNotifications } from "#/features/notifications/server/fanout";
@@ -12,6 +13,10 @@ import { runPricingGuard } from "#/features/ops-automation/server/pricing-guard"
 import { runProcurementAlerts } from "#/features/ops-automation/server/procurement-alerts";
 import { runWeeklyReport } from "#/features/ops-automation/server/weekly-report";
 import { settlePromotionRewards } from "#/features/promotions/server/balance";
+import {
+	runBulkProcurements,
+	topUpBulkCodeStock,
+} from "#/features/redeem-warehouse/server/bulk-procurement";
 import { runRedemptionExceptionTodos } from "#/features/redeem-warehouse/server/exception-todos";
 import { runRenewalReminders } from "#/features/renewals/server/scheduler";
 import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
@@ -97,6 +102,14 @@ export async function runScheduledCommerceWork(
 		env.DB,
 		scheduledAt,
 	).catch(() => ({ status: "failed" }));
+	const bulkProcurements = await runBulkProcurements({
+		db: env.DB,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
+	const bulkCodeTopUp = await topUpBulkCodeStock({
+		db: env.DB,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	const redemptionExceptions = await runRedemptionExceptionTodos({
 		db: env.DB,
 	}).catch(() => ({ status: "failed", changed: 0, accepted: 0 }));
@@ -124,6 +137,10 @@ export async function runScheduledCommerceWork(
 		files: env.FILES,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	const customerPriceGuard = await runCustomerPriceGuard({
+		db: env.DB,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	const weeklyReport = await runWeeklyReport({
 		db: env.DB,
 		now: scheduledAt,
@@ -138,12 +155,15 @@ export async function runScheduledCommerceWork(
 		procurementAlerts,
 		pricingGuard,
 		priceDropNotices,
+		customerPriceGuard,
 		weeklyReport,
 		withdrawalAlerts,
 		agentAccess,
 		promotionRewards,
 		payments,
 		redemptionExceptions,
+		bulkProcurements,
+		bulkCodeTopUp,
 		expired,
 		deliveries,
 		suppliers,

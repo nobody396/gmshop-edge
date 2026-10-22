@@ -79,6 +79,30 @@ const handlers: Record<string, HandlerEntry> = {
 			(await import("#/features/ops-automation/server/pricing-guard"))
 				.approvePricingRaise,
 	},
+	customer_price_set: {
+		load: async () =>
+			(await import("#/features/customer-pricing/server/telegram"))
+				.approveCustomerPriceSet,
+		rejectedLine: "❌ 已取消，没有设置",
+	},
+	customer_price_delete: {
+		load: async () =>
+			(await import("#/features/customer-pricing/server/telegram"))
+				.approveCustomerPriceDelete,
+		rejectedLine: "❌ 已取消，没有删除",
+	},
+	customer_price_raise: {
+		load: async () =>
+			(await import("#/features/customer-pricing/server/telegram"))
+				.approveCustomerPriceRaise,
+		rejectedLine: "保持不变",
+	},
+	bulk_procurement: {
+		load: async () =>
+			(await import("#/features/redeem-warehouse/server/bulk-procurement"))
+				.approveBulkProcurement,
+		rejectedLine: "🚫 这批不进了，客户兑换时单张进货",
+	},
 	agent_wallet_topup: {
 		load: async () =>
 			(await import("#/features/agent-program/server/wallet-topup"))
@@ -111,6 +135,23 @@ const commands: Record<
 	string,
 	{ description: string; load: () => Promise<OwnerCommand> }
 > = {
+	vip: {
+		description: "客户专属价：/vip 邮箱",
+		load: async () =>
+			(await import("#/features/customer-pricing/server/telegram")).vipCommand,
+	},
+	vipprice: {
+		description: "设置客户专属价：/vipprice 邮箱 商品 [N张起] 价格",
+		load: async () =>
+			(await import("#/features/customer-pricing/server/telegram"))
+				.vipPriceCommand,
+	},
+	vipdel: {
+		description: "删除客户专属价：/vipdel 邮箱 商品 [N张起]",
+		load: async () =>
+			(await import("#/features/customer-pricing/server/telegram"))
+				.vipDeleteCommand,
+	},
 	topup: {
 		description: "代理钱包充值：/topup 邮箱 金额",
 		load: async () =>
