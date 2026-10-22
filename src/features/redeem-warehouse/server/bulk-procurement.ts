@@ -25,6 +25,14 @@ export const bulkMinimumQuantity = 3;
 const maxTransientAttempts = 15;
 const verifyPollMs = 60_000;
 const awaitingStates = ["awaiting_funds", "awaiting_stock", "awaiting_price"];
+const rowColumns = `b.id, b.order_id, b.order_item_id, b.warehouse_sku, b.quantity,
+	b.code_hashes_json, b.state, b.accept_unit_minor, b.attempt_count, b.notified_state, b.last_result_json,
+	o.order_number, o.status AS order_status, o.total_minor,
+	i.product_name, i.sellable_item_name, c.name AS channel_name`;
+const rowJoins = `FROM bulk_procurements b
+	JOIN shop_orders o ON o.id = b.order_id
+	JOIN shop_order_items i ON i.id = b.order_item_id
+	LEFT JOIN payment_channels c ON c.id = o.pricing_channel_id`;
 
 const resultSchema = z.looseObject({
 	status: z.string(),
@@ -121,6 +129,23 @@ export async function runBulkProcurements(input: {
 		)
 		.bind(now)
 		.run();
+	// Messages that did not go out (Telegram down) are sent again.
+	const unsent = await db
+		.prepare(
+			`SELECT ${rowColumns} ${rowJoins}
+			 WHERE b.state NOT IN ('pending','verifying') AND (b.notified_state IS NULL OR b.notified_state <> b.state)
+			 ORDER BY b.updated_at LIMIT 5`,
+		)
+		.all<BulkRow & { last_result_json: string | null }>();
+	for (const row of unsent.results) {
+		let result: BulkResult = { status: row.state };
+		try {
+			result = resultSchema.parse(JSON.parse(row.last_result_json ?? "{}"));
+		} catch {
+			// The message falls back to the state alone.
+		}
+		await notify(db, row, row.state, result, now, input.fetcher);
+	}
 	const due = await db
 		.prepare(
 			`SELECT b.id, b.order_id, b.order_item_id, b.warehouse_sku, b.quantity,
@@ -253,10 +278,35 @@ async function settle(
 	if (Number(changed.meta.changes ?? 0) !== 1 || row.notified_state === state)
 		return;
 	// A silent skip: the line is not a bulk SKU at all.
-	if (result.status === "not_bulk") return;
+	if (result.status === "not_bulk") {
+		await db
+			.prepare("UPDATE bulk_procurements SET notified_state = ? WHERE id = ?")
+			.bind(state, row.id)
+			.run();
+		return;
+	}
+	await notify(db, row, state, result, now, fetcher);
+}
+
+/**
+ * Tells the owner about `state`, recording it only once a message actually
+ * went out; the minute cron resends anything not yet delivered.
+ */
+async function notify(
+	db: D1Database,
+	row: BulkRow,
+	state: string,
+	result: BulkResult,
+	now: number,
+	fetcher: typeof fetch | undefined,
+) {
 	const message = describe(row, state, result);
-	const ownerAction = awaitingStates.includes(state)
-		? await proposeOwnerAction(db, {
+	let delivered = false;
+	let actionId: string | null = null;
+	try {
+		if (awaitingStates.includes(state)) {
+			// Without a working button webhook the text still goes out as a plain alert.
+			const proposal = await proposeOwnerAction(db, {
 				kind: "bulk_procurement",
 				payload: {
 					id: row.id,
@@ -276,15 +326,20 @@ async function settle(
 				fallback: "（按钮暂不可用：请在后台把这条批量进货单改回待处理）",
 				now,
 				fetcher,
-			}).catch(() => null)
-		: await sendOwnerAlert(db, message, { fetcher })
-				.then(() => null)
-				.catch(() => null);
+			});
+			actionId = proposal?.id ?? null;
+			delivered = true;
+		} else
+			delivered = (await sendOwnerAlert(db, message, { fetcher })) !== null;
+	} catch {
+		delivered = false;
+	}
+	if (!delivered) return;
 	await db
 		.prepare(
-			"UPDATE bulk_procurements SET notified_state = ?, owner_action_id = COALESCE(?, owner_action_id) WHERE id = ?",
+			"UPDATE bulk_procurements SET notified_state = ?, owner_action_id = COALESCE(?, owner_action_id) WHERE id = ? AND state = ?",
 		)
-		.bind(state, ownerAction?.id ?? null, row.id)
+		.bind(state, actionId, row.id, state)
 		.run();
 }
 

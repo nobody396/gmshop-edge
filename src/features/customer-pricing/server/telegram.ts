@@ -358,8 +358,10 @@ export async function proposeLosingCustomerPrices(
 			: null;
 		if (!((usdt !== null && usdt < 0n) || (alipay !== null && alipay < 0n)))
 			continue;
-		next[row.id] = row.costMinor;
-		if (alerted[row.id] === row.costMinor) continue;
+		if (alerted[row.id] === row.costMinor) {
+			next[row.id] = row.costMinor;
+			continue;
+		}
 		const marginAtSet =
 			row.costMinorAtSet !== null
 				? BigInt(row.priceMinor) - BigInt(row.costMinorAtSet)
@@ -388,7 +390,11 @@ export async function proposeLosingCustomerPrices(
 			now: context.now,
 			fetcher: context.fetcher,
 		}).catch(() => null);
-		if (proposal) proposals += 1;
+		// Remembered only once the owner actually got it; otherwise tomorrow's run tries again.
+		if (proposal) {
+			proposals += 1;
+			next[row.id] = row.costMinor;
+		}
 	}
 	return { alerted: next, proposals };
 }

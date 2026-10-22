@@ -36,12 +36,14 @@ describe("bulk AISOU procurement after a bulk sale", {
 	let warehouse: Array<{ path: string; body: Record<string, unknown> }>;
 	let replies: Array<Record<string, unknown>>;
 	let webhookUrl: string;
+	let telegramDown: boolean;
 	const runtime = createInitialRuntimeConfig("https://shop.example");
 
 	const fetcher: typeof fetch = async (input, init) => {
 		const url = new URL(String(input));
 		const method = url.pathname.split("/").at(-1) ?? "";
 		const body = JSON.parse(String(init?.body ?? "{}"));
+		if (telegramDown) return new Response("bad gateway", { status: 502 });
 		telegram.push({ method, body });
 		if (method === "getWebhookInfo")
 			return Response.json({ ok: true, result: { url: webhookUrl } });
@@ -95,6 +97,7 @@ describe("bulk AISOU procurement after a bulk sale", {
 		warehouse = [];
 		replies = [];
 		webhookUrl = "";
+		telegramDown = false;
 		miniflare = new Miniflare({
 			modules: true,
 			script: "export default { fetch() { return new Response('ok') } }",
@@ -393,5 +396,26 @@ describe("bulk AISOU procurement after a bulk sale", {
 		await expect(
 			topUpBulkCodeStock({ db, now: 1_900_000_060_000, generate }),
 		).resolves.toEqual({ status: "waiting" });
+	});
+
+	it("keeps an unsent owner message pending and sends it once Telegram is back", async () => {
+		replies.push({ status: "stock_short", need: 3, stock: 2 });
+		telegramDown = true;
+		await run(1_900_000_000_000);
+		expect(await state()).toMatchObject({
+			state: "awaiting_stock",
+			notified_state: null,
+		});
+		telegramDown = false;
+		await run(1_900_000_060_000);
+		expect(await state()).toMatchObject({
+			state: "awaiting_stock",
+			notified_state: "awaiting_stock",
+		});
+		expect(sent()[0]?.body.text).toContain("AISOU 这款只剩 2 张");
+		// The warehouse was asked once; the resend did not buy or quote again.
+		expect(warehouse).toHaveLength(1);
+		await run(1_900_000_120_000);
+		expect(sent()).toHaveLength(1);
 	});
 });
