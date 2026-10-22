@@ -643,11 +643,11 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		),
 	},
 	"bb484132-9c65-4ba4-908b-9043afdf7f77": {
-		name: "Telegram Premium｜Gift link｜3 months",
+		name: "Telegram Premium｜3 months gift link",
 		policy: telegramPremiumPolicy("3 months"),
 	},
 	"58c5634b-89b4-4e61-a6ae-d3c9c7da87f3": {
-		name: "Telegram Premium｜Gift link｜6 months",
+		name: "Telegram Premium｜6 months gift link",
 		policy: telegramPremiumPolicy("6 months"),
 	},
 	"39d831df-4919-49a4-8896-8ccfdbd33d83": {
