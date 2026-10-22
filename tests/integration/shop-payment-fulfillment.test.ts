@@ -4,6 +4,7 @@ import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import {
 	completeManualDelivery,
 	processDelivery,
+	replaceDeliveredContent,
 	startManualDelivery,
 } from "#/features/fulfillment/server/process";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
@@ -638,6 +639,62 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 				"commerce-test-secret",
 			),
 		).toBe("https://shop.example/redeem/MANUAL-CDK-1234");
+
+		await expect(
+			replaceDeliveredContent(database, waiting?.id ?? "", "  REPLACED-1  "),
+		).resolves.toEqual({
+			id: waiting?.id,
+			status: "delivered",
+			changed: true,
+		});
+		await expect(
+			replaceDeliveredContent(database, waiting?.id ?? "", "REPLACED-1"),
+		).resolves.toMatchObject({ changed: false });
+		const replaced = await database
+			.prepare(
+				`SELECT dr.content_encrypted, dr.status, o.status AS order_status,
+				 (SELECT COUNT(*) FROM outbox_events
+				  WHERE event_type = 'delivery.ready' AND aggregate_id = dr.id) AS ready_events
+				 FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
+				 JOIN shop_orders o ON o.id = oi.order_id WHERE dr.id = ?`,
+			)
+			.bind(waiting?.id)
+			.first<Record<string, unknown>>();
+		expect(replaced).toMatchObject({
+			status: "delivered",
+			order_status: "completed",
+			ready_events: 1,
+		});
+		expect(
+			await decryptDeliveryContent(
+				String(replaced?.content_encrypted),
+				"commerce-test-secret",
+			),
+		).toBe("REPLACED-1");
+		await database
+			.prepare("UPDATE delivery_records SET redeem_sku = 'sku' WHERE id = ?")
+			.bind(waiting?.id)
+			.run();
+		await expect(
+			replaceDeliveredContent(database, waiting?.id ?? "", "REPLACED-2"),
+		).rejects.toMatchObject({ code: "delivery_content_warehouse_managed" });
+	});
+
+	it("refuses to replace content of an undelivered delivery", async () => {
+		await processShopPaymentEvent(database, channelId, succeededEvent("evt_1"));
+		await database
+			.prepare(
+				"UPDATE delivery_records SET status = 'pending' WHERE order_item_id = ?",
+			)
+			.bind(orderItemId)
+			.run();
+		const delivery = await database
+			.prepare("SELECT id FROM delivery_records WHERE order_item_id = ?")
+			.bind(orderItemId)
+			.first<{ id: string }>();
+		await expect(
+			replaceDeliveredContent(database, delivery?.id ?? "", "NEW"),
+		).rejects.toMatchObject({ code: "delivery_content_not_replaceable" });
 	});
 
 	it("makes provider event replay idempotent", async () => {

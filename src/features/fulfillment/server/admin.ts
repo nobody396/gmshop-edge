@@ -9,6 +9,7 @@ import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import {
 	completeManualDelivery,
+	replaceDeliveredContent,
 	startManualDelivery,
 } from "#/features/fulfillment/server/process";
 import { withOrderRedeemHost } from "#/features/redeem-warehouse/redeem-host";
@@ -36,6 +37,10 @@ const completeManualInput = idInput.extend({
 	content: z.string().trim().min(1).max(64_000),
 });
 const revealInput = sensitiveProofSchema.extend({ id: z.uuid() });
+const replaceContentInput = revealInput.extend({
+	content: z.string().trim().min(1).max(64_000),
+	reason: z.string().trim().min(1).max(500),
+});
 
 export const listDeliveriesFn = createServerFn({ method: "GET" })
 	.validator((input: z.input<typeof listInput>) => listInput.parse(input))
@@ -74,6 +79,7 @@ export async function queryDeliveryRecords(
 			.prepare(
 				`SELECT d.id, d.delivery_type, d.status, i.quantity, d.attempt_count,
 				 d.error_code, d.content_encrypted IS NOT NULL AS has_content,
+				 d.redeem_sku IS NULL AS content_replaceable,
 				 d.delivered_at, d.created_at, d.updated_at, o.order_number,
 				 i.product_name, i.sellable_item_name,
 				 i.input_values_json, i.sensitive_input_values_json,
@@ -102,6 +108,8 @@ export async function queryDeliveryRecords(
 			attemptCount: Number(row.attempt_count),
 			errorCode: row.error_code ? String(row.error_code) : null,
 			hasContent: Boolean(row.has_content),
+			contentReplaceable:
+				Boolean(row.has_content) && Boolean(row.content_replaceable),
 			deliveredAt: row.delivered_at ? Number(row.delivered_at) : null,
 			createdAt: Number(row.created_at),
 			updatedAt: Number(row.updated_at),
@@ -330,6 +338,30 @@ export const revealDeliveryContentFn = createServerFn({ method: "POST" })
 			auditStatement(context, "delivery.content_revealed", data.id, null, now),
 		]);
 		return { id: data.id, content };
+	});
+
+export const replaceDeliveryContentFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof replaceContentInput>) =>
+		replaceContentInput.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const context = await deliveryContext("update");
+		await verifySensitiveAdminAction(context.request, context.user.id, data);
+		const result = await replaceDeliveredContent(
+			context.db,
+			data.id,
+			data.content,
+		);
+		// The audit keeps the reason only; delivery secrets never enter audit logs.
+		if (result.changed)
+			await auditStatement(
+				context,
+				"delivery.content_replaced",
+				data.id,
+				{ reason: data.reason },
+				Date.now(),
+			).run();
+		return result;
 	});
 
 async function deliveryContext(permission: "read" | "update") {
