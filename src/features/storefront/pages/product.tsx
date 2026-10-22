@@ -559,6 +559,70 @@ export function StorefrontProductPage({
 									pricing={pricing.data?.[selectedItem.id]}
 									quantity={quantity}
 								/>
+								{selectedItem.minimumQuantity !==
+									selectedItem.maximumQuantity && (
+									<div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-2">
+										<div className="grid w-fit gap-2">
+											<Label htmlFor="product-quantity">
+												{m.store_quantity()}
+											</Label>
+											<div className="flex h-11 items-center rounded-xl bg-muted/50 p-1">
+												<Button
+													aria-label={m.store_quantity_decrease()}
+													className="size-9 rounded-lg"
+													disabled={quantity <= selectedItem.minimumQuantity}
+													onClick={() =>
+														setQuantity((current) =>
+															Math.max(
+																selectedItem.minimumQuantity,
+																current - 1,
+															),
+														)
+													}
+													size="icon"
+													type="button"
+													variant="ghost"
+												>
+													<Minus />
+												</Button>
+												<Input
+													className="h-9 w-16 border-0 bg-transparent px-1 text-center shadow-none focus-visible:ring-0"
+													id="product-quantity"
+													max={maximumQuantity}
+													min={selectedItem.minimumQuantity}
+													onChange={(event) =>
+														setQuantity(Number(event.target.value))
+													}
+													type="number"
+													value={quantity}
+												/>
+												<Button
+													aria-label={m.store_quantity_increase()}
+													className="size-9 rounded-lg"
+													disabled={
+														maximumQuantity == null ||
+														quantity >= maximumQuantity
+													}
+													onClick={() =>
+														setQuantity((current) =>
+															Math.min(maximumQuantity ?? current, current + 1),
+														)
+													}
+													size="icon"
+													type="button"
+													variant="ghost"
+												>
+													<Plus />
+												</Button>
+											</div>
+										</div>
+										<QuantityTotal
+											pricing={pricing.data?.[selectedItem.id]}
+											quantity={quantity}
+											sellableItem={selectedItem}
+										/>
+									</div>
+								)}
 							</>
 						) : (
 							<p className="text-muted-foreground">{m.store_select_plan()}</p>
@@ -599,57 +663,6 @@ export function StorefrontProductPage({
 						</div>
 					) : null}
 					<div className="mt-7 grid gap-5">
-						{selectedItem &&
-							selectedItem.minimumQuantity !== selectedItem.maximumQuantity && (
-								<div className="grid w-fit gap-2">
-									<Label htmlFor="product-quantity">{m.store_quantity()}</Label>
-									<div className="flex h-11 items-center rounded-xl bg-muted/50 p-1">
-										<Button
-											aria-label={m.store_quantity_decrease()}
-											className="size-9 rounded-lg"
-											disabled={quantity <= selectedItem.minimumQuantity}
-											onClick={() =>
-												setQuantity((current) =>
-													Math.max(selectedItem.minimumQuantity, current - 1),
-												)
-											}
-											size="icon"
-											type="button"
-											variant="ghost"
-										>
-											<Minus />
-										</Button>
-										<Input
-											className="h-9 w-16 border-0 bg-transparent px-1 text-center shadow-none focus-visible:ring-0"
-											id="product-quantity"
-											max={maximumQuantity}
-											min={selectedItem.minimumQuantity}
-											onChange={(event) =>
-												setQuantity(Number(event.target.value))
-											}
-											type="number"
-											value={quantity}
-										/>
-										<Button
-											aria-label={m.store_quantity_increase()}
-											className="size-9 rounded-lg"
-											disabled={
-												maximumQuantity == null || quantity >= maximumQuantity
-											}
-											onClick={() =>
-												setQuantity((current) =>
-													Math.min(maximumQuantity ?? current, current + 1),
-												)
-											}
-											size="icon"
-											type="button"
-											variant="ghost"
-										>
-											<Plus />
-										</Button>
-									</div>
-								</div>
-							)}
 						<div className="grid gap-2 sm:grid-cols-2">
 							{requiresSignIn && canPurchase ? (
 								<Button asChild className="h-12 rounded-xl">
@@ -1165,6 +1178,45 @@ function SellableItemSummary({
 				</span>
 			) : null}
 		</div>
+	);
+}
+
+/** What the chosen quantity costs on each payment method, at the quoted unit price. */
+function QuantityTotal({
+	sellableItem,
+	pricing,
+	quantity,
+}: {
+	sellableItem: SellableItem;
+	pricing: ItemPricing | undefined;
+	quantity: number;
+}) {
+	if (!Number.isInteger(quantity) || quantity < 1) return null;
+	const channels =
+		sellableItem.channelPrices.length > 0 ? sellableItem.channelPrices : [null];
+	return (
+		<p className="pb-2.5 text-muted-foreground text-sm" aria-live="polite">
+			{m.store_order_total()}：
+			{channels.map((channel, index) => (
+				<span
+					className="ml-1 font-semibold text-foreground"
+					key={channel?.id ?? "base"}
+				>
+					{index > 0 ? " · " : ""}
+					{channel ? `${paymentChannelLabel(channel.name)} ` : ""}
+					<StoreMoney
+						amountMinor={(
+							BigInt(
+								unitPriceAt(sellableItem, pricing, quantity, channel)
+									.unitPriceMinor,
+							) * BigInt(quantity)
+						).toString()}
+						currency={sellableItem.currency}
+						decimals={sellableItem.currencyDecimals}
+					/>
+				</span>
+			))}
+		</p>
 	);
 }
 
