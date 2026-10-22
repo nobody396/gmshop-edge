@@ -2586,5 +2586,6 @@
 	"seo_product_title_suffix": "Automatic delivery 24/7",
 	"seo_product_description_fallback": "{name}: {plans}. From {price}, delivered automatically 24/7 right after payment.",
 	"seo_product_stock_in": "In stock",
-	"seo_product_stock_out": "Temporarily out of stock"
+	"seo_product_stock_out": "Temporarily out of stock",
+	"store_sms_usage_guide": "SMS setup guide: illustrated step by step"
 }

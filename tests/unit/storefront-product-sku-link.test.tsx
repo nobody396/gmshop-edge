@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	productId: "product",
 	items: [
 		{ id: "go", name: "Go", availableStock: 10, minimumQuantity: 1 },
 		{ id: "ios", name: "iOS 20X", availableStock: 50, minimumQuantity: 1 },
@@ -19,7 +20,7 @@ vi.mock("@tanstack/react-query", () => ({
 		data:
 			queryKey[1] === "product"
 				? {
-						id: "product",
+						id: mocks.productId,
 						name: "ChatGPT",
 						productType: "stock",
 						tags: [],
@@ -81,6 +82,7 @@ describe("product SKU deep links", () => {
 		document.body.appendChild(container);
 		root = createRoot(container);
 		vi.clearAllMocks();
+		mocks.productId = "product";
 	});
 	afterEach(() => {
 		act(() => root.unmount());
@@ -88,6 +90,18 @@ describe("product SKU deep links", () => {
 		delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
 			.IS_REACT_ACT_ENVIRONMENT;
 	});
+	it.each([
+		["ff4ff1f6-cad4-4821-a195-39befdcc32d6", "/guides/claude-sms-us"],
+		["8f78192a-3097-4ec2-a771-5aa76d1bccab", "/guides/google-sms-us"],
+	])("links %s to its illustrated guide instead of the recharge guide", (id, href) => {
+		mocks.productId = id;
+		open();
+		expect(container.querySelector(`a[href="${href}"]`)?.textContent).toContain(
+			"store_sms_usage_guide",
+		);
+		expect(container.textContent).not.toContain("store_usage_guide_auto_intro");
+	});
+
 	function open(item?: string) {
 		act(() =>
 			root.render(
