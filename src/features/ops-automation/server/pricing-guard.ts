@@ -39,8 +39,11 @@ export const agentMinNetMinor = 100;
 export const pricingGuardHour = 9;
 /** Changes at or under this share apply automatically; above it they need the owner. */
 const autoChangeLimitPercent = 10;
-/** Supplier cost moves smaller than this are ignored until they add up. */
-const followMinDeltaMinor = 100;
+/** Cost rises at or above this are followed; smaller ones add up first. */
+const followMinRiseMinor = 100;
+/** Cost drops are followed only at or above both of these. */
+const followMinDropMinor = 500;
+const followMinDropPercent = 3;
 const alipayKeepPercent = 98;
 const alipayOverUsdtPercent = 102;
 
@@ -82,31 +85,21 @@ export function realCostMinor(
 	return Number((numerator + denominator - 1n) / denominator);
 }
 
-/** Next whole-yuan price ending in 9 (or 8 from ¥1000, e.g. ¥1098) that is ≥ minor. */
-export function roundUpRetailMinor(minor: number) {
-	let yuan = Math.ceil(minor / 100);
-	if (yuan < 1000) {
-		const nine = yuan + ((19 - (yuan % 10)) % 10);
-		if (nine < 1000) return nine * 100;
-		yuan = 1000;
-	}
-	return (yuan + ((18 - (yuan % 10)) % 10)) * 100;
+/** Smallest whole-yuan price ≥ minor. Prices are plain integers, no 8/9 tails. */
+export function ceilYuanMinor(minor: number) {
+	return Math.ceil(minor / 100) * 100;
 }
 
-/** Nearest whole-yuan price ending in 8, 9 or 0; ties go up. */
-export function nearestTailMinor(minor: number) {
-	const yuan = Math.round(minor / 100);
-	for (let step = 0; ; step += 1)
-		for (const candidate of [yuan + step, yuan - step])
-			if (candidate > 0 && [8, 9, 0].includes(candidate % 10))
-				return candidate * 100;
-}
-
-/** Smallest whole-yuan price ending in 8, 9 or 0 that is ≥ minor. */
-function ceilTailMinor(minor: number) {
-	let yuan = Math.ceil(minor / 100);
-	while (![8, 9, 0].includes(yuan % 10)) yuan += 1;
-	return yuan * 100;
+/**
+ * Rises of ¥1 or more are always followed. Drops are followed only once they
+ * reach both ¥5 and 3% of the USDT price, so ¥150 does not turn into ¥149.
+ */
+export function shouldFollow(deltaMinor: number, usdtMinor: number) {
+	if (deltaMinor > 0) return deltaMinor >= followMinRiseMinor;
+	return (
+		-deltaMinor >= followMinDropMinor &&
+		-deltaMinor * 100 >= usdtMinor * followMinDropPercent
+	);
 }
 
 const ceilDiv = (a: number, b: number) => Math.ceil(a / b);
@@ -135,7 +128,7 @@ export function planPrice(input: {
 		input.alipayMinor * alipayKeepPercent < need * 100;
 	if (!usdtLow && !alipayLow) return null;
 	const usdtNew = usdtLow
-		? Math.max(input.usdtMinor, roundUpRetailMinor(need))
+		? Math.max(input.usdtMinor, ceilYuanMinor(need))
 		: input.usdtMinor;
 	let alipayNew: number | null = null;
 	if (input.alipayMinor !== null) {
@@ -146,7 +139,7 @@ export function planPrice(input: {
 		alipayNew =
 			input.alipayMinor >= required
 				? input.alipayMinor
-				: Math.max(input.alipayMinor, roundUpRetailMinor(required));
+				: Math.max(input.alipayMinor, ceilYuanMinor(required));
 	}
 	const within = (oldMinor: number, newMinor: number) =>
 		(newMinor - oldMinor) * 100 <= oldMinor * autoChangeLimitPercent;
@@ -164,8 +157,9 @@ export function planPrice(input: {
 }
 
 /**
- * Shifts USDT, 支付宝 and agent prices by the supplier cost change so each
- * order keeps its net, then re-applies the floors. Moves up and down.
+ * Shifts USDT, 支付宝 and agent prices by the supplier cost change, rounded up
+ * to whole yuan so no order nets less than before, then re-applies the floors.
+ * Moves up and down; 支付宝 keeps its gap over USDT.
  */
 export function followPlan(input: {
 	usdtMinor: number;
@@ -178,29 +172,24 @@ export function followPlan(input: {
 	const delta = input.costMinor - input.baselineMinor;
 	const need = input.costMinor + input.floorMinor;
 	// A floor may stop a drop short, but never turns it into a raise.
-	const settle = (oldMinor: number, shifted: number, required: number) => {
-		const next = shifted < required ? ceilTailMinor(required) : shifted;
-		return delta < 0 ? Math.min(next, Math.max(oldMinor, required)) : next;
+	const settle = (oldMinor: number, required: number) => {
+		const next = ceilYuanMinor(Math.max(oldMinor + delta, required));
+		return delta < 0
+			? Math.min(next, Math.max(oldMinor, ceilYuanMinor(required)))
+			: next;
 	};
-	const usdtNew = settle(
-		input.usdtMinor,
-		nearestTailMinor(input.usdtMinor + delta),
-		need,
-	);
-	let alipayNew: number | null = null;
-	if (input.alipayMinor !== null)
-		alipayNew = settle(
-			input.alipayMinor,
-			nearestTailMinor(input.alipayMinor + delta),
-			Math.max(
-				ceilDiv(need * 100, alipayKeepPercent),
-				ceilDiv(usdtNew * alipayOverUsdtPercent, 100),
-			),
-		);
+	const usdtNew = settle(input.usdtMinor, need);
+	const alipayNew =
+		input.alipayMinor === null
+			? null
+			: settle(
+					input.alipayMinor,
+					Math.max(ceilDiv(need * 100, alipayKeepPercent), usdtNew),
+				);
 	let agentNew: number | null = null;
 	if (input.agentMinor !== null) {
-		const minimum = ceilDiv(input.costMinor + agentMinNetMinor, 100) * 100;
-		agentNew = Math.round((input.agentMinor + delta) / 100) * 100;
+		const minimum = ceilYuanMinor(input.costMinor + agentMinNetMinor);
+		agentNew = ceilYuanMinor(input.agentMinor + delta);
 		// Agents must still undercut our own USDT price.
 		if (agentNew >= usdtNew) agentNew = usdtNew - 100;
 		agentNew = Math.max(agentNew, minimum);
@@ -344,7 +333,7 @@ export async function runPricingGuard(input: {
 		baselines[row.id] = cost;
 		if (
 			baseline !== undefined &&
-			Math.abs(cost - baseline) >= followMinDeltaMinor
+			shouldFollow(cost - baseline, Number(row.price_minor))
 		) {
 			const plan = followPlan({
 				usdtMinor: Number(row.price_minor),
@@ -377,7 +366,7 @@ export async function runPricingGuard(input: {
 			});
 			continue;
 		}
-		// Small drifts keep the old baseline so they can add up.
+		// Small moves keep the old baseline so they can add up.
 		if (baseline !== undefined) baselines[row.id] = baseline;
 		if (row.agent_price_minor !== null) {
 			const agentMinor = Number(row.agent_price_minor);
@@ -447,7 +436,7 @@ export async function runPricingGuard(input: {
 				agentMinor: row.agent_price_minor,
 				plan: outcome.plan,
 			} satisfies PricingRaisePayload,
-			text: `${outcome.baselineMinor !== undefined && outcome.costMinor < outcome.baselineMinor ? "📉" : "📈"} 改价确认：${outcome.label}\n${costLine(outcome)}（净利底线 ${formatYuan(floorMinor)}）\n建议 ${priceChange(outcome.plan, true)}`,
+			text: `${outcome.baselineMinor !== undefined && outcome.costMinor < outcome.baselineMinor ? "📉" : "📈"} 改价确认：${outcome.label}\n${costLine(outcome)}（净利底线 ${formatYuan(floorMinor)}）\n建议 ${priceChange(outcome.plan, true)}\n${netLine(outcome)}`,
 			choices: ["✅ 按建议改价"],
 			rejectLabel: "❌ 不改",
 			fallback: null,
@@ -718,6 +707,14 @@ function costLine(outcome: PricingOutcome) {
 	return outcome.baselineMinor === undefined
 		? `成本 ${formatYuan(outcome.costMinor)}`
 		: `成本 ${formatYuan(outcome.baselineMinor)}→${formatYuan(outcome.costMinor)}`;
+}
+
+/** USDT net per order before and after, so a bad proposal is obvious at a glance. */
+function netLine(outcome: PricingOutcome) {
+	const before =
+		outcome.plan.usdtOld - (outcome.baselineMinor ?? outcome.costMinor);
+	const after = outcome.plan.usdtNew - outcome.costMinor;
+	return `USDT 每单净赚 ${formatYuan(before)}→${formatYuan(after)}`;
 }
 
 function priceChange(plan: PricePlan, withPercent: boolean) {
