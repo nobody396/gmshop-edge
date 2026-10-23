@@ -1808,6 +1808,10 @@ export const supplierExportListings = sqliteTable(
 		currency: text("currency").notNull(),
 		currencyDecimals: integer("currency_decimals").notNull(),
 		enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+		// Last computed stock the supplier API exported, and when it changed
+		// (see drizzle/0045). Maintained by the supplier catalog, not by admins.
+		exportedStockQuantity: integer("exported_stock_quantity"),
+		exportedStockChangedAt: integer("exported_stock_changed_at"),
 		...timestamps,
 	},
 	(table) => [

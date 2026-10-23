@@ -72,6 +72,74 @@ describe("supplier catalog", () => {
 		expect(result.items.map((product) => product.id)).toEqual(["product-1"]);
 	});
 
+	it("reports supplier-funded stock changes to incremental syncs even when no row timestamp moved", async () => {
+		await seedSupplierFunded(db, "2000");
+		const t0 = Date.now();
+		const full = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+			now: t0,
+		});
+		expect(
+			full.items.find((product) => product.id === "product-4")?.skus[0],
+		).toMatchObject({ stock_quantity: 20, active: true });
+
+		const cursor = new Date(t0 + 1).toISOString();
+		const unchanged = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+			updatedAfter: cursor,
+			now: t0 + 2,
+		});
+		expect(unchanged.total).toBe(0);
+
+		// Balance drained: the account row changes, the export rows do not.
+		await db
+			.prepare(
+				"UPDATE supplier_accounts SET balance_minor = '0' WHERE id = 'account'",
+			)
+			.run();
+		const drained = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+			updatedAfter: cursor,
+			now: t0 + 3,
+		});
+		expect(drained.items.map((product) => product.id)).toEqual(["product-4"]);
+		expect(drained.items[0]?.skus[0]).toMatchObject({
+			stock_quantity: 0,
+			active: false,
+		});
+		expect(drained.items[0]?.updated_at).toBe(new Date(t0 + 3).toISOString());
+
+		// Owner tops up: stock comes back on the next incremental poll.
+		const nextCursor = new Date(t0 + 4).toISOString();
+		await db
+			.prepare(
+				"UPDATE supplier_accounts SET balance_minor = '20000' WHERE id = 'account'",
+			)
+			.run();
+		const toppedUp = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+			updatedAfter: nextCursor,
+			now: t0 + 5,
+		});
+		expect(toppedUp.items.map((product) => product.id)).toEqual(["product-4"]);
+		expect(toppedUp.items[0]?.skus[0]).toMatchObject({
+			stock_quantity: 50,
+			active: true,
+		});
+
+		const quiet = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+			updatedAfter: new Date(t0 + 6).toISOString(),
+			now: t0 + 7,
+		});
+		expect(quiet.total).toBe(0);
+	});
+
 	it("loads a product directly by ID independently of catalog page limits", async () => {
 		await expect(getSupplierProduct(db, "product-3")).resolves.toMatchObject({
 			product: { id: "product-3", skus: [{ id: "sku-3-a" }] },
@@ -120,5 +188,48 @@ async function seed(db: D1Database) {
 			 ('stock-1', 'sku-1-a', 'ciphertext', 1, 'fingerprint-1', '****', 'available', 1, 1),
 			 ('stock-2', 'sku-3-a', 'ciphertext', 1, 'fingerprint-2', '****', 'available', 3, 3)`,
 		),
+	]);
+}
+
+async function seedSupplierFunded(db: D1Database, balanceMinor: string) {
+	await db.batch([
+		db.prepare(
+			`INSERT INTO products
+			 (id, name, product_type, status, sort_order, tag_names, created_at, updated_at)
+			 VALUES ('product-4', 'Four', 'stock', 'active', 4, '[]', 4, 4)`,
+		),
+		db.prepare(
+			`INSERT INTO product_sellable_items
+			 (id, product_id, name, sort_order, fulfillment_source, currency,
+			  currency_decimals, price_minor, supplier_status, created_at, updated_at)
+			 VALUES ('sku-4-a', 'product-4', 'A', 1, 'supplier', 'USD', 2, '500', 'active', 4, 4)`,
+		),
+		db.prepare(
+			`INSERT INTO supplier_export_listings
+			 (id, sellable_item_id, price_minor, currency, currency_decimals, enabled, created_at, updated_at)
+			 VALUES ('listing-4-a', 'sku-4-a', '450', 'USD', 2, 1, 4, 4)`,
+		),
+		db
+			.prepare(
+				`INSERT INTO supplier_accounts
+				 (id, provider, base_url, normalized_api_origin, protocol_version, name,
+				  credentials_encrypted, credential_fingerprint, balance_minor,
+				  reserve_balance_minor, health_status, enabled, created_at, updated_at)
+				 VALUES ('account', 'shared_stock', 'https://example.invalid',
+				  'https://example.invalid', 'fixture', 'fixture', 'fixture', 'fixture',
+				  ?, '0', 'healthy', 1, 4, 4)`,
+			)
+			.bind(balanceMinor),
+		db
+			.prepare(
+				`INSERT INTO supplier_bindings
+				 (id, sellable_item_id, provider, normalized_api_origin, protocol_version,
+				  upstream_product_id, upstream_sku_id, upstream_product_name, upstream_sku_name,
+				  reference_cost_minor, max_cost_minor, stock_quantity, remote_status,
+				  last_synced_at, enabled, created_at, updated_at)
+				 VALUES ('binding-4-a', 'sku-4-a', 'shared_stock', 'https://example.invalid',
+				  'fixture', 'p', 'sku', 'P', 'SKU', '100', '100', 50, 'active', ?, 1, 4, 4)`,
+			)
+			.bind(Date.now()),
 	]);
 }
