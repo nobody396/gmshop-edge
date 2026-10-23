@@ -12,6 +12,8 @@ export async function createSupplierApiKey(
 	commerceSecret: string,
 	input: z.infer<typeof supplierApiKeyCreateSchema>,
 ) {
+	if (!(await supplierApiUserAllowed(db, userId)))
+		throw supplierApiNotAllowed();
 	const id = crypto.randomUUID();
 	const apiKey = `gme_${crypto.randomUUID().replaceAll("-", "")}`;
 	const apiSecret = Array.from(
@@ -29,7 +31,8 @@ export async function createSupplierApiKey(
 					  allowed_callback_origin, created_at, updated_at)
 					 SELECT ?, ?, ?, ?, ?, 1, NULL, ?, ?
 					 WHERE (SELECT COUNT(*) FROM supplier_api_keys
-					        WHERE user_id = ? AND revoked_at IS NULL) < ?`,
+					        WHERE user_id = ? AND revoked_at IS NULL) < ?
+					 AND EXISTS (SELECT 1 FROM supplier_api_allowed_users WHERE user_id = ?)`,
 				)
 				.bind(
 					id,
@@ -41,6 +44,7 @@ export async function createSupplierApiKey(
 					now,
 					userId,
 					maximumActiveKeys,
+					userId,
 				),
 			apiKeyAuditStatement(db, request, userId, {
 				id,
@@ -63,13 +67,64 @@ export async function createSupplierApiKey(
 			);
 		throw error;
 	}
-	if (Number(results[0]?.meta.changes ?? 0) !== 1)
+	if (Number(results[0]?.meta.changes ?? 0) !== 1) {
+		if (!(await supplierApiUserAllowed(db, userId)))
+			throw supplierApiNotAllowed();
 		throw new DomainError(
 			"supplier_api_key_limit_reached",
 			409,
 			"Revoke an existing API key before creating another",
 		);
+	}
 	return { apiKey, apiSecret };
+}
+
+/**
+ * Supplier-API purchasing (agent supply prices) is limited to accounts an
+ * administrator explicitly allowed; a verified email alone is not enough.
+ */
+export async function supplierApiUserAllowed(db: D1Database, userId: string) {
+	if (!userId) return false;
+	const row = await db
+		.prepare(
+			"SELECT 1 AS allowed FROM supplier_api_allowed_users WHERE user_id = ? LIMIT 1",
+		)
+		.bind(userId)
+		.first<{ allowed: number }>();
+	return Boolean(row);
+}
+
+export async function allowSupplierApiUser(
+	db: D1Database,
+	userId: string,
+	input: { grantedBy: string | null; note?: string | null },
+) {
+	const now = Date.now();
+	await db
+		.prepare(
+			`INSERT INTO supplier_api_allowed_users (user_id, granted_by, note, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(user_id) DO UPDATE SET granted_by = excluded.granted_by,
+			 note = excluded.note, updated_at = excluded.updated_at`,
+		)
+		.bind(userId, input.grantedBy, input.note ?? null, now, now)
+		.run();
+}
+
+export async function disallowSupplierApiUser(db: D1Database, userId: string) {
+	const result = await db
+		.prepare("DELETE FROM supplier_api_allowed_users WHERE user_id = ?")
+		.bind(userId)
+		.run();
+	return Number(result.meta.changes ?? 0) > 0;
+}
+
+function supplierApiNotAllowed() {
+	return new DomainError(
+		"supplier_api_not_allowed",
+		403,
+		"API purchasing is not enabled for this account",
+	);
 }
 
 export async function revokeSupplierApiKey(

@@ -240,6 +240,10 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 					 VALUES ('fixed-channel-payment','sellableItem-card',?,'1000',1,1,1)`,
 				)
 				.bind(channelId),
+			// Checkout snapshots the channel the fixed price was quoted for.
+			database
+				.prepare("UPDATE shop_orders SET pricing_channel_id = ? WHERE id = ?")
+				.bind(channelId, orderId),
 		]);
 		const fetcher = vi.fn(
 			async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -1052,6 +1056,50 @@ describe("shop payment fulfillment", { timeout: 30_000 }, () => {
 			action: "delivery.content_viewed",
 			request_id: "reveal-request",
 			ip_address: "192.0.2.10",
+		});
+	});
+
+	it("does not reveal content whose share of a stacked entitlement was refunded", async () => {
+		await processShopPaymentEvent(
+			database,
+			channelId,
+			succeededEvent("evt_refunded_reveal"),
+		);
+		const delivery = await database
+			.prepare("SELECT id FROM delivery_records WHERE order_item_id = ?")
+			.bind(orderItemId)
+			.first<{ id: string }>();
+		await processDelivery(database, delivery?.id ?? "");
+		const reveal = () =>
+			revealStoreDelivery(database, {
+				orderNumber: "GM100001",
+				email: "buyer@example.com",
+				deliveryId: delivery?.id ?? "",
+			});
+		await expect(reveal()).resolves.toEqual({ content: "CARD-SECRET-1234" });
+		// Another order keeps the stacked entitlement active, but this order's
+		// own grant was refunded.
+		await database
+			.prepare(
+				"UPDATE entitlement_grants SET status = 'refunded' WHERE source_order_item_id = ?",
+			)
+			.bind(orderItemId)
+			.run();
+		await expect(reveal()).rejects.toMatchObject({
+			code: "delivery_not_found",
+		});
+		await database
+			.prepare(
+				"UPDATE entitlement_grants SET status = 'active' WHERE source_order_item_id = ?",
+			)
+			.bind(orderItemId)
+			.run();
+		await database
+			.prepare("UPDATE shop_orders SET status = 'refunded' WHERE id = ?")
+			.bind(orderId)
+			.run();
+		await expect(reveal()).rejects.toMatchObject({
+			code: "delivery_not_found",
 		});
 	});
 

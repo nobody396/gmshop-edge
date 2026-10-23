@@ -2,6 +2,7 @@ import { z } from "zod";
 import { assertAgentRefundAmount } from "#/features/agent-access/server/fulfillment";
 import { refundEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
 import { convertMinorAmount } from "#/features/exchange-rates/rates";
+import { cancelOpenFulfillmentStatements } from "#/features/fulfillment/server/refund-cancellation";
 import {
 	promotionRefundSplit,
 	refundAllocatedBalance,
@@ -425,6 +426,7 @@ async function requestWalletShopRefund(
 	if (orderStatus === "refunded")
 		statements.push(
 			...(await refundEntitlementGrantStatements(db, order.id, now)),
+			...cancelOpenFulfillmentStatements(db, order.id, now),
 		);
 	const results = await db.batch(statements);
 	if (Number(results[0]?.meta.changes ?? 0) < 1)
@@ -950,35 +952,7 @@ async function finalizeRefund(
 				attempt,
 				now,
 			)),
-			db
-				.prepare(
-					`UPDATE supplier_orders SET state = 'refunded',
-					 next_retry_at = NULL, updated_at = ?
-					 WHERE order_id = ?
-					  AND state IN ('pending', 'selecting', 'submitting', 'uncertain', 'failed')
-					  AND EXISTS (
-					  SELECT 1 FROM refunds completed_refund WHERE completed_refund.id = ?
-					   AND completed_refund.attempt_count = ?
-					   AND completed_refund.status = 'succeeded'
-					   AND completed_refund.completed_at = ?
-					 )`,
-				)
-				.bind(now, refund.order_id, refund.id, attempt, now),
-			db
-				.prepare(
-					`UPDATE outbox_events SET status = 'published',
-					 published_at = COALESCE(published_at, ?), updated_at = ?
-					 WHERE event_type = 'supplier.requested'
-					  AND aggregate_id IN (
-					   SELECT id FROM supplier_orders WHERE order_id = ?
-					  ) AND status IN ('pending', 'processing') AND EXISTS (
-					   SELECT 1 FROM refunds completed_refund WHERE completed_refund.id = ?
-					    AND completed_refund.attempt_count = ?
-					    AND completed_refund.status = 'succeeded'
-					    AND completed_refund.completed_at = ?
-					  )`,
-				)
-				.bind(now, now, refund.order_id, refund.id, attempt, now),
+			...cancelOpenFulfillmentStatements(db, refund.order_id, now),
 		);
 	const results = await db.batch(statements);
 	if (Number(results[0]?.meta.changes ?? 0) < 1)

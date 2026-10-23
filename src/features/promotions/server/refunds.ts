@@ -1,4 +1,5 @@
 import { refundEntitlementGrantStatements } from "#/features/entitlements/server/ledger";
+import { cancelOpenFulfillmentStatements } from "#/features/fulfillment/server/refund-cancellation";
 import { DomainError } from "#/lib/domain-error";
 import { createAuditStatement } from "#/server/audit";
 
@@ -166,10 +167,13 @@ export async function refundAllocatedBalance(
 				id,
 			),
 		...(status === "refunded"
-			? await refundEntitlementGrantStatements(db, order.id, now, {
-					refundId: id,
-					attempt: 0,
-				})
+			? [
+					...(await refundEntitlementGrantStatements(db, order.id, now, {
+						refundId: id,
+						attempt: 0,
+					})),
+					...cancelOpenFulfillmentStatements(db, order.id, now),
+				]
 			: []),
 		createAuditStatement(db, context.request, context.actorUserId, {
 			action: "refund.balance_succeeded",

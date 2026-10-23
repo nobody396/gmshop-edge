@@ -3,11 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { switchStockFulfillmentMode } from "#/features/catalog/server/fulfillment-source";
 import { encryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { processDelivery } from "#/features/fulfillment/server/process";
-import { completeFreeStoreOrder } from "#/features/shop-payments/server/service";
+import { requestShopRefund } from "#/features/shop-payments/server/refunds";
+import {
+	completeFreeStoreOrder,
+	completeWalletStoreOrder,
+} from "#/features/shop-payments/server/service";
 import { revealStoreDelivery } from "#/features/storefront/server/delivery-reveal";
 import { getStoreOrder } from "#/features/storefront/server/order-query";
 import { getSupplierProduct } from "#/features/supplier-api/server/catalog";
-import { createSupplierApiOrder } from "#/features/supplier-api/server/orders";
+import {
+	createSupplierApiOrder,
+	getSupplierApiOrder,
+} from "#/features/supplier-api/server/orders";
 import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { supplierFetchJson } from "#/features/suppliers/providers/http";
 import { signDujiaoNextRequest } from "#/features/suppliers/providers/signatures";
@@ -50,6 +57,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			.all<{ name: string }>();
 		expect(tables.results).toEqual([
 			{ name: "supplier_accounts" },
+			{ name: "supplier_api_allowed_users" },
 			{ name: "supplier_api_keys" },
 			{ name: "supplier_api_orders" },
 			{ name: "supplier_bindings" },
@@ -457,6 +465,222 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			(await getSupplierProduct(db, "product")).product?.skus[0]
 				?.stock_quantity,
 		).toBe(0);
+	});
+
+	it("a full wallet refund cancels unfinished supplier procurement and delivery", async () => {
+		const id = "0f0e0d0c-0000-4000-8000-000000000001";
+		await db.batch([
+			db.prepare(
+				"INSERT INTO users(id,name,email,email_verified,enabled,balance_minor) VALUES ('wallet-buyer','Buyer','wallet@example.com',1,1,'1000')",
+			),
+			db
+				.prepare(
+					`INSERT INTO shop_orders (id, order_number, user_id, contact_email, normalized_contact_email,
+					 status, currency, currency_decimals, subtotal_minor, discount_minor, total_minor, paid_minor,
+					 expires_at, created_at, updated_at)
+					 VALUES (?, 'ORDER-W', 'wallet-buyer', 'wallet@example.com', 'wallet@example.com',
+					 'pending_payment', 'USD', 2, '200', '0', '200', '0', ?, 1, 1)`,
+				)
+				.bind(id, Date.now() + 600_000),
+			db
+				.prepare(
+					`INSERT INTO shop_order_items (id, order_id, product_id, sellable_item_id, product_name,
+					 delivery_component_id, delivery_component_type, delivery_component_version, sellable_item_name,
+					 quantity, unit_price_minor, discount_minor, subtotal_minor, created_at, updated_at)
+					 VALUES ('wallet-item', ?, 'product', 'item', 'Product', 'item', 'stock', 1, 'SKU', 2, '100', '0', '200', 1, 1)`,
+				)
+				.bind(id),
+		]);
+		await completeWalletStoreOrder(db, { orderId: id, userId: "wallet-buyer" });
+		expect(
+			await db
+				.prepare("SELECT state FROM supplier_orders WHERE order_id = ?")
+				.bind(id)
+				.first(),
+		).toEqual({ state: "pending" });
+		await requestShopRefund(
+			db,
+			{
+				orderId: id,
+				amountMinor: "200",
+				reason: "Customer changed their mind",
+				idempotencyKey: "wallet-refund-cancels",
+			},
+			{
+				actorUserId: "wallet-buyer",
+				request: new Request("https://shop.example/admin"),
+			},
+		);
+		const state = await db
+			.prepare(
+				`SELECT o.status, so.state AS supplier_state, dr.status AS delivery_status,
+				 dr.error_code, u.balance_minor,
+				 (SELECT status FROM outbox_events WHERE event_type = 'supplier.requested'
+				  AND aggregate_id = so.id) AS supplier_event
+				 FROM shop_orders o JOIN supplier_orders so ON so.order_id = o.id
+				 JOIN delivery_records dr ON dr.id = so.delivery_record_id
+				 JOIN users u ON u.id = o.user_id WHERE o.id = ?`,
+			)
+			.bind(id)
+			.first();
+		expect(state).toEqual({
+			status: "refunded",
+			supplier_state: "refunded",
+			delivery_status: "failed",
+			error_code: "order_refunded",
+			balance_minor: "1000",
+			supplier_event: "published",
+		});
+	});
+
+	it("does not deliver cards that a supplier returns after the order was refunded", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const supplierOrder = await db
+			.prepare(
+				"SELECT id, delivery_record_id FROM supplier_orders WHERE order_id = 'order'",
+			)
+			.first<{ id: string; delivery_record_id: string }>();
+		const fetcher: typeof fetch = async (input) => {
+			const url = new URL(
+				typeof input === "string"
+					? input
+					: input instanceof URL
+						? input
+						: input.url,
+			);
+			if (url.pathname === "/api/v1/upstream/orders/99") {
+				// The refund lands while the supplier is still fulfilling.
+				await db.batch([
+					db.prepare(
+						"UPDATE supplier_orders SET state = 'refunded', next_retry_at = NULL WHERE order_id = 'order'",
+					),
+					db.prepare(
+						"UPDATE shop_orders SET status = 'refunded', version = version + 1 WHERE id = 'order'",
+					),
+				]);
+				return Response.json({
+					order_id: 99,
+					status: "completed",
+					fulfillment: { status: "delivered", payload: "LATE-1\nLATE-2" },
+				});
+			}
+			return pendingSupplierFetcher(input);
+		};
+		await expect(
+			processSupplierOrder(db, supplierOrder?.id ?? "", { fetcher }),
+		).rejects.toMatchObject({ code: "supplier_order_pending" });
+		await processSupplierOrder(db, supplierOrder?.id ?? "", {
+			fetcher,
+		}).catch(() => undefined);
+		const state = await db
+			.prepare(
+				`SELECT so.state, so.upstream_order_id, so.last_error_code,
+				 dr.status AS delivery_status,
+				 (SELECT COUNT(*) FROM stock_entries WHERE supplier_order_id = so.id) AS cards,
+				 (SELECT COUNT(*) FROM outbox_events WHERE idempotency_key = 'supplier-delivery-requested:' || dr.id) AS delivery_events
+				 FROM supplier_orders so JOIN delivery_records dr ON dr.id = so.delivery_record_id
+				 WHERE so.id = ?`,
+			)
+			.bind(supplierOrder?.id)
+			.first();
+		expect(state).toMatchObject({
+			state: "refunded",
+			upstream_order_id: "99",
+			last_error_code: "supplier_supplied_after_refund",
+			delivery_events: 0,
+			cards: 0,
+		});
+		expect(state?.delivery_status).not.toBe("pending");
+	});
+
+	it("never delivers or completes an order that was refunded before delivery ran", async () => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source = 'local', supplier_status = NULL WHERE id = 'item'",
+			)
+			.run();
+		await addOwned(2);
+		await completeFreeStoreOrder(db, "order");
+		const delivery = await db
+			.prepare(
+				"SELECT id, status FROM delivery_records WHERE order_item_id = 'order-item'",
+			)
+			.first<{ id: string; status: string }>();
+		expect(delivery?.status).toBe("pending");
+		await db
+			.prepare(
+				"UPDATE shop_orders SET status = 'refunded', version = version + 1 WHERE id = 'order'",
+			)
+			.run();
+		await expect(
+			processDelivery(db, delivery?.id ?? ""),
+		).resolves.toMatchObject({ status: "failed" });
+		const state = await db
+			.prepare(
+				`SELECT o.status AS order_status, dr.status AS delivery_status, dr.error_code,
+				 (SELECT COUNT(*) FROM stock_entries WHERE order_item_id = 'order-item' AND status = 'delivered') AS delivered
+				 FROM shop_orders o JOIN shop_order_items oi ON oi.order_id = o.id
+				 JOIN delivery_records dr ON dr.order_item_id = oi.id WHERE o.id = 'order'`,
+			)
+			.first();
+		expect(state).toEqual({
+			order_status: "refunded",
+			delivery_status: "failed",
+			error_code: "order_not_deliverable",
+			delivered: 0,
+		});
+	});
+
+	it("hides delivered cards from the supplier API once the order is refunded", async () => {
+		await db.batch([
+			db.prepare(
+				"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL WHERE id='item'",
+			),
+			db.prepare(
+				"INSERT INTO users(id,name,email,email_verified,enabled,balance_minor) VALUES ('buyer','Buyer','buyer@example.com',1,1,'10000')",
+			),
+			db.prepare(
+				"INSERT INTO supplier_api_keys(id,user_id,name,key_id,secret_encrypted) VALUES ('api-key','buyer','Test','key-id','encrypted')",
+			),
+			db.prepare(
+				"INSERT INTO supplier_export_listings(id,sellable_item_id,price_minor,currency,currency_decimals,enabled) VALUES ('export','item','100','USD',2,1)",
+			),
+		]);
+		await addOwned(1);
+		const identity = {
+			userId: "buyer",
+			keyRowId: "api-key",
+			keyId: "key-id",
+			allowedCallbackOrigin: null,
+		};
+		const created = await createSupplierApiOrder(db, identity, {
+			skuId: "item",
+			quantity: 1,
+			downstreamOrderNo: "refund-hide",
+		});
+		const delivery = await db
+			.prepare(
+				`SELECT dr.id FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
+				 JOIN supplier_api_orders api ON api.shop_order_id = oi.order_id WHERE api.id = ?`,
+			)
+			.bind(created.order_id)
+			.first<{ id: string }>();
+		await processDelivery(db, delivery?.id ?? "");
+		await expect(
+			getSupplierApiOrder(db, "buyer", created.order_id),
+		).resolves.toMatchObject({
+			status: "supplied",
+			cards: [expect.any(String)],
+		});
+		await db
+			.prepare(
+				"UPDATE shop_orders SET status = 'refunded' WHERE id = (SELECT shop_order_id FROM supplier_api_orders WHERE id = ?)",
+			)
+			.bind(created.order_id)
+			.run();
+		const refunded = await getSupplierApiOrder(db, "buyer", created.order_id);
+		expect(refunded).toMatchObject({ status: "refunded" });
+		expect(refunded).not.toHaveProperty("cards");
 	});
 
 	it("two concurrent paid orders cannot consume the same last owned card", async () => {

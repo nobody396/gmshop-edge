@@ -6,6 +6,7 @@ import { DomainError } from "#/lib/domain-error";
 import { decimalToMinor, minorToDecimal } from "#/lib/units";
 import { getAdminServerContext } from "#/server/context";
 import { supplierExportListingSchema } from "../schema";
+import { allowSupplierApiUser, disallowSupplierApiUser } from "./key-store";
 
 export const getSupplierApiConfigurationFn = createServerFn({
 	method: "GET",
@@ -42,6 +43,110 @@ export const setSupplierApiConfigurationFn = createServerFn({ method: "POST" })
 			.run();
 		return data;
 	});
+
+export const listSupplierApiAllowedUsersFn = createServerFn({
+	method: "GET",
+}).handler(async () => {
+	const { db } = await getAdminServerContext(
+		systemPermission("suppliers", "read"),
+	);
+	const rows = await db.$client
+		.prepare(
+			`SELECT allowed.user_id, user.email, allowed.note, allowed.created_at,
+			 (SELECT COUNT(*) FROM supplier_api_keys key
+			  WHERE key.user_id = allowed.user_id AND key.revoked_at IS NULL) AS active_keys
+			 FROM supplier_api_allowed_users allowed
+			 JOIN users user ON user.id = allowed.user_id
+			 ORDER BY allowed.created_at, allowed.user_id`,
+		)
+		.all<{
+			user_id: string;
+			email: string;
+			note: string | null;
+			created_at: number;
+			active_keys: number;
+		}>();
+	return rows.results.map((row) => ({
+		userId: row.user_id,
+		email: row.email,
+		note: row.note,
+		createdAt: Number(row.created_at),
+		activeKeys: Number(row.active_keys),
+	}));
+});
+
+export const allowSupplierApiUserFn = createServerFn({ method: "POST" })
+	.validator((value: { email: string }) =>
+		z.object({ email: z.string().trim().email().max(254) }).parse(value),
+	)
+	.handler(async ({ data }) => {
+		const { currentUser, db, request } = await getAdminServerContext(
+			systemPermission("suppliers", "update"),
+		);
+		const user = await db.$client
+			.prepare(
+				"SELECT id, email FROM users WHERE lower(email) = lower(?) AND enabled = 1 LIMIT 1",
+			)
+			.bind(data.email)
+			.first<{ id: string; email: string }>();
+		if (!user)
+			throw new DomainError(
+				"supplier_api_user_not_found",
+				404,
+				"No enabled account uses this email",
+			);
+		await allowSupplierApiUser(db.$client, user.id, {
+			grantedBy: currentUser.id,
+		});
+		await allowlistAudit(db.$client, request, currentUser.id, user.id, true);
+		return { userId: user.id, email: user.email };
+	});
+
+export const disallowSupplierApiUserFn = createServerFn({ method: "POST" })
+	.validator((value: { userId: string }) =>
+		z.object({ userId: z.string().trim().min(1).max(200) }).parse(value),
+	)
+	.handler(async ({ data }) => {
+		const { currentUser, db, request } = await getAdminServerContext(
+			systemPermission("suppliers", "update"),
+		);
+		const removed = await disallowSupplierApiUser(db.$client, data.userId);
+		if (removed)
+			await allowlistAudit(
+				db.$client,
+				request,
+				currentUser.id,
+				data.userId,
+				false,
+			);
+		return { userId: data.userId, removed };
+	});
+
+function allowlistAudit(
+	db: D1Database,
+	request: Request,
+	actorUserId: string,
+	userId: string,
+	allowed: boolean,
+) {
+	return db
+		.prepare(
+			`INSERT INTO audit_logs
+			 (id, actor_user_id, action, target_type, target_id, request_id, ip_address, after, created_at)
+			 VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			crypto.randomUUID(),
+			actorUserId,
+			allowed ? "supplier_api.user_allowed" : "supplier_api.user_disallowed",
+			userId,
+			request.headers.get("x-request-id"),
+			request.headers.get("cf-connecting-ip"),
+			JSON.stringify({ allowed }),
+			Date.now(),
+		)
+		.run();
+}
 
 export const listSupplierExportListingsFn = createServerFn({
 	method: "GET",

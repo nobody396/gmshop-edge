@@ -134,11 +134,13 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		const event = await prepareExternal(id, amount);
 		return { event, result: await processShopPaymentEvent(db, channel, event) };
 	}
-	it("reuses one persistent code and attributes a guest order without a customer relationship", async () => {
+	it("reuses one persistent code and attributes a guest order without paying a reward", async () => {
 		const code = await openReferralCoupon(db, promoter);
 		expect(await openReferralCoupon(db, promoter)).toEqual(code);
 		const created = await order(code.code, null);
 		expect(created.totalMinor).toBe("107600");
+		// Guests keep the discount, but only a verified account distinct from
+		// the referrer earns the referrer a reward.
 		expect(
 			await db
 				.prepare(
@@ -148,9 +150,28 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 				.first(),
 		).toEqual({
 			referrer_user_id: promoter,
-			referral_reward_minor: "400",
+			referral_reward_minor: "0",
 			promotion_purpose: "referral",
 		});
+	});
+	it("pays a referral reward only for a verified account distinct from the referrer", async () => {
+		const code = await openReferralCoupon(db, promoter);
+		const reward = async (id: string) =>
+			(
+				await db
+					.prepare("SELECT referral_reward_minor FROM shop_orders WHERE id=?")
+					.bind(id)
+					.first<{ referral_reward_minor: string }>()
+			)?.referral_reward_minor;
+		const verified = await order(code.code, buyer);
+		expect(verified.totalMinor).toBe("107600");
+		expect(await reward(verified.id)).toBe("400");
+		await db
+			.prepare("UPDATE users SET email_verified = 0 WHERE id = ?")
+			.bind(buyer)
+			.run();
+		const unverified = await order(code.code, buyer).catch(() => null);
+		if (unverified) expect(await reward(unverified.id)).toBe("0");
 	});
 	it("keeps the discount but pays no reward when a guest order looks like the referrer's own", async () => {
 		const code = await openReferralCoupon(db, promoter);

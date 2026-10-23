@@ -123,7 +123,7 @@ export async function createMultiStoreOrder(
 	const existing = await db
 		.prepare(
 			`SELECT id, order_number, user_id, normalized_contact_email, status,
-			 total_minor, currency, currency_decimals, expires_at
+			 total_minor, currency, currency_decimals, expires_at, pricing_channel_id
 			 FROM shop_orders WHERE idempotency_key = ? LIMIT 1`,
 		)
 		.bind(input.idempotencyKey)
@@ -137,6 +137,7 @@ export async function createMultiStoreOrder(
 			currency: string;
 			currency_decimals: number;
 			expires_at: number;
+			pricing_channel_id: string | null;
 		}>();
 	if (existing) {
 		const sameOwner = access.userId
@@ -147,6 +148,17 @@ export async function createMultiStoreOrder(
 				"idempotency_key_conflict",
 				409,
 				"Idempotency key belongs to another checkout",
+			);
+		// The replayed total was priced for one channel; another channel must
+		// start a new checkout so its own price and fee apply.
+		if (
+			(existing.pricing_channel_id ?? null) !==
+			(access.pricingChannelId ?? null)
+		)
+			throw new DomainError(
+				"payment_channel_mismatch",
+				409,
+				"This order was priced for another payment channel",
 			);
 		return {
 			id: existing.id,
@@ -273,6 +285,7 @@ export async function createMultiStoreOrder(
 	const withholdReferralReward =
 		promotion && coupon?.purpose === "referral" && coupon.referrer_user_id
 			? await referralRewardWithheld(db, coupon.referrer_user_id, {
+					userId: access.userId,
 					email: normalizedContactEmail,
 					ip: access.clientIp,
 					rewardMinor: BigInt(promotion.rewardMinor),
@@ -1315,11 +1328,20 @@ async function referralRewardWithheld(
 	db: D1Database,
 	referrerUserId: string,
 	buyer: {
+		userId: string | null | undefined;
 		email: string | null | undefined;
 		ip: string | null | undefined;
 		rewardMinor: bigint;
 	},
 ) {
+	// Rewards are paid only for a verified-email account other than the
+	// referrer; guests and unverified accounts keep the discount only.
+	if (!buyer.userId || buyer.userId === referrerUserId) return true;
+	const account = await db
+		.prepare("SELECT email_verified FROM users WHERE id = ? AND enabled = 1")
+		.bind(buyer.userId)
+		.first<{ email_verified: number }>();
+	if (!account || Number(account.email_verified) !== 1) return true;
 	const owner = await db
 		.prepare("SELECT email FROM users WHERE id = ?")
 		.bind(referrerUserId)

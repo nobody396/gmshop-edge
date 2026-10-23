@@ -3,7 +3,10 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema";
 import { authenticateSupplierApi } from "#/features/supplier-api/server/auth";
-import { createSupplierApiKey } from "#/features/supplier-api/server/key-store";
+import {
+	allowSupplierApiUser,
+	createSupplierApiKey,
+} from "#/features/supplier-api/server/key-store";
 import { signGmshopEdgeRequest } from "#/features/suppliers/providers/signatures";
 import { createUser } from "#/features/users/server/users";
 import { createInitialRuntimeConfig } from "#/server/runtime-config";
@@ -41,6 +44,7 @@ describe("supplier API authentication budget", { timeout: 30_000 }, () => {
 			enabled: true,
 			password: "current-password",
 		});
+		await allowSupplierApiUser(db, user.id, { grantedBy: null });
 		credentials = await createSupplierApiKey(
 			db,
 			new Request("https://shop.example/account"),

@@ -420,7 +420,7 @@ describe("ACG adapter", () => {
 		expect(requests[0]?.redirect).toBe("manual");
 	});
 
-	it("reuses the trade number when reconciling", async () => {
+	it("never places another trade when reconciling an unfinished order", async () => {
 		const bodies: string[] = [];
 		const adapter = new AcgAdapter({
 			baseUrl: "https://supplier.example",
@@ -436,6 +436,7 @@ describe("ACG adapter", () => {
 				});
 			},
 		});
+		// The open API has no order query; repeating /trade could buy again.
 		await expect(
 			adapter.reconcileOrder({
 				upstreamOrderId: "trade-123",
@@ -445,12 +446,12 @@ describe("ACG adapter", () => {
 				callbackUrl: "",
 				traceId: "",
 			}),
-		).resolves.toMatchObject({
-			status: "supplied",
+		).resolves.toEqual({
+			status: "uncertain",
 			upstreamOrderId: "trade-123",
-			cards: ["CARD-1", "CARD-2"],
+			errorCode: "supplier_reconcile_manual_required",
 		});
-		expect(bodies[0]).toContain("trade_no=trade-123");
+		expect(bodies).toEqual([]);
 	});
 });
 

@@ -117,7 +117,13 @@ export class AcgAdapter implements SupplierAdapter {
 		callbackUrl: string;
 		traceId: string;
 	}): Promise<SupplierPurchaseResult> {
-		return this.submitOrder(input);
+		// The open API offers no order query, and repeating /trade may buy the
+		// same SKU again. An unfinished trade stays uncertain for the operator.
+		return {
+			status: "uncertain",
+			upstreamOrderId: input.upstreamOrderId ?? (input.requestNo || null),
+			errorCode: "supplier_reconcile_manual_required",
+		};
 	}
 
 	private product(value: z.infer<typeof productSchema>): SupplierProduct {

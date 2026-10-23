@@ -50,6 +50,17 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 			409,
 			"Delivery requires administrator recovery",
 		);
+	// Only a paid order that is still being fulfilled may receive content; a
+	// refunded order must never be delivered or flipped back to completed.
+	if (!deliverableOrderStatuses.includes(delivery.order_status)) {
+		if (closedOrderStatuses.includes(delivery.order_status))
+			return closeUndeliverableDelivery(db, delivery.id);
+		throw new DomainError(
+			"delivery_order_not_ready",
+			409,
+			"Order is not ready for delivery",
+		);
+	}
 	const now = Date.now();
 	let contentEncrypted = delivery.content_encrypted;
 	let soldEntries: { id: string; plaintext: string }[] = [];
@@ -138,21 +149,18 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 				`UPDATE delivery_records SET status = 'delivered', content_encrypted = ?,
 			 content_key_version = CASE WHEN ? IS NULL THEN NULL ELSE 1 END,
 			 attempt_count = attempt_count + 1, next_attempt_at = NULL, error_code = NULL,
-			 delivered_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'processing')${delivery.redeem_sku ? " AND EXISTS (SELECT 1 FROM shop_order_items oi JOIN shop_orders o ON o.id=oi.order_id WHERE oi.id=delivery_records.order_item_id AND o.status IN ('paid','fulfilling')) AND (SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=delivery_records.order_item_id AND s.status='reserved' AND s.redeem_sku=delivery_records.redeem_sku)=(SELECT quantity FROM shop_order_items WHERE id=delivery_records.order_item_id)" : ""}`,
+			 delivered_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'processing') AND EXISTS (SELECT 1 FROM shop_order_items oi JOIN shop_orders o ON o.id=oi.order_id WHERE oi.id=delivery_records.order_item_id AND o.status IN ('paid','fulfilling'))${delivery.redeem_sku ? " AND (SELECT COUNT(*) FROM stock_entries s WHERE s.order_item_id=delivery_records.order_item_id AND s.status='reserved' AND s.redeem_sku=delivery_records.redeem_sku)=(SELECT quantity FROM shop_order_items WHERE id=delivery_records.order_item_id)" : ""}`,
 			)
 			.bind(contentEncrypted, contentEncrypted, now, now, delivery.id),
+		// D1 batches are transactions. A failed delivery CAS (for example an
+		// order refunded meanwhile) must abort BEFORE stock, outbox or
+		// entitlement writes; throwing after batch completion is too late.
+		db
+			.prepare(
+				`SELECT CASE WHEN EXISTS (SELECT 1 FROM delivery_records WHERE id=? AND status='delivered') THEN 1 ELSE json_extract('${delivery.redeem_sku ? "redeem_delivery_conflict" : "delivery_conflict"}','$') END`,
+			)
+			.bind(delivery.id),
 	];
-	if (delivery.redeem_sku) {
-		// D1 batches are transactions. A failed delivery CAS must abort BEFORE stock,
-		// outbox or entitlement writes; throwing after batch completion is too late.
-		statements.push(
-			db
-				.prepare(
-					"SELECT CASE WHEN EXISTS (SELECT 1 FROM delivery_records WHERE id=? AND status='delivered') THEN 1 ELSE json_extract('redeem_delivery_conflict','$') END",
-				)
-				.bind(delivery.id),
-		);
-	}
 
 	if (delivery.delivery_type === "stock")
 		statements.push(
@@ -263,6 +271,33 @@ export async function processDelivery(db: D1Database, deliveryId: string) {
 		orderStatus: nextStatus,
 		duplicate: false,
 	};
+}
+
+const deliverableOrderStatuses: readonly string[] = ["paid", "fulfilling"];
+const closedOrderStatuses: readonly string[] = [
+	"refunded",
+	"cancelled",
+	"expired",
+];
+
+async function closeUndeliverableDelivery(db: D1Database, deliveryId: string) {
+	const now = Date.now();
+	await db.batch([
+		db
+			.prepare(
+				`UPDATE delivery_records SET status = 'failed', error_code = 'order_not_deliverable',
+				 next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
+			)
+			.bind(now, deliveryId),
+		db
+			.prepare(
+				`UPDATE outbox_events SET status = 'published', published_at = COALESCE(published_at, ?), updated_at = ?
+				 WHERE event_type = 'delivery.requested' AND aggregate_type = 'delivery'
+				 AND aggregate_id = ? AND status IN ('pending', 'processing')`,
+			)
+			.bind(now, now, deliveryId),
+	]);
+	return { id: deliveryId, status: "failed" as const, duplicate: false };
 }
 
 async function recordOwnedDeliveryFailure(
@@ -451,6 +486,12 @@ export async function completeManualDelivery(
 			"manual_delivery_not_awaiting_supply",
 			409,
 			"Manual delivery is not awaiting supply or processing",
+		);
+	if (!deliverableOrderStatuses.includes(delivery.order_status))
+		throw new DomainError(
+			"manual_delivery_order_not_ready",
+			409,
+			"Order is not ready for manual processing",
 		);
 	const runtime = await loadRuntimeConfig(db);
 	if (!runtime.commerceSecret)
