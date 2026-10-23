@@ -25,6 +25,7 @@ const ELIGIBLE_PRODUCTS = `
 	 product.description, product.cover_object_key, product.tag_names, product.sort_order,
 	 product.sale_disabled AS product_sale_disabled,
 	 MAX(MAX(product.updated_at, item.updated_at, COALESCE(listing.updated_at, 0),
+  COALESCE(listing.exported_stock_changed_at, 0),
   COALESCE((SELECT MAX(binding.updated_at) FROM supplier_bindings binding
    WHERE binding.sellable_item_id=item.id AND binding.enabled=1),0),
   COALESCE((SELECT setting.updated_at FROM system_settings setting
@@ -61,13 +62,41 @@ const ELIGIBLE_SKUS = `
 	  AND item.currency_decimals = COALESCE((SELECT CAST(json_extract(value, '$') AS INTEGER)
 	   FROM system_settings WHERE key = 'commerce.currency_decimals'), 2)`;
 
+// Supplier-funded stock is derived from the binding snapshot, the supplier
+// wallet and account health, none of which moves an export timestamp. Before
+// answering, record any listing whose computed quantity differs from what was
+// last exported so incremental partner syncs pick up top-ups, drained
+// balances and expired snapshots on their next poll. The first observation of
+// a listing is only a baseline: enabling it already moves listing.updated_at.
+const REFRESH_EXPORTED_STOCK = `
+	UPDATE supplier_export_listings
+	 SET exported_stock_quantity = current.stock_quantity,
+	     exported_stock_changed_at = CASE
+	      WHEN supplier_export_listings.exported_stock_quantity IS NULL THEN 0
+	      ELSE ? END
+	 FROM (SELECT item.id AS item_id,
+	        ${storefrontStockExpression("product", "item")} AS stock_quantity
+	       FROM supplier_export_listings exported
+	       JOIN product_sellable_items item ON item.id = exported.sellable_item_id
+	       JOIN products product ON product.id = item.product_id
+	       WHERE exported.enabled = 1) AS current
+	 WHERE supplier_export_listings.enabled = 1
+	  AND current.item_id = supplier_export_listings.sellable_item_id
+	  AND supplier_export_listings.exported_stock_quantity IS NOT current.stock_quantity`;
+
 export async function listSupplierCatalog(
 	db: D1Database,
-	input: { page: number; pageSize: number; updatedAfter?: string },
+	input: {
+		page: number;
+		pageSize: number;
+		updatedAfter?: string;
+		now?: number;
+	},
 ) {
 	const updatedAfter = input.updatedAfter ? Date.parse(input.updatedAfter) : 0;
 	const offset = (input.page - 1) * input.pageSize;
-	const [countResult, productResult] = await db.batch([
+	const [, countResult, productResult] = await db.batch([
+		db.prepare(REFRESH_EXPORTED_STOCK).bind(input.now ?? Date.now()),
 		db
 			.prepare(
 				`WITH eligible_products AS (${ELIGIBLE_PRODUCTS})

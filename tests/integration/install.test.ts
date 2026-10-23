@@ -77,6 +77,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0042_guides.sql",
 			"0043_volume_pricing.sql",
 			"0044_supplier_api_allowlist.sql",
+			"0045_supplier_export_stock_marker.sql",
 		]);
 		const legacyTables = await database
 			.prepare(
