@@ -6,13 +6,13 @@ import {
 } from "#/features/ops-automation/server/balance-guard";
 import {
 	approvePricingRaise,
+	ceilYuanMinor,
 	followPlan,
-	nearestTailMinor,
 	parseCostFactors,
 	planPrice,
 	realCostMinor,
-	roundUpRetailMinor,
 	runPricingGuard,
+	shouldFollow,
 } from "#/features/ops-automation/server/pricing-guard";
 import {
 	formatProcurementAlert,
@@ -88,17 +88,15 @@ describe("ops automation pure helpers", () => {
 		).toEqual([{ sku: "GPT_500_CHILE", source: "aisou", priceMinor: 308000 }]);
 	});
 
-	it("parses money exactly and rounds retail prices up to 9 / 8", () => {
+	it("parses money exactly and rounds prices up to whole yuan", () => {
 		expect(yuanToMinor("12.3")).toBe(1230);
 		expect(yuanToMinor("12.301")).toBe(1231);
 		expect(yuanToMinor(null)).toBeNull();
-		expect(roundUpRetailMinor(5372)).toBe(5900);
-		expect(roundUpRetailMinor(5900)).toBe(5900);
-		expect(roundUpRetailMinor(6001)).toBe(6900);
-		expect(roundUpRetailMinor(99_850)).toBe(99_900);
-		expect(roundUpRetailMinor(99_950)).toBe(100_800);
-		expect(roundUpRetailMinor(109_100)).toBe(109_800);
-		expect(roundUpRetailMinor(109_800)).toBe(109_800);
+		expect(ceilYuanMinor(5372)).toBe(5400);
+		expect(ceilYuanMinor(5900)).toBe(5900);
+		expect(ceilYuanMinor(6001)).toBe(6100);
+		expect(ceilYuanMinor(99_850)).toBe(99_900);
+		expect(ceilYuanMinor(109_100)).toBe(109_100);
 	});
 
 	it("computes real cost with factors and never plans a lower price", () => {
@@ -126,7 +124,7 @@ describe("ops automation pure helpers", () => {
 			usdtOld: 10400,
 			usdtNew: 10400,
 			alipayOld: 10500,
-			alipayNew: 10900,
+			alipayNew: 10700,
 			auto: true,
 		});
 	});
@@ -445,14 +443,14 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		expect(text).toContain("📈 定价守护｜2026-10-19（净利底线 ¥3.00）");
 		expect(text).toContain("自动调价（事后通知）：");
 		expect(text).toContain(
-			"· Claude · Pro：成本 ¥141.66；USDT ¥142.00→¥149.00，支付宝 ¥152.00（不变）",
+			"· Claude · Pro：成本 ¥141.66；USDT ¥142.00→¥145.00，支付宝 ¥152.00（不变）",
 		);
 		expect(text).toContain(
-			"· AISOU · Plus：成本 ¥100.37；USDT ¥104.00（不变），支付宝 ¥105.00→¥109.00",
+			"· AISOU · Plus：成本 ¥100.37；USDT ¥104.00（不变），支付宝 ¥105.00→¥107.00",
 		);
 		expect(text).toContain("需要你确认（未改价）：");
 		expect(text).toContain(
-			"· ChatGPT · Plus：成本 ¥50.72；建议 USDT ¥53.00→¥59.00（+11.4%），支付宝 ¥55.00→¥69.00（+25.5%）",
+			"· ChatGPT · Plus：成本 ¥50.72；建议 USDT ¥48.00→¥54.00（+12.5%），支付宝 ¥50.00→¥56.00（+12.0%）",
 		);
 		expect(text).toContain("代理价需要调整（仅建议，未改动）：");
 		expect(text).toContain(
@@ -472,11 +470,11 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				.bind(id)
 				.first();
 		await expect(item("claude")).resolves.toEqual({
-			price_minor: "14900",
+			price_minor: "14500",
 			version: 2,
 			revision: 2,
-			usdt: "14900",
-			// ¥152 already ≥ ¥149 × 1.02 and nets ≥ ¥3, so it stays.
+			usdt: "14500",
+			// ¥152 already ≥ ¥145 × 1.02 and nets ≥ ¥3, so it stays.
 			alipay: "15200",
 		});
 		await expect(item("aisou-plus")).resolves.toEqual({
@@ -484,15 +482,15 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			version: 2,
 			revision: 2,
 			usdt: "10400",
-			alipay: "10900",
+			alipay: "10700",
 		});
-		// >5% is only proposed; generous prices are never lowered.
+		// >10% is only proposed; generous prices are never lowered.
 		await expect(item("gpt-plus")).resolves.toEqual({
-			price_minor: "5300",
+			price_minor: "4800",
 			version: 1,
 			revision: 1,
-			usdt: "5300",
-			alipay: "5500",
+			usdt: "4800",
+			alipay: "5000",
 		});
 		await expect(item("aisou-cheap")).resolves.toEqual({
 			price_minor: "9900",
@@ -524,7 +522,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			version: 1,
 		});
 		expect(JSON.parse(audits.results[1]?.after ?? "{}")).toMatchObject({
-			priceMinor: "14900",
+			priceMinor: "14500",
 			alipayMinor: "15200",
 			version: 2,
 			costMinor: "14166",
@@ -540,7 +538,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			success: true,
 			data: {
 				suppliers: [{ name: "86", balance: "5000.00" }],
-				skus: ["PRO100", "PLUS", "PRO200", "GO", "NEW"].map((sku) => ({
+				skus: ["PRO100", "PLUS", "PRO200", "GO", "MAX", "NEW"].map((sku) => ({
 					sku,
 					available: 1,
 					restock_source: "86",
@@ -550,10 +548,11 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		const followPrices = parseProcurementPrices({
 			success: true,
 			data: [
-				{ sku: "PRO100", source: "86", price: "590.00" },
+				{ sku: "PRO100", source: "86", price: "570.00" },
 				{ sku: "PLUS", source: "86", price: "120.00" },
 				{ sku: "PRO200", source: "86", price: "1280.00" },
 				{ sku: "GO", source: "86", price: "35.00" },
+				{ sku: "MAX", source: "86", price: "134.00" },
 				{ sku: "NEW", source: "86", price: "10.00" },
 			],
 		});
@@ -574,6 +573,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			listing("l-plus", "plus", "13000"),
 			...sellable(db, "pro200", "gpt", "Pro 200", "140000", "150000"),
 			...sellable(db, "go", "gpt", "Go", "4300", "4500"),
+			...sellable(db, "max", "gpt", "Max", "15000", "15500"),
 			...sellable(db, "new", "gpt", "New", "2000", "2100"),
 			db
 				.prepare(
@@ -585,6 +585,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 						plus: "PLUS",
 						pro200: "PRO200",
 						go: "GO",
+						max: "MAX",
 						new: "NEW",
 					}),
 				),
@@ -595,6 +596,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			plus: cost(110),
 			pro200: cost(1500),
 			go: cost(35.5),
+			max: cost(135),
 		});
 		const messages: string[] = [];
 		await expect(
@@ -619,19 +621,24 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				)
 				.bind(id)
 				.first();
-		// Cost fell ¥10.14: every price drops by about that, each to a 8/9/0 tail.
+		// Cost fell ¥30.43: every price drops by that, rounded up to whole yuan.
 		await expect(item("pro100")).resolves.toEqual({
-			price_minor: "65000",
-			cost_minor: "59000",
-			alipay: "66800",
-			agent: "63000",
+			price_minor: "63000",
+			cost_minor: "57000",
+			alipay: "64800",
+			agent: "61000",
 		});
-		// Cost rose ¥10.14 (≤10%): prices follow up automatically.
+		// Cost rose ¥10.14 (≤10%): prices follow up automatically, rounded up.
 		await expect(item("plus")).resolves.toEqual({
-			price_minor: "14800",
+			price_minor: "14600",
 			cost_minor: "12000",
-			alipay: "15800",
-			agent: "14000",
+			alipay: "15600",
+			agent: "14100",
+		});
+		// A ¥1 drop on a ¥150 price is below ¥5 / 3%: nothing moves.
+		await expect(item("max")).resolves.toMatchObject({
+			price_minor: "15000",
+			alipay: "15500",
 		});
 		// A 14.7% drop is only proposed.
 		await expect(item("pro200")).resolves.toMatchObject({
@@ -642,10 +649,10 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 
 		const text = messages[0] ?? "";
 		expect(text).toContain(
-			`· ChatGPT · Pro 100：成本 ¥608.55→¥598.41；USDT ¥660.00→¥650.00，支付宝 ¥678.00→¥668.00，代理 ¥640.00→¥630.00`,
+			`· ChatGPT · Pro 100：成本 ¥608.55→¥578.12；USDT ¥660.00→¥630.00，支付宝 ¥678.00→¥648.00，代理 ¥640.00→¥610.00`,
 		);
 		expect(text).toContain("需要你确认（未改价）：");
-		expect(text).toContain("USDT ¥1400.00→¥1308.00（-6.6%）");
+		expect(text).toContain("USDT ¥1400.00→¥1302.00（-7.0%）");
 
 		const baselines = JSON.parse(
 			(await db
@@ -655,11 +662,12 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				.first<string>("value")) ?? "{}",
 		);
 		expect(baselines).toEqual({
-			pro100: cost(590),
+			pro100: cost(570),
 			plus: cost(120),
 			pro200: cost(1280),
-			// Sub-¥1 drift keeps the old baseline so it can add up.
+			// Unfollowed moves keep the old baseline so they can add up.
 			go: cost(35.5),
+			max: cost(135),
 			new: cost(10),
 		});
 		const audit = await db
@@ -668,15 +676,33 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			)
 			.first<{ before: string; after: string }>();
 		expect(JSON.parse(audit?.after ?? "{}")).toMatchObject({
-			priceMinor: "65000",
-			agentMinor: "63000",
+			priceMinor: "63000",
+			agentMinor: "61000",
 		});
 	});
 
 	it("follow plans keep agents under retail and nets above the floor", () => {
-		expect(nearestTailMinor(64986)).toBe(65000);
-		expect(nearestTailMinor(13300)).toBe(13000);
-		expect(nearestTailMinor(14514)).toBe(14800);
+		expect(shouldFollow(100, 15000)).toBe(true);
+		expect(shouldFollow(99, 15000)).toBe(false);
+		expect(shouldFollow(-101, 15000)).toBe(false);
+		expect(shouldFollow(-500, 15000)).toBe(true);
+		expect(shouldFollow(-500, 20000)).toBe(false);
+		// Gemini 2026-10-23: cost ¥5.20→¥6.83 must not turn ¥10.80 into ¥18.
+		expect(
+			followPlan({
+				usdtMinor: 1000,
+				alipayMinor: 1080,
+				agentMinor: 890,
+				costMinor: 683,
+				baselineMinor: 520,
+				floorMinor: 300,
+			}),
+		).toMatchObject({
+			usdtNew: 1200,
+			alipayNew: 1300,
+			agentNew: 1100,
+			auto: false,
+		});
 		expect(
 			followPlan({
 				usdtMinor: 10000,
@@ -697,7 +723,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				baselineMinor: 10300,
 				floorMinor: 300,
 			}),
-		).toMatchObject({ usdtNew: 10400, alipayNew: 10800, agentNew: 10000 });
+		).toMatchObject({ usdtNew: 10200, alipayNew: 10500, agentNew: 10000 });
 	});
 
 	it("pricing guard applies a proposed raise only while the price is unchanged", async () => {
@@ -705,21 +731,21 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		const payload = {
 			itemId: "gpt-plus",
 			version: 1,
-			priceMinor: "5300",
-			alipayMinor: "5500",
+			priceMinor: "4800",
+			alipayMinor: "5000",
 			costMinor: 5072,
 			floorMinor: 300,
 			plan: {
-				usdtOld: 5300,
-				usdtNew: 5900,
-				alipayOld: 5500,
-				alipayNew: 6900,
+				usdtOld: 4800,
+				usdtNew: 5400,
+				alipayOld: 5000,
+				alipayNew: 5600,
 				auto: false,
 			},
 		};
 		await expect(
 			approvePricingRaise({ db, now: monday }, payload),
-		).resolves.toBe("✅ 已改价：USDT ¥53.00→¥59.00，支付宝 ¥55.00→¥69.00");
+		).resolves.toBe("✅ 已改价：USDT ¥48.00→¥54.00，支付宝 ¥50.00→¥56.00");
 		await expect(
 			db
 				.prepare(
@@ -728,7 +754,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 					 FROM product_sellable_items item WHERE item.id = 'gpt-plus'`,
 				)
 				.first(),
-		).resolves.toEqual({ price_minor: "5900", version: 2, alipay: "6900" });
+		).resolves.toEqual({ price_minor: "5400", version: 2, alipay: "5600" });
 		await expect(
 			db
 				.prepare(
@@ -1004,11 +1030,11 @@ async function seedPricing(db: D1Database) {
 		product(db, "gpt", "ChatGPT"),
 		product(db, "claude-product", "Claude"),
 		product(db, "aisou-product", "AISOU"),
-		// Redeem-mapped, 86: needs +11% → proposal only.
-		...sellable(db, "gpt-plus", "gpt", "Plus", "5300", "5500"),
+		// Redeem-mapped, 86: needs +12.5% → proposal only.
+		...sellable(db, "gpt-plus", "gpt", "Plus", "4800", "5000"),
 		// Redeem-mapped, 86 has no restock source → skipped.
 		...sellable(db, "gpt-pro", "gpt", "Pro 500", "100", "100"),
-		// Redeem-mapped, 小九: USDT +4.9% → automatic.
+		// Redeem-mapped, 小九: USDT +2.1% → automatic.
 		...sellable(db, "claude", "claude-product", "Pro", "14200", "15200"),
 		// AISOU: only 支付宝 is short.
 		...sellable(db, "aisou-plus", "aisou-product", "Plus", "10400", "10500"),
