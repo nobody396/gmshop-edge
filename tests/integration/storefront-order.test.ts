@@ -4,6 +4,7 @@ import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
 import {
 	completeFreeStoreOrder,
 	createShopPayment,
+	processShopPaymentEvent,
 } from "#/features/shop-payments/server/service";
 import { createMultiStoreOrder } from "#/features/storefront/server/multi-order";
 import { getStoreOrder } from "#/features/storefront/server/order-query";
@@ -279,6 +280,55 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 				payerIp: "203.0.113.9",
 			}),
 		).rejects.toMatchObject({ code: "payment_channel_mismatch" });
+	});
+
+	it("does not let a base-priced order or replay dodge a channel's own price", async () => {
+		await database.batch([
+			database
+				.prepare(
+					`INSERT INTO payment_channels
+				 (id,provider,name,currency,fee_bps,fixed_fee_minor,enabled,created_at,updated_at)
+				 VALUES (?,'gmpay','Alipay-priced','CNY',300,'0',1,1,1)`,
+				)
+				.bind(channelId),
+			database
+				.prepare(
+					`INSERT INTO sellable_item_channel_prices
+				 (id,sellable_item_id,channel_id,price_minor,enabled,created_at,updated_at)
+				 VALUES ('channel-price-bypass',?,?, '1200',1,1,1)`,
+				)
+				.bind(sellableItemId, channelId),
+		]);
+		const checkout = {
+			sellableItemId,
+			quantity: 1,
+			email: "bypass@example.com",
+			idempotencyKey: "checkout-channel-bypass",
+			customerNote: "",
+		};
+		const basePriced = await createStoreOrder(database, checkout);
+		expect(basePriced.totalMinor).toBe("1000");
+		// Replaying the base-priced checkout under the priced channel is a conflict.
+		await expect(
+			createStoreOrder(database, checkout, { pricingChannelId: channelId }),
+		).rejects.toMatchObject({ code: "payment_channel_mismatch", status: 409 });
+		// Paying the base-priced order through that channel is refused too.
+		await expect(
+			createShopPayment(database, {
+				orderId: basePriced.id,
+				channelId,
+				paymentCurrency: "CNY",
+				idempotencyKey: "pay-base-priced-through-channel",
+				successUrl: "https://shop.example/orders/x",
+				cancelUrl: "https://shop.example/orders/x",
+				payerIp: "203.0.113.9",
+			}),
+		).rejects.toMatchObject({ code: "payment_channel_mismatch" });
+		// The same checkout key still replays for the same (base) pricing.
+		await expect(createStoreOrder(database, checkout)).resolves.toMatchObject({
+			id: basePriced.id,
+			duplicate: true,
+		});
 	});
 
 	it.each([
@@ -1056,6 +1106,112 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 			redemption_status: "released",
 			events: 1,
 			orphaned_outbox_events: 0,
+		});
+	});
+
+	async function payLate(orderId: string, totalMinor: string, key: string) {
+		await database.batch([
+			database
+				.prepare(
+					`INSERT INTO payment_channels
+					 (id,provider,name,currency,fee_bps,fixed_fee_minor,enabled,created_at,updated_at)
+					 VALUES (?,'stripe','Card','CNY',0,'0',1,1,1) ON CONFLICT(id) DO NOTHING`,
+				)
+				.bind(channelId),
+			database
+				.prepare(
+					`INSERT INTO payment_attempts
+					 (id, order_id, channel_id, provider_payment_id, idempotency_key, status,
+					  amount_minor, currency, created_at, updated_at)
+					 VALUES (?, ?, ?, ?, ?, 'expired', ?, 'CNY', 1, 1)`,
+				)
+				.bind(
+					crypto.randomUUID(),
+					orderId,
+					channelId,
+					`pi_${key}`,
+					key,
+					totalMinor,
+				),
+		]);
+		return processShopPaymentEvent(database, channelId, {
+			providerEventId: `evt_${key}`,
+			providerPaymentId: `pi_${key}`,
+			type: "payment_succeeded",
+			amountMinor: totalMinor,
+			currency: "CNY",
+			payloadDigest: `digest-${key}`,
+		});
+	}
+
+	it("re-claims a released coupon when an expired order is paid late", async () => {
+		const created = await createStoreOrder(database, {
+			sellableItemId,
+			quantity: 1,
+			email: "late@example.com",
+			couponCode: "SAVE25",
+			idempotencyKey: "checkout-late-reclaim",
+			customerNote: "",
+		});
+		await expireStoreOrders(database, created.expiresAt + 1);
+		await expect(
+			payLate(created.id, created.totalMinor, "late-reclaim"),
+		).resolves.toMatchObject({ status: "succeeded" });
+		const state = await database
+			.prepare(
+				`SELECT o.status, c.used_count, cr.status AS redemption_status
+				 FROM shop_orders o JOIN coupons c ON c.id = o.coupon_id
+				 JOIN coupon_redemptions cr ON cr.order_id = o.id WHERE o.id = ?`,
+			)
+			.bind(created.id)
+			.first();
+		expect(state).toEqual({
+			status: "paid",
+			used_count: 1,
+			redemption_status: "consumed",
+		});
+	});
+
+	it("holds a late payment for review when the released coupon was used up meanwhile", async () => {
+		await database
+			.prepare("UPDATE coupons SET usage_limit = 1 WHERE id = ?")
+			.bind(couponId)
+			.run();
+		const first = await createStoreOrder(database, {
+			sellableItemId,
+			quantity: 1,
+			email: "first@example.com",
+			couponCode: "SAVE25",
+			idempotencyKey: "checkout-coupon-first",
+			customerNote: "",
+		});
+		await expireStoreOrders(database, first.expiresAt + 1);
+		await createStoreOrder(database, {
+			sellableItemId,
+			quantity: 1,
+			email: "second@example.com",
+			couponCode: "SAVE25",
+			idempotencyKey: "checkout-coupon-second",
+			customerNote: "",
+		});
+		await expect(
+			payLate(first.id, first.totalMinor, "late-overused"),
+		).resolves.toMatchObject({ status: "reconciliation_required" });
+		const state = await database
+			.prepare(
+				`SELECT o.status, c.used_count, cr.status AS redemption_status,
+				 (SELECT COUNT(*) FROM delivery_records dr JOIN shop_order_items oi ON oi.id = dr.order_item_id
+				  WHERE oi.order_id = o.id) AS deliveries
+				 FROM shop_orders o JOIN coupons c ON c.id = o.coupon_id
+				 JOIN coupon_redemptions cr ON cr.order_id = o.id WHERE o.id = ?`,
+			)
+			.bind(first.id)
+			.first();
+		expect(state).toEqual({
+			status: "expired",
+			used_count: 1,
+			redemption_status: "released",
+			deliveries: 0,
 		});
 	});
 });

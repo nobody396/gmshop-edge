@@ -57,6 +57,7 @@ type PaymentCreationContext = {
 	fee_bps: number;
 	fixed_fee_minor: string;
 	fixed_channel_pricing: number;
+	has_channel_pricing: number;
 };
 
 type OrderItem = EntitlementOrderItem & {
@@ -122,7 +123,14 @@ export async function createShopPayment(
 			   WHERE channel_price.sellable_item_id = order_item.sellable_item_id
 			    AND channel_price.channel_id = pc.id AND channel_price.enabled = 1
 			  )
-			 ) AS fixed_channel_pricing
+			 ) AS fixed_channel_pricing,
+			 EXISTS (
+			  SELECT 1 FROM shop_order_items order_item
+			  JOIN sellable_item_channel_prices channel_price
+			   ON channel_price.sellable_item_id = order_item.sellable_item_id
+			  WHERE order_item.order_id = o.id AND channel_price.channel_id = pc.id
+			   AND channel_price.enabled = 1
+			 ) AS has_channel_pricing
 			 FROM shop_orders o JOIN payment_channels pc ON pc.id = ?
 			 WHERE o.id = ? AND pc.enabled = 1 LIMIT 1`,
 		)
@@ -137,9 +145,12 @@ export async function createShopPayment(
 	if (context.order_status !== "pending_payment")
 		throw new DomainError("order_not_payable", 409, "Order cannot be paid");
 	// The total was quoted with this channel's prices; another channel would pay that price without its own fee.
+	// An order quoted without a channel was priced at the base price; a channel
+	// with its own prices for these items must quote a new order instead.
 	if (
-		context.pricing_channel_id != null &&
-		context.pricing_channel_id !== context.channel_id
+		context.pricing_channel_id != null
+			? context.pricing_channel_id !== context.channel_id
+			: Boolean(context.has_channel_pricing)
 	)
 		throw new DomainError(
 			"payment_channel_mismatch",
@@ -833,6 +844,34 @@ export async function processShopPaymentEvent(
 			"Order cannot accept payment",
 		);
 
+	// Expiry released the order's coupon use. A late payment must claim it
+	// again; if the coupon was used up meanwhile, hold the payment for review
+	// instead of delivering at the discounted price.
+	const releasedCoupon =
+		context.order_status === "expired"
+			? await loadReleasedCouponUse(db, context.order_id)
+			: null;
+	if (releasedCoupon && !releasedCoupon.available) {
+		const now = Date.now();
+		const held = await runPaymentEventBatch(db, channelId, event, [
+			paymentEventStatement(
+				db,
+				channelId,
+				context.attempt_id,
+				event,
+				"rejected",
+				now,
+			),
+			db
+				.prepare(
+					"UPDATE payment_attempts SET failure_code='coupon_reclaim_required',updated_at=? WHERE id=?",
+				)
+				.bind(now, context.attempt_id),
+		]);
+		if (held.duplicate)
+			return presentPaymentReplayReceipt(held.duplicate, event);
+		return { duplicate: false, status: "reconciliation_required" };
+	}
 	const items = await db
 		.prepare(`${orderItemsForFulfillmentSql} WHERE oi.order_id = ?`)
 		.bind(context.order_id)
@@ -888,6 +927,21 @@ export async function processShopPaymentEvent(
 				now,
 			),
 	];
+	if (releasedCoupon)
+		statements.push(
+			db
+				.prepare(
+					`UPDATE coupons SET used_count = used_count + 1, updated_at = ?
+					 WHERE id = ? AND (usage_limit IS NULL OR used_count < usage_limit)
+					 AND EXISTS (SELECT 1 FROM shop_orders WHERE id = ? AND status = 'paid' AND version = ?)`,
+				)
+				.bind(now, releasedCoupon.couponId, context.order_id, nextVersion),
+			// A concurrent order took the last use: abort the whole payment batch;
+			// the provider retries and the next attempt holds it for review.
+			db.prepare(
+				"SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('coupon_reclaim_conflict','$') END",
+			),
+		);
 	for (const item of items.results)
 		statements.push(...fulfillmentStatements(db, context.order_id, item, now));
 	statements.push(
@@ -1370,6 +1424,34 @@ function presentPaymentReplayReceipt(
 			"Payment event identifier was reused with different content",
 		);
 	return { duplicate: true as const, status: receipt.status };
+}
+
+async function loadReleasedCouponUse(db: D1Database, orderId: string) {
+	const row = await db
+		.prepare(
+			`SELECT cr.coupon_id, c.usage_limit, c.used_count, c.usage_limit_per_customer,
+			 (SELECT COUNT(*) FROM coupon_redemptions other
+			  WHERE other.coupon_id = cr.coupon_id AND other.id <> cr.id
+			   AND other.status IN ('reserved', 'consumed')
+			   AND (CASE WHEN cr.user_id IS NOT NULL THEN other.user_id = cr.user_id
+			        ELSE other.normalized_email = cr.normalized_email END)) AS customer_uses
+			 FROM coupon_redemptions cr JOIN coupons c ON c.id = cr.coupon_id
+			 WHERE cr.order_id = ? AND cr.status = 'released' LIMIT 1`,
+		)
+		.bind(orderId)
+		.first<{
+			coupon_id: string;
+			usage_limit: number | null;
+			used_count: number;
+			usage_limit_per_customer: number | null;
+			customer_uses: number;
+		}>();
+	if (!row) return null;
+	const available =
+		(row.usage_limit == null || row.used_count < row.usage_limit) &&
+		(row.usage_limit_per_customer == null ||
+			row.customer_uses < row.usage_limit_per_customer);
+	return { couponId: row.coupon_id, available };
 }
 
 async function runPaymentEventBatch(

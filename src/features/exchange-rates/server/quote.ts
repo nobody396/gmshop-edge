@@ -1,10 +1,14 @@
-import { convertMinorAmount } from "#/features/exchange-rates/rates";
+import {
+	convertMinorAmount,
+	inverseAdjustedRate,
+} from "#/features/exchange-rates/rates";
 import { DomainError } from "#/lib/domain-error";
 
 type ExchangeRateRow = {
 	id: string;
 	base_currency: string;
 	quote_currency: string;
+	raw_rate: string;
 	rate: string;
 	source: string;
 	adjustment_bps: number;
@@ -50,7 +54,7 @@ export async function quotePaymentCurrency(
 		};
 	const rate = await db
 		.prepare(
-			`SELECT id, base_currency, quote_currency, rate, source, adjustment_bps,
+			`SELECT id, base_currency, quote_currency, raw_rate, rate, source, adjustment_bps,
 			 observed_at FROM exchange_rates
 			 WHERE ((base_currency = ? AND quote_currency = ?) OR
 			  (base_currency = ? AND quote_currency = ?))
@@ -67,17 +71,23 @@ export async function quotePaymentCurrency(
 			"The selected payment currency is unavailable",
 		);
 	const direction = rate.base_currency === currency ? "multiply" : "divide";
+	// The adjustment always favours the shop: multiplying uses the adjusted
+	// rate, dividing uses the inversely adjusted raw rate.
+	const effectiveRate =
+		direction === "divide" && rate.adjustment_bps !== 0
+			? inverseAdjustedRate(rate.raw_rate, rate.adjustment_bps)
+			: rate.rate;
 	return {
 		...convertMinorAmount({
 			amountMinor: input.amountMinor,
 			fromCurrency: currency,
 			fromDecimals: input.currencyDecimals,
 			toCurrency: paymentCurrency,
-			rate: rate.rate,
+			rate: effectiveRate,
 			direction,
 		}),
 		rateId: rate.id,
-		rate: rate.rate,
+		rate: effectiveRate,
 		rateDirection: direction,
 		rateSource: rate.source,
 		rateAdjustmentBps: rate.adjustment_bps,

@@ -9,7 +9,11 @@ import { getDb } from "#/server/db.server";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import { supplierApiKeyCreateSchema, supplierApiKeyIdSchema } from "../schema";
 import { supplierApiIsEnabled } from "./auth";
-import { createSupplierApiKey, revokeSupplierApiKey } from "./key-store";
+import {
+	createSupplierApiKey,
+	revokeSupplierApiKey,
+	supplierApiUserAllowed,
+} from "./key-store";
 
 export const listSupplierApiKeysFn = createServerFn({ method: "GET" }).handler(
 	async () => {
@@ -25,8 +29,9 @@ export const listSupplierApiKeysFn = createServerFn({ method: "GET" }).handler(
 		const db = getDb(request).$client;
 		const account = await resolveStoreAccount(db, request, { required: true });
 		const userId = account?.user.id ?? "";
-		const [enabled, keys] = await Promise.all([
+		const [enabled, allowed, keys] = await Promise.all([
 			supplierApiIsEnabled(db),
+			supplierApiUserAllowed(db, userId),
 			db
 				.prepare(
 					"SELECT id, name, key_id, last_used_at, revoked_at, created_at FROM supplier_api_keys WHERE user_id = ? ORDER BY created_at DESC, id DESC",
@@ -34,6 +39,8 @@ export const listSupplierApiKeysFn = createServerFn({ method: "GET" }).handler(
 				.bind(userId)
 				.all<ApiKeyRow>(),
 		]);
+		// Only explicitly allowed accounts see the API entry; others get no keys list.
+		if (!enabled || !allowed) return { enabled: false, keys: [] };
 		return { enabled, keys: keys.results };
 	},
 );
@@ -52,6 +59,12 @@ export const createSupplierApiKeyFn = createServerFn({ method: "POST" })
 				"email_verification_required",
 				403,
 				m.auth_error_email_not_verified(),
+			);
+		if (!(await supplierApiUserAllowed(db, userId)))
+			throw new DomainError(
+				"supplier_api_not_allowed",
+				403,
+				"API purchasing is not enabled for this account",
 			);
 		await verifySensitiveAdminAction(request, userId, data);
 		if (!(await supplierApiIsEnabled(db)))

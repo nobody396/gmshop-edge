@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Save } from "lucide-react";
+import { ExternalLink, Save, UserPlus } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Switch as ProSwitch } from "#/components/pro/base/fields/checkbox";
 import {
@@ -9,6 +10,17 @@ import {
 	ModalForm,
 	ProSchemaForm,
 } from "#/components/pro/form";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from "#/components/ui/alert-dialog";
 import { Button } from "#/components/ui/button";
 import {
 	Card,
@@ -17,11 +29,15 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import { Input } from "#/components/ui/input";
 import { PageHeader } from "#/layouts/components/page-header";
 import { formatMinorAmount } from "#/lib/format";
 import { m } from "#/paraglide/messages";
 import {
+	allowSupplierApiUserFn,
+	disallowSupplierApiUserFn,
 	getSupplierApiConfigurationFn,
+	listSupplierApiAllowedUsersFn,
 	listSupplierExportListingsFn,
 	setSupplierApiConfigurationFn,
 	setSupplierExportListingFn,
@@ -29,6 +45,7 @@ import {
 
 const configurationKey = ["admin", "supplier-api", "configuration"] as const;
 const listingKey = ["admin", "supplier-api", "export-listings"] as const;
+const allowlistKey = ["admin", "supplier-api", "allowed-users"] as const;
 
 export function SupplierApiAdminPage() {
 	const formId = "system-settings-supplier-api";
@@ -101,6 +118,7 @@ export function SupplierApiAdminPage() {
 					}}
 					submitter={false}
 				/>
+				<SupplierApiAllowlistCard />
 				<Card>
 					<CardHeader>
 						<CardTitle>{m.supplier_api_export_title()}</CardTitle>
@@ -184,5 +202,111 @@ export function SupplierApiAdminPage() {
 				</Card>
 			</div>
 		</div>
+	);
+}
+
+function SupplierApiAllowlistCard() {
+	const client = useQueryClient();
+	const [email, setEmail] = useState("");
+	const allowed = useQuery({
+		queryKey: allowlistKey,
+		queryFn: () => listSupplierApiAllowedUsersFn(),
+	});
+	const refresh = async () => {
+		await client.invalidateQueries({ queryKey: allowlistKey });
+		toast.success(m.settings_saved());
+	};
+	const allow = useMutation({
+		mutationFn: (value: string) =>
+			allowSupplierApiUserFn({ data: { email: value } }),
+		onSuccess: async () => {
+			setEmail("");
+			await refresh();
+		},
+		onError: () => toast.error(m.web_support_failed()),
+	});
+	const remove = useMutation({
+		mutationFn: (userId: string) =>
+			disallowSupplierApiUserFn({ data: { userId } }),
+		onSuccess: refresh,
+		onError: () => toast.error(m.web_support_failed()),
+	});
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>{m.supplier_api_allowlist_title()}</CardTitle>
+				<CardDescription>
+					{m.supplier_api_allowlist_description()}
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="space-y-3">
+				<form
+					className="flex flex-wrap items-center gap-2"
+					onSubmit={(event) => {
+						event.preventDefault();
+						if (email.trim()) allow.mutate(email.trim());
+					}}
+				>
+					<Input
+						aria-label={m.supplier_api_allowlist_email()}
+						autoComplete="off"
+						className="min-w-0 flex-1"
+						onChange={(event) => setEmail(event.target.value)}
+						placeholder={m.supplier_api_allowlist_email()}
+						type="email"
+						value={email}
+					/>
+					<Button disabled={allow.isPending || !email.trim()} type="submit">
+						<UserPlus />
+						{m.supplier_api_allowlist_add()}
+					</Button>
+				</form>
+				{(allowed.data ?? []).length === 0 && !allowed.isLoading ? (
+					<p className="text-muted-foreground text-sm">
+						{m.supplier_api_allowlist_empty()}
+					</p>
+				) : null}
+				{(allowed.data ?? []).map((entry) => (
+					<div
+						className="flex flex-wrap items-center gap-3 rounded-md border p-3"
+						key={entry.userId}
+					>
+						<div className="min-w-0 flex-1">
+							<strong className="block truncate text-sm">{entry.email}</strong>
+							<span className="text-muted-foreground text-xs">
+								{m.supplier_api_allowlist_active_keys({
+									count: entry.activeKeys,
+								})}
+							</span>
+						</div>
+						<AlertDialog>
+							<AlertDialogTrigger asChild>
+								<Button disabled={remove.isPending} size="sm" variant="outline">
+									{m.supplier_api_allowlist_remove()}
+								</Button>
+							</AlertDialogTrigger>
+							<AlertDialogContent>
+								<AlertDialogHeader>
+									<AlertDialogTitle>
+										{m.supplier_api_allowlist_remove()} · {entry.email}
+									</AlertDialogTitle>
+									<AlertDialogDescription>
+										{m.supplier_api_allowlist_description()}
+									</AlertDialogDescription>
+								</AlertDialogHeader>
+								<AlertDialogFooter>
+									<AlertDialogCancel>{m.common_cancel()}</AlertDialogCancel>
+									<AlertDialogAction
+										onClick={() => remove.mutate(entry.userId)}
+									>
+										{m.common_confirm()}
+									</AlertDialogAction>
+								</AlertDialogFooter>
+							</AlertDialogContent>
+						</AlertDialog>
+					</div>
+				))}
+			</CardContent>
+		</Card>
 	);
 }

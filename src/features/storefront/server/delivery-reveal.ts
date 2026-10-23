@@ -32,6 +32,10 @@ export async function revealStoreDelivery(
 		{ orderNumber: input.orderNumber, email: input.email },
 		{ userId: input.userId },
 	);
+	// A refunded order (or this order's refunded share of a stacked
+	// entitlement) must not reveal its content again.
+	if (["refunding", "refunded", "cancelled"].includes(order.status))
+		throw new DomainError("delivery_not_found", 404, "Delivery not found");
 	const delivery = await db
 		.prepare(
 			`SELECT dr.content_encrypted, dr.delivery_type, dr.redeem_sku, ce.id AS entitlement_id,
@@ -43,7 +47,7 @@ export async function revealStoreDelivery(
 			 LEFT JOIN supplier_orders supplier_order ON supplier_order.order_item_id = oi.id
 			 JOIN customer_entitlements ce ON ce.id = (
 			  SELECT grants.entitlement_id FROM entitlement_grants grants
-			 WHERE grants.source_order_item_id = oi.id LIMIT 1)
+			 WHERE grants.source_order_item_id = oi.id AND grants.status = 'active' LIMIT 1)
 			 WHERE dr.id = ? AND oi.order_id = ? AND dr.status = 'delivered'
 			 AND dr.delivery_type = 'stock'
 			 AND ce.status IN ('active', 'exhausted')

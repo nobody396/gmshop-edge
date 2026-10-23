@@ -3,6 +3,7 @@ import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema";
 import {
+	allowSupplierApiUser,
 	createSupplierApiKey,
 	revokeSupplierApiKey,
 } from "#/features/supplier-api/server/key-store";
@@ -39,6 +40,7 @@ describe("supplier API key lifecycle", () => {
 			enabled: true,
 			password: "current-password",
 		});
+		await allowSupplierApiUser(db, user.id, { grantedBy: null });
 		let firstKeyId = "";
 		for (let index = 0; index < 10; index += 1) {
 			const key = await createSupplierApiKey(
@@ -98,6 +100,7 @@ describe("supplier API key lifecycle", () => {
 			enabled: true,
 			password: "current-password",
 		});
+		await allowSupplierApiUser(db, user.id, { grantedBy: null });
 		await createSupplierApiKey(db, request, user.id, commerceSecret, {
 			name: "Compromised integration",
 			password: "current-password",

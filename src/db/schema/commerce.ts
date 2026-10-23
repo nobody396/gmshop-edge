@@ -1781,6 +1781,22 @@ export const supplierApiKeys = sqliteTable(
 	],
 );
 
+/**
+ * Accounts allowed to hold supplier-API keys (see drizzle/0044). Checked when
+ * a key is created and on every signed supplier-API request.
+ */
+export const supplierApiAllowedUsers = sqliteTable(
+	"supplier_api_allowed_users",
+	{
+		userId: text("user_id")
+			.primaryKey()
+			.references(() => users.id, { onDelete: "cascade" }),
+		grantedBy: text("granted_by"),
+		note: text("note"),
+		...timestamps,
+	},
+);
+
 export const supplierExportListings = sqliteTable(
 	"supplier_export_listings",
 	{

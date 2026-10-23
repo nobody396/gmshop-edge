@@ -416,6 +416,10 @@ async function fulfillSupplierOrder(
 		})),
 	);
 	const now = Date.now();
+	// Card import and delivery only follow this exact pending -> supplied
+	// transition. A refunded or already-supplied order must not gain cards.
+	const suppliedNow =
+		"EXISTS (SELECT 1 FROM supplier_orders WHERE id = ? AND state = 'supplied' AND supplied_at = ?)";
 	const statements: D1PreparedStatement[] = [
 		db
 			.prepare(
@@ -436,6 +440,7 @@ async function fulfillSupplierOrder(
 				  supplier_order_id, reserved_at, created_at, updated_at)
 				 SELECT ?, oi.sellable_item_id, ?, 1, ?, ?, 'reserved', ?,
 				  ?, ?, ?, ? FROM shop_order_items oi WHERE oi.id = ?
+				  AND ${suppliedNow}
 				 ON CONFLICT(id) DO NOTHING`,
 				)
 				.bind(
@@ -449,21 +454,24 @@ async function fulfillSupplierOrder(
 					now,
 					now,
 					order.order_item_id,
+					order.id,
+					now,
 				),
 		),
 		db
 			.prepare(
 				`UPDATE delivery_records SET status = 'pending',
 				 next_attempt_at = ?, error_code = NULL, updated_at = ?
-				 WHERE id = ? AND status = 'awaiting_supply'`,
+				 WHERE id = ? AND status = 'awaiting_supply' AND ${suppliedNow}`,
 			)
-			.bind(now, now, order.delivery_record_id),
+			.bind(now, now, order.delivery_record_id, order.id, now),
 		db
 			.prepare(
 				`INSERT INTO outbox_events
 				 (id, event_type, aggregate_type, aggregate_id, idempotency_key,
 				  payload, status, attempt_count, created_at, updated_at)
-				 VALUES (?, 'delivery.requested', 'delivery', ?, ?, ?, 'pending', 0, ?, ?)
+				 SELECT ?, 'delivery.requested', 'delivery', ?, ?, ?, 'pending', 0, ?, ?
+				 WHERE ${suppliedNow}
 				 ON CONFLICT(idempotency_key) DO NOTHING`,
 			)
 			.bind(
@@ -476,10 +484,29 @@ async function fulfillSupplierOrder(
 				}),
 				now,
 				now,
+				order.id,
+				now,
 			),
 	);
 	const results = await db.batch(statements);
 	const duplicate = Number(results[0]?.meta.changes ?? 0) !== 1;
+	if (duplicate) {
+		// The order was refunded (or otherwise closed) while the supplier was
+		// still working. Keep the upstream reference for the operator instead of
+		// delivering the cards to a refunded customer.
+		const current = await loadOrder(db, order.id);
+		if (current?.state === "refunded") {
+			await db
+				.prepare(
+					`UPDATE supplier_orders SET upstream_order_id = COALESCE(?, upstream_order_id),
+					 last_error_code = 'supplier_supplied_after_refund', updated_at = ?
+					 WHERE id = ? AND state = 'refunded'`,
+				)
+				.bind(result.upstreamOrderId, Date.now(), order.id)
+				.run();
+			return { id: order.id, state: "refunded", duplicate: true };
+		}
+	}
 	return { id: order.id, state: "supplied", duplicate };
 }
 

@@ -372,7 +372,10 @@ describe("no-pause owned redemption delivery", { timeout: 30000 }, () => {
 		await db
 			.prepare("UPDATE shop_orders SET status='cancelled' WHERE id='o'")
 			.run();
-		await expect(processDelivery(db, "d")).rejects.toThrow();
+		// A closed order's delivery is failed for the operator instead of retried.
+		await expect(processDelivery(db, "d")).resolves.toMatchObject({
+			status: "failed",
+		});
 		expect(
 			(
 				await db
@@ -391,7 +394,7 @@ describe("no-pause owned redemption delivery", { timeout: 30000 }, () => {
 					.prepare("SELECT status FROM delivery_records WHERE id='d'")
 					.first()
 			)?.status,
-		).toBe("pending");
+		).toBe("failed");
 		expect(
 			(
 				await db

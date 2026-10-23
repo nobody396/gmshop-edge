@@ -38,6 +38,7 @@ export async function authenticateSupplierApi(
 			`SELECT key.id, key.user_id, key.key_id, key.secret_encrypted,
 			 key.allowed_callback_origin
 			 FROM supplier_api_keys key JOIN users user ON user.id = key.user_id
+			 JOIN supplier_api_allowed_users allowed ON allowed.user_id = key.user_id
 			 WHERE key.key_id = ? AND key.revoked_at IS NULL AND user.enabled = 1 LIMIT 1`,
 		)
 		.bind(apiKey)

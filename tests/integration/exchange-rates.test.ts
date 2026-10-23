@@ -84,6 +84,45 @@ describe("store-owned fiat exchange rates", () => {
 		});
 	});
 
+	it("keeps a positive adjustment a markup when a pair is quoted in reverse", async () => {
+		await db
+			.prepare(
+				"UPDATE exchange_rates SET rate = '0.1414', adjustment_bps = 100 WHERE id = 'cny-usd'",
+			)
+			.run();
+		// Paying CNY for a USD order divides by the CNY->USD rate; the +1%
+		// adjustment must make the CNY amount larger, not smaller.
+		const quote = await quotePaymentCurrency(db, {
+			amountMinor: "1000",
+			currency: "USD",
+			currencyDecimals: 2,
+			paymentCurrency: "CNY",
+			now: 2000,
+		});
+		expect(quote).toMatchObject({
+			currency: "CNY",
+			rateDirection: "divide",
+			rateAdjustmentBps: 100,
+		});
+		expect(BigInt(quote.amountMinor)).toBeGreaterThanOrEqual(7215n);
+		// The snapshot rate reproduces the charged amount for later refunds.
+		expect(
+			convertMinorAmount({
+				amountMinor: "1000",
+				fromCurrency: "USD",
+				fromDecimals: 2,
+				toCurrency: "CNY",
+				rate: quote.rate,
+				direction: "divide",
+			}).amountMinor,
+		).toBe(quote.amountMinor);
+		await db
+			.prepare(
+				"UPDATE exchange_rates SET rate = '0.14', adjustment_bps = 0 WHERE id = 'cny-usd'",
+			)
+			.run();
+	});
+
 	it("keeps every maintained currency selectable even when refresh is overdue", async () => {
 		await db
 			.prepare(

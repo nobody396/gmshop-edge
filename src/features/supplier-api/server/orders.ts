@@ -6,6 +6,7 @@ import {
 } from "#/features/redeem-warehouse/redeem-host";
 import {
 	prepareSale,
+	releaseSaleStatements,
 	reserveSaleStatements,
 } from "#/features/redeem-warehouse/server/sale-capacity";
 import { completeWalletStoreOrder } from "#/features/shop-payments/server/service";
@@ -16,6 +17,9 @@ import { DomainError } from "#/lib/domain-error";
 import { isSafeWebhookUrl } from "#/lib/webhook-url";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import type { SupplierApiIdentity } from "./auth";
+
+// One API order may not hold more than this many units of shared stock.
+const maximumApiOrderQuantity = 100;
 
 type OrderInput = {
 	skuId: string;
@@ -38,7 +42,7 @@ export async function createSupplierApiOrder(
 	if (
 		!Number.isInteger(input.quantity) ||
 		input.quantity < 1 ||
-		input.quantity > 1_000
+		input.quantity > maximumApiOrderQuantity
 	)
 		throw new DomainError("supplier_quantity_invalid", 400, "Invalid quantity");
 	validateCallback(input.callbackUrl, identity.allowedCallbackOrigin);
@@ -47,7 +51,8 @@ export async function createSupplierApiOrder(
 		.digest("hex");
 	const existing = await db
 		.prepare(
-			`SELECT api.id, api.request_digest, shop_order.total_minor, shop_order.currency,
+			`SELECT api.id, api.request_digest, api.state, shop_order.paid_minor,
+			 shop_order.total_minor, shop_order.currency,
 			 shop_order.currency_decimals FROM supplier_api_orders api
 			 JOIN shop_orders shop_order ON shop_order.id = api.shop_order_id
 			 WHERE api.user_id = ? AND api.downstream_order_no = ? LIMIT 1`,
@@ -56,6 +61,8 @@ export async function createSupplierApiOrder(
 		.first<{
 			id: string;
 			request_digest: string;
+			state: string;
+			paid_minor: string;
 			total_minor: string;
 			currency: string;
 			currency_decimals: number;
@@ -66,6 +73,12 @@ export async function createSupplierApiOrder(
 				"supplier_idempotency_conflict",
 				409,
 				"Order number was reused",
+			);
+		if (existing.state === "cancelled" && existing.paid_minor === "0")
+			throw new DomainError(
+				"supplier_order_cancelled",
+				409,
+				"This order was never paid and is cancelled; use a new order number",
 			);
 		return {
 			ok: true,
@@ -126,6 +139,18 @@ export async function createSupplierApiOrder(
 			input.quantity - item.owned_stock_quantity,
 		);
 	const total = (BigInt(item.price_minor) * BigInt(input.quantity)).toString();
+	// Check the wallet before reserving shared stock, so a caller without
+	// funds cannot hold codes that other buyers could purchase.
+	const buyer = await db
+		.prepare("SELECT balance_minor FROM users WHERE id = ? AND enabled = 1")
+		.bind(identity.userId)
+		.first<{ balance_minor: string }>();
+	if (!buyer || BigInt(buyer.balance_minor) < BigInt(total))
+		throw new DomainError(
+			"wallet_insufficient_balance",
+			409,
+			"Insufficient balance",
+		);
 	const orderId = crypto.randomUUID();
 	const orderItemId = crypto.randomUUID();
 	const apiOrderId = crypto.randomUUID();
@@ -197,7 +222,12 @@ export async function createSupplierApiOrder(
 				? reserveSaleStatements(db, item.id, orderItemId, input.quantity, now)
 				: []),
 		]);
-		await completeWalletStoreOrder(db, { orderId, userId: identity.userId });
+		try {
+			await completeWalletStoreOrder(db, { orderId, userId: identity.userId });
+		} catch (error) {
+			await cancelUnpaidApiOrder(db, orderId, apiOrderId);
+			throw error;
+		}
 		return {
 			ok: true,
 			order_id: apiOrderId,
@@ -273,7 +303,20 @@ export async function getSupplierApiOrder(
 		}>();
 	if (!row)
 		throw new DomainError("supplier_order_not_found", 404, "Order not found");
-	if (row.delivery_status === "delivered" && row.content_encrypted) {
+	// Cards of a refunded or cancelled order are never handed out again.
+	if (row.order_status === "refunded" || row.order_status === "cancelled")
+		return {
+			order_id: row.id,
+			status: row.order_status,
+			amount_minor: row.total_minor,
+			currency: row.currency,
+			currency_decimals: row.currency_decimals,
+		};
+	if (
+		row.delivery_status === "delivered" &&
+		row.content_encrypted &&
+		row.order_status !== "refunding"
+	) {
 		const runtime = await loadRuntimeConfig(db);
 		if (!runtime.commerceSecret)
 			throw new DomainError(
@@ -401,6 +444,32 @@ export async function cancelSupplierApiOrder(
 		reason: "Supplier API order cancelled",
 	});
 	return { ok: true, order_id: id, status: "cancelled" };
+}
+
+// The wallet debit failed after the order row was written (for example a
+// concurrent order spent the balance). Close the unpaid order and return any
+// reserved shared stock in the same transaction instead of holding it until
+// the order expires.
+async function cancelUnpaidApiOrder(
+	db: D1Database,
+	orderId: string,
+	apiOrderId: string,
+) {
+	const now = Date.now();
+	await db.batch([
+		db
+			.prepare(
+				`UPDATE shop_orders SET status = 'cancelled', cancelled_at = ?, version = version + 1, updated_at = ?
+				 WHERE id = ? AND status = 'pending_payment'`,
+			)
+			.bind(now, now, orderId),
+		db
+			.prepare(
+				"UPDATE supplier_api_orders SET state = 'cancelled', updated_at = ? WHERE id = ? AND state = 'processing' AND EXISTS (SELECT 1 FROM shop_orders WHERE id = ? AND status = 'cancelled')",
+			)
+			.bind(now, apiOrderId, orderId),
+		...releaseSaleStatements(db, orderId, now),
+	]);
 }
 
 function validateCallback(

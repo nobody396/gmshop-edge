@@ -287,6 +287,47 @@ export function describeClaudeSaleCheckout(skus: readonly string[]) {
 			).toMatchObject({ balance_minor: "9900" });
 			expect(fetcher).not.toHaveBeenCalled();
 		});
+		it("a caller without balance cannot hold shared owned codes", async () => {
+			await db
+				.prepare("UPDATE users SET balance_minor='0' WHERE id=?")
+				.bind(user)
+				.run();
+			const identity = {
+				userId: user,
+				keyId: "test-key",
+				keyRowId: "key-row",
+				allowedCallbackOrigin: null,
+			};
+			await expect(
+				createSupplierApiOrder(db, identity, {
+					skuId: item,
+					quantity: 50,
+					downstreamOrderNo: "agent-no-money",
+				}),
+			).rejects.toMatchObject({ code: "wallet_insufficient_balance" });
+			await expect(
+				createSupplierApiOrder(db, identity, {
+					skuId: item,
+					quantity: 101,
+					downstreamOrderNo: "agent-too-large",
+				}),
+			).rejects.toMatchObject({ code: "supplier_quantity_invalid" });
+			expect(await stock()).toBe(100);
+			expect(
+				await db
+					.prepare(
+						"SELECT COUNT(*) AS n FROM stock_entries WHERE status='reserved'",
+					)
+					.first(),
+			).toMatchObject({ n: 0 });
+			expect(
+				await db
+					.prepare(
+						"SELECT COUNT(*) AS n FROM shop_orders WHERE status='pending_payment'",
+					)
+					.first(),
+			).toMatchObject({ n: 0 });
+		});
 		it("never creates more codes as a checkout side effect", async () => {
 			await db.prepare("DELETE FROM stock_entries WHERE id!='stock-0'").run();
 			await expect(checkout(3)).rejects.toMatchObject({
