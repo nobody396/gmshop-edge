@@ -29,6 +29,8 @@ import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
 import { AgentAccessDelivery } from "#/features/agent-access/components/access";
 import { agentAccessProducts } from "#/features/agent-access/products";
+import { ClaudeEnvPanel } from "#/features/claude-env/components/panel";
+import { claudeEnvProductId } from "#/features/claude-env/domain";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { DeliveryRevealContent } from "#/features/storefront/components/delivery-reveal-content";
@@ -538,6 +540,12 @@ export function StorefrontOrderPage({
 									),
 								) ? (
 									<AgentAccessDelivery orderNumber={orderNumber} />
+								) : null}
+								{accountOrder &&
+								data.items.some(
+									(item) => item.productId === claudeEnvProductId,
+								) ? (
+									<ClaudeEnvPanel orderNumber={orderNumber} />
 								) : null}
 								{data.items.some(
 									(item) =>

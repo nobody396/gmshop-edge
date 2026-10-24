@@ -236,6 +236,13 @@ export const navigationGroups: readonly NavigationGroup[] = [
 						Package,
 						systemPermission("delivery", "read"),
 					),
+					entry(
+						"claude-env",
+						() => m.claude_env_nav(),
+						"/admin/claude-env",
+						ShieldCheck,
+						systemPermission("delivery", "read"),
+					),
 				],
 			},
 			{
