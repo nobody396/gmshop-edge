@@ -419,7 +419,7 @@ function scheduleFeishuWebSupportAlert(
 			await sendOwnerAlert(
 				db,
 				formatFeishuWebSupportAlert(topicName, message),
-				{ requireFeishuEnabled: true },
+				{ requireFeishuEnabled: true, topic: "general" },
 			);
 		} catch {
 			// Owner pings never block the customer's message reaching Telegram.

@@ -266,6 +266,7 @@ export async function runPricingGuard(input: {
 		input.deliver,
 		"ops-pricing",
 		now,
+		"restock",
 	);
 	const retried = await retryUnsent(
 		input.db,

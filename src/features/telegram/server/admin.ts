@@ -266,6 +266,16 @@ export const saveTelegramOwnerAlertSettingsFn = createServerFn({
 				data.chatId,
 				now,
 			),
+			...(data.topics
+				? [
+						upsertFeishuAlertSetting(
+							db,
+							telegramOwnerAlertSettingKeys.topics,
+							data.topics,
+							now,
+						),
+					]
+				: []),
 			...(data.botToken
 				? [
 						upsertFeishuAlertSetting(

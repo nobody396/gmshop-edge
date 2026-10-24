@@ -5,6 +5,8 @@ import { loadRuntimeConfig } from "#/server/runtime-config";
 import { upsertFeishuAlertSetting } from "./feishu-alerts";
 import {
 	callTelegram,
+	type OwnerAlertTopic,
+	ownerAlertThreadId,
 	resolveTelegramOwnerAlertCredentials,
 	sendOwnerAlert,
 	type TelegramOwnerAlertCredentials,
@@ -48,6 +50,8 @@ type OwnerActionHandler = (
 ) => Promise<string>;
 
 type HandlerEntry = {
+	/** Forum topic the proposal is posted into. */
+	topic: OwnerAlertTopic;
 	// Loaded lazily: the handlers' modules import this one to send proposals.
 	load: () => Promise<OwnerActionHandler>;
 	/** Line shown when the owner presses the reject button. */
@@ -65,45 +69,53 @@ type HandlerEntry = {
 
 const handlers: Record<string, HandlerEntry> = {
 	supplier_rebind: {
+		topic: "restock",
 		load: async () =>
 			(await import("#/features/suppliers/server/rebind-proposal"))
 				.approveSupplierRebind,
 	},
 	supplier_cost_cap: {
+		topic: "restock",
 		load: async () =>
 			(await import("#/features/suppliers/server/rebind-proposal"))
 				.approveSupplierCostCap,
 	},
 	pricing_raise: {
+		topic: "restock",
 		load: async () =>
 			(await import("#/features/ops-automation/server/pricing-guard"))
 				.approvePricingRaise,
 	},
 	customer_price_set: {
+		topic: "general",
 		load: async () =>
 			(await import("#/features/customer-pricing/server/telegram"))
 				.approveCustomerPriceSet,
 		rejectedLine: "❌ 已取消，没有设置",
 	},
 	customer_price_delete: {
+		topic: "general",
 		load: async () =>
 			(await import("#/features/customer-pricing/server/telegram"))
 				.approveCustomerPriceDelete,
 		rejectedLine: "❌ 已取消，没有删除",
 	},
 	customer_price_raise: {
+		topic: "restock",
 		load: async () =>
 			(await import("#/features/customer-pricing/server/telegram"))
 				.approveCustomerPriceRaise,
 		rejectedLine: "保持不变",
 	},
 	bulk_procurement: {
+		topic: "restock",
 		load: async () =>
 			(await import("#/features/redeem-warehouse/server/bulk-procurement"))
 				.approveBulkProcurement,
 		rejectedLine: "🚫 这批不进了，客户兑换时单张进货",
 	},
 	agent_wallet_topup: {
+		topic: "orders",
 		load: async () =>
 			(await import("#/features/agent-program/server/wallet-topup"))
 				.approveWalletTopUp,
@@ -111,6 +123,7 @@ const handlers: Record<string, HandlerEntry> = {
 		retryOnFailure: true,
 	},
 	agent_withdrawal_paid: {
+		topic: "withdrawals",
 		load: async () =>
 			(await import("#/features/agent-program/server/withdrawal-alerts"))
 				.markWithdrawalPaidFromTelegram,
@@ -189,6 +202,7 @@ export async function proposeOwnerAction(
 		if (input.fallback !== null)
 			await sendOwnerAlert(db, `${input.text}\n\n${input.fallback}`, {
 				fetcher: request,
+				topic: handlers[input.kind]?.topic,
 			});
 		return null;
 	}
@@ -209,12 +223,14 @@ export async function proposeOwnerAction(
 			input.now,
 		)
 		.run();
+	const threadId = ownerAlertThreadId(credentials, handlers[input.kind]?.topic);
 	const message = z.object({ message_id: z.number().int() }).parse(
 		await callTelegram(
 			credentials,
 			"sendMessage",
 			{
 				chat_id: credentials.chatId,
+				...(threadId ? { message_thread_id: threadId } : {}),
 				text: input.text,
 				link_preview_options: { is_disabled: true },
 				reply_markup: {
@@ -251,6 +267,8 @@ const callbackQuerySchema = z.object({
 	message: z
 		.object({
 			message_id: z.number().int(),
+			// Set for messages inside a forum topic.
+			message_thread_id: z.number().int().positive().optional(),
 			chat: z.object({ id: z.number().int() }),
 		})
 		.optional(),
@@ -318,6 +336,7 @@ export async function handleOwnerActionCallback(
 				"sendMessage",
 				{
 					chat_id: chatId,
+					...threadField(callback.message.message_thread_id),
 					text: input.prompt,
 					reply_parameters: { message_id: callback.message.message_id },
 					reply_markup: {
@@ -365,6 +384,8 @@ export async function handleOwnerActionCallback(
 
 const replyMessageSchema = z.object({
 	message_id: z.number().int(),
+	// Set for messages inside a forum topic; the chat id is the supergroup's.
+	message_thread_id: z.number().int().positive().optional(),
 	chat: z.object({ id: z.number().int() }),
 	from: z.object({ id: z.number().int(), is_bot: z.boolean().optional() }),
 	text: z.string().optional(),
@@ -398,6 +419,7 @@ export async function handleOwnerCommand(
 			"sendMessage",
 			{
 				chat_id: credentials.chatId,
+				...threadField(message.message_thread_id),
 				text,
 				reply_parameters: { message_id: message.message_id },
 			},
@@ -448,6 +470,7 @@ export async function handleOwnerActionReply(
 			"sendMessage",
 			{
 				chat_id: chatId,
+				...threadField(message.message_thread_id),
 				text,
 				reply_parameters: { message_id: message.message_id },
 			},
@@ -593,6 +616,11 @@ async function isChatCreator(
 		z.object({ status: z.string() }).safeParse(member).data?.status ===
 		"creator"
 	);
+}
+
+/** Replies stay in the topic of the incoming message. */
+function threadField(threadId: number | undefined) {
+	return threadId ? { message_thread_id: threadId } : {};
 }
 
 function failureReason(error: unknown) {

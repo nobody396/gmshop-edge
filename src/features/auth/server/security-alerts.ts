@@ -47,7 +47,8 @@ export async function publishAuthSecurityAlert(
 		}).format(end);
 		const text = `商城认证安全告警\n截至 ${at}（北京时间）的15分钟\n认证失败：${failures}\n触发限流的计数窗口：${blocked}\n请核查商城审计；这不是入侵成功的证明。`;
 		if (deliver) await deliver(text);
-		else if (!(await sendOwnerAlert(db, text))) throw new Error("unconfigured");
+		else if (!(await sendOwnerAlert(db, text, { topic: "general" })))
+			throw new Error("unconfigured");
 		await record(db, "security.alert_sent", end, now);
 		return { status: "sent" };
 	} catch {
