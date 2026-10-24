@@ -80,7 +80,7 @@ CREATE TABLE `claude_env_subscriptions` (
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	CONSTRAINT "claude_env_subscriptions_plan_check" CHECK("claude_env_subscriptions"."plan" IN ('monthly','quarterly','eb_monthly','eb_quarterly')),
-	CONSTRAINT "claude_env_subscriptions_status_check" CHECK("claude_env_subscriptions"."status" IN ('awaiting_ip','provisioning','active','needs_replace','grace','expired','suspended','cancelled')),
+	CONSTRAINT "claude_env_subscriptions_status_check" CHECK("claude_env_subscriptions"."status" IN ('awaiting_ip','provisioning','active','needs_replace','expired','suspended','cancelled')),
 	CONSTRAINT "claude_env_subscriptions_order_state_check" CHECK("claude_env_subscriptions"."iproyal_order_state" IS NULL OR "claude_env_subscriptions"."iproyal_order_state" IN ('posting','ordered','unknown')),
 	CONSTRAINT "claude_env_subscriptions_port_check" CHECK("claude_env_subscriptions"."relay_port" IS NULL OR "claude_env_subscriptions"."relay_port" BETWEEN 20000 AND 20999)
 );
@@ -137,3 +137,24 @@ CREATE TABLE `claude_env_events` (
 );
 --> statement-breakpoint
 CREATE INDEX `claude_env_events_subscription_idx` ON `claude_env_events` (`subscription_id`,`created_at`);
+--> statement-breakpoint
+-- Customer expiry reminders: one row per (subscription, expires_at, point).
+-- Renewal moves expires_at, so reminders of the old date never match again.
+CREATE TABLE `claude_env_reminders` (
+	`id` text PRIMARY KEY NOT NULL,
+	`subscription_id` text NOT NULL REFERENCES `claude_env_subscriptions`(`id`),
+	`expires_at` integer NOT NULL,
+	`point` integer NOT NULL,
+	`days_left` integer NOT NULL,
+	`locale` text NOT NULL,
+	`status` text DEFAULT 'sending' NOT NULL,
+	`detail` text,
+	`owner_alerted` integer DEFAULT 0 NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	CONSTRAINT "claude_env_reminders_point_check" CHECK("claude_env_reminders"."point" IN (7,5,3)),
+	CONSTRAINT "claude_env_reminders_locale_check" CHECK("claude_env_reminders"."locale" IN ('zh-CN','en-US')),
+	CONSTRAINT "claude_env_reminders_status_check" CHECK("claude_env_reminders"."status" IN ('sending','sent','skipped','failed'))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `claude_env_reminders_point_uidx` ON `claude_env_reminders` (`subscription_id`,`expires_at`,`point`);

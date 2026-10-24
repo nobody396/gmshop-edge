@@ -5,6 +5,7 @@ export function notificationEventLabel(event: string) {
 		support_reply_manual: m.notifications_event_support_reply_manual,
 		agent_access_ready: m.notifications_event_agent_access_ready,
 		claude_env_ready: m.notifications_event_claude_env_ready,
+		claude_env_expiring: m.notifications_event_claude_env_expiring,
 		"auth.email_verification": m.notifications_event_verification,
 		"auth.password_reset": m.notifications_event_password_reset,
 		order_paid: m.store_account_notification_order_paid,

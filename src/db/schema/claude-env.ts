@@ -49,7 +49,6 @@ export const claudeEnvSubscriptions = sqliteTable(
 				"provisioning",
 				"active",
 				"needs_replace",
-				"grace",
 				"expired",
 				"suspended",
 				"cancelled",
@@ -192,6 +191,36 @@ export const claudeEnvEvents = sqliteTable(
 		index("claude_env_events_subscription_idx").on(
 			table.subscriptionId,
 			table.createdAt,
+		),
+	],
+);
+
+export const claudeEnvReminders = sqliteTable(
+	"claude_env_reminders",
+	{
+		id: text("id").primaryKey(),
+		subscriptionId: text("subscription_id")
+			.notNull()
+			.references(() => claudeEnvSubscriptions.id),
+		expiresAt: integer("expires_at").notNull(),
+		point: integer("point").notNull(),
+		daysLeft: integer("days_left").notNull(),
+		locale: text("locale", { enum: ["zh-CN", "en-US"] }).notNull(),
+		status: text("status", {
+			enum: ["sending", "sent", "skipped", "failed"],
+		})
+			.notNull()
+			.default("sending"),
+		detail: text("detail"),
+		ownerAlerted: integer("owner_alerted").notNull().default(0),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		uniqueIndex("claude_env_reminders_point_uidx").on(
+			table.subscriptionId,
+			table.expiresAt,
+			table.point,
 		),
 	],
 );

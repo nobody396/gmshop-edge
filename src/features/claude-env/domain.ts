@@ -53,7 +53,6 @@ export const claudeEnvSettingKeys = {
 } as const;
 
 export const dayMs = 86_400_000;
-export const graceMs = 3 * dayMs;
 export const trafficPeriodMs = 30 * dayMs;
 export const relayOfflineMs = 5 * 60_000;
 export const relaySkewSeconds = 300;
@@ -69,14 +68,14 @@ export const patrolFailThreshold = 3;
 /** Consecutive failed provisioning self-tests before an IP is declared bad. */
 export const provisioningFailThreshold = 3;
 
-export const desiredStatuses = ["provisioning", "active", "grace"] as const;
+/** No grace period: an expired subscription drops out of the relay list at once. */
+export const desiredStatuses = ["provisioning", "active"] as const;
 /** Statuses that occupy a relay slot (capacity counting). */
 export const relaySlotStatuses = [
 	"awaiting_ip",
 	"provisioning",
 	"active",
 	"needs_replace",
-	"grace",
 	"suspended",
 ] as const;
 
@@ -85,7 +84,6 @@ export type ClaudeEnvStatus =
 	| "provisioning"
 	| "active"
 	| "needs_replace"
-	| "grace"
 	| "expired"
 	| "suspended"
 	| "cancelled";
@@ -346,6 +344,60 @@ export function evaluateQuality(input: QualityInput) {
 export function parseScamalyticsScore(html: string) {
 	const match = /Fraud Score:\s*(\d{1,3})/.exec(html);
 	return match ? Number(match[1]) : null;
+}
+
+// ---------- expiry reminders ----------
+
+/** Customer reminders N days before expires_at (monthly and quarterly alike). */
+export const reminderPoints = [7, 5, 3] as const;
+export type ReminderPoint = (typeof reminderPoints)[number];
+/** The owner also gets a Telegram at this point (support follows up on WeChat). */
+export const ownerReminderPoint: ReminderPoint = 3;
+
+/**
+ * The reminder point due now: the nearest point already reached before expiry.
+ * A subscription that enters the window late (e.g. 4 days left at activation)
+ * gets only that nearest point, never a burst of the earlier ones.
+ */
+export function dueReminderPoint(
+	expiresAt: number,
+	now: number,
+): ReminderPoint | null {
+	if (expiresAt <= now) return null;
+	let due: ReminderPoint | null = null;
+	for (const point of reminderPoints)
+		if (expiresAt - point * dayMs <= now) due = point;
+	return due;
+}
+
+/** Whole days left, rounded up (6 days 23 hours → 7). */
+export function daysLeft(expiresAt: number, now: number) {
+	return Math.max(0, Math.ceil((expiresAt - now) / dayMs));
+}
+
+/** "2026-11-23 08:07" in Beijing time (UTC+8, no DST). */
+export function beijingMinute(ms: number) {
+	return new Date(ms + 8 * 3_600_000)
+		.toISOString()
+		.slice(0, 16)
+		.replace("T", " ");
+}
+
+/** Renewals always use the regular price of the same duration (early-bird is first period only). */
+export const renewalSkuIds = {
+	monthly: "c3bab030-0c3c-4451-9c41-3cc32538e778",
+	quarterly: "1e599d3a-3aa2-498e-a955-f4b04a4abdc4",
+} as const;
+
+export function renewalSkuForPlan(plan: string) {
+	return plan === "quarterly" || plan === "eb_quarterly"
+		? renewalSkuIds.quarterly
+		: renewalSkuIds.monthly;
+}
+
+/** Product page with the regular-price SKU of the same duration preselected. */
+export function renewalPath(plan: string) {
+	return `/products/${claudeEnvProductId}?item=${renewalSkuForPlan(plan)}#purchase-options`;
 }
 
 // ---------- dates and traffic ----------

@@ -4,9 +4,10 @@ import {
 	claudeEnvSettingKeys,
 	claudeEnvSkuIds,
 	customerCommands,
-	dayMs,
+	daysLeft,
 	displayCity,
 	encodeActivationCode,
+	renewalPath,
 	trafficPeriodMs,
 } from "../domain";
 import { type Crypt, secretPurpose } from "./shared";
@@ -97,6 +98,9 @@ export async function loadClaudeEnvPanel(
 			return null;
 		return { state: "preparing" as const };
 	}
+	// Expired: the IP went back with the upstream order and can never return.
+	const expired = row.status === "expired";
+	const left = row.expires_at === null ? null : daysLeft(row.expires_at, now);
 	const periodCurrent =
 		row.traffic_period_start !== null &&
 		now < row.traffic_period_start + trafficPeriodMs;
@@ -104,15 +108,20 @@ export async function loadClaudeEnvPanel(
 		state: "subscription" as const,
 		status: row.status,
 		plan: row.plan,
-		ip: row.ip,
-		city: displayCity(row.ip_city),
-		timezone: row.ip_tz,
+		ip: expired ? null : row.ip,
+		city: expired ? null : displayCity(row.ip_city),
+		timezone: expired ? null : row.ip_tz,
 		activatedAt: row.activated_at,
 		expiresAt: row.expires_at,
-		daysLeft:
-			row.expires_at === null
-				? null
-				: Math.max(0, Math.ceil((row.expires_at - now) / dayMs)),
+		daysLeft: left,
+		/** Active and within 7 days of expiry: the panel shows the renewal banner. */
+		expiringSoon:
+			row.status === "active" &&
+			row.expires_at !== null &&
+			row.expires_at > now &&
+			left !== null &&
+			left <= 7,
+		renewUrl: renewalPath(row.plan),
 		trafficUsedBytes: periodCurrent ? row.traffic_period_bytes : 0,
 		trafficQuotaBytes: row.traffic_quota_bytes,
 		trafficResetAt:
@@ -123,12 +132,12 @@ export async function loadClaudeEnvPanel(
 					: null,
 		lastCheckAt: row.last_check_at,
 		lineOk: row.last_exit_ok === null ? null : row.last_exit_ok === 1,
-		codeAvailable: row.status === "active" || row.status === "grace",
+		codeAvailable: row.status === "active",
 		ipCheckUrl: customerCommands("").ipCheck,
 	};
 }
 
-/** Activation code + one-line commands; only for an active/grace subscription the user owns. */
+/** Activation code + one-line commands; only for an active subscription the user owns. */
 export async function revealClaudeEnvCode(
 	db: D1Database,
 	crypt: Crypt,
@@ -138,7 +147,7 @@ export async function revealClaudeEnvCode(
 	const row = await ownedSubscription(db, userId, orderNumber);
 	if (
 		!row ||
-		(row.status !== "active" && row.status !== "grace") ||
+		row.status !== "active" ||
 		!row.hostname ||
 		!row.relay_port ||
 		!row.relay_user ||

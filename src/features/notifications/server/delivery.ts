@@ -20,6 +20,7 @@ import { recipientSuppressionReason } from "./recipient-policy";
 export const supportReplyEmailEvent = "support_reply_manual";
 export const agentAccessReadyEmailEvent = "agent_access_ready";
 export const claudeEnvReadyEmailEvent = "claude_env_ready";
+export const claudeEnvExpiryEmailEvent = "claude_env_expiring";
 export const supportReplyEmailSender =
 	"老实人AI VIP <no-reply@laoshirenvip.com>";
 // Events that may only leave through the approved Cloudflare sender, never a
@@ -28,6 +29,7 @@ const approvedSenderEvents = new Set([
 	supportReplyEmailEvent,
 	agentAccessReadyEmailEvent,
 	claudeEnvReadyEmailEvent,
+	claudeEnvExpiryEmailEvent,
 ]);
 
 type EmailMessage = z.output<typeof emailMessageSchema>;

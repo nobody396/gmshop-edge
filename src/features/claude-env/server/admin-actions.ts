@@ -398,6 +398,15 @@ function conflict(message: string): never {
 	throw new DomainError("claude_env_action_invalid", 409, message);
 }
 
+/** No grace and no revival: the IP left with the IPRoyal order when it expired. */
+const expiredReleased = "IP 已随 IPRoyal 订单到期释放，不能恢复";
+
+const pastExpiry = (
+	sub: { activated_at: number | null; expires_at: number | null },
+	now: number,
+) =>
+	sub.activated_at !== null && sub.expires_at !== null && sub.expires_at <= now;
+
 export async function applySubscriptionAction(
 	deps: { db: D1Database; crypt: Crypt; fetcher?: typeof fetch },
 	actor: AdminActor,
@@ -409,7 +418,7 @@ export async function applySubscriptionAction(
 		const period = await db
 			.prepare(
 				`SELECT p.order_item_id, p.subscription_id, p.extend_status, p.extending_at, p.days,
-				 s.iproyal_order_id, s.expires_at FROM claude_env_periods p
+				 s.iproyal_order_id, s.expires_at, s.status FROM claude_env_periods p
 				 LEFT JOIN claude_env_subscriptions s ON s.id = p.subscription_id WHERE p.order_item_id = ?`,
 			)
 			.bind(input.orderItemId)
@@ -421,9 +430,11 @@ export async function applySubscriptionAction(
 				days: number;
 				iproyal_order_id: string | null;
 				expires_at: number | null;
+				status: string | null;
 			}>();
 		if (!period || !["failed", "extending"].includes(period.extend_status))
 			conflict("该续期记录不需要处理");
+		if (period.status === "expired") conflict(expiredReleased);
 		if (input.action === "period_retry" && !retryAllowed(period, now))
 			conflict(
 				"续期结果还不明（不到 5 分钟）。先核对 IPRoyal 这张订单的到期时间有没有延长，再决定。",
@@ -453,8 +464,7 @@ export async function applySubscriptionAction(
 							.bind(now, period.subscription_id)
 					: db
 							.prepare(
-								`UPDATE claude_env_subscriptions SET expires_at = ?,
-								 status = CASE WHEN status = 'grace' THEN 'active' ELSE status END, updated_at = ? WHERE id = ?`,
+								"UPDATE claude_env_subscriptions SET expires_at = ?, updated_at = ? WHERE id = ? AND status <> 'expired'",
 							)
 							.bind(
 								extendExpiry(period.expires_at, now, period.days),
@@ -488,13 +498,9 @@ export async function applySubscriptionAction(
 	switch (input.action) {
 		case "suspend": {
 			if (
-				![
-					"awaiting_ip",
-					"provisioning",
-					"active",
-					"grace",
-					"needs_replace",
-				].includes(sub.status)
+				!["awaiting_ip", "provisioning", "active", "needs_replace"].includes(
+					sub.status,
+				)
 			)
 				conflict("当前状态不能暂停");
 			statements.push(
@@ -507,6 +513,8 @@ export async function applySubscriptionAction(
 			break;
 		}
 		case "resume": {
+			if (sub.status === "expired" || pastExpiry(sub, now))
+				conflict(expiredReleased);
 			if (sub.status !== "suspended") conflict("只有已暂停的才能恢复");
 			const back =
 				sub.status_before_suspend ??
@@ -523,13 +531,14 @@ export async function applySubscriptionAction(
 		}
 		case "extend_days": {
 			if (["cancelled"].includes(sub.status)) conflict("已取消的不能延长");
+			if (sub.status === "expired" || pastExpiry(sub, now))
+				conflict(expiredReleased);
 			if (sub.activated_at !== null) {
 				const expiresAt = extendExpiry(sub.expires_at, now, input.days);
 				statements.push(
 					db
 						.prepare(
-							`UPDATE claude_env_subscriptions SET expires_at = ?,
-							 status = CASE WHEN status IN ('grace','expired') THEN 'active' ELSE status END, updated_at = ? WHERE id = ?`,
+							"UPDATE claude_env_subscriptions SET expires_at = ?, updated_at = ? WHERE id = ? AND status <> 'expired'",
 						)
 						.bind(expiresAt, now, sub.id),
 				);

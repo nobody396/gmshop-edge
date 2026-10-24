@@ -24,8 +24,7 @@ const statusLabel: Record<string, string> = {
 	provisioning: "开通中（质检）",
 	active: "正常",
 	needs_replace: "待换 IP",
-	grace: "宽限期",
-	expired: "已到期",
+	expired: "已到期（IP 已释放）",
 	suspended: "已暂停",
 	cancelled: "已取消",
 };
@@ -404,7 +403,13 @@ function SubscriptionActions({
 			<h2 className="font-medium">
 				操作：{sub.email}（{statusLabel[status] ?? status}，{id}）
 			</h2>
-			<div className="flex flex-wrap gap-2">
+			{status === "expired" ? (
+				<p className="text-muted-foreground text-sm">
+					IP 已随 IPRoyal 订单到期释放，不能恢复；客户再买会自动开新订阅、分配新
+					IP。
+				</p>
+			) : null}
+			<div className={status === "expired" ? "hidden" : "flex flex-wrap gap-2"}>
 				{status === "suspended" ? (
 					<Button
 						disabled={action.isPending}

@@ -11,6 +11,7 @@ import {
 	saveRelay,
 	setClaudeEnvEnabled,
 } from "#/features/claude-env/server/admin-actions";
+import type { SendExpiryEmail } from "#/features/claude-env/server/customer-email";
 import type { IproyalClient } from "#/features/claude-env/server/iproyal";
 import { IproyalError } from "#/features/claude-env/server/iproyal";
 import {
@@ -18,8 +19,11 @@ import {
 	revealClaudeEnvCode,
 } from "#/features/claude-env/server/panel";
 import { handleRelayApiRequest } from "#/features/claude-env/server/relay-api";
+import { sendExpiryReminders } from "#/features/claude-env/server/reminders";
 import { runClaudeEnv } from "#/features/claude-env/server/scheduler";
 import { loadCrypt } from "#/features/claude-env/server/shared";
+import { supportReplyEmailSender } from "#/features/notifications/server/delivery";
+import { recipientHash } from "#/features/notifications/server/recipient-policy";
 import { applyMigrations } from "./migrations";
 
 const relaySecret =
@@ -28,6 +32,7 @@ const monthlySku = "c3bab030-0c3c-4451-9c41-3cc32538e778";
 const quarterlySku = "1e599d3a-3aa2-498e-a955-f4b04a4abdc4";
 const t0 = Date.parse("2026-10-24T00:00:00Z");
 const minute = 60_000;
+const hour = 60 * minute;
 /** IPRoyal's expire_date for the first purchase in these tests. */
 const iproyalExpiry = t0 + 30 * dayMs + 7 * minute;
 
@@ -498,60 +503,404 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 		).toMatchObject({ ip: "161.77.8.204" });
 	});
 
-	it("goes grace then expired at once when IPRoyal's own expiry has passed, and alerts", async () => {
-		const { client } = fakeIproyal();
-		await provision(client);
-		await run(t0 + 6 * minute, client);
-		await run(iproyalExpiry + 1, client);
-		const row = await sub();
-		expect(row?.status).toBe("expired");
-		expect(row?.expired_at).toBe(iproyalExpiry + 1);
-		expect(messages.some((m) => m.includes("IP 已失效"))).toBe(true);
-		const desired = await relayCall(
-			"GET",
-			"/api/claude-env/relay/v1/desired",
-			undefined,
-			iproyalExpiry + 2,
-		);
-		expect(desired.json.customers).toEqual([]);
-	});
-
-	it("keeps grace for 3 days while IPRoyal still holds the IP (no re-read possible)", async () => {
-		const { client } = fakeIproyal();
-		await provision(client);
-		await run(t0 + 6 * minute, client);
-		await db
-			.prepare(
-				"UPDATE claude_env_subscriptions SET expires_at = ?, iproyal_expires_at = ?",
-			)
-			.bind(t0 + dayMs, t0 + 6 * dayMs)
-			.run();
-		await run(t0 + dayMs + 1, undefined);
-		expect((await sub())?.status).toBe("grace");
-		await run(t0 + 4 * dayMs + 1, undefined);
-		expect((await sub())?.status).toBe("expired");
-	});
-
-	it("a renewal during grace reactivates once IPRoyal's new expiry is read back", async () => {
-		const { client } = fakeIproyal();
-		await provision(client);
-		await run(t0 + 6 * minute, client);
-		await db
-			.prepare(
-				"UPDATE claude_env_subscriptions SET status = 'grace', iproyal_expires_at = ?",
-			)
-			.bind(iproyalExpiry + dayMs)
-			.run();
-		await insertOrder({
-			id: "o2",
-			userId: "u1",
-			sku: monthlySku,
-			paidAt: iproyalExpiry + minute,
+	describe("expiry: no grace period", () => {
+		it("expires the moment expires_at passes, alerts once and drops out of the relay list", async () => {
+			const { client } = fakeIproyal();
+			const id = await provision(client);
+			await run(t0 + 6 * minute, client);
+			await run(iproyalExpiry - 1, client);
+			expect((await sub())?.status).toBe("active");
+			await run(iproyalExpiry, client);
+			const row = await sub();
+			expect(row?.status).toBe("expired");
+			expect(row?.expired_at).toBe(iproyalExpiry);
+			await run(iproyalExpiry + minute, client);
+			expect(
+				messages.filter((m) =>
+					m.includes("已到期停用：bu****@example.com 161.77.8.204"),
+				),
+			).toHaveLength(1);
+			const desired = await relayCall(
+				"GET",
+				"/api/claude-env/relay/v1/desired",
+				undefined,
+				iproyalExpiry + 2,
+			);
+			expect(desired.json.customers).toEqual([]);
+			const panel = await loadClaudeEnvPanel(
+				db,
+				"u1",
+				"GMO1",
+				iproyalExpiry + 2,
+			);
+			expect(panel).toMatchObject({
+				status: "expired",
+				ip: null,
+				codeAvailable: false,
+				expiringSoon: false,
+			});
+			expect(
+				await revealClaudeEnvCode(db, await loadCrypt(db), "u1", "GMO1"),
+			).toBeNull();
+			const deps = { db, crypt: await loadCrypt(db) };
+			for (const action of [
+				{ action: "resume" as const, id },
+				{ action: "extend_days" as const, id, days: 30 },
+				{ action: "suspend" as const, id },
+			])
+				await expect(
+					applySubscriptionAction(
+						deps,
+						{ userId: "u1" },
+						action,
+						iproyalExpiry + 3,
+					),
+				).rejects.toThrow(
+					action.action === "suspend"
+						? /不能暂停/
+						: /IP 已随 IPRoyal 订单到期释放，不能恢复/,
+				);
+			expect((await sub())?.status).toBe("expired");
 		});
-		await run(iproyalExpiry + 2 * minute, client);
-		expect(await sub()).toMatchObject({
-			status: "active",
-			expires_at: iproyalExpiry + 30 * dayMs,
+
+		it("an admin-suspended subscription past its expiry also expires and cannot be resumed", async () => {
+			const { client } = fakeIproyal();
+			const id = await provision(client);
+			await run(t0 + 6 * minute, client);
+			const deps = { db, crypt: await loadCrypt(db) };
+			await applySubscriptionAction(
+				deps,
+				{ userId: "u1" },
+				{ action: "suspend", id },
+				t0 + 7 * minute,
+			);
+			await expect(
+				applySubscriptionAction(
+					deps,
+					{ userId: "u1" },
+					{ action: "resume", id },
+					iproyalExpiry,
+				),
+			).rejects.toThrow(/不能恢复/);
+			await run(iproyalExpiry, client);
+			expect(await sub()).toMatchObject({
+				status: "expired",
+				status_before_suspend: null,
+			});
+		});
+
+		it("a purchase after expiry is a brand-new subscription with a new IP, never a renewal", async () => {
+			const { client, calls } = fakeIproyal();
+			await provision(client);
+			await run(t0 + 6 * minute, client);
+			await run(iproyalExpiry, client);
+			await insertOrder({
+				id: "o2",
+				userId: "u1",
+				sku: monthlySku,
+				paidAt: iproyalExpiry + minute,
+			});
+			await run(iproyalExpiry + 2 * minute, client);
+			const rows = await db
+				.prepare(
+					"SELECT id, status, order_id FROM claude_env_subscriptions ORDER BY created_at",
+				)
+				.all<Row>();
+			expect(rows.results).toHaveLength(2);
+			expect(rows.results[0]).toMatchObject({ status: "expired" });
+			expect(rows.results[1]).toMatchObject({ order_id: "o2" });
+			expect(await period("o2-item")).toMatchObject({ kind: "initial" });
+			expect(calls.extend).toEqual([]);
+			expect(calls.create).toBe(2);
+		});
+
+		it("a paid renewal IPRoyal never extended is cancelled at expiry and flagged for a refund", async () => {
+			const { client, calls } = fakeIproyal({
+				extendOrder: async () => {
+					throw new IproyalError("iproyal_http_402", 402, true);
+				},
+			});
+			await provision(client);
+			await run(t0 + 6 * minute, client);
+			await insertOrder({
+				id: "o2",
+				userId: "u1",
+				sku: monthlySku,
+				paidAt: t0 + 10 * minute,
+			});
+			await run(t0 + 11 * minute, client);
+			expect(await period("o2-item")).toMatchObject({
+				kind: "renewal",
+				extend_status: "failed",
+			});
+			await run(iproyalExpiry, client);
+			expect((await sub())?.status).toBe("expired");
+			expect(await period("o2-item")).toMatchObject({
+				extend_status: "cancelled",
+				note: "expired_before_extend",
+			});
+			expect(
+				messages.some(
+					(m) => m.includes("续费单 GMO2") && m.includes("请人工退款"),
+				),
+			).toBe(true);
+			expect(calls.create).toBe(1);
+		});
+	});
+
+	describe("expiry reminders (7 / 5 / 3 days)", () => {
+		const remindersFor = (subscriptionId: string) =>
+			db
+				.prepare(
+					"SELECT * FROM claude_env_reminders WHERE subscription_id = ? ORDER BY created_at, point DESC",
+				)
+				.bind(subscriptionId)
+				.all<Row>()
+				.then((r) => r.results);
+
+		async function activeSubscription() {
+			const fake = fakeIproyal();
+			const id = await provision(fake.client);
+			await run(t0 + 6 * minute, fake.client);
+			expect((await sub())?.status).toBe("active");
+			return { id, ...fake };
+		}
+
+		const emailSpy = () =>
+			vi.fn<SendExpiryEmail>(async () => ({
+				status: "queued",
+				deliveryId: "d",
+			}));
+
+		it("sends each point exactly once with the right N, Beijing time and a single −3d owner alert", async () => {
+			const { id, client } = await activeSubscription();
+			const email = emailSpy();
+			const at = (now: number) =>
+				runClaudeEnv({
+					db,
+					now,
+					iproyal: client,
+					fetcher: qualityFetcher(98, 32),
+					deliver,
+					sendCustomerEmail: vi.fn(async () => undefined),
+					sendExpiryEmail: email,
+				});
+			await at(iproyalExpiry - 7 * dayMs - minute);
+			expect(email).not.toHaveBeenCalled();
+			await at(iproyalExpiry - 7 * dayMs + minute);
+			await at(iproyalExpiry - 6 * dayMs);
+			await at(iproyalExpiry - 5 * dayMs + minute);
+			await at(iproyalExpiry - 5 * dayMs + 2 * minute);
+			await at(iproyalExpiry - 3 * dayMs + minute);
+			await at(iproyalExpiry - 3 * dayMs + 10 * minute);
+			await at(iproyalExpiry - dayMs);
+			expect(
+				email.mock.calls.map(([, input]) => [input.point, input.daysLeft]),
+			).toEqual([
+				[7, 7],
+				[5, 5],
+				[3, 3],
+			]);
+			expect(email.mock.calls[0]?.[1]).toMatchObject({
+				subscriptionId: id,
+				to: "buyer1@example.com",
+				recipientKind: "account",
+				expiresAt: iproyalExpiry,
+				plan: "monthly",
+				locale: "zh-CN",
+			});
+			const rows = await remindersFor(id);
+			expect(rows.map((r) => [r.point, r.status, r.owner_alerted])).toEqual([
+				[7, "sent", 0],
+				[5, "sent", 0],
+				[3, "sent", 1],
+			]);
+			const owner = messages.filter((m) =>
+				m.includes("天到期（客户还没续费）"),
+			);
+			expect(owner).toHaveLength(1);
+			// 2026-11-23T00:07Z = 2026-11-23 08:07 Beijing.
+			expect(owner[0]).toContain("还有 3 天到期");
+			expect(owner[0]).toContain("bu****@example.com");
+			expect(owner[0]).toContain("161.77.8.204");
+			expect(owner[0]).toContain("到期 2026-11-23 08:07 北京时间");
+		});
+
+		it("overlapping cron runs claim a point only once", async () => {
+			const { id } = await activeSubscription();
+			const email = emailSpy();
+			const now = iproyalExpiry - 3 * dayMs + minute;
+			await Promise.all(
+				[0, 1, 2].map(() =>
+					sendExpiryReminders({ db, now, deliver, sendEmail: email }),
+				),
+			);
+			expect(email).toHaveBeenCalledTimes(1);
+			expect(await remindersFor(id)).toHaveLength(1);
+			expect(
+				messages.filter((m) => m.includes("天到期（客户还没续费）")),
+			).toHaveLength(1);
+		});
+
+		it("renewal moves the date: the old date's reminders are void and the new date's apply", async () => {
+			const { id, client } = await activeSubscription();
+			const email = emailSpy();
+			const at = (now: number) =>
+				runClaudeEnv({
+					db,
+					now,
+					iproyal: client,
+					fetcher: qualityFetcher(98, 32),
+					deliver,
+					sendCustomerEmail: vi.fn(async () => undefined),
+					sendExpiryEmail: email,
+				});
+			await at(iproyalExpiry - 7 * dayMs + minute);
+			expect(email).toHaveBeenCalledTimes(1);
+			await insertOrder({
+				id: "o2",
+				userId: "u1",
+				sku: monthlySku,
+				paidAt: iproyalExpiry - 6 * dayMs,
+			});
+			await at(iproyalExpiry - 6 * dayMs + minute);
+			const renewed = iproyalExpiry + 30 * dayMs;
+			expect((await sub())?.expires_at).toBe(renewed);
+			await at(iproyalExpiry - 5 * dayMs + minute);
+			await at(iproyalExpiry - 3 * dayMs + minute);
+			expect(email).toHaveBeenCalledTimes(1);
+			await at(renewed - 7 * dayMs + minute);
+			expect(email).toHaveBeenCalledTimes(2);
+			expect(email.mock.calls[1]?.[1]).toMatchObject({
+				point: 7,
+				daysLeft: 7,
+				expiresAt: renewed,
+			});
+			expect(
+				(await remindersFor(id)).map((r) => [r.expires_at, r.point]),
+			).toEqual([
+				[iproyalExpiry, 7],
+				[renewed, 7],
+			]);
+		});
+
+		it("entering the window late sends only the nearest point once (no backfill burst)", async () => {
+			const { id } = await activeSubscription();
+			const now = t0 + dayMs;
+			await db
+				.prepare("UPDATE claude_env_subscriptions SET expires_at = ?")
+				.bind(now + 4 * dayMs)
+				.run();
+			const email = emailSpy();
+			await sendExpiryReminders({ db, now, deliver, sendEmail: email });
+			await sendExpiryReminders({
+				db,
+				now: now + hour,
+				deliver,
+				sendEmail: email,
+			});
+			expect(
+				email.mock.calls.map(([, input]) => [input.point, input.daysLeft]),
+			).toEqual([[5, 4]]);
+			await sendExpiryReminders({
+				db,
+				now: now + dayMs + minute,
+				deliver,
+				sendEmail: email,
+			});
+			expect(email.mock.calls.map(([, input]) => input.point)).toEqual([5, 3]);
+			expect(await remindersFor(id)).toHaveLength(2);
+		});
+
+		it("sends nothing for expired, needs_replace or suspended subscriptions", async () => {
+			const { id } = await activeSubscription();
+			const now = iproyalExpiry - 3 * dayMs + minute;
+			const email = emailSpy();
+			for (const status of ["needs_replace", "suspended", "expired"]) {
+				await db
+					.prepare("UPDATE claude_env_subscriptions SET status = ?")
+					.bind(status)
+					.run();
+				await sendExpiryReminders({ db, now, deliver, sendEmail: email });
+			}
+			expect(email).not.toHaveBeenCalled();
+			expect(await remindersFor(id)).toEqual([]);
+			expect(messages.some((m) => m.includes("天到期（客户还没续费）"))).toBe(
+				false,
+			);
+		});
+
+		it("real sender: skipped and recorded without the approved channel; queued to account + order email when configured", async () => {
+			const { id } = await activeSubscription();
+			await db.batch([
+				db.prepare(
+					"UPDATE users SET email = 'buyer@mail-buyer.cn' WHERE id = 'u1'",
+				),
+				db.prepare(
+					"UPDATE shop_orders SET normalized_contact_email = 'contact@mail-buyer.cn', locale = 'en-US' WHERE id = 'o1'",
+				),
+			]);
+			await sendExpiryReminders({
+				db,
+				now: iproyalExpiry - 7 * dayMs + minute,
+				deliver,
+			});
+			const [skipped] = await remindersFor(id);
+			expect(skipped).toMatchObject({ point: 7, status: "skipped" });
+			expect(JSON.parse(skipped?.detail)).toEqual([
+				{
+					recipient: "account",
+					status: "skipped",
+					reason: "sender_unavailable",
+				},
+				{ recipient: "order", status: "skipped", reason: "sender_unavailable" },
+			]);
+			const none = await db
+				.prepare("SELECT COUNT(*) AS n FROM notification_deliveries")
+				.first<{ n: number }>();
+			expect(none?.n).toBe(0);
+
+			await db
+				.prepare(
+					"INSERT INTO notification_channel_configs (id,channel,name,provider,from_address,enabled) VALUES ('official','email','Official','cloudflare_email',?,1)",
+				)
+				.bind(supportReplyEmailSender)
+				.run();
+			await db
+				.prepare(
+					"INSERT INTO email_unsubscribes (recipient_hash, scope, created_at) VALUES (?, 'renewal', 1)",
+				)
+				.bind(await recipientHash("contact@mail-buyer.cn"))
+				.run();
+			await sendExpiryReminders({
+				db,
+				now: iproyalExpiry - 5 * dayMs + minute,
+				deliver,
+			});
+			const sent = (await remindersFor(id)).find((r) => r.point === 5);
+			expect(sent).toMatchObject({ status: "sent", locale: "en-US" });
+			expect(
+				JSON.parse(sent?.detail).map((r: Row) => [r.recipient, r.status]),
+			).toEqual([
+				["account", "queued"],
+				["order", "unsubscribed"],
+			]);
+			const deliveries = await db
+				.prepare(
+					"SELECT event, channel_config_id, status, locale, idempotency_key FROM notification_deliveries",
+				)
+				.all<Row>();
+			expect(deliveries.results).toEqual([
+				{
+					event: "claude_env_expiring",
+					channel_config_id: "official",
+					status: "pending",
+					locale: "en-US",
+					idempotency_key: expect.stringMatching(
+						new RegExp(`^claude-env-expiry:${id}:${iproyalExpiry}:5:`),
+					),
+				},
+			]);
 		});
 	});
 

@@ -70,6 +70,19 @@ const copy = {
 		"开通完成后这里会显示开通码。",
 		"Your activation code appears here once ready.",
 	],
+	expiring: [
+		(n: number) => `还有 ${n} 天到期`,
+		(n: number) => `Expires in ${n} day${n === 1 ? "" : "s"}`,
+	],
+	renew: ["立即续费", "Renew now"],
+	renewKeep: [
+		"续费后专属 IP 不变，不用重新配置。",
+		"After renewal your dedicated IP stays the same; no need to set anything up again.",
+	],
+	renewWarning: [
+		"如果不续费，到期后环境会立即失效，专属 IP 会被释放，再也无法找回。",
+		"If you do not renew, the environment stops working the moment it expires and the dedicated IP is released. It can never be recovered.",
+	],
 } as const;
 
 const statusCopy: Record<
@@ -112,19 +125,11 @@ const statusCopy: Record<
 		],
 		tone: "ok",
 	},
-	grace: {
-		label: ["已到期（宽限期）", "Expired (grace)"],
-		text: [
-			"已到期，3 天宽限期内还能用。续费后 IP 不变，不用重新配置。",
-			"Expired; it keeps working during a 3-day grace period. Renew to keep the same IP without reconfiguring.",
-		],
-		tone: "bad",
-	},
 	expired: {
-		label: ["已停用", "Expired"],
+		label: ["已到期", "Expired"],
 		text: [
-			"已到期停用。如需继续使用请重新购买。",
-			"Expired and stopped. Buy again to continue.",
+			"已到期，环境已失效，专属 IP 已释放，无法找回。如需继续使用请重新购买（会分配新的 IP，需要重新运行配置命令）。",
+			"Expired. The environment no longer works and the dedicated IP has been released; it cannot be recovered. To continue, buy again (you will get a new IP and need to run the setup command again).",
 		],
 		tone: "bad",
 	},
@@ -233,6 +238,26 @@ function SubscriptionView({
 				</Badge>
 				<p className="text-sm leading-6">{t(status.text)}</p>
 			</div>
+			{data.expiringSoon && data.daysLeft !== null ? (
+				<div
+					className="grid gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"
+					role="alert"
+				>
+					<p className="font-semibold text-destructive">
+						{(getLocale() === "en-US" ? copy.expiring[1] : copy.expiring[0])(
+							data.daysLeft,
+						)}
+						{data.expiresAt ? ` · ${formatDateTime(data.expiresAt)}` : ""}
+					</p>
+					<p>{t(copy.renewKeep)}</p>
+					<p className="font-semibold">{t(copy.renewWarning)}</p>
+					<div>
+						<Button asChild size="sm">
+							<a href={data.renewUrl}>{t(copy.renew)}</a>
+						</Button>
+					</div>
+				</div>
+			) : null}
 			<dl className="grid gap-3 text-sm sm:grid-cols-2">
 				<Item label={t(copy.ip)} value={data.ip ?? "—"} mono />
 				<Item label={t(copy.city)} value={data.city ?? "—"} />

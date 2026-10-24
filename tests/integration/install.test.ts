@@ -94,7 +94,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 			)
 			.all<{ name: string }>();
-		expect(tables.results).toHaveLength(82);
+		expect(tables.results).toHaveLength(83);
 		expect(tables.results.map((table) => table.name)).toEqual(
 			expect.arrayContaining([
 				"owner_action_requests",

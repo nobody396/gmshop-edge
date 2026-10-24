@@ -410,7 +410,7 @@ export async function applyReport(
 		}
 		if (
 			enabled &&
-			(sub.status === "active" || sub.status === "grace") &&
+			sub.status === "active" &&
 			typeof result.exit_ok === "boolean"
 		) {
 			if (result.exit_ok)

@@ -11,7 +11,6 @@ import {
 	generateRelayPass,
 	generateRelayUser,
 	generateSubscriptionId,
-	graceMs,
 	isIpv4,
 	lowBalanceUsd,
 	maskEmail,
@@ -24,12 +23,16 @@ import {
 	timezoneForCity,
 } from "../domain";
 import { formatLabel, needsReplaceAlert, subscriptionLabel } from "./alerts";
-import { enqueueClaudeEnvReadyEmail } from "./customer-email";
+import {
+	enqueueClaudeEnvReadyEmail,
+	type SendExpiryEmail,
+} from "./customer-email";
 import {
 	createIproyalClient,
 	type IproyalClient,
 	IproyalError,
 } from "./iproyal";
+import { sendExpiryReminders } from "./reminders";
 import {
 	alertThrottled,
 	type Crypt,
@@ -62,6 +65,8 @@ export type ClaudeEnvCronInput = {
 	/** Tests inject a fake client; production builds one from the token. */
 	iproyal?: IproyalClient;
 	sendCustomerEmail?: (subscriptionId: string) => Promise<unknown>;
+	/** Tests inject the expiry-reminder email sender. */
+	sendExpiryEmail?: SendExpiryEmail;
 };
 
 type Context = {
@@ -138,6 +143,14 @@ export async function runClaudeEnv(input: ClaudeEnvCronInput) {
 		staleExtending: await step(() => alertStaleExtending(context)),
 		synced: await step(() => syncExpiry(context)),
 		expired: await step(() => expireSubscriptions(context)),
+		reminders: await step(() =>
+			sendExpiryReminders({
+				db: context.db,
+				now,
+				deliver: context.deliver,
+				sendEmail: input.sendExpiryEmail,
+			}),
+		),
 		relays: await step(() => alertOfflineRelays(context)),
 		pruned: await step(() =>
 			context.db
@@ -239,10 +252,13 @@ async function processPaidItem(
 	const existing = await db
 		.prepare(
 			`SELECT id, status, ip, iproyal_order_id, iproyal_order_state FROM claude_env_subscriptions
-			 WHERE user_id = ? AND status IN ('awaiting_ip','provisioning','needs_replace','active','grace','suspended')
+			 WHERE user_id = ? AND status IN ('awaiting_ip','provisioning','needs_replace','active','suspended')
+			 AND (expires_at IS NULL OR expires_at > ?)
 			 ORDER BY created_at DESC LIMIT 1`,
 		)
-		.bind(buyer.userId)
+		// Past its expiry the IP is gone: a purchase then is a brand-new
+		// subscription with a new IP, never a renewal of the dead one.
+		.bind(buyer.userId, now)
 		.first<{
 			id: string;
 			status: string;
@@ -1009,22 +1025,9 @@ async function refreshExpiry(
 	await db
 		.prepare(
 			`UPDATE claude_env_subscriptions SET expires_at = ?, iproyal_expires_at = ?, expire_sync_needed = 0, expire_checked_at = ?,
-			 status = CASE WHEN status = 'grace' AND ? > ? THEN 'active' ELSE status END,
-			 status_before_suspend = CASE WHEN status_before_suspend = 'grace' AND ? > ? THEN 'active' ELSE status_before_suspend END,
-			 updated_at = ? WHERE id = ? AND iproyal_order_id = ?`,
+			 updated_at = ? WHERE id = ? AND iproyal_order_id = ? AND status <> 'expired'`,
 		)
-		.bind(
-			expiresAt,
-			expiresAt,
-			now,
-			expiresAt,
-			now,
-			expiresAt,
-			now,
-			now,
-			subscriptionId,
-			orderId,
-		)
+		.bind(expiresAt, expiresAt, now, now, subscriptionId, orderId)
 		.run();
 	return expiresAt;
 }
@@ -1188,7 +1191,7 @@ export async function syncExpiry(context: Context) {
 		.prepare(
 			`SELECT id, iproyal_order_id FROM claude_env_subscriptions
 			 WHERE iproyal_order_state = 'ordered' AND iproyal_order_id IS NOT NULL AND ip IS NOT NULL
-			 AND status IN ('provisioning','active','grace','suspended','needs_replace')
+			 AND status IN ('provisioning','active','suspended','needs_replace')
 			 AND (expire_sync_needed = 1 OR (expires_at IS NOT NULL AND expires_at <= ?))
 			 AND COALESCE(expire_checked_at, 0) < ?
 			 ORDER BY expires_at LIMIT ?`,
@@ -1200,45 +1203,66 @@ export async function syncExpiry(context: Context) {
 	return rows.results.length;
 }
 
-// ---------- 6. expiry ----------
+// ---------- 6. expiry (no grace period) ----------
 
+/**
+ * expires_at is IPRoyal's real expire_date: once it has passed the IP is gone,
+ * so the subscription expires at once and leaves the relay's desired list on
+ * its next sync. Nothing can bring it back; a new purchase gets a new IP.
+ */
 export async function expireSubscriptions(context: Context) {
 	const { db, now } = context;
-	const grace = await db
+	const rows = await db
 		.prepare(
-			"UPDATE claude_env_subscriptions SET status = 'grace', updated_at = ? WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?",
+			`SELECT id, email, ip FROM claude_env_subscriptions
+			 WHERE status IN ('active','suspended') AND expires_at IS NOT NULL AND expires_at <= ?
+			 ORDER BY expires_at LIMIT 50`,
 		)
-		.bind(now, now)
-		.run();
-	// Grace ends after 3 days, or at once when IPRoyal's own expiry has passed
-	// (the IP is gone then; there is nothing left to keep).
-	const ending = await db
-		.prepare(
-			`SELECT id, iproyal_expires_at FROM claude_env_subscriptions WHERE status = 'grace' AND expires_at IS NOT NULL
-			 AND (expires_at + ? <= ? OR (iproyal_expires_at IS NOT NULL AND iproyal_expires_at <= ?)) LIMIT 50`,
-		)
-		.bind(graceMs, now, now)
-		.all<{ id: string; iproyal_expires_at: number | null }>();
+		.bind(now)
+		.all<{ id: string; email: string; ip: string | null }>();
 	let expired = 0;
-	for (const row of ending.results) {
+	for (const row of rows.results) {
 		const result = await db
 			.prepare(
-				"UPDATE claude_env_subscriptions SET status = 'expired', expired_at = ?, updated_at = ? WHERE id = ? AND status = 'grace'",
+				`UPDATE claude_env_subscriptions SET status = 'expired', status_before_suspend = NULL, expired_at = ?, updated_at = ?
+				 WHERE id = ? AND status IN ('active','suspended') AND expires_at IS NOT NULL AND expires_at <= ?`,
 			)
-			.bind(now, now, row.id)
+			.bind(now, now, row.id, now)
 			.run();
 		if (Number(result.meta.changes ?? 0) !== 1) continue;
 		expired += 1;
-		await eventStatement(db, row.id, "expired", null, now).run();
-		if (row.iproyal_expires_at !== null && row.iproyal_expires_at <= now) {
-			const { text } = await subscriptionLabel(db, row.id);
-			await say(
-				context,
-				`ℹ️ Claude 专属环境已到期停用：IPRoyal 订单也已到期，IP 已失效。客户之后再买会分配新 IP。\n${text}`,
-			);
-		}
+		// A paid renewal that IPRoyal never extended can no longer apply.
+		const unapplied = await db
+			.prepare(
+				`SELECT p.extend_status, o.order_number FROM claude_env_periods p
+				 LEFT JOIN shop_orders o ON o.id = p.order_id
+				 WHERE p.subscription_id = ? AND p.kind = 'renewal' AND p.extend_status IN ('pending','failed','extending')`,
+			)
+			.bind(row.id)
+			.all<{ extend_status: string; order_number: string | null }>();
+		await db.batch([
+			db
+				.prepare(
+					`UPDATE claude_env_periods SET extend_status = 'cancelled', note = 'expired_before_extend', updated_at = ?
+					 WHERE subscription_id = ? AND kind = 'renewal' AND extend_status IN ('pending','failed')`,
+				)
+				.bind(now, row.id),
+			eventStatement(db, row.id, "expired", null, now),
+		]);
+		await say(
+			context,
+			[
+				`⛔ 已到期停用：${maskEmail(row.email)} ${row.ip ?? "（无 IP）"}`,
+				"专属 IP 已随订单到期释放，不能恢复；客户再买会分配新 IP、需要重新运行配置命令。",
+				...unapplied.results.map((p) =>
+					p.extend_status === "extending"
+						? `⚠️ 续费单 ${p.order_number ?? "?"} 的续期结果不明，请到 IPRoyal 后台核对并人工处理（可能需要退款）。`
+						: `⚠️ 续费单 ${p.order_number ?? "?"} 已付款但没续上，已取消，请人工退款。`,
+				),
+			].join("\n"),
+		);
 	}
-	return { grace: Number(grace.meta.changes ?? 0), expired };
+	return { expired };
 }
 
 // ---------- 7. relay heartbeat ----------
