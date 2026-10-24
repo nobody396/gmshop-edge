@@ -120,3 +120,17 @@ bun run build:bun
   evidence. Never commit real secrets.
 - Releases use semantic-release from `main`. Native amd64 and arm64 jobs must
   smoke-test before publishing a GHCR manifest with SBOM and provenance.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues (`nobody396/gmshop-edge`) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: one `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
