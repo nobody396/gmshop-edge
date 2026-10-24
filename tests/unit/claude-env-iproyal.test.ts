@@ -93,6 +93,7 @@ describe("IPRoyal reseller client", () => {
 				body: {
 					id: 1,
 					location: "United States",
+					expire_date: "2026-11-23 10:25:12",
 					proxy_data: {
 						ports: { socks5: 12324, "http|https": 12323 },
 						proxies: [{ ip: "161.77.8.204", username: "u1", password: "p1" }],
@@ -102,13 +103,19 @@ describe("IPRoyal reseller client", () => {
 		]);
 		const client = createIproyalClient("tok", fetcher);
 		expect(await client.price(22, 187)).toBe(5.2);
-		expect(await client.getOrder("1")).toBeNull();
 		expect(await client.getOrder("1")).toEqual({
-			ip: "161.77.8.204",
-			port: 12323,
-			username: "u1",
-			password: "p1",
-			location: "United States",
+			proxy: null,
+			expiresAt: null,
+		});
+		expect(await client.getOrder("1")).toEqual({
+			proxy: {
+				ip: "161.77.8.204",
+				port: 12323,
+				username: "u1",
+				password: "p1",
+				location: "United States",
+			},
+			expiresAt: Date.parse("2026-11-23T10:25:12Z"),
 		});
 		expect(parseOrderProxy(null)).toBeNull();
 	});

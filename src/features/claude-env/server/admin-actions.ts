@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DomainError } from "#/lib/domain-error";
 import {
+	canonicalTimezone,
 	claudeEnvSettingKeys,
 	defaultMaxCustomers,
 	defaultMonthlyQuotaBytes,
@@ -8,6 +9,7 @@ import {
 	extendExpiry,
 	maskEmail,
 	relaySlotStatuses,
+	staleClaimMs,
 	timezoneForCity,
 } from "../domain";
 import {
@@ -56,6 +58,7 @@ export type AdminSubscriptionRow = {
 	relay_port: Nullable<number>;
 	iproyal_order_id: Nullable<string>;
 	iproyal_order_state: Nullable<string>;
+	iproyal_posting_at: Nullable<number>;
 	expires_at: Nullable<number>;
 	pending_days: number;
 	activated_at: Nullable<number>;
@@ -96,6 +99,7 @@ export type AdminPeriodRow = {
 	units: number;
 	units_extended: number;
 	extend_status: string;
+	extending_at: Nullable<number>;
 	note: Nullable<string>;
 	created_at: number;
 	order_number: Nullable<string>;
@@ -112,7 +116,7 @@ export async function loadClaudeEnvAdmin(db: D1Database, now: number) {
 		db
 			.prepare(
 				`SELECT s.id, s.email, s.status, s.plan, s.ip, s.ip_city, s.ip_tz, s.relay_id, s.relay_port,
-				 s.iproyal_order_id, s.iproyal_order_state, s.expires_at, s.pending_days, s.activated_at,
+				 s.iproyal_order_id, s.iproyal_order_state, s.iproyal_posting_at, s.expires_at, s.pending_days, s.activated_at,
 				 s.traffic_period_bytes, s.traffic_period_start, s.traffic_total_bytes, s.traffic_quota_bytes,
 				 s.last_check_at, s.last_exit_ok, s.last_anthropic_status, s.last_apply_error, s.last_error,
 				 s.qc_trust_score, s.qc_scam_score, s.qc_note, s.needs_replace_reason, s.created_at, o.order_number
@@ -136,8 +140,8 @@ export async function loadClaudeEnvAdmin(db: D1Database, now: number) {
 		db
 			.prepare(
 				`SELECT p.order_item_id, p.subscription_id, p.kind, p.days, p.units, p.units_extended, p.extend_status,
-				 p.note, p.created_at, o.order_number FROM claude_env_periods p LEFT JOIN shop_orders o ON o.id = p.order_id
-				 WHERE p.extend_status IN ('failed','extending') OR p.kind = 'skipped'
+				 p.extending_at, p.note, p.created_at, o.order_number FROM claude_env_periods p LEFT JOIN shop_orders o ON o.id = p.order_id
+				 WHERE p.extend_status IN ('failed','extending') OR p.kind IN ('skipped','waiting')
 				 ORDER BY p.created_at DESC LIMIT 100`,
 			)
 			.all<AdminPeriodRow>(),
@@ -148,10 +152,41 @@ export async function loadClaudeEnvAdmin(db: D1Database, now: number) {
 		subscriptions: subs.results.map((row) => ({
 			...row,
 			email: maskEmail(row.email),
+			reorderAllowed: reorderAllowed(row, now),
 		})),
 		relays: relays.results,
-		periods: periods.results,
+		periods: periods.results.map((row) => ({
+			...row,
+			retryAllowed: retryAllowed(row, now),
+		})),
 	};
+}
+
+/** "允许重新下单" only after a posting claim is at least 5 minutes old. */
+export function reorderAllowed(
+	row: {
+		iproyal_order_state: string | null;
+		iproyal_posting_at: number | null;
+	},
+	now: number,
+) {
+	return (
+		(row.iproyal_order_state === "posting" ||
+			row.iproyal_order_state === "unknown") &&
+		(row.iproyal_posting_at ?? 0) < now - staleClaimMs
+	);
+}
+
+/** "重试续期": a refused (4xx) extension any time, an unknown one only once stale. */
+export function retryAllowed(
+	row: { extend_status: string; extending_at: number | null },
+	now: number,
+) {
+	return (
+		row.extend_status === "failed" ||
+		(row.extend_status === "extending" &&
+			(row.extending_at ?? 0) < now - staleClaimMs)
+	);
 }
 
 // ---------- flag ----------
@@ -176,6 +211,25 @@ export async function setClaudeEnvEnabled(
 				now,
 				now,
 			),
+		// Every switch-on starts a fresh window: orders paid while the flag
+		// was off stay on the manual flow and are never backfilled.
+		...(enabled
+			? [
+					db
+						.prepare(
+							`INSERT INTO system_settings (key, value, is_secret, updated_by, created_at, updated_at)
+							 VALUES (?, ?, 0, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+							 updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+						)
+						.bind(
+							claudeEnvSettingKeys.ingestAfter,
+							JSON.stringify(now),
+							actor.userId,
+							now,
+							now,
+						),
+				]
+			: []),
 		audit(db, actor, "claude_env.enabled_changed", "flag", { enabled }, now),
 	];
 	await db.batch(statements);
@@ -303,11 +357,14 @@ export const subscriptionActionSchema = z.discriminatedUnion("action", [
 		user: visible,
 		pass: visible,
 		city: z.string().trim().max(100).optional(),
+		/** The new IPRoyal order behind the swapped IP… */
 		iproyalOrderId: z
 			.string()
 			.trim()
 			.regex(/^\d{1,20}$/)
 			.optional(),
+		/** …or an explicit "IPRoyal swapped the IP inside the same order". */
+		sameOrder: z.boolean().optional(),
 	}),
 	z.object({
 		action: z.literal("set_iproyal_order"),
@@ -330,6 +387,8 @@ type SubRow = {
 	activated_at: number | null;
 	expires_at: number | null;
 	iproyal_order_state: string | null;
+	iproyal_order_id: string | null;
+	iproyal_posting_at: number | null;
 	order_item_id: string;
 	ip_city: string | null;
 	iproyal_location: string | null;
@@ -347,34 +406,79 @@ export async function applySubscriptionAction(
 ) {
 	const { db } = deps;
 	if (input.action === "period_done" || input.action === "period_retry") {
-		const result = await db
+		const period = await db
 			.prepare(
-				`UPDATE claude_env_periods SET extend_status = ?, note = ?, updated_at = ?
-				 WHERE order_item_id = ? AND extend_status IN ('failed','extending')`,
+				`SELECT p.order_item_id, p.subscription_id, p.extend_status, p.extending_at, p.days,
+				 s.iproyal_order_id, s.expires_at FROM claude_env_periods p
+				 LEFT JOIN claude_env_subscriptions s ON s.id = p.subscription_id WHERE p.order_item_id = ?`,
 			)
-			.bind(
-				input.action === "period_done" ? "done" : "pending",
-				input.action === "period_done" ? "已在 IPRoyal 后台手动续期" : null,
-				now,
-				input.orderItemId,
-			)
-			.run();
-		if (Number(result.meta.changes ?? 0) !== 1)
+			.bind(input.orderItemId)
+			.first<{
+				order_item_id: string;
+				subscription_id: string | null;
+				extend_status: string;
+				extending_at: number | null;
+				days: number;
+				iproyal_order_id: string | null;
+				expires_at: number | null;
+			}>();
+		if (!period || !["failed", "extending"].includes(period.extend_status))
 			conflict("该续期记录不需要处理");
-		await audit(
-			db,
-			actor,
-			`claude_env.${input.action}`,
-			input.orderItemId,
-			{},
-			now,
-		).run();
+		if (input.action === "period_retry" && !retryAllowed(period, now))
+			conflict(
+				"续期结果还不明（不到 5 分钟）。先核对 IPRoyal 这张订单的到期时间有没有延长，再决定。",
+			);
+		const statements: D1PreparedStatement[] = [
+			db
+				.prepare(
+					`UPDATE claude_env_periods SET extend_status = ?, note = ?, extending_at = NULL, updated_at = ?
+					 WHERE order_item_id = ? AND extend_status = ?`,
+				)
+				.bind(
+					input.action === "period_done" ? "done" : "pending",
+					input.action === "period_done" ? "已在 IPRoyal 后台手动续期" : null,
+					now,
+					input.orderItemId,
+					period.extend_status,
+				),
+		];
+		if (input.action === "period_done" && period.subscription_id)
+			statements.push(
+				period.iproyal_order_id
+					? // Re-read IPRoyal's expire_date on the next tick.
+						db
+							.prepare(
+								"UPDATE claude_env_subscriptions SET expire_sync_needed = 1, expire_checked_at = NULL, updated_at = ? WHERE id = ?",
+							)
+							.bind(now, period.subscription_id)
+					: db
+							.prepare(
+								`UPDATE claude_env_subscriptions SET expires_at = ?,
+								 status = CASE WHEN status = 'grace' THEN 'active' ELSE status END, updated_at = ? WHERE id = ?`,
+							)
+							.bind(
+								extendExpiry(period.expires_at, now, period.days),
+								now,
+								period.subscription_id,
+							),
+			);
+		statements.push(
+			audit(
+				db,
+				actor,
+				`claude_env.${input.action}`,
+				input.orderItemId,
+				{},
+				now,
+			),
+		);
+		await db.batch(statements);
 		return { ok: true };
 	}
 	const sub = await db
 		.prepare(
-			`SELECT id, status, status_before_suspend, activated_at, expires_at, iproyal_order_state, order_item_id,
-			 ip_city, iproyal_location FROM claude_env_subscriptions WHERE id = ?`,
+			`SELECT id, status, status_before_suspend, activated_at, expires_at, iproyal_order_state, iproyal_order_id,
+			 iproyal_posting_at, order_item_id, ip_city, iproyal_location FROM claude_env_subscriptions WHERE id = ?`,
 		)
 		.bind(input.id)
 		.first<SubRow>();
@@ -447,18 +551,23 @@ export async function applySubscriptionAction(
 				!["needs_replace", "provisioning", "awaiting_ip"].includes(sub.status)
 			)
 				conflict("只有待换 IP / 开通中的订阅可以换 IP（已交付的 IP 不换）");
+			if (!input.iproyalOrderId && !input.sameOrder)
+				conflict("请填新的 IPRoyal 订单号，或勾选「还是原来那张订单」");
+			if (input.sameOrder && !input.iproyalOrderId && !sub.iproyal_order_id)
+				conflict("原订阅没有 IPRoyal 订单号，请填新的订单号");
+			const orderId = input.iproyalOrderId ?? sub.iproyal_order_id;
 			const city = input.city || sub.ip_city || sub.iproyal_location;
-			const tz =
+			const tz = canonicalTimezone(
 				(await lookupTimezone(input.ip, deps.fetcher ?? fetch)) ??
-				timezoneForCity(city);
+					timezoneForCity(city),
+			);
 			statements.push(
 				db
 					.prepare(
 						`UPDATE claude_env_subscriptions SET status = 'provisioning', ip = ?, ip_port = ?, ip_city = ?, ip_tz = ?,
 						 ip_user_encrypted = ?, ip_pass_encrypted = ?,
-						 iproyal_order_id = COALESCE(?, iproyal_order_id),
-						 iproyal_order_state = CASE WHEN ? IS NOT NULL OR iproyal_order_id IS NOT NULL THEN 'ordered' ELSE iproyal_order_state END,
-						 relay_check_ok = 0, relay_check_fail_streak = 0, needs_replace_reason = NULL,
+						 iproyal_order_id = ?, iproyal_order_state = 'ordered', expire_sync_needed = 1, expire_checked_at = NULL,
+						 relay_check_ok = 0, relay_check_fail_streak = 0, apply_fail_streak = 0, relay_scam_score = NULL, needs_replace_reason = NULL,
 						 qc_trust_score = NULL, qc_scam_score = NULL, qc_note = NULL, qc_at = NULL, attempt_after = 0, updated_at = ?
 						 WHERE id = ?`,
 					)
@@ -469,13 +578,12 @@ export async function applySubscriptionAction(
 						tz,
 						await deps.crypt.encrypt(input.user, secretPurpose.upstreamUser),
 						await deps.crypt.encrypt(input.pass, secretPurpose.upstreamPass),
-						input.iproyalOrderId ?? null,
-						input.iproyalOrderId ?? null,
+						orderId,
 						now,
 						sub.id,
 					),
 			);
-			if (input.iproyalOrderId)
+			if (orderId)
 				statements.push(
 					db
 						.prepare(
@@ -487,7 +595,8 @@ export async function applySubscriptionAction(
 				ip: input.ip,
 				city,
 				tz,
-				iproyalOrderId: input.iproyalOrderId ?? null,
+				iproyalOrderId: orderId,
+				sameOrder: !input.iproyalOrderId,
 			};
 			break;
 		}
@@ -518,10 +627,14 @@ export async function applySubscriptionAction(
 				!["posting", "unknown"].includes(sub.iproyal_order_state ?? "")
 			)
 				conflict("只有「下单结果不明」的订阅可以重新下单");
+			if (!reorderAllowed(sub, now))
+				conflict(
+					"下单才过去不到 5 分钟。先去 IPRoyal 后台核对有没有这一单，确认没有再点。",
+				);
 			statements.push(
 				db
 					.prepare(
-						"UPDATE claude_env_subscriptions SET iproyal_order_state = NULL, attempt_after = 0, last_error = NULL, updated_at = ? WHERE id = ?",
+						"UPDATE claude_env_subscriptions SET iproyal_order_state = NULL, iproyal_posting_at = NULL, order_unknown_alerted = 0, attempt_after = 0, last_error = NULL, updated_at = ? WHERE id = ?",
 					)
 					.bind(now, sub.id),
 			);

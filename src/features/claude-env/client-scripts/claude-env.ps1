@@ -34,6 +34,10 @@ $TZ_MAP = @{
   "America/Boise"="Mountain Standard Time"; "America/Phoenix"="US Mountain Standard Time"; "America/Los_Angeles"="Pacific Standard Time"
   "America/Anchorage"="Alaskan Standard Time"; "Pacific/Honolulu"="Hawaiian Standard Time"; "Asia/Singapore"="Singapore Standard Time"
   "Asia/Tokyo"="Tokyo Standard Time"; "Europe/London"="GMT Standard Time"
+  "America/Kentucky/Monticello"="Eastern Standard Time"; "America/Indiana/Vincennes"="Eastern Standard Time"; "America/Indiana/Winamac"="Eastern Standard Time"
+  "America/Indiana/Marengo"="Eastern Standard Time"; "America/Indiana/Petersburg"="Eastern Standard Time"; "America/Indiana/Vevay"="Eastern Standard Time"
+  "America/Indiana/Tell_City"="Central Standard Time"; "America/North_Dakota/New_Salem"="Central Standard Time"; "America/North_Dakota/Beulah"="Central Standard Time"
+  "America/Juneau"="Alaskan Standard Time"; "America/Sitka"="Alaskan Standard Time"; "America/Nome"="Alaskan Standard Time"; "America/Adak"="Aleutian Standard Time"
 }
 $OTHER_CLIENTS = @(
   @("Clash for Windows","Clash for Windows"), @("Clash Party","Clash Party"), @("Mihomo Party","Mihomo Party"), @("FlClash","FlClash"),

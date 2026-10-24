@@ -37,7 +37,13 @@ CREATE TABLE `claude_env_subscriptions` (
 	`iproyal_plan_id` integer NOT NULL,
 	`iproyal_order_state` text,
 	`iproyal_order_id` text,
+	`iproyal_posting_at` integer,
+	`order_unknown_alerted` integer DEFAULT 0 NOT NULL,
 	`iproyal_location` text,
+	`iproyal_expires_at` integer,
+	`expire_sync_needed` integer DEFAULT 0 NOT NULL,
+	`expire_checked_at` integer,
+	`ip_invalid_alerted` integer DEFAULT 0 NOT NULL,
 	`ip` text,
 	`ip_port` integer,
 	`ip_city` text,
@@ -47,12 +53,14 @@ CREATE TABLE `claude_env_subscriptions` (
 	`pending_days` integer DEFAULT 0 NOT NULL,
 	`activated_at` integer,
 	`expires_at` integer,
+	`expired_at` integer,
 	`traffic_period_start` integer,
 	`traffic_period_bytes` integer DEFAULT 0 NOT NULL,
 	`traffic_total_bytes` integer DEFAULT 0 NOT NULL,
 	`traffic_quota_bytes` integer DEFAULT 200000000000 NOT NULL,
 	`relay_check_ok` integer DEFAULT 0 NOT NULL,
 	`relay_check_fail_streak` integer DEFAULT 0 NOT NULL,
+	`apply_fail_streak` integer DEFAULT 0 NOT NULL,
 	`last_check_at` integer,
 	`last_exit_ok` integer,
 	`last_exit_ip` text,
@@ -60,6 +68,7 @@ CREATE TABLE `claude_env_subscriptions` (
 	`last_apply_error` text,
 	`exit_fail_streak` integer DEFAULT 0 NOT NULL,
 	`patrol_alerted` integer DEFAULT 0 NOT NULL,
+	`relay_scam_score` integer,
 	`qc_trust_score` real,
 	`qc_scam_score` integer,
 	`qc_note` text,
@@ -95,14 +104,21 @@ CREATE TABLE `claude_env_periods` (
 	`iproyal_plan_id` integer,
 	`units_extended` integer DEFAULT 0 NOT NULL,
 	`extend_status` text DEFAULT 'none' NOT NULL,
+	`extending_at` integer,
+	`stale_alerted` integer DEFAULT 0 NOT NULL,
+	`refund_handled` integer DEFAULT 0 NOT NULL,
+	`remind_count` integer DEFAULT 0 NOT NULL,
+	`next_remind_at` integer,
 	`note` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
-	CONSTRAINT "claude_env_periods_kind_check" CHECK("claude_env_periods"."kind" IN ('initial','renewal','skipped')),
-	CONSTRAINT "claude_env_periods_extend_check" CHECK("claude_env_periods"."extend_status" IN ('none','pending','extending','done','failed'))
+	CONSTRAINT "claude_env_periods_kind_check" CHECK("claude_env_periods"."kind" IN ('initial','renewal','skipped','waiting')),
+	CONSTRAINT "claude_env_periods_extend_check" CHECK("claude_env_periods"."extend_status" IN ('none','pending','extending','done','failed','cancelled'))
 );
 --> statement-breakpoint
 CREATE INDEX `claude_env_periods_extend_idx` ON `claude_env_periods` (`extend_status`,`subscription_id`);
+--> statement-breakpoint
+CREATE INDEX `claude_env_periods_kind_idx` ON `claude_env_periods` (`kind`,`order_id`);
 --> statement-breakpoint
 CREATE TABLE `claude_env_reports` (
 	`report_id` text PRIMARY KEY NOT NULL,

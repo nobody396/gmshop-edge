@@ -385,6 +385,7 @@ function SubscriptionActions({
 	});
 	const [days, setDays] = useState("30");
 	const [replace, setReplace] = useState({
+		sameOrder: false,
 		ip: "",
 		port: "12323",
 		user: "",
@@ -438,7 +439,7 @@ function SubscriptionActions({
 					size="sm"
 					variant="outline"
 				>
-					延长天数（不碰 IPRoyal）
+					只改本地到期（不碰 IPRoyal，IPRoyal 要另外手动续）
 				</Button>
 			</div>
 			{unknownOrder ? (
@@ -464,15 +465,20 @@ function SubscriptionActions({
 						填入订单号
 					</Button>
 					<Button
-						disabled={action.isPending}
+						disabled={action.isPending || !sub.reorderAllowed}
 						onClick={() =>
 							action.mutate({ data: { action: "allow_reorder", id } })
 						}
 						size="sm"
 						variant="outline"
 					>
-						后台没有新订单，允许重新下单
+						允许重新下单
 					</Button>
+					<p className="basis-full text-muted-foreground text-xs">
+						先去 IPRoyal
+						后台核对有没有这一单，确认没有再点「允许重新下单」；有的话填订单号。
+						{sub.reorderAllowed ? "" : "（下单不到 5 分钟，按钮暂不可用）"}
+					</p>
 				</div>
 			) : null}
 			{["needs_replace", "provisioning", "awaiting_ip"].includes(status) ? (
@@ -490,6 +496,7 @@ function SubscriptionActions({
 								pass: replace.pass,
 								city: replace.city || undefined,
 								iproyalOrderId: replace.order || undefined,
+								sameOrder: replace.sameOrder || undefined,
 							},
 						});
 					}}
@@ -521,10 +528,20 @@ function SubscriptionActions({
 						value={replace.city}
 					/>
 					<Field
-						label="IPRoyal 订单号（可空）"
+						label="新的 IPRoyal 订单号（必填，除非勾选右边）"
 						onChange={(order) => setReplace({ ...replace, order })}
 						value={replace.order}
 					/>
+					<label className="flex items-center gap-2 text-xs">
+						<input
+							checked={replace.sameOrder}
+							onChange={(event) =>
+								setReplace({ ...replace, sameOrder: event.target.checked })
+							}
+							type="checkbox"
+						/>
+						还是原来那张订单（IPRoyal 在原订单里换的 IP）
+					</label>
 					<div className="sm:col-span-3 lg:col-span-6">
 						<Button disabled={action.isPending} size="sm" type="submit">
 							已在 IPRoyal 换好 IP：保存并重新质检
@@ -571,7 +588,9 @@ function PeriodsSection({
 									<td className="px-3 py-2">
 										{period.kind === "skipped"
 											? "未自动处理"
-											: `续期 ${num(period.days)} 天（${num(period.units_extended)}/${num(period.units)}）`}
+											: period.kind === "waiting"
+												? "游客订单，等客户注册"
+												: `续期 ${num(period.days)} 天（${num(period.units_extended)}/${num(period.units)}）`}
 									</td>
 									<td className="px-3 py-2 text-xs">{str(period.note)}</td>
 									<td className="px-3 py-2 text-xs">
@@ -592,7 +611,7 @@ function PeriodsSection({
 													已手动续期
 												</Button>
 												<Button
-													disabled={action.isPending}
+													disabled={action.isPending || !period.retryAllowed}
 													onClick={() =>
 														action.mutate({
 															data: { action: "period_retry", orderItemId },
@@ -603,6 +622,12 @@ function PeriodsSection({
 												>
 													重试续期
 												</Button>
+												{period.extend_status === "extending" ? (
+													<span className="text-muted-foreground text-xs">
+														结果不明：先核对 IPRoyal
+														这张订单的到期时间有没有延长，再决定
+													</span>
+												) : null}
 											</>
 										) : null}
 									</td>

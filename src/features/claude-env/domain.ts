@@ -396,3 +396,63 @@ export function customerCommands(code: string) {
 		ipCheck: `${scriptOrigin}/ip-check`,
 	};
 }
+
+// ---------- review additions (2026-10-24) ----------
+
+/** A posting/extending claim older than this is "结果不明" (IPRoyal calls time out after 20 s). */
+export const staleClaimMs = 5 * 60_000;
+/** A relay port is never handed to another customer within this window. */
+export const portReuseMs = 30 * dayMs;
+
+const ipv4Pattern =
+	/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+export function isIpv4(value: unknown): value is string {
+	return typeof value === "string" && ipv4Pattern.test(value);
+}
+
+const canonicalZones: Array<[RegExp, string]> = [
+	[
+		/^(America\/(Detroit|Fort_Wayne|Indianapolis|Louisville|Indiana\/(Indianapolis|Marengo|Petersburg|Vevay|Vincennes|Winamac)|Kentucky\/(Louisville|Monticello))|US\/(Eastern|Michigan|East-Indiana)|EST5EDT)$/,
+		"America/New_York",
+	],
+	[
+		/^(America\/(Menominee|Knox_IN|Indiana\/(Knox|Tell_City)|North_Dakota\/(Center|New_Salem|Beulah))|US\/(Central|Indiana-Starke)|CST6CDT)$/,
+		"America/Chicago",
+	],
+	[
+		/^(America\/(Boise|Shiprock)|US\/Mountain|MST7MDT|Navajo)$/,
+		"America/Denver",
+	],
+	[/^(US\/Arizona|MST)$/, "America/Phoenix"],
+	[/^(US\/Pacific|PST8PDT)$/, "America/Los_Angeles"],
+	[
+		/^(America\/(Juneau|Sitka|Metlakatla|Nome|Yakutat)|US\/Alaska)$/,
+		"America/Anchorage",
+	],
+	[/^(US\/Hawaii|HST)$/, "Pacific/Honolulu"],
+];
+
+/**
+ * Folds US zone aliases onto the 7 canonical names the Windows script maps
+ * (America/New_York, Chicago, Denver, Phoenix, Los_Angeles, Anchorage,
+ * Pacific/Honolulu). Other IANA names are kept as they are.
+ */
+export function canonicalTimezone(tz: string) {
+	for (const [pattern, canonical] of canonicalZones)
+		if (pattern.test(tz)) return canonical;
+	return tz;
+}
+
+/**
+ * IPRoyal `expire_date` ("2024-04-20 10:25:12"). The docs give no zone; read
+ * as UTC (unverified — compare with the IPRoyal dashboard on the first order).
+ */
+export function parseIproyalDate(value: unknown) {
+	if (typeof value !== "string") return null;
+	const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/.exec(
+		value.trim(),
+	);
+	if (!match) return null;
+	const ms = Date.parse(`${match[1]}T${match[2]}Z`);
+	return Number.isFinite(ms) ? ms : null;
+}

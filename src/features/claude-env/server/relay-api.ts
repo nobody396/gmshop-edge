@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+	claudeEnvSettingKeys,
 	desiredStatuses,
 	patrolFailThreshold,
 	provisioningFailThreshold,
@@ -10,6 +11,7 @@ import {
 } from "../domain";
 import { needsReplaceAlert, subscriptionLabel } from "./alerts";
 import {
+	alertThrottled,
 	type Crypt,
 	type Deliver,
 	defaultDeliver,
@@ -226,6 +228,8 @@ export const reportSchema = z.object({
 				exit_ip: z.string().max(64).nullable().optional(),
 				exit_ok: z.boolean().nullable().optional(),
 				anthropic_status: z.number().int().nullable().optional(),
+				// Relay-measured scamalytics score (provisioning only; older relays omit it).
+				scam_score: z.number().int().min(0).max(100).nullable().optional(),
 			}),
 		)
 		.max(2000)
@@ -252,6 +256,7 @@ type SubState = {
 	activated_at: number | null;
 	traffic_period_start: number | null;
 	relay_check_fail_streak: number;
+	apply_fail_streak: number;
 	exit_fail_streak: number;
 	patrol_alerted: number;
 };
@@ -268,6 +273,15 @@ export async function applyReport(
 		.bind(report.report_id)
 		.first<{ seen: number }>();
 	if (seen) return { duplicate: true, alerts: [] as string[] };
+	// While the feature flag is off the relay keeps being served and its
+	// traffic/heartbeat recorded, but nothing changes subscription states.
+	const enabled =
+		(
+			await db
+				.prepare("SELECT value FROM system_settings WHERE key = ?")
+				.bind(claudeEnvSettingKeys.enabled)
+				.first<{ value: string }>()
+		)?.value === "true";
 	const ids = [
 		...new Set([
 			...report.results.map((r) => r.id),
@@ -280,7 +294,7 @@ export async function applyReport(
 		const rows = await db
 			.prepare(
 				`SELECT id, status, ip, activated_at, traffic_period_start, relay_check_fail_streak,
-				 exit_fail_streak, patrol_alerted FROM claude_env_subscriptions
+				 apply_fail_streak, exit_fail_streak, patrol_alerted FROM claude_env_subscriptions
 				 WHERE relay_id = ? AND id IN (${chunk.map(() => "?").join(",")})`,
 			)
 			.bind(relay.id, ...chunk)
@@ -296,10 +310,13 @@ export async function applyReport(
 	];
 	const alerts: Array<{
 		subscriptionId: string;
-		kind: "replace" | "patrol";
+		kind: "replace" | "patrol" | "apply";
 		reason: string;
 	}> = [];
+	let massRemoveBlocked = 0;
 	for (const result of report.results) {
+		if (!result.applied && result.error?.startsWith("mass_remove_blocked"))
+			massRemoveBlocked += 1;
 		const sub = subs.get(result.id);
 		if (!sub) continue;
 		statements.push(
@@ -323,7 +340,39 @@ export async function applyReport(
 					sub.id,
 				),
 		);
-		if (sub.status === "provisioning" && result.applied) {
+		if (enabled && sub.status === "provisioning" && !result.applied) {
+			const streak = sub.apply_fail_streak + 1;
+			statements.push(
+				db
+					.prepare(
+						"UPDATE claude_env_subscriptions SET apply_fail_streak = ? WHERE id = ? AND status = 'provisioning'",
+					)
+					.bind(streak, sub.id),
+			);
+			if (streak === provisioningFailThreshold)
+				alerts.push({
+					subscriptionId: sub.id,
+					kind: "apply",
+					reason: `中转机连续 ${streak} 次没能加上这个客户：${result.error ?? "未知原因"}`,
+				});
+		}
+		if (enabled && sub.status === "provisioning" && result.applied) {
+			if (sub.apply_fail_streak)
+				statements.push(
+					db
+						.prepare(
+							"UPDATE claude_env_subscriptions SET apply_fail_streak = 0 WHERE id = ?",
+						)
+						.bind(sub.id),
+				);
+			if (result.scam_score !== undefined && result.scam_score !== null)
+				statements.push(
+					db
+						.prepare(
+							"UPDATE claude_env_subscriptions SET relay_scam_score = ? WHERE id = ? AND status = 'provisioning'",
+						)
+						.bind(result.scam_score, sub.id),
+				);
 			const ok =
 				result.exit_ok === true &&
 				(!result.exit_ip || result.exit_ip === sub.ip) &&
@@ -360,6 +409,7 @@ export async function applyReport(
 			}
 		}
 		if (
+			enabled &&
 			(sub.status === "active" || sub.status === "grace") &&
 			typeof result.exit_ok === "boolean"
 		) {
@@ -456,10 +506,21 @@ export async function applyReport(
 		texts.push(
 			alert.kind === "replace"
 				? needsReplaceAlert(text, alert.reason)
-				: `⚠️ Claude 专属环境线路不通\n${text}\n${alert.reason}\n系统不会自动换 IP，请人工检查（中转机/IPRoyal 后台）。`,
+				: alert.kind === "apply"
+					? `⚠️ Claude 专属环境：中转机加不上客户\n${text}\n${alert.reason}\n请检查中转机（ce-relay / xray 日志）。`
+					: `⚠️ Claude 专属环境线路不通\n${text}\n${alert.reason}\n系统不会自动换 IP，请人工检查（中转机/IPRoyal 后台）。`,
 		);
 	}
 	if (quotaAlert) texts.push(quotaAlert);
+	if (massRemoveBlocked > 0)
+		await alertThrottled(
+			db,
+			deliver,
+			`claude_env.alert.mass_remove.${relay.id}`,
+			`⚠️ 中转机 ${relay.id} 拒绝了一次性删除 ${massRemoveBlocked} 个客户（大量删除保护）。请先在后台核对这些客户确实该停用，再在中转机上运行：CE_SYNC_ALLOW_MASS_REMOVE=1 ce-relay sync`,
+			now,
+			6 * 3_600_000,
+		);
 	for (const text of texts) await deliver(text).catch(() => undefined);
 	return { duplicate: false, alerts: texts };
 }

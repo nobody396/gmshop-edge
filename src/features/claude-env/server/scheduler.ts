@@ -1,8 +1,6 @@
+import { loadSettings } from "#/features/ops-automation/server/shared";
 import {
-	loadSettings,
-	settingStatement,
-} from "#/features/ops-automation/server/shared";
-import {
+	canonicalTimezone,
 	claudeEnvSettingKeys,
 	claudeEnvSkuIds,
 	claudeEnvSkus,
@@ -10,17 +8,19 @@ import {
 	desiredStatuses,
 	displayCity,
 	evaluateQuality,
-	extendExpiry,
 	generateRelayPass,
 	generateRelayUser,
 	generateSubscriptionId,
 	graceMs,
+	isIpv4,
 	lowBalanceUsd,
 	maskEmail,
 	pickIproyalCity,
 	pickRelayPort,
+	portReuseMs,
 	relayOfflineMs,
 	relaySlotStatuses,
+	staleClaimMs,
 	timezoneForCity,
 } from "../domain";
 import { formatLabel, needsReplaceAlert, subscriptionLabel } from "./alerts";
@@ -45,6 +45,11 @@ import {
 
 const hourMs = 3_600_000;
 const perTick = 5;
+
+export const reorderHint =
+	"先去 IPRoyal 后台核对有没有这一单，确认没有再点「允许重新下单」；有的话在后台填订单号。";
+export const extendUnknownHint =
+	"先核对 IPRoyal 这张订单的到期时间有没有延长，再决定：延长了点「已手动续期」，没延长点「重试续期」。";
 
 export type ClaudeEnvCronInput = {
 	db: D1Database;
@@ -79,6 +84,9 @@ const planLabel: Record<string, string> = {
 	eb_quarterly: "早鸟季付",
 };
 
+const say = (context: Context, text: string) =>
+	context.deliver(text).catch(() => undefined);
+
 /** Every minute (behind `claude_env.automation_enabled`). Each step is isolated. */
 export async function runClaudeEnv(input: ClaudeEnvCronInput) {
 	const now = input.now ?? Date.now();
@@ -88,17 +96,8 @@ export async function runClaudeEnv(input: ClaudeEnvCronInput) {
 	]);
 	if (settings.get(claudeEnvSettingKeys.enabled) !== true)
 		return { status: "disabled" as const };
-	let ingestAfter = settings.get(claudeEnvSettingKeys.ingestAfter);
-	if (typeof ingestAfter !== "number" || !Number.isSafeInteger(ingestAfter)) {
-		// First tick after the owner turns the flag on: only orders paid from now on.
-		ingestAfter = now;
-		await settingStatement(
-			input.db,
-			claudeEnvSettingKeys.ingestAfter,
-			now,
-			now,
-		).run();
-	}
+	// Written only by the admin switch, at the moment it is turned on.
+	const ingestAfter = settings.get(claudeEnvSettingKeys.ingestAfter);
 	const fetcher = input.fetcher ?? fetch;
 	const context: Context = {
 		db: input.db,
@@ -124,11 +123,20 @@ export async function runClaudeEnv(input: ClaudeEnvCronInput) {
 	};
 	return {
 		status: "ok" as const,
-		ingested: await step(() => ingestOrders(context, ingestAfter as number)),
+		ingested: await step(async () =>
+			typeof ingestAfter === "number" && Number.isSafeInteger(ingestAfter)
+				? await ingestOrders(context, ingestAfter)
+				: ("no_ingest_after" as const),
+		),
+		waiting: await step(() => promoteWaitingOrders(context)),
 		refunds: await step(() => handleRefunds(context)),
+		renewalRefunds: await step(() => handleRenewalRefunds(context)),
 		provisioned: await step(() => provisionSubscriptions(context)),
+		stalePosting: await step(() => alertStalePosting(context)),
 		activated: await step(() => activateSubscriptions(context)),
 		extended: await step(() => extendPeriods(context)),
+		staleExtending: await step(() => alertStaleExtending(context)),
+		synced: await step(() => syncExpiry(context)),
 		expired: await step(() => expireSubscriptions(context)),
 		relays: await step(() => alertOfflineRelays(context)),
 		pruned: await step(() =>
@@ -155,15 +163,18 @@ type PaidItem = {
 	via_api: number;
 };
 
+const paidItemColumns = `oi.id AS order_item_id, oi.order_id, o.order_number, oi.sellable_item_id, oi.quantity,
+ o.user_id, u.email AS user_email, o.normalized_contact_email AS contact_email,
+ EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) AS via_api`;
+const paidItemFrom = `FROM shop_order_items oi JOIN shop_orders o ON o.id = oi.order_id
+ LEFT JOIN users u ON u.id = o.user_id`;
+
 export async function ingestOrders(context: Context, ingestAfter: number) {
-	const { db, now } = context;
-	const rows = await db
+	// Every handled item (including guests waiting to register) has a period
+	// row, so it never occupies a batch slot again.
+	const rows = await context.db
 		.prepare(
-			`SELECT oi.id AS order_item_id, oi.order_id, o.order_number, oi.sellable_item_id, oi.quantity,
-			 o.user_id, u.email AS user_email, o.normalized_contact_email AS contact_email,
-			 EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) AS via_api
-			 FROM shop_order_items oi JOIN shop_orders o ON o.id = oi.order_id
-			 LEFT JOIN users u ON u.id = o.user_id
+			`SELECT ${paidItemColumns} ${paidItemFrom}
 			 WHERE oi.sellable_item_id IN (${claudeEnvSkuIds.map(() => "?").join(",")})
 			 AND o.status IN ('paid','fulfilling','completed') AND o.paid_at >= ?
 			 AND NOT EXISTS (SELECT 1 FROM claude_env_periods p WHERE p.order_item_id = oi.id)
@@ -171,175 +182,167 @@ export async function ingestOrders(context: Context, ingestAfter: number) {
 		)
 		.bind(...claudeEnvSkuIds, ingestAfter)
 		.all<PaidItem>();
-	let created = 0;
-	let renewed = 0;
-	let skipped = 0;
-	for (const row of rows.results) {
-		const sku = claudeEnvSkus[row.sellable_item_id];
-		if (!sku) continue;
-		const quantity = Math.max(1, row.quantity);
-		const days = sku.days * quantity;
-		let userId = row.user_id;
-		let email = row.user_email;
-		if (!userId && row.contact_email) {
-			const user = await db
-				.prepare(
-					"SELECT id, email FROM users WHERE lower(email) = lower(?) AND email_verified = 1 LIMIT 1",
-				)
-				.bind(row.contact_email)
-				.first<{ id: string; email: string }>();
-			if (user) {
-				userId = user.id;
-				email = user.email;
-			}
-		}
-		if (!row.via_api && (!userId || !email)) {
-			// Guest checkout: the order is claimed onto an account once the buyer
-			// signs in with a verified email, so wait instead of skipping.
-			await alertThrottled(
-				db,
-				context.deliver,
-				`claude_env.alert.guest.${row.order_item_id}`,
-				`⚠️ Claude 专属环境游客订单 ${row.order_number}：客户还没用下单邮箱注册/验证主站账号，面板只对登录用户开放。客户登录并验证邮箱后系统会自动开通；也可以让客服提醒客户注册。`,
-				now,
-				24 * hourMs,
-			);
-			skipped += 1;
-			continue;
-		}
-		const skip = row.via_api
-			? "代理站（lsrai.shop）经供货 API 下的单（下单账号是代理，不是最终客户），系统不自动开通"
-			: null;
-		if (skip) {
-			await db.batch([
-				periodInsert(db, row, null, "skipped", sku, days, quantity, now, skip),
-			]);
-			await context
-				.deliver(
-					`⚠️ Claude 专属环境订单需要人工处理\n订单 ${row.order_number}｜${planLabel[sku.plan]} ×${quantity}\n原因：${skip}`,
-				)
-				.catch(() => undefined);
-			skipped += 1;
-			continue;
-		}
-		const existing = await db
-			.prepare(
-				`SELECT id, status, activated_at, expires_at FROM claude_env_subscriptions
-				 WHERE user_id = ? AND status IN ('awaiting_ip','provisioning','needs_replace','active','grace','suspended')
-				 ORDER BY created_at DESC LIMIT 1`,
-			)
-			.bind(userId)
-			.first<{
-				id: string;
-				status: string;
-				activated_at: number | null;
-				expires_at: number | null;
-			}>();
-		if (existing) {
-			const applyStatements: D1PreparedStatement[] = [];
-			let newExpiry: number | null = null;
-			if (existing.activated_at !== null) {
-				newExpiry = extendExpiry(existing.expires_at, now, days);
-				applyStatements.push(
-					db
-						.prepare(
-							`UPDATE claude_env_subscriptions SET expires_at = ?,
-							 status = CASE WHEN status = 'grace' THEN 'active' ELSE status END,
-							 status_before_suspend = CASE WHEN status_before_suspend = 'grace' THEN 'active' ELSE status_before_suspend END,
-							 updated_at = ? WHERE id = ?`,
-						)
-						.bind(newExpiry, now, existing.id),
-				);
-			} else
-				applyStatements.push(
-					db
-						.prepare(
-							"UPDATE claude_env_subscriptions SET pending_days = pending_days + ?, updated_at = ? WHERE id = ?",
-						)
-						.bind(days, now, existing.id),
-				);
-			await db.batch([
-				periodInsert(db, row, existing.id, "renewal", sku, days, quantity, now),
-				...applyStatements,
-				eventStatement(
-					db,
-					existing.id,
-					"renewed",
-					`+${days} 天（订单 ${row.order_number}）`,
-					now,
-				),
-			]);
-			renewed += 1;
-			const { text } = await subscriptionLabel(db, existing.id);
-			await context
-				.deliver(
-					[
-						"🔁 Claude 专属环境续费",
-						text,
-						`${planLabel[sku.plan]} ×${quantity}，+${days} 天，IP 不变`,
-						newExpiry
-							? `新到期：${beijing(newExpiry)}（北京时间）`
-							: "还没开通，开通后从开通时起算",
-						"IPRoyal 续期会自动处理，失败会另外提醒。",
-					].join("\n"),
-				)
-				.catch(() => undefined);
-			continue;
-		}
-		const id = generateSubscriptionId();
-		await db.batch([
-			db
-				.prepare(
-					`INSERT INTO claude_env_subscriptions
-					 (id, user_id, email, order_id, order_item_id, plan, status, iproyal_plan_id, pending_days, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, 'awaiting_ip', ?, ?, ?, ?)`,
-				)
-				.bind(
-					id,
-					userId,
-					email,
-					row.order_id,
-					row.order_item_id,
-					sku.plan,
-					sku.iproyalPlanId,
-					days,
-					now,
-					now,
-				),
-			periodInsert(db, row, id, "initial", sku, days, quantity, now),
-			eventStatement(db, id, "created", `订单 ${row.order_number}`, now),
-		]);
-		created += 1;
-		await context
-			.deliver(
-				[
-					"🆕 Claude 专属环境新订单（已付款）",
-					`订单 ${row.order_number}｜客户 ${maskEmail(email as string)}`,
-					`${planLabel[sku.plan]} ×${quantity}（${days} 天）`,
-					"系统开始自动买 IP、质检、开通，完成后再通知你。",
-				].join("\n"),
-			)
-			.catch(() => undefined);
+	const outcome = { created: 0, renewed: 0, skipped: 0, waiting: 0 };
+	for (const row of rows.results)
+		outcome[await processPaidItem(context, row)] += 1;
+	return outcome;
+}
+
+async function resolveBuyer(db: D1Database, row: PaidItem) {
+	if (row.user_id && row.user_email)
+		return { userId: row.user_id, email: row.user_email };
+	if (!row.contact_email) return null;
+	const user = await db
+		.prepare(
+			"SELECT id, email FROM users WHERE lower(email) = lower(?) AND email_verified = 1 LIMIT 1",
+		)
+		.bind(row.contact_email)
+		.first<{ id: string; email: string }>();
+	return user ? { userId: user.id, email: user.email } : null;
+}
+
+const guestReminder = (orderNumber: string, count: number) =>
+	`⚠️ Claude 专属环境游客订单 ${orderNumber}（第 ${count}/3 次提醒）：客户还没用下单邮箱注册/验证主站账号，面板只对登录用户开放。客户登录并验证邮箱后系统会自动开通；可以让客服提醒客户注册。`;
+
+async function processPaidItem(
+	context: Context,
+	row: PaidItem,
+): Promise<"created" | "renewed" | "skipped" | "waiting"> {
+	const { db, now } = context;
+	const sku = claudeEnvSkus[row.sellable_item_id];
+	if (!sku) return "skipped";
+	const quantity = Math.max(1, row.quantity);
+	const days = sku.days * quantity;
+	if (row.via_api) {
+		const reason =
+			"代理站（lsrai.shop）经供货 API 下的单（下单账号是代理，不是最终客户），系统不自动开通";
+		await periodInsert(db, row, null, "skipped", sku, days, quantity, now, {
+			note: reason,
+		}).run();
+		await say(
+			context,
+			`⚠️ Claude 专属环境订单需要人工处理\n订单 ${row.order_number}｜${planLabel[sku.plan]} ×${quantity}\n原因：${reason}`,
+		);
+		return "skipped";
 	}
-	return { created, renewed, skipped };
+	const buyer = await resolveBuyer(db, row);
+	if (!buyer) {
+		// Guest checkout: claimed onto an account once the buyer verifies the
+		// order email. Reminders on day 1, 3 and 7 only.
+		await periodInsert(db, row, null, "waiting", sku, days, quantity, now, {
+			remindCount: 1,
+			nextRemindAt: now + 2 * dayMs,
+		}).run();
+		await say(context, guestReminder(row.order_number, 1));
+		return "waiting";
+	}
+	const existing = await db
+		.prepare(
+			`SELECT id, status, ip, iproyal_order_id, iproyal_order_state FROM claude_env_subscriptions
+			 WHERE user_id = ? AND status IN ('awaiting_ip','provisioning','needs_replace','active','grace','suspended')
+			 ORDER BY created_at DESC LIMIT 1`,
+		)
+		.bind(buyer.userId)
+		.first<{
+			id: string;
+			status: string;
+			ip: string | null;
+			iproyal_order_id: string | null;
+			iproyal_order_state: string | null;
+		}>();
+	if (existing) {
+		// IPRoyal's expire_date is authoritative: the paid days are added by
+		// extending the IPRoyal order, then re-reading its expire_date.
+		const noOrder = existing.ip !== null && !existing.iproyal_order_id;
+		await db.batch([
+			periodInsert(db, row, existing.id, "renewal", sku, days, quantity, now, {
+				extendStatus: noOrder ? "failed" : "pending",
+				note: noOrder ? "no_iproyal_order" : null,
+			}),
+			eventStatement(
+				db,
+				existing.id,
+				"renewed",
+				`+${days} 天（订单 ${row.order_number}）`,
+				now,
+			),
+		]);
+		const { text } = await subscriptionLabel(db, existing.id);
+		const next = noOrder
+			? "⚠️ 这个订阅没有 IPRoyal 订单号（手动换过 IP），系统没法自动续期。请到 IPRoyal 后台手动续期，然后在后台点「已手动续期」。"
+			: existing.status === "needs_replace"
+				? "⚠️ 这个订阅正在等换 IP，系统不会对旧 IPRoyal 订单续期。换好 IP 并在后台填新订单号后会自动续期。"
+				: existing.iproyal_order_state !== "ordered"
+					? "还没买到 IP，买好后会自动续期。"
+					: "IPRoyal 续期会自动处理，到期时间以 IPRoyal 实际到期为准；失败会另外提醒。";
+		await say(
+			context,
+			[
+				"🔁 Claude 专属环境续费",
+				text,
+				`${planLabel[sku.plan]} ×${quantity}，+${days} 天，IP 不变`,
+				next,
+			].join("\n"),
+		);
+		return "renewed";
+	}
+	const id = generateSubscriptionId();
+	await db.batch([
+		db
+			.prepare(
+				`INSERT INTO claude_env_subscriptions
+				 (id, user_id, email, order_id, order_item_id, plan, status, iproyal_plan_id, pending_days, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, 'awaiting_ip', ?, ?, ?, ?)`,
+			)
+			.bind(
+				id,
+				buyer.userId,
+				buyer.email,
+				row.order_id,
+				row.order_item_id,
+				sku.plan,
+				sku.iproyalPlanId,
+				days,
+				now,
+				now,
+			),
+		periodInsert(db, row, id, "initial", sku, days, quantity, now),
+		eventStatement(db, id, "created", `订单 ${row.order_number}`, now),
+	]);
+	await say(
+		context,
+		[
+			"🆕 Claude 专属环境新订单（已付款）",
+			`订单 ${row.order_number}｜客户 ${maskEmail(buyer.email)}`,
+			`${planLabel[sku.plan]} ×${quantity}（${days} 天）`,
+			"系统开始自动买 IP、质检、开通，完成后再通知你。",
+		].join("\n"),
+	);
+	return "created";
 }
 
 function periodInsert(
 	db: D1Database,
 	row: PaidItem,
 	subscriptionId: string | null,
-	kind: "initial" | "renewal" | "skipped",
+	kind: "initial" | "renewal" | "skipped" | "waiting",
 	sku: { plan: string; iproyalPlanId: number },
 	days: number,
 	units: number,
 	now: number,
-	note: string | null = null,
+	extra: {
+		note?: string | null;
+		extendStatus?: string;
+		remindCount?: number;
+		nextRemindAt?: number | null;
+	} = {},
 ) {
 	return db
 		.prepare(
 			`INSERT INTO claude_env_periods
-			 (order_item_id, order_id, subscription_id, kind, plan, days, units, iproyal_plan_id, units_extended, extend_status, note, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+			 (order_item_id, order_id, subscription_id, kind, plan, days, units, iproyal_plan_id, units_extended,
+			  extend_status, note, remind_count, next_remind_at, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.order_item_id,
@@ -350,11 +353,78 @@ function periodInsert(
 			days,
 			units,
 			sku.iproyalPlanId,
-			kind === "renewal" ? "pending" : "none",
-			note,
+			extra.extendStatus ?? (kind === "renewal" ? "pending" : "none"),
+			extra.note ?? null,
+			extra.remindCount ?? 0,
+			extra.nextRemindAt ?? null,
 			now,
 			now,
 		);
+}
+
+/** Guests who registered since are ingested; others get the day-3/day-7 reminders. */
+export async function promoteWaitingOrders(context: Context) {
+	const { db, now } = context;
+	const rows = await db
+		.prepare(
+			`SELECT ${paidItemColumns}, o.status AS order_status, p.remind_count, p.next_remind_at, p.created_at AS waiting_since
+			 ${paidItemFrom} JOIN claude_env_periods p ON p.order_item_id = oi.id
+			 WHERE p.kind = 'waiting' ORDER BY p.created_at LIMIT 50`,
+		)
+		.all<
+			PaidItem & {
+				order_status: string;
+				remind_count: number;
+				next_remind_at: number | null;
+				waiting_since: number;
+			}
+		>();
+	let promoted = 0;
+	for (const row of rows.results) {
+		if (!["paid", "fulfilling", "completed"].includes(row.order_status)) {
+			await db
+				.prepare(
+					"UPDATE claude_env_periods SET kind = 'skipped', note = ?, next_remind_at = NULL, updated_at = ? WHERE order_item_id = ? AND kind = 'waiting'",
+				)
+				.bind(`order_${row.order_status}`, now, row.order_item_id)
+				.run();
+			continue;
+		}
+		if (await resolveBuyer(db, row)) {
+			const removed = await db
+				.prepare(
+					"DELETE FROM claude_env_periods WHERE order_item_id = ? AND kind = 'waiting'",
+				)
+				.bind(row.order_item_id)
+				.run();
+			if (Number(removed.meta.changes ?? 0) !== 1) continue;
+			await processPaidItem(context, row);
+			promoted += 1;
+			continue;
+		}
+		if (
+			row.remind_count < 3 &&
+			row.next_remind_at !== null &&
+			row.next_remind_at <= now
+		) {
+			const count = row.remind_count + 1;
+			const claimed = await db
+				.prepare(
+					"UPDATE claude_env_periods SET remind_count = ?, next_remind_at = ?, updated_at = ? WHERE order_item_id = ? AND remind_count = ?",
+				)
+				.bind(
+					count,
+					count < 3 ? row.waiting_since + 6 * dayMs : null,
+					now,
+					row.order_item_id,
+					row.remind_count,
+				)
+				.run();
+			if (Number(claimed.meta.changes ?? 0) === 1)
+				await say(context, guestReminder(row.order_number, count));
+		}
+	}
+	return promoted;
 }
 
 // ---------- 2. refunds ----------
@@ -371,18 +441,30 @@ export async function handleRefunds(context: Context) {
 	for (const row of rows.results) {
 		const { text } = await subscriptionLabel(db, row.id);
 		if (row.status === "awaiting_ip" && row.iproyal_order_state === null) {
-			await db.batch([
+			const [cancelled] = await db.batch([
 				db
 					.prepare(
-						"UPDATE claude_env_subscriptions SET status = 'cancelled', relay_id = NULL, relay_port = NULL, refund_seen = 1, updated_at = ? WHERE id = ?",
+						"UPDATE claude_env_subscriptions SET status = 'cancelled', relay_id = NULL, relay_port = NULL, refund_seen = 1, updated_at = ? WHERE id = ? AND status = 'awaiting_ip' AND iproyal_order_state IS NULL",
 					)
 					.bind(now, row.id),
-				eventStatement(db, row.id, "cancelled", "订单已退款", now),
+				db
+					.prepare(
+						"INSERT INTO claude_env_events (id, subscription_id, kind, detail, created_at) SELECT ?, id, 'cancelled', '订单已退款', ? FROM claude_env_subscriptions WHERE id = ? AND status = 'cancelled'",
+					)
+					.bind(crypto.randomUUID(), now, row.id),
 			]);
-			await context
-				.deliver(`ℹ️ Claude 专属环境订单已退款，还没买 IP，已取消\n${text}`)
-				.catch(() => undefined);
-			continue;
+			if (Number(cancelled?.meta.changes ?? 0) === 1) {
+				await say(
+					context,
+					`ℹ️ Claude 专属环境订单已退款，还没买 IP，已取消\n${text}`,
+				);
+				continue;
+			}
+			// Lost the race against a purchase that just started.
+			await say(
+				context,
+				`⚠️ 退款单可能已买了 IP，请人工处理（到 IPRoyal 后台核对）\n${text}`,
+			);
 		}
 		const suspend = !["expired", "cancelled", "suspended"].includes(row.status);
 		await db.batch([
@@ -395,11 +477,64 @@ export async function handleRefunds(context: Context) {
 				.bind(suspend ? 1 : 0, suspend ? 1 : 0, now, row.id),
 			eventStatement(db, row.id, "refunded", "首单已退款，已停用", now),
 		]);
-		await context
-			.deliver(
-				`⚠️ Claude 专属环境首单已退款${suspend ? "，已自动停用" : ""}\n${text}\nIPRoyal 订单不会自动续费；需要的话请手动处理。`,
+		await say(
+			context,
+			`⚠️ Claude 专属环境首单已退款${suspend ? "，已自动停用" : ""}\n${text}\nIPRoyal 订单不会自动续费；需要的话请手动处理。`,
+		);
+	}
+	return rows.results.length;
+}
+
+/** A refunded renewal order: cancel the extension if IPRoyal was not extended yet, else alert. */
+export async function handleRenewalRefunds(context: Context) {
+	const { db, now } = context;
+	const rows = await db
+		.prepare(
+			`SELECT p.order_item_id, p.subscription_id, p.extend_status, p.units_extended, p.days, o.order_number
+			 FROM claude_env_periods p JOIN shop_orders o ON o.id = p.order_id
+			 WHERE p.kind = 'renewal' AND o.status = 'refunded' AND p.refund_handled = 0 LIMIT 20`,
+		)
+		.all<{
+			order_item_id: string;
+			subscription_id: string;
+			extend_status: string;
+			units_extended: number;
+			days: number;
+			order_number: string;
+		}>();
+	for (const row of rows.results) {
+		const cancel = await db
+			.prepare(
+				`UPDATE claude_env_periods SET extend_status = 'cancelled', refund_handled = 1, note = 'refunded', updated_at = ?
+				 WHERE order_item_id = ? AND extend_status IN ('pending','failed') AND units_extended = 0`,
 			)
-			.catch(() => undefined);
+			.bind(now, row.order_item_id)
+			.run();
+		const { text } = await subscriptionLabel(db, row.subscription_id);
+		if (Number(cancel.meta.changes ?? 0) === 1) {
+			await eventStatement(
+				db,
+				row.subscription_id,
+				"renewal_refunded",
+				`订单 ${row.order_number} 已退款，取消续期`,
+				now,
+			).run();
+			await say(
+				context,
+				`ℹ️ Claude 专属环境续费单 ${row.order_number} 已退款：IPRoyal 还没续期，已取消这次续期（到期时间不变）。\n${text}`,
+			);
+			continue;
+		}
+		await db
+			.prepare(
+				"UPDATE claude_env_periods SET refund_handled = 1, updated_at = ? WHERE order_item_id = ?",
+			)
+			.bind(now, row.order_item_id)
+			.run();
+		await say(
+			context,
+			`⚠️ Claude 专属环境续费单 ${row.order_number} 已退款，但 IPRoyal ${row.extend_status === "extending" ? "可能已经" : "已经"}续期了 ${row.days} 天。系统没有改到期时间，请人工决定（缩短到期或其他处理）。\n${text}`,
+		);
 	}
 	return rows.results.length;
 }
@@ -413,6 +548,7 @@ type AwaitingRow = {
 	iproyal_order_state: string | null;
 	iproyal_order_id: string | null;
 	iproyal_location: string | null;
+	ip_invalid_alerted: number;
 	order_item_id: string;
 };
 
@@ -433,6 +569,14 @@ export async function assignRelay(
 		.all<{ id: string; max_customers: number; used: number }>();
 	const relay = relays.results.find((r) => r.used < r.max_customers);
 	if (!relay) return null;
+	// Ports of customers expired for more than 30 days go back to the pool;
+	// anything newer keeps its port so a stale client never reaches someone else.
+	await db
+		.prepare(
+			"UPDATE claude_env_subscriptions SET relay_port = NULL WHERE relay_id = ? AND status = 'expired' AND relay_port IS NOT NULL AND COALESCE(expired_at, updated_at) < ?",
+		)
+		.bind(relay.id, now - portReuseMs)
+		.run();
 	const ports = await db
 		.prepare(
 			"SELECT relay_port FROM claude_env_subscriptions WHERE relay_id = ? AND relay_port IS NOT NULL",
@@ -463,7 +607,7 @@ export async function provisionSubscriptions(context: Context) {
 	const rows = await db
 		.prepare(
 			`SELECT s.id, s.relay_id, s.iproyal_plan_id, s.iproyal_order_state, s.iproyal_order_id,
-			 s.iproyal_location, s.order_item_id
+			 s.iproyal_location, s.ip_invalid_alerted, s.order_item_id
 			 FROM claude_env_subscriptions s
 			 WHERE s.status = 'awaiting_ip' AND s.attempt_after <= ?
 			 AND (s.iproyal_order_state IS NULL OR s.iproyal_order_state = 'ordered')
@@ -569,9 +713,9 @@ async function placeOrder(context: Context, row: AwaitingRow) {
 	// Idempotency: claim the single POST /orders slot before calling IPRoyal.
 	const claim = await db
 		.prepare(
-			"UPDATE claude_env_subscriptions SET iproyal_order_state = 'posting', iproyal_location = ?, updated_at = ? WHERE id = ? AND iproyal_order_state IS NULL AND status = 'awaiting_ip'",
+			"UPDATE claude_env_subscriptions SET iproyal_order_state = 'posting', iproyal_posting_at = ?, order_unknown_alerted = 0, iproyal_location = ?, updated_at = ? WHERE id = ? AND iproyal_order_state IS NULL AND status = 'awaiting_ip'",
 		)
-		.bind(city.name, now, row.id)
+		.bind(now, city.name, now, row.id)
 		.run();
 	if (Number(claim.meta.changes ?? 0) !== 1) return false;
 	let orderId: string;
@@ -582,7 +726,7 @@ async function placeOrder(context: Context, row: AwaitingRow) {
 			// A 4xx means IPRoyal refused: nothing was bought, a later retry is safe.
 			await db
 				.prepare(
-					"UPDATE claude_env_subscriptions SET iproyal_order_state = NULL, attempt_after = ?, last_error = ?, updated_at = ? WHERE id = ? AND iproyal_order_state = 'posting'",
+					"UPDATE claude_env_subscriptions SET iproyal_order_state = NULL, iproyal_posting_at = NULL, attempt_after = ?, last_error = ?, updated_at = ? WHERE id = ? AND iproyal_order_state = 'posting'",
 				)
 				.bind(now + 10 * 60_000, errorCode(error), now, row.id)
 				.run();
@@ -599,32 +743,39 @@ async function placeOrder(context: Context, row: AwaitingRow) {
 		await db.batch([
 			db
 				.prepare(
-					"UPDATE claude_env_subscriptions SET iproyal_order_state = 'unknown', last_error = ?, updated_at = ? WHERE id = ?",
+					"UPDATE claude_env_subscriptions SET iproyal_order_state = 'unknown', order_unknown_alerted = 1, last_error = ?, updated_at = ? WHERE id = ? AND iproyal_order_state = 'posting'",
 				)
 				.bind(errorCode(error), now, row.id),
 			eventStatement(db, row.id, "order_unknown", errorCode(error), now),
 		]);
 		const { text } = await subscriptionLabel(db, row.id);
-		await context
-			.deliver(
-				`⚠️ IPRoyal 下单结果不明（${errorCode(error)}），为防止重复扣钱，系统不会再下单。\n${text}\n请到 IPRoyal 后台看有没有新订单：有就在后台「Claude 专属环境」填订单号；没有就点「允许重新下单」。`,
-			)
-			.catch(() => undefined);
+		await say(
+			context,
+			`⚠️ IPRoyal 下单结果不明（${errorCode(error)}），为防止重复扣钱，系统不会再下单。\n${text}\n${reorderHint}（5 分钟后按钮才可用）`,
+		);
 		return false;
 	}
-	await db.batch([
+	const [written] = await db.batch([
 		db
 			.prepare(
-				"UPDATE claude_env_subscriptions SET iproyal_order_state = 'ordered', iproyal_order_id = ?, attempt_after = ?, last_error = NULL, updated_at = ? WHERE id = ?",
+				"UPDATE claude_env_subscriptions SET iproyal_order_state = 'ordered', iproyal_order_id = ?, attempt_after = ?, last_error = NULL, updated_at = ? WHERE id = ? AND iproyal_order_state = 'posting'",
 			)
 			.bind(orderId, now + 30_000, now, row.id),
 		db
 			.prepare(
-				"UPDATE claude_env_periods SET units_extended = 1, extend_status = CASE WHEN units > 1 THEN 'pending' ELSE 'done' END, updated_at = ? WHERE order_item_id = ? AND kind = 'initial'",
+				"UPDATE claude_env_periods SET units_extended = 1, extend_status = CASE WHEN units > 1 THEN 'pending' ELSE 'done' END, updated_at = ? WHERE order_item_id = ? AND kind = 'initial' AND EXISTS (SELECT 1 FROM claude_env_subscriptions s WHERE s.id = ? AND s.iproyal_order_id = ?)",
 			)
-			.bind(now, row.order_item_id),
-		eventStatement(db, row.id, "ip_ordered", `${city.name}`, now),
+			.bind(now, row.order_item_id, row.id, orderId),
+		eventStatement(db, row.id, "ip_ordered", `${city.name} #${orderId}`, now),
 	]);
+	if (Number(written?.meta.changes ?? 0) !== 1) {
+		const { text } = await subscriptionLabel(db, row.id);
+		await say(
+			context,
+			`⚠️ IPRoyal 已下单成功（订单 ${orderId}），但订阅状态已被改动，没有写回。请人工核对并在后台填这个订单号。\n${text}`,
+		);
+		return false;
+	}
 	const remaining = balance - (price ?? 0);
 	if (remaining < lowBalanceUsd)
 		await alertThrottled(
@@ -638,29 +789,80 @@ async function placeOrder(context: Context, row: AwaitingRow) {
 	return true;
 }
 
+/** A `posting` claim that never finished (worker died mid-call) is reported once. */
+export async function alertStalePosting(context: Context) {
+	const { db, now } = context;
+	const rows = await db
+		.prepare(
+			`SELECT id FROM claude_env_subscriptions
+			 WHERE iproyal_order_state IN ('posting','unknown') AND order_unknown_alerted = 0
+			 AND COALESCE(iproyal_posting_at, 0) < ? LIMIT 20`,
+		)
+		.bind(now - staleClaimMs)
+		.all<{ id: string }>();
+	for (const row of rows.results) {
+		const claimed = await db
+			.prepare(
+				"UPDATE claude_env_subscriptions SET iproyal_order_state = 'unknown', order_unknown_alerted = 1, updated_at = ? WHERE id = ? AND order_unknown_alerted = 0",
+			)
+			.bind(now, row.id)
+			.run();
+		if (Number(claimed.meta.changes ?? 0) !== 1) continue;
+		const { text } = await subscriptionLabel(db, row.id);
+		await say(
+			context,
+			`⚠️ IPRoyal 下单结果不明（超过 5 分钟没有结果），系统不会再下单。\n${text}\n${reorderHint}`,
+		);
+	}
+	return rows.results.length;
+}
+
 async function pollOrder(context: Context, row: AwaitingRow) {
 	const { db, now } = context;
 	const iproyal = context.iproyal as IproyalClient;
-	let proxy: Awaited<ReturnType<IproyalClient["getOrder"]>>;
+	let order: Awaited<ReturnType<IproyalClient["getOrder"]>>;
 	try {
-		proxy = await iproyal.getOrder(row.iproyal_order_id as string);
+		order = await iproyal.getOrder(row.iproyal_order_id as string);
 	} catch (error) {
 		await backoff(db, row.id, now + 60_000, errorCode(error));
 		return false;
 	}
+	const proxy = order.proxy;
 	if (!proxy) {
 		await backoff(db, row.id, now + 60_000, "ip_not_assigned_yet");
 		return false;
 	}
+	if (!isIpv4(proxy.ip)) {
+		await backoff(db, row.id, now + 30 * 60_000, "ip_not_ipv4");
+		if (!row.ip_invalid_alerted) {
+			await db
+				.prepare(
+					"UPDATE claude_env_subscriptions SET ip_invalid_alerted = 1 WHERE id = ?",
+				)
+				.bind(row.id)
+				.run();
+			const { text } = await subscriptionLabel(db, row.id);
+			await say(
+				context,
+				`⚠️ IPRoyal 返回的 IP 不是 IPv4（${String(proxy.ip).slice(0, 64)}），没有分配给客户。请到 IPRoyal 后台核对。\n${text}`,
+			);
+		}
+		return false;
+	}
 	const cityName = row.iproyal_location ?? proxy.location;
-	const tz =
+	const tz = canonicalTimezone(
 		(await lookupTimezone(proxy.ip, context.fetcher)) ??
-		timezoneForCity(cityName);
+			timezoneForCity(cityName),
+	);
+	// The customer's paid period follows IPRoyal's real expire_date (it starts
+	// at purchase; quality checks take minutes, at most about a day).
 	await db.batch([
 		db
 			.prepare(
 				`UPDATE claude_env_subscriptions SET status = 'provisioning', ip = ?, ip_port = ?, ip_city = ?, ip_tz = ?,
-				 ip_user_encrypted = ?, ip_pass_encrypted = ?, relay_check_ok = 0, relay_check_fail_streak = 0,
+				 ip_user_encrypted = ?, ip_pass_encrypted = ?, relay_check_ok = 0, relay_check_fail_streak = 0, apply_fail_streak = 0,
+				 expires_at = COALESCE(?, expires_at), iproyal_expires_at = COALESCE(?, iproyal_expires_at),
+				 expire_sync_needed = ?, expire_checked_at = ?,
 				 attempt_after = 0, last_error = NULL, updated_at = ? WHERE id = ? AND status = 'awaiting_ip'`,
 			)
 			.bind(
@@ -670,6 +872,10 @@ async function pollOrder(context: Context, row: AwaitingRow) {
 				tz,
 				await context.crypt.encrypt(proxy.username, secretPurpose.upstreamUser),
 				await context.crypt.encrypt(proxy.password, secretPurpose.upstreamPass),
+				order.expiresAt,
+				order.expiresAt,
+				order.expiresAt === null ? 1 : 0,
+				now,
 				now,
 				row.id,
 			),
@@ -690,18 +896,26 @@ export async function activateSubscriptions(context: Context) {
 	const { db, now } = context;
 	const rows = await db
 		.prepare(
-			`SELECT id, ip, pending_days FROM claude_env_subscriptions
+			`SELECT id, ip, pending_days, expires_at, relay_scam_score FROM claude_env_subscriptions
 			 WHERE status = 'provisioning' AND relay_check_ok = 1 AND ip IS NOT NULL AND attempt_after <= ?
 			 ORDER BY updated_at LIMIT ?`,
 		)
 		.bind(now, perTick)
-		.all<{ id: string; ip: string; pending_days: number }>();
+		.all<{
+			id: string;
+			ip: string;
+			pending_days: number;
+			expires_at: number | null;
+			relay_scam_score: number | null;
+		}>();
 	let activated = 0;
 	let rejected = 0;
 	for (const row of rows.results) {
+		// scamalytics usually blocks Cloudflare Workers: prefer the score the
+		// relay measured, fall back to our own fetch, else warn only.
 		const [trustScore, scamScore] = await Promise.all([
 			lookupTrustScore(row.ip, context.fetcher),
-			lookupScamScore(row.ip, context.fetcher),
+			row.relay_scam_score ?? lookupScamScore(row.ip, context.fetcher),
 		]);
 		const quality = evaluateQuality({ trustScore, scamScore });
 		const note = [...quality.fails, ...quality.warns].join("；") || null;
@@ -717,17 +931,19 @@ export async function activateSubscriptions(context: Context) {
 				eventStatement(db, row.id, "needs_replace", reason, now),
 			]);
 			const { text } = await subscriptionLabel(db, row.id);
-			await context
-				.deliver(needsReplaceAlert(text, reason))
-				.catch(() => undefined);
+			await say(context, needsReplaceAlert(text, reason));
 			rejected += 1;
 			continue;
 		}
-		const expiresAt = now + Math.max(0, row.pending_days) * dayMs;
+		// expires_at normally already holds IPRoyal's expire_date; the
+		// pending-days fallback only applies when it could not be read.
+		const expiresAt =
+			row.expires_at ?? now + Math.max(0, row.pending_days) * dayMs;
 		const result = await db.batch([
 			db
 				.prepare(
 					`UPDATE claude_env_subscriptions SET status = 'active', activated_at = ?, expires_at = ?, pending_days = 0,
+					 expire_sync_needed = CASE WHEN ? THEN 1 ELSE expire_sync_needed END,
 					 traffic_period_start = ?, traffic_period_bytes = 0, qc_trust_score = ?, qc_scam_score = ?, qc_note = ?, qc_at = ?,
 					 exit_fail_streak = 0, patrol_alerted = 0, needs_replace_reason = NULL, updated_at = ?
 					 WHERE id = ? AND status = 'provisioning' AND relay_check_ok = 1`,
@@ -735,6 +951,7 @@ export async function activateSubscriptions(context: Context) {
 				.bind(
 					now,
 					expiresAt,
+					row.expires_at === null ? 1 : 0,
 					now,
 					trustScore,
 					scamScore,
@@ -748,24 +965,69 @@ export async function activateSubscriptions(context: Context) {
 		if (Number(result[0]?.meta.changes ?? 0) !== 1) continue;
 		activated += 1;
 		const label = await subscriptionLabel(db, row.id);
-		await context
-			.deliver(
-				[
-					"✅ Claude 专属环境已开通（质检通过，已通知客户）",
-					label.row
-						? formatLabel({ ...label.row, iproyal_order_id: null })
-						: label.text,
-					`城市 ${displayCity(label.row?.ip_city) ?? "?"}｜到期 ${beijing(expiresAt)}（北京时间）`,
-					`信任分 ${trustScore ?? "查不到"}｜scamalytics ${scamScore ?? "查不到"}`,
-				].join("\n"),
-			)
-			.catch(() => undefined);
+		await say(
+			context,
+			[
+				"✅ Claude 专属环境已开通（质检通过，已通知客户）",
+				label.row
+					? formatLabel({ ...label.row, iproyal_order_id: null })
+					: label.text,
+				`城市 ${displayCity(label.row?.ip_city) ?? "?"}｜到期 ${beijing(expiresAt)}（北京时间，跟 IPRoyal 到期一致）`,
+				`信任分 ${trustScore ?? "查不到"}｜scamalytics ${scamScore ?? "查不到"}`,
+			].join("\n"),
+		);
 		await context.sendCustomerEmail(row.id).catch(() => undefined);
 	}
 	return { activated, rejected };
 }
 
 // ---------- 5. IPRoyal extensions (renewals, multi-unit first orders) ----------
+
+/** Re-reads IPRoyal's expire_date and makes it the subscription's expiry. */
+async function refreshExpiry(
+	context: Context,
+	subscriptionId: string,
+	orderId: string,
+) {
+	const { db, now } = context;
+	let expiresAt: number | null = null;
+	try {
+		expiresAt = (await (context.iproyal as IproyalClient).getOrder(orderId))
+			.expiresAt;
+	} catch {
+		expiresAt = null;
+	}
+	if (expiresAt === null) {
+		await db
+			.prepare(
+				"UPDATE claude_env_subscriptions SET expire_sync_needed = 1, expire_checked_at = ? WHERE id = ?",
+			)
+			.bind(now, subscriptionId)
+			.run();
+		return null;
+	}
+	await db
+		.prepare(
+			`UPDATE claude_env_subscriptions SET expires_at = ?, iproyal_expires_at = ?, expire_sync_needed = 0, expire_checked_at = ?,
+			 status = CASE WHEN status = 'grace' AND ? > ? THEN 'active' ELSE status END,
+			 status_before_suspend = CASE WHEN status_before_suspend = 'grace' AND ? > ? THEN 'active' ELSE status_before_suspend END,
+			 updated_at = ? WHERE id = ? AND iproyal_order_id = ?`,
+		)
+		.bind(
+			expiresAt,
+			expiresAt,
+			now,
+			expiresAt,
+			now,
+			expiresAt,
+			now,
+			now,
+			subscriptionId,
+			orderId,
+		)
+		.run();
+	return expiresAt;
+}
 
 export async function extendPeriods(context: Context) {
 	const { db, now } = context;
@@ -775,7 +1037,7 @@ export async function extendPeriods(context: Context) {
 			`SELECT p.order_item_id, p.subscription_id, p.units, p.units_extended, p.iproyal_plan_id, p.days,
 			 s.iproyal_order_id FROM claude_env_periods p JOIN claude_env_subscriptions s ON s.id = p.subscription_id
 			 WHERE p.extend_status = 'pending' AND s.iproyal_order_state = 'ordered' AND s.iproyal_order_id IS NOT NULL
-			 AND s.ip IS NOT NULL AND s.status NOT IN ('expired','cancelled')
+			 AND s.ip IS NOT NULL AND s.status NOT IN ('expired','cancelled','needs_replace')
 			 ORDER BY p.created_at LIMIT ?`,
 		)
 		.bind(perTick)
@@ -792,9 +1054,9 @@ export async function extendPeriods(context: Context) {
 	for (const row of rows.results) {
 		const claim = await db
 			.prepare(
-				"UPDATE claude_env_periods SET extend_status = 'extending', updated_at = ? WHERE order_item_id = ? AND extend_status = 'pending'",
+				"UPDATE claude_env_periods SET extend_status = 'extending', extending_at = ?, stale_alerted = 0, updated_at = ? WHERE order_item_id = ? AND extend_status = 'pending'",
 			)
-			.bind(now, row.order_item_id)
+			.bind(now, now, row.order_item_id)
 			.run();
 		if (Number(claim.meta.changes ?? 0) !== 1) continue;
 		try {
@@ -803,38 +1065,64 @@ export async function extendPeriods(context: Context) {
 				row.iproyal_plan_id,
 			);
 		} catch (error) {
+			const definite = error instanceof IproyalError && error.definite;
+			const { text } = await subscriptionLabel(db, row.subscription_id);
+			if (definite) {
+				// 4xx: nothing was extended; retrying later is safe.
+				await db.batch([
+					db
+						.prepare(
+							"UPDATE claude_env_periods SET extend_status = 'failed', note = ?, updated_at = ? WHERE order_item_id = ?",
+						)
+						.bind(errorCode(error), now, row.order_item_id),
+					eventStatement(
+						db,
+						row.subscription_id,
+						"extend_failed",
+						errorCode(error),
+						now,
+					),
+				]);
+				await say(
+					context,
+					[
+						`⚠️ IPRoyal 续期被拒（${errorCode(error)}），没有扣费`,
+						text,
+						`如果是余额不足，充值后在后台「Claude 专属环境」点「重试续期」；或到 IPRoyal 后台给订单 ${row.iproyal_order_id} 手动续期${row.iproyal_plan_id === 25 ? " 90" : " 30"} 天（续费不换 IP）后点「已手动续期」。`,
+					].join("\n"),
+				);
+				continue;
+			}
+			// Unknown outcome: stay in `extending`; retry only after a manual check.
 			await db.batch([
 				db
 					.prepare(
-						"UPDATE claude_env_periods SET extend_status = 'failed', note = ?, updated_at = ? WHERE order_item_id = ?",
+						"UPDATE claude_env_periods SET stale_alerted = 1, note = ?, updated_at = ? WHERE order_item_id = ?",
 					)
 					.bind(errorCode(error), now, row.order_item_id),
 				eventStatement(
 					db,
 					row.subscription_id,
-					"extend_failed",
+					"extend_unknown",
 					errorCode(error),
 					now,
 				),
 			]);
-			const { text } = await subscriptionLabel(db, row.subscription_id);
-			const definite = error instanceof IproyalError && error.definite;
-			await context
-				.deliver(
-					[
-						`⚠️ IPRoyal 续期${definite ? "被拒" : "结果不明"}（${errorCode(error)}）`,
-						text,
-						`请到 IPRoyal 后台给订单 ${row.iproyal_order_id} 手动续期${row.iproyal_plan_id === 25 ? " 90" : " 30"} 天（续费不换 IP），然后在后台「Claude 专属环境」点「已手动续期」。${definite ? "如果是余额不足，充值后点「重试续期」即可。" : ""}`,
-					].join("\n"),
-				)
-				.catch(() => undefined);
+			await say(
+				context,
+				[
+					`⚠️ IPRoyal 续期结果不明（${errorCode(error)}），系统不会自动重试`,
+					text,
+					`${extendUnknownHint}（订单 ${row.iproyal_order_id}；5 分钟后「重试续期」按钮才可用）`,
+				].join("\n"),
+			);
 			continue;
 		}
 		const done = row.units_extended + 1 >= row.units;
 		await db.batch([
 			db
 				.prepare(
-					"UPDATE claude_env_periods SET units_extended = units_extended + 1, extend_status = ?, note = NULL, updated_at = ? WHERE order_item_id = ?",
+					"UPDATE claude_env_periods SET units_extended = units_extended + 1, extend_status = ?, extending_at = NULL, note = NULL, updated_at = ? WHERE order_item_id = ?",
 				)
 				.bind(done ? "done" : "pending", now, row.order_item_id),
 			eventStatement(
@@ -846,30 +1134,111 @@ export async function extendPeriods(context: Context) {
 			),
 		]);
 		extended += 1;
+		const expiresAt = await refreshExpiry(
+			context,
+			row.subscription_id,
+			row.iproyal_order_id,
+		);
+		if (done)
+			await say(
+				context,
+				`✅ IPRoyal 已续期：订单 ${row.iproyal_order_id}，新到期 ${expiresAt ? `${beijing(expiresAt)}（北京时间）` : "稍后同步"}，IP 不变。`,
+			);
 	}
 	return { extended };
+}
+
+/** An `extending` claim older than 5 minutes (worker died mid-call) is reported once. */
+export async function alertStaleExtending(context: Context) {
+	const { db, now } = context;
+	const rows = await db
+		.prepare(
+			`SELECT p.order_item_id, p.subscription_id, s.iproyal_order_id FROM claude_env_periods p
+			 LEFT JOIN claude_env_subscriptions s ON s.id = p.subscription_id
+			 WHERE p.extend_status = 'extending' AND p.stale_alerted = 0 AND COALESCE(p.extending_at, 0) < ? LIMIT 20`,
+		)
+		.bind(now - staleClaimMs)
+		.all<{
+			order_item_id: string;
+			subscription_id: string;
+			iproyal_order_id: string | null;
+		}>();
+	for (const row of rows.results) {
+		const claimed = await db
+			.prepare(
+				"UPDATE claude_env_periods SET stale_alerted = 1, updated_at = ? WHERE order_item_id = ? AND stale_alerted = 0",
+			)
+			.bind(now, row.order_item_id)
+			.run();
+		if (Number(claimed.meta.changes ?? 0) !== 1) continue;
+		const { text } = await subscriptionLabel(db, row.subscription_id);
+		await say(
+			context,
+			`⚠️ IPRoyal 续期结果不明（超过 5 分钟没有结果，订单 ${row.iproyal_order_id ?? "?"}）\n${text}\n${extendUnknownHint}`,
+		);
+	}
+	return rows.results.length;
+}
+
+/** Retries expire_date reads that failed, and refreshes subscriptions about to expire. */
+export async function syncExpiry(context: Context) {
+	const { db, now } = context;
+	if (!context.iproyal) return 0;
+	const rows = await db
+		.prepare(
+			`SELECT id, iproyal_order_id FROM claude_env_subscriptions
+			 WHERE iproyal_order_state = 'ordered' AND iproyal_order_id IS NOT NULL AND ip IS NOT NULL
+			 AND status IN ('provisioning','active','grace','suspended','needs_replace')
+			 AND (expire_sync_needed = 1 OR (expires_at IS NOT NULL AND expires_at <= ?))
+			 AND COALESCE(expire_checked_at, 0) < ?
+			 ORDER BY expires_at LIMIT ?`,
+		)
+		.bind(now + hourMs, now - 30 * 60_000, perTick)
+		.all<{ id: string; iproyal_order_id: string }>();
+	for (const row of rows.results)
+		await refreshExpiry(context, row.id, row.iproyal_order_id);
+	return rows.results.length;
 }
 
 // ---------- 6. expiry ----------
 
 export async function expireSubscriptions(context: Context) {
 	const { db, now } = context;
-	const [grace, expired] = await db.batch([
-		db
+	const grace = await db
+		.prepare(
+			"UPDATE claude_env_subscriptions SET status = 'grace', updated_at = ? WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?",
+		)
+		.bind(now, now)
+		.run();
+	// Grace ends after 3 days, or at once when IPRoyal's own expiry has passed
+	// (the IP is gone then; there is nothing left to keep).
+	const ending = await db
+		.prepare(
+			`SELECT id, iproyal_expires_at FROM claude_env_subscriptions WHERE status = 'grace' AND expires_at IS NOT NULL
+			 AND (expires_at + ? <= ? OR (iproyal_expires_at IS NOT NULL AND iproyal_expires_at <= ?)) LIMIT 50`,
+		)
+		.bind(graceMs, now, now)
+		.all<{ id: string; iproyal_expires_at: number | null }>();
+	let expired = 0;
+	for (const row of ending.results) {
+		const result = await db
 			.prepare(
-				"UPDATE claude_env_subscriptions SET status = 'grace', updated_at = ? WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?",
+				"UPDATE claude_env_subscriptions SET status = 'expired', expired_at = ?, updated_at = ? WHERE id = ? AND status = 'grace'",
 			)
-			.bind(now, now),
-		db
-			.prepare(
-				"UPDATE claude_env_subscriptions SET status = 'expired', updated_at = ? WHERE status = 'grace' AND expires_at IS NOT NULL AND expires_at + ? <= ?",
-			)
-			.bind(now, graceMs, now),
-	]);
-	return {
-		grace: Number(grace?.meta.changes ?? 0),
-		expired: Number(expired?.meta.changes ?? 0),
-	};
+			.bind(now, now, row.id)
+			.run();
+		if (Number(result.meta.changes ?? 0) !== 1) continue;
+		expired += 1;
+		await eventStatement(db, row.id, "expired", null, now).run();
+		if (row.iproyal_expires_at !== null && row.iproyal_expires_at <= now) {
+			const { text } = await subscriptionLabel(db, row.id);
+			await say(
+				context,
+				`ℹ️ Claude 专属环境已到期停用：IPRoyal 订单也已到期，IP 已失效。客户之后再买会分配新 IP。\n${text}`,
+			);
+		}
+	}
+	return { grace: Number(grace.meta.changes ?? 0), expired };
 }
 
 // ---------- 7. relay heartbeat ----------
@@ -893,11 +1262,10 @@ export async function alertOfflineRelays(context: Context) {
 			)
 			.bind(now, row.id)
 			.run();
-		await context
-			.deliver(
-				`⚠️ 中转机 ${row.id} 已经 5 分钟以上没有上报（最近一次：${row.last_report_at ? `${beijing(row.last_report_at)} 北京时间` : "从未"}）。客户可能断线，请检查中转机和 ce-relay 服务。`,
-			)
-			.catch(() => undefined);
+		await say(
+			context,
+			`⚠️ 中转机 ${row.id} 已经 5 分钟以上没有上报（最近一次：${row.last_report_at ? `${beijing(row.last_report_at)} 北京时间` : "从未"}）。客户可能断线，请检查中转机和 ce-relay 服务。`,
+		);
 	}
 	return rows.results.length;
 }

@@ -67,7 +67,13 @@ export const claudeEnvSubscriptions = sqliteTable(
 			enum: ["posting", "ordered", "unknown"],
 		}),
 		iproyalOrderId: text("iproyal_order_id"),
+		iproyalPostingAt: integer("iproyal_posting_at"),
+		orderUnknownAlerted: integer("order_unknown_alerted").notNull().default(0),
 		iproyalLocation: text("iproyal_location"),
+		iproyalExpiresAt: integer("iproyal_expires_at"),
+		expireSyncNeeded: integer("expire_sync_needed").notNull().default(0),
+		expireCheckedAt: integer("expire_checked_at"),
+		ipInvalidAlerted: integer("ip_invalid_alerted").notNull().default(0),
 		ip: text("ip"),
 		ipPort: integer("ip_port"),
 		ipCity: text("ip_city"),
@@ -77,6 +83,7 @@ export const claudeEnvSubscriptions = sqliteTable(
 		pendingDays: integer("pending_days").notNull().default(0),
 		activatedAt: integer("activated_at"),
 		expiresAt: integer("expires_at"),
+		expiredAt: integer("expired_at"),
 		trafficPeriodStart: integer("traffic_period_start"),
 		trafficPeriodBytes: integer("traffic_period_bytes").notNull().default(0),
 		trafficTotalBytes: integer("traffic_total_bytes").notNull().default(0),
@@ -87,6 +94,7 @@ export const claudeEnvSubscriptions = sqliteTable(
 		relayCheckFailStreak: integer("relay_check_fail_streak")
 			.notNull()
 			.default(0),
+		applyFailStreak: integer("apply_fail_streak").notNull().default(0),
 		lastCheckAt: integer("last_check_at"),
 		lastExitOk: integer("last_exit_ok"),
 		lastExitIp: text("last_exit_ip"),
@@ -94,6 +102,7 @@ export const claudeEnvSubscriptions = sqliteTable(
 		lastApplyError: text("last_apply_error"),
 		exitFailStreak: integer("exit_fail_streak").notNull().default(0),
 		patrolAlerted: integer("patrol_alerted").notNull().default(0),
+		relayScamScore: integer("relay_scam_score"),
 		qcTrustScore: real("qc_trust_score"),
 		qcScamScore: integer("qc_scam_score"),
 		qcNote: text("qc_note"),
@@ -129,17 +138,24 @@ export const claudeEnvPeriods = sqliteTable(
 		subscriptionId: text("subscription_id").references(
 			() => claudeEnvSubscriptions.id,
 		),
-		kind: text("kind", { enum: ["initial", "renewal", "skipped"] }).notNull(),
+		kind: text("kind", {
+			enum: ["initial", "renewal", "skipped", "waiting"],
+		}).notNull(),
 		plan: text("plan"),
 		days: integer("days").notNull().default(0),
 		units: integer("units").notNull().default(0),
 		iproyalPlanId: integer("iproyal_plan_id"),
 		unitsExtended: integer("units_extended").notNull().default(0),
 		extendStatus: text("extend_status", {
-			enum: ["none", "pending", "extending", "done", "failed"],
+			enum: ["none", "pending", "extending", "done", "failed", "cancelled"],
 		})
 			.notNull()
 			.default("none"),
+		extendingAt: integer("extending_at"),
+		staleAlerted: integer("stale_alerted").notNull().default(0),
+		refundHandled: integer("refund_handled").notNull().default(0),
+		remindCount: integer("remind_count").notNull().default(0),
+		nextRemindAt: integer("next_remind_at"),
 		note: text("note"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
@@ -149,6 +165,7 @@ export const claudeEnvPeriods = sqliteTable(
 			table.extendStatus,
 			table.subscriptionId,
 		),
+		index("claude_env_periods_kind_idx").on(table.kind, table.orderId),
 	],
 );
 

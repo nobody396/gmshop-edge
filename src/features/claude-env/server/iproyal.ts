@@ -1,4 +1,8 @@
-import { iproyalIspProductId, iproyalNewIpQuestionId } from "../domain";
+import {
+	iproyalIspProductId,
+	iproyalNewIpQuestionId,
+	parseIproyalDate,
+} from "../domain";
 
 /**
  * Minimal IPRoyal reseller REST client (https://apid.iproyal.com/v1/reseller,
@@ -112,10 +116,15 @@ export function createIproyalClient(token: string, fetcher: typeof fetch) {
 				throw new IproyalError("iproyal_order_id_missing", 200, false);
 			return String(id);
 		},
-		async getOrder(orderId: string) {
-			return parseOrderProxy(
-				await call("GET", `/orders/${encodeURIComponent(orderId)}`),
-			);
+		/** proxy = null until the IP is assigned; expiresAt = parsed `expire_date`. */
+		async getOrder(orderId: string): Promise<IproyalOrder> {
+			const order = await call("GET", `/orders/${encodeURIComponent(orderId)}`);
+			return {
+				proxy: parseOrderProxy(order),
+				expiresAt: parseIproyalDate(
+					(order as { expire_date?: unknown } | null)?.expire_date,
+				),
+			};
 		},
 		/**
 		 * POST /orders/{id}/extend {product_plan_id, proxies: []} — documented
@@ -129,6 +138,11 @@ export function createIproyalClient(token: string, fetcher: typeof fetch) {
 		},
 	};
 }
+
+export type IproyalOrder = {
+	proxy: IproyalProxy | null;
+	expiresAt: number | null;
+};
 
 export type IproyalProxy = {
 	ip: string;

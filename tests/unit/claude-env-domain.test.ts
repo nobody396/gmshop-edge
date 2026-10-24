@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	canonicalTimezone,
 	customerCommands,
 	dayMs,
 	decodeActivationCode,
@@ -11,6 +12,8 @@ import {
 	generateRelayUser,
 	generateSubscriptionId,
 	isIanaTimezone,
+	isIpv4,
+	parseIproyalDate,
 	parseScamalyticsScore,
 	pickIproyalCity,
 	pickRelayPort,
@@ -250,5 +253,41 @@ describe("dates", () => {
 		expect(trafficPeriodStart(now, now + 29 * dayMs)).toBe(now);
 		expect(trafficPeriodStart(now, now + 30 * dayMs)).toBe(now + 30 * dayMs);
 		expect(trafficPeriodStart(now, now + 61 * dayMs)).toBe(now + 60 * dayMs);
+	});
+});
+
+describe("review additions", () => {
+	it("folds US zone aliases onto the 7 canonical zones the Windows script maps", () => {
+		expect(canonicalTimezone("America/Indiana/Indianapolis")).toBe(
+			"America/New_York",
+		);
+		expect(canonicalTimezone("America/Detroit")).toBe("America/New_York");
+		expect(canonicalTimezone("America/Kentucky/Louisville")).toBe(
+			"America/New_York",
+		);
+		expect(canonicalTimezone("America/Indiana/Knox")).toBe("America/Chicago");
+		expect(canonicalTimezone("America/North_Dakota/Center")).toBe(
+			"America/Chicago",
+		);
+		expect(canonicalTimezone("America/Menominee")).toBe("America/Chicago");
+		expect(canonicalTimezone("America/Boise")).toBe("America/Denver");
+		expect(canonicalTimezone("US/Arizona")).toBe("America/Phoenix");
+		expect(canonicalTimezone("America/Juneau")).toBe("America/Anchorage");
+		expect(canonicalTimezone("US/Hawaii")).toBe("Pacific/Honolulu");
+		expect(canonicalTimezone("America/Los_Angeles")).toBe(
+			"America/Los_Angeles",
+		);
+		expect(canonicalTimezone("Asia/Singapore")).toBe("Asia/Singapore");
+	});
+
+	it("validates IPv4 and parses IPRoyal dates as UTC", () => {
+		expect(isIpv4("161.77.8.204")).toBe(true);
+		expect(isIpv4("256.1.1.1")).toBe(false);
+		expect(isIpv4("2001:db8::1")).toBe(false);
+		expect(parseIproyalDate("2024-04-20 10:25:12")).toBe(
+			Date.parse("2024-04-20T10:25:12Z"),
+		);
+		expect(parseIproyalDate("soon")).toBeNull();
+		expect(parseIproyalDate(null)).toBeNull();
 	});
 });
