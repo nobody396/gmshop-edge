@@ -13,6 +13,7 @@ const publicGetPatterns = [
 	new RegExp(`^/api/support/web/attachments/${uuidSegment}$`, "i"),
 	supplierApiPattern,
 	/^\/api\/ops\/restock$/,
+	/^\/api\/claude-env\/relay\/v1\/desired$/,
 	/^\/api\/ops\/redeem-cutover$/,
 	/^\/api\/ops\/attribution$/,
 	/^\/api\/ops\/guides$/,
@@ -26,6 +27,7 @@ const publicGetPatterns = [
 ];
 const publicPostPatterns = [
 	/^\/api\/internal\/agent-program\/order-profit$/,
+	/^\/api\/claude-env\/relay\/v1\/report$/,
 	/^\/api\/support\/web\/attachments\/?$/,
 	/^\/api\/shop\/invoice-order$/,
 	/^\/api\/shop\/renewal\/unsubscribe$/,

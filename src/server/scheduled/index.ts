@@ -2,6 +2,7 @@ import { reconcileAgentAccess } from "#/features/agent-access/server/fulfillment
 import { runWithdrawalAlerts } from "#/features/agent-program/server/withdrawal-alerts";
 import { publishAuthSecurityAlert } from "#/features/auth/server/security-alerts";
 import { publishPendingBuilds } from "#/features/builds/server/outbox";
+import { runClaudeEnv } from "#/features/claude-env/server/scheduler";
 import { runCustomerPriceGuard } from "#/features/customer-pricing/server/telegram";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
 import { publishPendingNotifications } from "#/features/notifications/server/delivery";
@@ -150,7 +151,14 @@ export async function runScheduledCommerceWork(
 		token: env.AGENT_SHOP_PROGRAM_TOKEN,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	// Claude 专属环境 control center: idle unless claude_env.automation_enabled.
+	const claudeEnv = await runClaudeEnv({
+		db: env.DB,
+		iproyalToken: env.IPROYAL_API_TOKEN,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	return {
+		claudeEnv,
 		balanceGuard,
 		procurementAlerts,
 		pricingGuard,

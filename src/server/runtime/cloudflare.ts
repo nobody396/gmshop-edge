@@ -10,6 +10,7 @@ export type CloudflareBindings = {
 	COMMERCE_QUEUE?: Queue;
 	EMAIL?: SendEmail;
 	RESTOCK_API_TOKEN?: string;
+	IPROYAL_API_TOKEN?: string;
 	INVOICE_LOOKUP_TOKEN?: string;
 	GMSHOP_EDGEONE_ORIGIN_VERIFY?: string;
 	INDEXNOW_KEY?: string;
@@ -33,6 +34,7 @@ export function adaptCloudflareEnv(
 		COMMERCE_QUEUE: bindings.COMMERCE_QUEUE as RuntimeEnv["COMMERCE_QUEUE"],
 		EMAIL: bindings.EMAIL,
 		RESTOCK_API_TOKEN: bindings.RESTOCK_API_TOKEN,
+		IPROYAL_API_TOKEN: bindings.IPROYAL_API_TOKEN,
 		INVOICE_LOOKUP_TOKEN: bindings.INVOICE_LOOKUP_TOKEN,
 		GMSHOP_EDGEONE_ORIGIN_VERIFY: bindings.GMSHOP_EDGEONE_ORIGIN_VERIFY,
 		INDEXNOW_KEY: bindings.INDEXNOW_KEY,

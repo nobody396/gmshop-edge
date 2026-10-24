@@ -1,6 +1,7 @@
 export * from "./access";
 export * from "./agent-access";
 export * from "./auth";
+export * from "./claude-env";
 export * from "./commerce";
 export * from "./content";
 export * from "./pricing";
