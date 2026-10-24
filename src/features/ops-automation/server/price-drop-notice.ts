@@ -265,9 +265,10 @@ export async function runPriceDropNotices(input: {
 			: []),
 	];
 	if (lines.length)
-		await sendOwnerAlert(db, lines.join("\n"), { fetcher }).catch(
-			() => undefined,
-		);
+		await sendOwnerAlert(db, lines.join("\n"), {
+			fetcher,
+			topic: "restock",
+		}).catch(() => undefined);
 	return {
 		status: "ran" as const,
 		posted: posted.length,

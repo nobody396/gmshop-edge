@@ -257,6 +257,7 @@ export async function runBalanceGuard(input: {
 		input.deliver,
 		"ops-balance",
 		now,
+		"restock",
 	);
 	try {
 		await deliver(formatBalanceAlert(risks, day));

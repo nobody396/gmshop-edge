@@ -182,6 +182,70 @@ describe("owner alert routing", () => {
 		expect(settings.lastSentAt).toEqual(expect.any(Number));
 	});
 
+	it("posts into the mapped forum topic and leaves General unthreaded", async () => {
+		await configureTelegram(true);
+		await db
+			.prepare(
+				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+				 VALUES (?, ?, 0, 1, 1)`,
+			)
+			.bind(
+				telegramOwnerAlertSettingKeys.topics,
+				JSON.stringify({ orders: 5, withdrawals: 6, restock: "x", extra: 9 }),
+			)
+			.run();
+		const { calls, fetcher } = fakeFetch();
+		await sendOwnerAlert(db, "sale", { fetcher, topic: "orders" });
+		await sendOwnerAlert(db, "withdraw", { fetcher, topic: "withdrawals" });
+		await sendOwnerAlert(db, "invalid id", { fetcher, topic: "restock" });
+		await sendOwnerAlert(db, "general", { fetcher, topic: "general" });
+		await sendOwnerAlert(db, "none", { fetcher });
+		expect(calls.map((call) => call.body.message_thread_id)).toEqual([
+			5,
+			6,
+			undefined,
+			undefined,
+			undefined,
+		]);
+		expect(calls[0]?.body).toMatchObject({ chat_id: chatId, text: "sale" });
+	});
+
+	it("puts every split part into the topic and ignores topics on Feishu", async () => {
+		await configureTelegram(true);
+		await db
+			.prepare(
+				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+				 VALUES (?, ?, 0, 1, 1)`,
+			)
+			.bind(
+				telegramOwnerAlertSettingKeys.topics,
+				JSON.stringify({ restock: 7 }),
+			)
+			.run();
+		const long = `${"a".repeat(telegramMessageLimit - 10)}\n${"b".repeat(100)}`;
+		const { calls, fetcher } = fakeFetch();
+		await sendOwnerAlert(db, long, { fetcher, topic: "restock" });
+		expect(calls).toHaveLength(2);
+		expect(calls.map((call) => call.body.message_thread_id)).toEqual([7, 7]);
+	});
+
+	it.each([
+		["not json", "oops"],
+		["array", JSON.stringify([1, 2])],
+		["bad ids", JSON.stringify({ orders: 0, withdrawals: -1, restock: 1.5 })],
+	])("treats %s topics as no thread", async (_name, value) => {
+		await configureTelegram(true);
+		await db
+			.prepare(
+				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+				 VALUES (?, ?, 0, 1, 1)`,
+			)
+			.bind(telegramOwnerAlertSettingKeys.topics, value)
+			.run();
+		const credentials = await resolveTelegramOwnerAlertCredentials(db);
+		expect(credentials?.topics).toEqual({});
+	});
+
 	it("fails instead of falling back to Feishu when enabled Telegram is incomplete", async () => {
 		await configureFeishu();
 		await configureTelegram(true, false);
@@ -282,7 +346,7 @@ describe("owner alert routing", () => {
 		expect(row?.is_secret).toBe(1);
 		expect(row?.value).not.toContain(botToken);
 		const credentials = await resolveTelegramOwnerAlertCredentials(db);
-		expect(credentials).toEqual({ botToken, chatId });
+		expect(credentials).toEqual({ botToken, chatId, topics: {} });
 		const { calls, fetcher } = fakeFetch(() =>
 			Response.json({
 				ok: true,

@@ -98,6 +98,7 @@ export async function runProcurementAlerts(input: {
 		input.deliver,
 		`ops-procurement-${after}`,
 		now,
+		"restock",
 	);
 	await deliver(
 		data.alerts

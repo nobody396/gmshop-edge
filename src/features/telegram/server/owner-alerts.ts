@@ -22,6 +22,8 @@ export const telegramOwnerAlertSettingKeys = {
 	enabled: "telegram.owner_alerts.enabled",
 	botToken: "telegram.owner_alerts.bot_token",
 	chatId: "telegram.owner_alerts.chat_id",
+	/** JSON object: topic name -> forum `message_thread_id`. */
+	topics: "telegram.owner_alerts.topics",
 	lastSentAt: "telegram.owner_alerts.last_sent_at",
 	lastErrorCode: "telegram.owner_alerts.last_error_code",
 	/** Bot token + origin digest of the registered button webhook. */
@@ -36,6 +38,14 @@ export const telegramOwnerAlertSettingsInputSchema = z.object({
 	enabled: z.boolean(),
 	botToken: z.string().trim().regex(botTokenPattern).optional(),
 	chatId: z.string().trim().regex(chatIdPattern).nullable(),
+	/** Omitted keeps the stored topics; `{}` clears them. */
+	topics: z
+		.object({
+			orders: z.number().int().positive().optional(),
+			withdrawals: z.number().int().positive().optional(),
+			restock: z.number().int().positive().optional(),
+		})
+		.optional(),
 });
 
 export const telegramMessageLimit = 4_096;
@@ -55,10 +65,44 @@ const chatSchema = z.object({
 });
 
 type Fetcher = typeof fetch;
+/** Forum topics of the owner supergroup; `general` has no thread id. */
+export type OwnerAlertTopic = "orders" | "withdrawals" | "restock" | "general";
+export type TelegramOwnerAlertTopics = Partial<
+	Record<Exclude<OwnerAlertTopic, "general">, number>
+>;
 export type TelegramOwnerAlertCredentials = {
 	botToken: string;
 	chatId: string;
+	/** Optional: absent or empty means every alert goes to General. */
+	topics?: TelegramOwnerAlertTopics;
 };
+
+const topicNames = ["orders", "withdrawals", "restock"] as const;
+
+/** Defensive parse: only positive safe integers survive. */
+export function parseTelegramOwnerAlertTopics(
+	value: unknown,
+): TelegramOwnerAlertTopics {
+	let source = value;
+	if (typeof source === "string") source = parse(source);
+	if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+	const topics: TelegramOwnerAlertTopics = {};
+	for (const name of topicNames) {
+		const id = (source as Record<string, unknown>)[name];
+		if (typeof id === "number" && Number.isSafeInteger(id) && id > 0)
+			topics[name] = id;
+	}
+	return topics;
+}
+
+/** The `message_thread_id` for a topic, or `undefined` (General). */
+export function ownerAlertThreadId(
+	credentials: Pick<TelegramOwnerAlertCredentials, "topics">,
+	topic: OwnerAlertTopic | undefined,
+) {
+	if (!topic || topic === "general") return undefined;
+	return credentials.topics?.[topic];
+}
 export type OwnerAlertChannel = "telegram" | "feishu";
 
 /** Structured, token-free error: the message is only the code. */
@@ -113,6 +157,9 @@ export async function resolveTelegramOwnerAlertCredentials(
 	try {
 		return {
 			chatId,
+			topics: parseTelegramOwnerAlertTopics(
+				values.get(telegramOwnerAlertSettingKeys.topics),
+			),
 			botToken: await decryptSecret(
 				encrypted,
 				runtime.integrationConfigSecret,
@@ -199,7 +246,9 @@ export async function sendTelegramOwnerAlertText(
 	credentials: TelegramOwnerAlertCredentials,
 	text: string,
 	request: Fetcher = fetch,
+	topic?: OwnerAlertTopic,
 ) {
+	const threadId = ownerAlertThreadId(credentials, topic);
 	const parts = splitTelegramText(text);
 	if (parts.length === 0)
 		throw new OwnerAlertError("telegram_alert_empty_message");
@@ -209,6 +258,7 @@ export async function sendTelegramOwnerAlertText(
 			"sendMessage",
 			{
 				chat_id: credentials.chatId,
+				...(threadId ? { message_thread_id: threadId } : {}),
 				text: part,
 				link_preview_options: { is_disabled: true },
 			},
@@ -286,6 +336,8 @@ export type OwnerAlertOptions = {
 	requireFeishuEnabled?: boolean;
 	/** Persist last sent / last error for the channel used. Default true. */
 	record?: boolean;
+	/** Telegram forum topic; `general`/unmapped goes to General. Feishu ignores it. */
+	topic?: OwnerAlertTopic;
 };
 
 /**
@@ -306,7 +358,7 @@ export async function sendOwnerAlert(
 	try {
 		const telegram = await resolveTelegramOwnerAlertCredentials(db);
 		if (telegram) {
-			await sendTelegramOwnerAlertText(telegram, text, request);
+			await sendTelegramOwnerAlertText(telegram, text, request, options.topic);
 			if (record)
 				await recordTelegramOwnerAlertResult(db, { sent: true }).catch(
 					() => undefined,

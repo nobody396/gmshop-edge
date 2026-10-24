@@ -334,10 +334,14 @@ async function notify(
 				(await sendOwnerAlert(
 					db,
 					`${message}\n\n（Telegram 按钮暂时不可用：处理好后让 Claude 把这批改回待进货即可）`,
-					{ fetcher },
+					{ fetcher, topic: "restock" },
 				)) !== null;
 		} else
-			delivered = (await sendOwnerAlert(db, message, { fetcher })) !== null;
+			delivered =
+				(await sendOwnerAlert(db, message, {
+					fetcher,
+					topic: "restock",
+				})) !== null;
 	} catch {
 		delivered = false;
 	}

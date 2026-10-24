@@ -3,7 +3,10 @@ import {
 	loadDeliveryWarehouseToken,
 	requestWarehouse,
 } from "#/features/redeem-warehouse/server/warehouse-client";
-import { deliverOwnerAlert } from "#/features/telegram/server/owner-alerts";
+import {
+	deliverOwnerAlert,
+	type OwnerAlertTopic,
+} from "#/features/telegram/server/owner-alerts";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 
 /** Delivers one owner text. Tests inject it; production uses the owner alert channel (Telegram, else Feishu). */
@@ -128,8 +131,9 @@ export async function deliverToOwner(
 	text: string,
 	fetcher: typeof fetch,
 	uuid: string,
+	topic: OwnerAlertTopic,
 ) {
-	await deliverOwnerAlert(db, text, { fetcher, uuid });
+	await deliverOwnerAlert(db, text, { fetcher, uuid, topic });
 }
 
 const unsentSchema = z.object({ text: z.string(), at: z.number() });
@@ -188,10 +192,11 @@ export function resolveDeliver(
 	deliver: Deliver | undefined,
 	uuidPrefix: string,
 	now: number,
+	topic: OwnerAlertTopic,
 ): Deliver {
 	return (
 		deliver ??
-		((text) => deliverToOwner(db, text, fetcher, `${uuidPrefix}-${now}`))
+		((text) => deliverToOwner(db, text, fetcher, `${uuidPrefix}-${now}`, topic))
 	);
 }
 
