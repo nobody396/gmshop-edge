@@ -248,14 +248,18 @@ After-sales
 The warranty covers the link's validity for 24 hours after delivery: if it says "already used" or "expired" in that time, contact support from the order page with the order number and a screenshot for a replacement after verification. Requests must be made within 24 hours of delivery. Unsupported regions, missing permissions, risk controls, disabled or banned accounts are not covered, and the subscription's duration after activation is not guaranteed.`,
 	},
 	"2ee356de-fe69-4641-94c3-1dfea19b6967": {
-		name: "Muse AI account｜1 billion tokens",
-		description: `A ready-made Muse AI account with 1 billion tokens of creation credit for AI image and video generation, from short clips to videos over an hour long. Delivered automatically after payment: the account email and sign-in access to that email.
+		name: "Muse AI account｜1 billion / 31 billion tokens",
+		description: `A ready-made Muse AI account in two credit tiers, 1 billion or 31 billion tokens, for AI image and video generation, from short clips to videos over an hour long. Delivered automatically after payment: the account email and sign-in access to that email.
+
+Which to choose
+- 1 billion tokens: to try it out, or for occasional images and videos.
+- 31 billion tokens: 31 times the 1 billion tier, for frequent video work and large image batches.
 
 How to use
 1. View the delivered account email and its sign-in details on the order page.
 2. Open https://muse.ai and enter the delivered account email.
 3. Sign in to the delivered email, find the verification email, and enter its code on muse.ai.
-4. After signing in, open Settings to see the 1 billion tokens.
+4. After signing in, open Settings to see the token credit (1 billion or 31 billion, matching the option you bought).
 
 Notes
 - If no verification email arrives, check the spam folder first.
@@ -666,6 +670,16 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 			"Delivered automatically after payment: the account email and sign-in access to that email",
 			"Automatic, usually within 1 minute; view it on the order page",
 			"A ready-made Muse AI account with 1 billion tokens for AI image and video generation",
+			"24-hour warranty; sign in and check soon after delivery",
+			"Tokens are usage credit, not a fixed number of images or minutes of video; never share the email verification code or publish the account details",
+		),
+	},
+	"38d5bd61-1be4-43d7-a358-da62262fdf7b": {
+		name: "Muse AI account｜31 billion tokens",
+		policy: policy(
+			"Delivered automatically after payment: the account email and sign-in access to that email",
+			"Automatic, usually within 1 minute; view it on the order page",
+			"A ready-made Muse AI account with 31 billion tokens for AI image and video generation",
 			"24-hour warranty; sign in and check soon after delivery",
 			"Tokens are usage credit, not a fixed number of images or minutes of video; never share the email verification code or publish the account details",
 		),
