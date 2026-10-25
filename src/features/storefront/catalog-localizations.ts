@@ -368,7 +368,7 @@ const claudeRestrictions =
 const claudeMaxRestrictions = `New accounts cannot recharge 5X / 20X; the account must be registered for at least one month, or the subscription may not arrive. This cannot be checked in advance, so confirm before recharging.
 
 Important｜Claude Max identity verification (KYC)
-Claude Max 5X / 20X always requires KYC identity verification. This is Claude's official requirement and unrelated to our recharge. We only recharge the subscription; KYC is the buyer's responsibility and we do not complete or guarantee it. Do not order if you cannot complete it yourself.
+For Claude Max 5X / 20X, use an account that has passed KYC or is KYC-exempt. KYC is Claude's official requirement and unrelated to our recharge; we only recharge the subscription and do not complete or guarantee KYC. Do not order if the account cannot pass verification.
 
 ${claudeRestrictions}`;
 const claudePolicy = (restrictions: string) =>
@@ -594,7 +594,8 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 			immediate,
 			"Claude Max 20X (paid by physical card), 1 month. To redeem, copy Claude's sessionKey in a desktop browser, then confirm the account email and organization on the redemption page; your current Claude subscription must expire first; accounts subscribed through the App Store / Google Play cannot use it.",
 			"Subscription warranty; a dropped subscription is restored first, otherwise handled by the remaining days",
-			`Identity verification (KYC): if Claude asks this account for KYC, the redemption page gives you the official link. Nothing is paid and the code is not used until verification is done; you may also abandon the order and get the code back. We do not complete or guarantee KYC.
+			`Important｜Claude Max identity verification (KYC)
+Use an account that has passed KYC or is KYC-exempt. KYC is Claude's official requirement and unrelated to our recharge; we do not complete or guarantee it. If Claude still asks for verification during redemption, the page gives you the official link; nothing is paid and the code is not used until it is done.
 
 New accounts cannot recharge 20X; the account must be registered for at least one month.
 

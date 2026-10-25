@@ -37,7 +37,7 @@ export function ClaudeProductDescription({
 				<p className="mt-4 whitespace-pre-wrap font-semibold text-base leading-8 sm:text-lg">
 					{notice
 						.split(
-							/(新账号禁止充值|已注册至少一个月|可能存在不到账|无法事先检测|百分百需要 KYC 身份验证|KYC 需买家自行解决|请勿下单)/u,
+							/(新账号禁止充值|已注册至少一个月|可能存在不到账|无法事先检测|已通过 KYC 或免 KYC 的账号|百分百需要 KYC 身份验证|KYC 需买家自行解决|请勿下单)/u,
 						)
 						.map((part, index) =>
 							index % 2 === 1 ? (
