@@ -54,7 +54,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	"ba540b83-388d-45d1-9dcb-25c3da3f9956": {
 		name: "Claude Membership Recharge",
 		description:
-			"Claude Pro and Claude Max membership recharge. Select a plan to review eligibility, warranty, and restrictions.\n\nMax 20X is the web (card-paid) subscription: redeeming it needs Claude sign-in details (sessionKey) from a desktop browser, and the account must already pass KYC.",
+			"Claude Pro and Claude Max membership recharge. Select a plan to review eligibility, warranty, and restrictions.",
 	},
 	"3e60e88d-a0bd-4723-bc9e-ff45f6dafa16": {
 		name: "X Subscription｜4-in-1｜X Premium + Grok + Grok Bot + Cursor",
@@ -576,11 +576,11 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: codexPolicy,
 	},
 	"efa6e9ae-f8a6-4cf7-b99c-72e51e68dace": {
-		name: "Claude Pro｜1 month",
+		name: "Claude Pro｜iOS｜1 month",
 		policy: claudePolicy(claudeRestrictions),
 	},
 	"d3a2050e-1c65-4c7e-9ad7-3c8892ef412e": {
-		name: "Claude Max 5X｜1 month",
+		name: "Claude Max 5X｜iOS｜1 month",
 		policy: claudePolicy(claudeMaxRestrictions),
 	},
 	"34c18e6b-c4d5-4289-9c6b-ab47fa027182": {
@@ -588,14 +588,13 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: claudePolicy(claudeMaxRestrictions),
 	},
 	"88a570bd-557e-48a1-aa4f-b7e4c5a9b908": {
-		name: "Claude Max 20X｜Web｜1 month",
+		name: "Claude Max 20X｜Physical card｜1 month",
 		policy: policy(
 			automatic,
 			immediate,
-			"Claude Max 20X on the web (card-paid subscription), 1 month. To redeem, copy Claude's sessionKey in a desktop browser, then confirm the account email and organization on the redemption page; your current Claude subscription must expire first; accounts subscribed through the App Store / Google Play cannot use it.",
+			"Claude Max 20X (paid by physical card), 1 month. To redeem, copy Claude's sessionKey in a desktop browser, then confirm the account email and organization on the redemption page; your current Claude subscription must expire first; accounts subscribed through the App Store / Google Play cannot use it.",
 			"Subscription warranty; a dropped subscription is restored first, otherwise handled by the remaining days",
-			`Important｜Claude Max identity verification (KYC)
-The account must pass Claude's official identity verification (KYC); this is not an iOS subscription. The redemption page checks first whether verification is needed; if it is, nothing is paid until you finish it, and you may abandon the order to get the code back and redeem with a verified account. We do not complete or guarantee KYC.
+			`Identity verification (KYC): if Claude asks this account for KYC, the redemption page gives you the official link. Nothing is paid and the code is not used until verification is done; you may also abandon the order and get the code back. We do not complete or guarantee KYC.
 
 New accounts cannot recharge 20X; the account must be registered for at least one month.
 
