@@ -14,7 +14,8 @@ describe("Claude env ready email", () => {
 		expect(mail.text).toContain(
 			"专属 IP：161.77.8.204（Springfield, Massachusetts）",
 		);
-		expect(mail.text).toContain("输入下单邮箱 buyer@example.com");
+		expect(mail.text).toContain("用下单邮箱 buyer@example.com 登录");
+		expect(mail.text).toContain("忘记密码");
 		expect(mail.text).toContain(
 			"https://laoshirenvip.com/guides/claude-env-setup",
 		);

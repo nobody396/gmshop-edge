@@ -46,7 +46,7 @@ export function renderClaudeEnvReadyEmail(input: {
 		`完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员，一步一步来）：${guideUrl}`,
 		"开始使用（大约 5 分钟）：",
 		"① 打开代理软件 Clash Verge Rev，确认能正常打开 google.com。",
-		`② 打开 ${shopOrigin} 点「登录」，输入下单邮箱 ${input.email}，填邮件里的验证码登录（不用密码）。然后打开订单页 → ${input.orderUrl}`,
+		`② 打开 ${shopOrigin} 点「登录」，用下单邮箱 ${input.email} 登录：Gmail 邮箱可以直接点「Google 登录」；没设过密码的，在登录页点「忘记密码」，用这个邮箱收验证码设一个密码。登录后点顶部「我的订单」，打开这一单 → ${input.orderUrl}`,
 		"在「Claude 专属环境」里点「显示开通码」，复制对应电脑的那一行命令：Mac 粘贴到「终端」，Windows 粘贴到管理员身份的「终端」或「PowerShell」，回车运行。",
 		"③ 过程中 Mac 会让你输入一次开机密码（Windows 点一次「是」），中间会让你手动关一下「定位服务」。最后出现「全部验收通过 ✅」就好了；没通过的，把窗口截图发给客服。",
 		`④ 重启电脑一次，然后打开 ${shopOrigin}/ip-check ，确认显示的 IP 和上面的专属 IP 一样。`,
