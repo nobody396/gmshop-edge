@@ -5,6 +5,8 @@ interface __BaseEnv_Env {
 	AGENT_SHOP_PROGRAM_TOKEN?: string;
 	AGENT_PROGRAM_PROFIT_TOKEN?: string;
 	IPROYAL_API_TOKEN?: string;
+	SUPPLIER_ALERT_TOKEN?: string;
+	SUPPLIER_TOPUP_RUNNER_TOKEN?: string;
 	CACHE: KVNamespace;
 	FILES: R2Bucket;
 	DB: D1Database;

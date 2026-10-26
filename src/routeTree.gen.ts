@@ -122,6 +122,9 @@ import { Route as ApiSupportWebConversationsRouteImport } from './routes/api/sup
 import { Route as ApiSupportWebCloseRouteImport } from './routes/api/support/web/close'
 import { Route as ApiShopRenewalUnsubscribeRouteImport } from './routes/api/shop/renewal/unsubscribe'
 import { Route as ApiShopAutomationCallbackRouteImport } from './routes/api/shop/automation/callback'
+import { Route as ApiOpsSupplierTopupResultRouteImport } from './routes/api/ops/supplier-topup/result'
+import { Route as ApiOpsSupplierTopupOfferRouteImport } from './routes/api/ops/supplier-topup/offer'
+import { Route as ApiOpsSupplierTopupClaimRouteImport } from './routes/api/ops/supplier-topup/claim'
 import { Route as ApiOpsRestockSwapRouteImport } from './routes/api/ops/restock/swap'
 import { Route as ApiOpsRestockReconcileRouteImport } from './routes/api/ops/restock/reconcile'
 import { Route as ApiOpsAgentAccessReadyEmailRouteImport } from './routes/api/ops/agent-access/ready-email'
@@ -730,6 +733,24 @@ const ApiShopAutomationCallbackRoute =
     path: '/api/shop/automation/callback',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOpsSupplierTopupResultRoute =
+  ApiOpsSupplierTopupResultRouteImport.update({
+    id: '/api/ops/supplier-topup/result',
+    path: '/api/ops/supplier-topup/result',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiOpsSupplierTopupOfferRoute =
+  ApiOpsSupplierTopupOfferRouteImport.update({
+    id: '/api/ops/supplier-topup/offer',
+    path: '/api/ops/supplier-topup/offer',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiOpsSupplierTopupClaimRoute =
+  ApiOpsSupplierTopupClaimRouteImport.update({
+    id: '/api/ops/supplier-topup/claim',
+    path: '/api/ops/supplier-topup/claim',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiOpsRestockSwapRoute = ApiOpsRestockSwapRouteImport.update({
   id: '/swap',
   path: '/swap',
@@ -989,6 +1010,9 @@ export interface FileRoutesByFullPath {
   '/api/ops/agent-access/ready-email': typeof ApiOpsAgentAccessReadyEmailRoute
   '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/ops/restock/swap': typeof ApiOpsRestockSwapRoute
+  '/api/ops/supplier-topup/claim': typeof ApiOpsSupplierTopupClaimRoute
+  '/api/ops/supplier-topup/offer': typeof ApiOpsSupplierTopupOfferRoute
+  '/api/ops/supplier-topup/result': typeof ApiOpsSupplierTopupResultRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
   '/api/shop/renewal/unsubscribe': typeof ApiShopRenewalUnsubscribeRoute
   '/api/support/web/close': typeof ApiSupportWebCloseRoute
@@ -1119,6 +1143,9 @@ export interface FileRoutesByTo {
   '/api/ops/agent-access/ready-email': typeof ApiOpsAgentAccessReadyEmailRoute
   '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/ops/restock/swap': typeof ApiOpsRestockSwapRoute
+  '/api/ops/supplier-topup/claim': typeof ApiOpsSupplierTopupClaimRoute
+  '/api/ops/supplier-topup/offer': typeof ApiOpsSupplierTopupOfferRoute
+  '/api/ops/supplier-topup/result': typeof ApiOpsSupplierTopupResultRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
   '/api/shop/renewal/unsubscribe': typeof ApiShopRenewalUnsubscribeRoute
   '/api/support/web/close': typeof ApiSupportWebCloseRoute
@@ -1261,6 +1288,9 @@ export interface FileRoutesById {
   '/api/ops/agent-access/ready-email': typeof ApiOpsAgentAccessReadyEmailRoute
   '/api/ops/restock/reconcile': typeof ApiOpsRestockReconcileRoute
   '/api/ops/restock/swap': typeof ApiOpsRestockSwapRoute
+  '/api/ops/supplier-topup/claim': typeof ApiOpsSupplierTopupClaimRoute
+  '/api/ops/supplier-topup/offer': typeof ApiOpsSupplierTopupOfferRoute
+  '/api/ops/supplier-topup/result': typeof ApiOpsSupplierTopupResultRoute
   '/api/shop/automation/callback': typeof ApiShopAutomationCallbackRoute
   '/api/shop/renewal/unsubscribe': typeof ApiShopRenewalUnsubscribeRoute
   '/api/support/web/close': typeof ApiSupportWebCloseRoute
@@ -1402,6 +1432,9 @@ export interface FileRouteTypes {
     | '/api/ops/agent-access/ready-email'
     | '/api/ops/restock/reconcile'
     | '/api/ops/restock/swap'
+    | '/api/ops/supplier-topup/claim'
+    | '/api/ops/supplier-topup/offer'
+    | '/api/ops/supplier-topup/result'
     | '/api/shop/automation/callback'
     | '/api/shop/renewal/unsubscribe'
     | '/api/support/web/close'
@@ -1532,6 +1565,9 @@ export interface FileRouteTypes {
     | '/api/ops/agent-access/ready-email'
     | '/api/ops/restock/reconcile'
     | '/api/ops/restock/swap'
+    | '/api/ops/supplier-topup/claim'
+    | '/api/ops/supplier-topup/offer'
+    | '/api/ops/supplier-topup/result'
     | '/api/shop/automation/callback'
     | '/api/shop/renewal/unsubscribe'
     | '/api/support/web/close'
@@ -1673,6 +1709,9 @@ export interface FileRouteTypes {
     | '/api/ops/agent-access/ready-email'
     | '/api/ops/restock/reconcile'
     | '/api/ops/restock/swap'
+    | '/api/ops/supplier-topup/claim'
+    | '/api/ops/supplier-topup/offer'
+    | '/api/ops/supplier-topup/result'
     | '/api/shop/automation/callback'
     | '/api/shop/renewal/unsubscribe'
     | '/api/support/web/close'
@@ -1734,6 +1773,9 @@ export interface RootRouteChildren {
   ApiConfigurationLogoScopeIdRoute: typeof ApiConfigurationLogoScopeIdRoute
   ApiInternalAgentProgramOrderProfitRoute: typeof ApiInternalAgentProgramOrderProfitRoute
   ApiOpsAgentAccessReadyEmailRoute: typeof ApiOpsAgentAccessReadyEmailRoute
+  ApiOpsSupplierTopupClaimRoute: typeof ApiOpsSupplierTopupClaimRoute
+  ApiOpsSupplierTopupOfferRoute: typeof ApiOpsSupplierTopupOfferRoute
+  ApiOpsSupplierTopupResultRoute: typeof ApiOpsSupplierTopupResultRoute
   ApiShopAutomationCallbackRoute: typeof ApiShopAutomationCallbackRoute
   ApiShopRenewalUnsubscribeRoute: typeof ApiShopRenewalUnsubscribeRoute
   ApiSupportWebCloseRoute: typeof ApiSupportWebCloseRoute
@@ -2554,6 +2596,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiShopAutomationCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ops/supplier-topup/result': {
+      id: '/api/ops/supplier-topup/result'
+      path: '/api/ops/supplier-topup/result'
+      fullPath: '/api/ops/supplier-topup/result'
+      preLoaderRoute: typeof ApiOpsSupplierTopupResultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/supplier-topup/offer': {
+      id: '/api/ops/supplier-topup/offer'
+      path: '/api/ops/supplier-topup/offer'
+      fullPath: '/api/ops/supplier-topup/offer'
+      preLoaderRoute: typeof ApiOpsSupplierTopupOfferRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/supplier-topup/claim': {
+      id: '/api/ops/supplier-topup/claim'
+      path: '/api/ops/supplier-topup/claim'
+      fullPath: '/api/ops/supplier-topup/claim'
+      preLoaderRoute: typeof ApiOpsSupplierTopupClaimRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ops/restock/swap': {
       id: '/api/ops/restock/swap'
       path: '/swap'
@@ -3084,6 +3147,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalAgentProgramOrderProfitRoute:
     ApiInternalAgentProgramOrderProfitRoute,
   ApiOpsAgentAccessReadyEmailRoute: ApiOpsAgentAccessReadyEmailRoute,
+  ApiOpsSupplierTopupClaimRoute: ApiOpsSupplierTopupClaimRoute,
+  ApiOpsSupplierTopupOfferRoute: ApiOpsSupplierTopupOfferRoute,
+  ApiOpsSupplierTopupResultRoute: ApiOpsSupplierTopupResultRoute,
   ApiShopAutomationCallbackRoute: ApiShopAutomationCallbackRoute,
   ApiShopRenewalUnsubscribeRoute: ApiShopRenewalUnsubscribeRoute,
   ApiSupportWebCloseRoute: ApiSupportWebCloseRoute,
