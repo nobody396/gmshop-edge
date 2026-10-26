@@ -173,6 +173,67 @@ v2rayN|xray v2ray sing-box mihomo
 Hiddify|HiddifyCli hiddify-core
 NekoRay|nekobox_core nekoray_core"
 thook() { [ -n "$TR" ] && [ -n "${CE_TEST_HOOK:-}" ] || return 0; "$CE_PYTHON" "$CE_TEST_HOOK" "$@" >/dev/null 2>&1; }
+# ===== 虚拟网卡（TUN）要用 Clash Verge 的「服务模式」：没装就用 Clash Verge 自带的安装程序装上 =====
+# 和 Clash Verge 2.5.8 设置里点「安装服务模式」完全一样：App 里自带的 clash-verge-service-install --prepare-install，
+# 带上 App 自带的两个内核；我们已经有管理员权限（sudo），所以它直接安装，不再弹密码框。
+SVC_ID="io.github.clash-verge-rev.clash-verge-rev.service"   # 2.5 起的服务（launchd）
+SVC_OLD_ID="io.github.clashverge.helper"                      # 更早版本的服务
+SVC_MIN="2.5.8"                                               # 自动安装只用在我们验证过的版本上
+SVC_LOG=""
+verge_app_dir() { local a; for a in "$VERGE_APP" "$HOME/Applications/Clash Verge.app"; do [ -d "$a" ] && { echo "$a"; return 0; }; done; return 1; }
+lc_running() { { launchctl print "system/$1" 2>/dev/null || sudo -n launchctl print "system/$1" 2>/dev/null; } | grep -qE '^[[:space:]]*state = running'; }
+svc_state() { # running | stopped | none
+  if [ -n "$TR" ]; then cat "$TR/service" 2>/dev/null || echo none; return 0; fi
+  local id found=""
+  for id in "$SVC_ID" "$SVC_OLD_ID"; do
+    [ -e "/Library/LaunchDaemons/$id.plist" ] || continue
+    found=1; lc_running "$id" && { echo running; return 0; }
+  done
+  # 读不到 launchd 状态时，以服务的控制接口在不在为准
+  [ -n "$found" ] && [ -S /var/run/clash-verge-service/service.sock ] && { echo running; return 0; }
+  [ -n "$found" ] && echo stopped || echo none
+}
+# 限时运行（macOS 没有 timeout 命令）：超时就结束它，返回 124
+run_bounded() {
+  local secs=$1 pid i=0; shift
+  "$@" & pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$i" -ge "$secs" ]; then kill "$pid" 2>/dev/null; sudo -n pkill -f 'clash-verge-service-install' 2>/dev/null; wait "$pid" 2>/dev/null; return 124; fi
+    sleep 1; i=$((i + 1))
+  done
+  wait "$pid"
+}
+svc_install() {
+  if [ -n "$TR" ]; then sudo_once; echo "install clash verge service" >>"$TR/sys.log"; thook service-install; return; fi
+  local app res inst c gid args=()
+  app=$(verge_app_dir) || return 1
+  res="$app/Contents/Resources/resources"; inst="$res/clash-verge-service-install"
+  [ -x "$inst" ] && [ -f "$res/clash-verge-service" ] || return 1
+  for c in verge-mihomo verge-mihomo-alpha; do [ -f "$app/Contents/MacOS/$c" ] && args+=(--core "$c" "$app/Contents/MacOS/$c"); done
+  [ "${#args[@]}" -gt 0 ] || return 1
+  sudo_once || return 1
+  gid=$(id -g)
+  mkdir -p "$HOME/.claude-env-backup"; SVC_LOG="$HOME/.claude-env-backup/service-install-$TS.log"
+  # cd / 与 Clash Verge 自己一样（避开隐私保护的目录）；CLASH_VERGE_SERVICE_GID = 当前用户的组，Clash Verge 才连得上服务
+  ( cd / && run_bounded 180 sudo -n env CLASH_VERGE_SERVICE_GID="$gid" "$inst" --prepare-install --ensure --gid "$gid" --prompt "Clash Verge" "${args[@]}" ) >"$SVC_LOG" 2>&1 || return 1
+  for _ in $(seq 1 15); do [ "$(svc_state)" = running ] && return 0; sleep 1; done
+  return 1
+}
+# 结果放在 SVC_OK：1 = 服务模式在运行（能开 TUN）
+SVC_OK=""
+ensure_service() {
+  local st; st=$(svc_state)
+  if [ "$st" = running ]; then SVC_OK=1; c_ok "Clash Verge 服务模式已在运行（虚拟网卡要用它）"; return 0; fi
+  local vv; vv=$(verge_version)
+  if [ -z "$vv" ] || ! ver_ge "$vv" "$SVC_MIN"; then
+    c_warn "Clash Verge ${vv:-版本未知} 不能自动安装「服务模式」（需要 ${SVC_MIN} 及以上），先不开虚拟网卡（TUN），网络照常可用"
+    return 1
+  fi
+  printf '  正在安装 Clash Verge 的「服务模式」（虚拟网卡要用它；和在 Clash Verge 设置里点「安装服务模式」一样，大约半分钟）…\n'
+  if svc_install; then SVC_OK=1; c_ok "Clash Verge 服务模式已安装并在运行"; return 0; fi
+  c_warn "Clash Verge 服务模式没装上，先不开虚拟网卡（TUN），网络照常可用${SVC_LOG:+（安装记录：${SVC_LOG/#$HOME/~}）}"
+  return 1
+}
 verge_present() { [ -d "$VERGE_APP" ] || [ -d "$HOME/Applications/Clash Verge.app" ] || [ -f "$CV_CFG" ]; }
 # 订阅链接只显示到域名，后面的路径和参数（含令牌）一律打码
 mask_url() { printf '%s' "$1" | sed -E 's#^(https?://)([^@/?#]*@)?([^/?#]+).*#\1\3/***#'; }
@@ -483,7 +544,8 @@ migrate() { # install|import
   [ -n "$was" ] && c_ok "已关掉原来软件留下的系统代理（$(printf '%s\n' "$was" | paste -sd '、' -)）"
   printf '  正在打开 Clash Verge Rev 并加载订阅…\n'
   start_verge
-  SOCK=""; wait_ctl 60 || die "Clash Verge Rev 打开后连不上控制接口。"
+  # 刚退出的 Clash Verge 偶尔还没完全关掉，这次打开会落空：再打开一次
+  SOCK=""; wait_ctl 60 || { start_verge; wait_ctl 60; } || die "Clash Verge Rev 打开后连不上控制接口。"
   n=0; for _ in $(seq 1 15); do n=$(count_nodes "$names"); [ "${n:-0}" -gt 0 ] && break; sleep 2; done
   rm -f "$names"
   [ "${n:-0}" -gt 0 ] || die "订阅导入后 Clash Verge Rev 里没有读到节点。请打开 Clash Verge Rev「订阅」页看一下是否有报错，截图发给客服。"
@@ -662,10 +724,20 @@ else c_ok "以上项目已停用（原文件都有 .backup-claude-env-$TS 备份
 
 # ===== 5. 本机设置 =====
 step 5 "本机设置：TUN / 时区 / 语言 / 定位 / 遥测 / 旧标识"
+set_tun() { # true|false
+  if grep -qE '^enable_tun_mode:' "$VERGE_YAML"; then sed -i '' -E "s/^enable_tun_mode:.*/enable_tun_mode: $1/" "$VERGE_YAML"
+  else echo "enable_tun_mode: $1" >>"$VERGE_YAML"; fi
+}
+TUN_ON=""
 if [ -z "$DRY" ]; then
-  if grep -qE '^enable_tun_mode:' "$VERGE_YAML"; then sed -i '' -E 's/^enable_tun_mode:.*/enable_tun_mode: true/' "$VERGE_YAML"
-  else echo 'enable_tun_mode: true' >>"$VERGE_YAML"; fi
-  c_ok "TUN（虚拟网卡）设为开启"
+  if ensure_service; then
+    set_tun true; TUN_ON=1
+    c_ok "TUN（虚拟网卡）设为开启"
+  elif [ "$(jget "$(ctl GET /configs)" 'o.tun&&o.tun.enable')" = true ]; then
+    c_ok "TUN（虚拟网卡）现在就开着，保持不动"
+  else
+    set_tun false   # Clash Verge 没有服务模式时开着 TUN 内核起不来；先关掉，验收里会告诉客户怎么打开
+  fi
   NEED_SUDO=""
   { [ "$(tz_auto)" != 0 ] || [ "$(sys_tz)" != "$TZNAME" ]; } && NEED_SUDO=1
   [ -n "$NEED_SUDO" ] && [ -z "$SUDO_READY" ] && printf '  接下来改时区需要输入一次开机密码（输入时不显示）\n'
@@ -717,9 +789,19 @@ if [ -z "$DRY" ]; then
   c_ok "以上都已备份到 ~/.claude-env-backup/$TS"
 
   step 6 "重启 Clash Verge 使配置生效（断网几秒）"
-  sysrun osascript -e 'quit app "Clash Verge"' 2>/dev/null; sleep 4; sysrun open -a "Clash Verge"
-  SOCK=""; for _ in $(seq 1 20); do sleep 2; find_ctl && break; done
+  restart_verge() { sysrun osascript -e 'quit app "Clash Verge"' 2>/dev/null; sleep 4; sysrun open -a "Clash Verge"; SOCK=""; for _ in $(seq 1 20); do sleep 2; find_ctl && break; done; }
+  restart_verge
+  if [ -z "$SOCK" ] && [ -n "$TUN_ON" ]; then
+    # 开着 TUN 内核没起来：先关掉虚拟网卡让 Clash Verge 正常运行（客户不能断网），验收里会提示
+    c_warn "Clash Verge 开着虚拟网卡（TUN）没能启动，先关掉虚拟网卡让它正常运行"
+    set_tun false; TUN_ON=""; restart_verge
+  fi
   [ -n "$SOCK" ] || die "Clash Verge 重启后连不上。"
+  if [ -n "$TUN_ON" ]; then
+    # 服务模式下内核由服务启动，虚拟网卡要等几秒
+    for _ in $(seq 1 10); do [ "$(jget "$(ctl GET /configs)" 'o.tun&&o.tun.enable')" = true ] && break; sleep 2; done
+    [ "$(jget "$(ctl GET /configs)" 'o.tun&&o.tun.enable')" = true ] && c_ok "虚拟网卡（TUN）已在运行" || c_warn "虚拟网卡（TUN）设了开启，但内核没打开它（验收会标出）"
+  fi
   [ "$(jget "$(ctl GET /configs)" 'o.mode')" = "rule" ] || ctl PATCH /configs '{"mode":"rule"}' >/dev/null
   for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null -x "http://127.0.0.1:$MIXED_PORT" https://www.google.com/generate_204 && break; sleep 2; done
   V6=$(curl -6 -s -m 6 https://claude.ai/cdn-cgi/trace | trace_ip)
@@ -735,7 +817,9 @@ PASS=0; FAILN=0
 chk() { if [ "$2" = ok ]; then c_ok "$1"; PASS=$((PASS+1)); else c_err "$1 —— $2"; FAILN=$((FAILN+1)); fi; }
 CFG=$(ctl GET /configs)
 [ "$(jget "$CFG" 'o.mode')" = "rule" ] && chk "Clash 规则模式" ok || chk "Clash 规则模式" "当前是 $(jget "$CFG" 'o.mode')，请在首页切到「规则」"
-[ "$(jget "$CFG" 'o.tun&&o.tun.enable')" = "true" ] && chk "TUN 虚拟网卡已开启" ok || chk "TUN 虚拟网卡已开启" "没开。Clash Verge「设置」→ 先安装「服务模式」，再打开「虚拟网卡模式」"
+if [ "$(jget "$CFG" 'o.tun&&o.tun.enable')" = "true" ]; then chk "TUN 虚拟网卡已开启" ok
+elif [ -z "$DRY" ] && [ "$(svc_state)" = running ]; then chk "TUN 虚拟网卡已开启" "没开。服务模式已装好：Clash Verge「设置」→ 打开「虚拟网卡模式」，然后重新运行本命令"
+else chk "TUN 虚拟网卡已开启" "没开（服务模式没能自动装上）。Clash Verge「设置」→ 点「安装服务模式」，再打开「虚拟网卡模式」，然后重新运行本命令"; fi
 if [ -z "$DRY" ]; then
   RULES=$(ctl GET /rules)
   rule_to() { jget "$RULES" 'return o.rules.some(r=>r.payload==="'"$1"'"&&r.proxy==="'"$2"'")'; }

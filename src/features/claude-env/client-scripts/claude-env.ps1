@@ -162,7 +162,8 @@ function Ctl($method, $path, $body) {
   # 管道名以 Clash Verge 写在配置里的为准（2.5 起每个用户不同：verge-mihomo-sidecar-release-…）；YAML 里可能带引号、双引号里反斜杠会转义
   $pipeName = "verge-mihomo"
   $m = [regex]::Match((ReadText $CV_CFG), '(?m)^external-controller-pipe:[ \t]*([^\r\n]+?)[ \t]*\r?$')
-  if ($m.Success) {
+  if ($script:PIPE) { $pipeName = $script:PIPE }
+  elseif ($m.Success) {
     $v = $m.Groups[1].Value
     if ($v.StartsWith('"')) { $v = $v.Trim('"').Replace('\\', '\') } elseif ($v.StartsWith("'")) { $v = $v.Trim("'") }
     $pm = [regex]::Match($v, '^\\\\\.\\pipe\\(.+)$'); if ($pm.Success) { $pipeName = $pm.Groups[1].Value }
@@ -195,9 +196,25 @@ function Ctl($method, $path, $body) {
     return $UTF8.GetString($bodyMs.ToArray())
   } catch { return "" }
 }
+$script:PIPE = ""
+# 服务模式下内核由 Clash Verge 的服务启动，控制管道是 verge-mihomo-production-<当前用户 SID 的 SHA-256>（2.5.8 的 mihomo_ipc_path）
+function Service-PipeName {
+  try {
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $h = [Security.Cryptography.SHA256]::Create().ComputeHash($UTF8.GetBytes($sid))
+    "verge-mihomo-production-" + (-join ($h | ForEach-Object { $_.ToString("x2") }))
+  } catch { "" }
+}
 function Find-Ctl {
   $m = [regex]::Match((ReadText $CV_CFG), '(?m)^secret:\s*[''"]?([^''"\r\n]*)')
   $script:SECRET = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "" }
+  $script:PIPE = ""
+  if ($TR) { return ((Ctl "GET" "/version" $null) -match "version") }
+  # 先试服务模式的管道（只试已经存在的，免得每个都等超时），再试配置里写的（普通模式）
+  $have = @(); try { $have = @([IO.Directory]::GetFiles("\\.\pipe\") | ForEach-Object { $_ -replace '^.*\\', '' }) } catch {}
+  $svcPipe = Service-PipeName
+  if ($svcPipe -and (-not $have.Count -or $have -contains $svcPipe)) { $script:PIPE = $svcPipe; if ((Ctl "GET" "/version" $null) -match "version") { return $true } }
+  $script:PIPE = ""
   return ((Ctl "GET" "/version" $null) -match "version")
 }
 function JParse($s) { try { $s | ConvertFrom-Json } catch { $null } }
@@ -216,6 +233,48 @@ function JsArr($s) { '[' + ((($s -split " ") | ForEach-Object { '"' + $_ + '"' }
 
 # ===== 迁移：没装 Clash Verge Rev → 自动安装 + 搬订阅 + 关旧软件 =====
 function THook { if ($TR -and $env:CE_TEST_HOOK) { & $env:CE_PYTHON $env:CE_TEST_HOOK @args | Out-Null; return ($LASTEXITCODE -eq 0) }; $true }
+# ===== 虚拟网卡（TUN）要用 Clash Verge 的「服务模式」：没装就用 Clash Verge 自带的安装程序装上 =====
+# 和 Clash Verge 2.5.8 设置里点「安装服务模式」完全一样：安装目录 resources\clash-verge-service-install.exe --prepare-install，
+# 带上自带的两个内核；脚本本来就是管理员身份，所以不会再弹「是否允许更改」。服务名 clash_verge_service（开机自动启动）。
+$SVC_NAME = "clash_verge_service"
+$SVC_MIN = [version]"2.5.8"   # 自动安装只用在我们验证过的版本上
+$script:SVC_LOG = ""
+function Get-SvcState { if ($TR) { return (TGet "service" "none") }
+  $s = Get-Service -Name $SVC_NAME -ErrorAction SilentlyContinue
+  if (-not $s) { "none" } elseif ($s.Status -eq "Running") { "running" } else { "stopped" } }
+function Install-VergeService {
+  SysLog "install clash verge service"
+  if ($TR) { return (THook "service-install") }
+  $e = Get-VergeExe; if (-not $e) { return $false }
+  $dir = Split-Path -Parent $e
+  $inst = Join-Path $dir "resources\clash-verge-service-install.exe"
+  if (-not (Test-Path -LiteralPath $inst) -or -not (Test-Path -LiteralPath (Join-Path $dir "resources\clash-verge-service.exe"))) { return $false }
+  $argv = '--prepare-install --ensure --prompt "Clash Verge"'
+  $n = 0; foreach ($c in "verge-mihomo.exe", "verge-mihomo-alpha.exe") { $p = Join-Path $dir $c; if (Test-Path -LiteralPath $p) { $argv += " --core $c `"$p`""; $n++ } }
+  if (-not $n) { return $false }
+  $bk = Join-Path $UH ".claude-env-backup"; New-Item -ItemType Directory -Force -Path $bk | Out-Null
+  $script:SVC_LOG = Join-Path $bk "service-install-$TS.log"
+  try {
+    $psi = New-Object Diagnostics.ProcessStartInfo; $psi.FileName = $inst; $psi.Arguments = $argv; $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.WorkingDirectory = $dir
+    $pr = [Diagnostics.Process]::Start($psi)
+    $o = $pr.StandardOutput.ReadToEndAsync(); $er = $pr.StandardError.ReadToEndAsync()
+    if (-not $pr.WaitForExit(180000)) { try { $pr.Kill() } catch {}; WriteText $script:SVC_LOG "timeout"; return $false }
+    WriteText $script:SVC_LOG ("exit " + $pr.ExitCode + "`n" + $o.Result + "`n" + $er.Result)
+    if ($pr.ExitCode -ne 0) { return $false }
+  } catch { WriteText $script:SVC_LOG ([string]$_); return $false }
+  for ($i = 0; $i -lt 15; $i++) { if ((Get-SvcState) -eq "running") { return $true }; Start-Sleep -Seconds 1 }
+  $false
+}
+function Ensure-Service {
+  if ((Get-SvcState) -eq "running") { OK "Clash Verge 服务模式已在运行（虚拟网卡要用它）"; return $true }
+  $vv = Get-VergeVersion; $okv = $false; try { $okv = [version]($vv -replace '[^0-9.].*$','') -ge $SVC_MIN } catch {}
+  if (-not $okv) { WARN ("Clash Verge " + $(if ($vv) { $vv } else { "版本未知" }) + " 不能自动安装「服务模式」（需要 $SVC_MIN 及以上），先不开虚拟网卡（TUN），网络照常可用"); return $false }
+  Write-Host "  正在安装 Clash Verge 的「服务模式」（虚拟网卡要用它；和在 Clash Verge 设置里点「安装服务模式」一样，大约半分钟）…"
+  if (Install-VergeService) { OK "Clash Verge 服务模式已安装并在运行"; return $true }
+  WARN ("Clash Verge 服务模式没装上，先不开虚拟网卡（TUN），网络照常可用" + $(if ($script:SVC_LOG) { "（安装记录：$($script:SVC_LOG)）" } else { "" }))
+  $false
+}
 function Test-VergeInstalled { if ($TR) { return ((Test-Path -LiteralPath $CV_CFG) -or (Test-Path -LiteralPath (TFile "verge_installed"))) }; [bool](Get-VergeExe) -or (Test-Path -LiteralPath $CV_CFG) }
 # 订阅链接只显示到域名，后面的路径和参数（含令牌）一律打码
 function MaskUrl($u) { $m = [regex]::Match([string]$u, '^(https?://)(?:[^@/?#]*@)?([^/?#]+)'); if ($m.Success) { $m.Groups[1].Value + $m.Groups[2].Value + "/***" } else { "***" } }
@@ -536,7 +595,8 @@ function Migrate($needInstall) {
   if ($was) { OK "已关掉原来软件留下的系统代理（$was）" }
   Write-Host "  正在打开 Clash Verge Rev 并加载订阅…"
   Start-Verge
-  if (-not (Wait-Ctl 60)) { DIE "Clash Verge Rev 打开后连不上控制接口。" }
+  # 刚关掉的 Clash Verge 偶尔还没完全退出，这次打开会落空：再打开一次
+  if (-not (Wait-Ctl 60)) { Start-Verge; if (-not (Wait-Ctl 60)) { DIE "Clash Verge Rev 打开后连不上控制接口。" } }
   $n = 0; for ($i = 0; $i -lt 15; $i++) { $n = Count-Nodes $names; if ($n -gt 0) { break }; Start-Sleep -Seconds 2 }
   if ($n -le 0) { DIE "订阅导入后 Clash Verge Rev 里没有读到节点。请打开 Clash Verge Rev「订阅」页看一下是否有报错，截图发给客服。" }
   OK "Clash Verge Rev 已读到订阅里的 $n 个节点"
@@ -675,9 +735,15 @@ if ($found) { OK "以上项目已停用（原文件都有 .backup-claude-env-$TS
 
 # ===== 5. 本机设置 =====
 STEP 5 "本机设置：TUN / 时区 / 语言 / 定位 / 遥测 / 旧标识"
-$vy = ReadText $VERGE_YAML
-if ($vy -match "(?m)^enable_tun_mode:") { $vy = [regex]::Replace($vy, "(?m)^enable_tun_mode:.*$", "enable_tun_mode: true") } else { $vy = $vy.TrimEnd() + "`nenable_tun_mode: true`n" }
-WriteText $VERGE_YAML $vy
+function Set-Tun($on) {
+  $v = if ($on) { "true" } else { "false" }; $vy = ReadText $VERGE_YAML
+  if ($vy -match "(?m)^enable_tun_mode:") { $vy = [regex]::Replace($vy, "(?m)^enable_tun_mode:.*$", "enable_tun_mode: $v") } else { $vy = $vy.TrimEnd() + "`nenable_tun_mode: $v`n" }
+  WriteText $VERGE_YAML $vy
+}
+$TUN_ON = $false
+if (Ensure-Service) { Set-Tun $true; $TUN_ON = $true }
+elseif ((JParse (Ctl "GET" "/configs" $null)).tun.enable -eq $true) { OK "TUN（虚拟网卡）现在就开着，保持不动"; $TUN_ON = $true }
+else { Set-Tun $false }   # 没有服务模式时开着 TUN 内核起不来；先关掉，验收里会告诉客户怎么打开
 # Windows 的 TUN 必须开「严格路由」，否则部分流量会绕过虚拟网卡
 $cc = ReadText $CV_CLASH
 if ($cc -match "(?m)^tun:") {
@@ -685,7 +751,7 @@ if ($cc -match "(?m)^tun:") {
   else { $cc = [regex]::Replace($cc, "(?m)^tun:\s*$", "tun:`n  strict-route: true") }
 } else { $cc = $cc.TrimEnd() + "`ntun:`n  strict-route: true`n" }
 WriteText $CV_CLASH $cc
-OK "TUN（虚拟网卡）设为开启，严格路由开启"
+if ($TUN_ON) { OK "TUN（虚拟网卡）设为开启，严格路由开启" } else { OK "TUN 严格路由已设好（虚拟网卡打开后生效）" }
 if ((Get-TzAuto) -ne "4") { Set-TzAutoOff }
 if ((Get-SysTz) -ne $WINTZ) { Set-SysTz $WINTZ }
 OK "已关闭「自动设置时区」，电脑时区：$(Get-SysTz)"
@@ -723,14 +789,19 @@ STEP 6 "重启 Clash Verge 使配置生效（断网几秒）"
 # Clash Verge 2.5 起：只结束界面进程的话，内核还占着端口和管道，新开的 Clash Verge 会拒绝再起一个内核；所以连内核一起关
 Stop-VergeAll; Start-Sleep -Seconds 1; Start-Verge
 $ok = Wait-Ctl 60
-if (-not $ok) {
-  # 没装「服务模式」时，开着虚拟网卡（TUN）的内核可能起不来：先关掉虚拟网卡让 Clash Verge 正常运行，验收里会提示怎么打开
-  WARN "Clash Verge 开着虚拟网卡（TUN）没能启动（多半是还没安装「服务模式」），先关掉虚拟网卡让它正常运行"
-  WriteText $VERGE_YAML ([regex]::Replace((ReadText $VERGE_YAML), "(?m)^enable_tun_mode:.*$", "enable_tun_mode: false"))
+if (-not $ok -and $TUN_ON) {
+  # 开着虚拟网卡（TUN）内核没起来：先关掉虚拟网卡让 Clash Verge 正常运行（客户不能断网），验收里会提示怎么打开
+  WARN "Clash Verge 开着虚拟网卡（TUN）没能启动，先关掉虚拟网卡让它正常运行"
+  Set-Tun $false; $TUN_ON = $false
   Stop-VergeAll; Start-Sleep -Seconds 1; Start-Verge
   $ok = Wait-Ctl 60
 }
 if (-not $ok) { DIE "Clash Verge 重启后连不上。" }
+if ($TUN_ON) {
+  # 服务模式下内核由服务启动，虚拟网卡要等几秒
+  $tunUp = $false; for ($i = 0; $i -lt 10; $i++) { if ((JParse (Ctl "GET" "/configs" $null)).tun.enable -eq $true) { $tunUp = $true; break }; Start-Sleep -Seconds 2 }
+  if ($tunUp) { OK "虚拟网卡（TUN）已在运行" } else { WARN "虚拟网卡（TUN）设了开启，但内核没打开它（验收会标出）" }
+}
 $cfgJ = JParse (Ctl "GET" "/configs" $null)
 if ($cfgJ.mode -ne "rule") { $null = Ctl "PATCH" "/configs" '{"mode":"rule"}' }
 for ($i = 0; $i -lt 15; $i++) { $null = CurlX -s -m 3 -o NUL -x "http://127.0.0.1:$MIXED_PORT" "https://www.google.com/generate_204"; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 2 }
@@ -743,7 +814,9 @@ $script:PASS = 0; $script:FAILN = 0
 function Chk($name, $res) { if ($res -eq "ok") { OK $name; $script:PASS++ } else { ERR "$name —— $res"; $script:FAILN++ } }
 $cfgJ = JParse (Ctl "GET" "/configs" $null)
 if ($cfgJ.mode -eq "rule") { Chk "Clash 规则模式" "ok" } else { Chk "Clash 规则模式" "当前是 $($cfgJ.mode)，请在首页切到「规则」" }
-if ($cfgJ.tun.enable -eq $true) { Chk "TUN 虚拟网卡已开启" "ok" } else { Chk "TUN 虚拟网卡已开启" "没开。Clash Verge「设置」→ 先安装「服务模式」，再打开「虚拟网卡模式」" }
+if ($cfgJ.tun.enable -eq $true) { Chk "TUN 虚拟网卡已开启" "ok" }
+elseif ((Get-SvcState) -eq "running") { Chk "TUN 虚拟网卡已开启" "没开。服务模式已装好：Clash Verge「设置」→ 打开「虚拟网卡模式」，然后重新运行本命令" }
+else { Chk "TUN 虚拟网卡已开启" "没开（服务模式没能自动装上）。Clash Verge「设置」→ 点「安装服务模式」，再打开「虚拟网卡模式」，然后重新运行本命令" }
 if ($cfgJ.tun.'strict-route' -eq $true) { Chk "TUN 严格路由已开启" "ok" } else { Chk "TUN 严格路由已开启" "没开。Clash Verge「设置」→「虚拟网卡模式」旁的齿轮 → 打开「严格路由」" }
 $rules = (JParse (Ctl "GET" "/rules" $null)).rules
 $missing = @(); foreach ($d in "claude.ai", "sentry.io", "hcaptcha.com", "stripe.com", "withpersona.com") { if (-not ($rules | Where-Object { $_.payload -eq $d -and $_.proxy -eq $GROUP_NAME })) { $missing += $d } }
