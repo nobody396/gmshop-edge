@@ -40,7 +40,7 @@ export function renderClaudeEnvReadyEmail(input: {
 	const subject = "你的 Claude 专属环境已开通";
 	const lines = [
 		"你好，",
-		"你购买的「Claude 稳定使用环境」已开通，专属美国住宅 IP 已经准备好，只给你一个人用。",
+		"你购买的「Claude 稳定使用环境」已开通，可以开始使用了。",
 		`专属 IP：${input.ip ?? "—"}${input.city ? `（${input.city}）` : ""}`,
 		`到期时间：${input.expiresText}（北京时间）`,
 		`完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员，一步一步来）：${guideUrl}`,

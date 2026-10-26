@@ -27,6 +27,7 @@ describe("Claude env ready email", () => {
 		expect(mail.text).not.toContain("英文对话");
 		expect(mail.text).not.toContain("200GB");
 		expect(mail.text).not.toContain("注销");
+		expect(mail.text).not.toContain("住宅");
 		expect(mail.text).not.toMatch(/CE1-/);
 	});
 });
