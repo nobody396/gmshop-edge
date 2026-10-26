@@ -41,8 +41,8 @@ const copy = {
 	],
 	autoRefresh: ["本页会自动刷新。", "This page refreshes automatically."],
 	waitPrepare: [
-		"等待时请先完成准备：在要用 Claude 的 Mac / Windows 电脑上装好 Clash Verge Rev，并确认能正常打开 google.com。先不要注册任何账号。",
-		"While you wait, get ready: install Clash Verge Rev on the Mac / Windows computer you will use for Claude and make sure google.com opens. Do not sign up for anything yet.",
+		"等待时请先完成准备：确认要用 Claude 的 Mac / Windows 电脑上的代理软件能正常打开 google.com。没装 Clash Verge Rev 也没关系，配置命令会自动装好。先不要注册任何账号。",
+		"While you wait, get ready: make sure google.com opens through your proxy app on the Mac / Windows computer you will use for Claude (Clash Verge Rev is installed automatically if missing). Do not sign up for anything yet.",
 	],
 	guideLink: [
 		"完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员）",
@@ -110,8 +110,8 @@ const copy = {
 	support: ["联系客服", "Contact support"],
 	start: ["开始使用", "Get started"],
 	step1: [
-		"准备：这台 Mac / Windows 电脑上已装好 Clash Verge Rev，并能正常打开 google.com。",
-		"Prepare: Clash Verge Rev is installed on this Mac / Windows computer and google.com opens normally.",
+		"准备：这台 Mac / Windows 电脑上的代理软件能正常打开 google.com。没装 Clash Verge Rev 也没关系，命令会自动装好，并把你原来软件（如 FlClash）里的订阅搬过来。",
+		"Prepare: google.com opens through your proxy app on this Mac / Windows computer. If Clash Verge Rev is missing, the command installs it and moves your subscription over from your old app (e.g. FlClash).",
 	],
 	step2: [
 		"请在要用 Claude 的电脑上打开本页面。",
@@ -876,7 +876,7 @@ export function agentPrompt(
 		? [
 				"请帮我在这台电脑上配置「Claude 专属环境」。能自己做的全部自己做，只在需要我本人操作时停下来，告诉我具体点哪里。全部完成后只回复「OK」；没完成就列出没通过的项目和要我做什么。",
 				`我的开通码（相当于专属线路密码，不要发到任何网站、日志或别人那里）：${input.code}`,
-				"1. 先看这台电脑是 macOS 还是 Windows；确认已经安装并打开 Clash Verge Rev，并且能访问 https://www.google.com 。没装或打不开就停下告诉我。",
+				"1. 先看这台电脑是 macOS 还是 Windows；确认能访问 https://www.google.com （打不开就停下告诉我）。没装 Clash Verge Rev 不用管，第 2 步的命令会自动安装，并把我原来代理软件里的订阅搬过去。Windows 必须在「终端（管理员）」里运行，不是管理员身份命令会直接停下。",
 				"2. 运行下面对应系统的配置命令。它必须在有交互的终端里运行；如果你没法操作交互终端，就让我打开「终端」把命令粘贴进去运行，等我说跑完了再继续。",
 				`macOS（终端）：${input.mac}`,
 				`Windows（管理员身份的终端或 PowerShell）：${input.windows}`,
@@ -888,7 +888,7 @@ export function agentPrompt(
 		: [
 				'Please set up my "Claude dedicated environment" on this computer. Do everything you can yourself; stop only when I must act, and tell me exactly what to click. When everything passes, reply only "OK"; otherwise list what failed and what I need to do.',
 				`My activation code (it works like a password; never send it to any website, log or person): ${input.code}`,
-				"1. Check whether this is macOS or Windows; confirm Clash Verge Rev is installed and running and https://www.google.com opens. If not, stop and tell me.",
+				"1. Check whether this is macOS or Windows and that https://www.google.com opens (if not, stop and tell me). Clash Verge Rev is installed automatically by the command in step 2 if missing; on Windows it must run in an administrator terminal. If google does not open, stop and tell me.",
 				"2. Run the command for this OS. It needs an interactive terminal; if you cannot drive one, ask me to paste it into Terminal and wait until I say it finished.",
 				`macOS (Terminal): ${input.mac}`,
 				`Windows (Terminal / PowerShell as administrator): ${input.windows}`,

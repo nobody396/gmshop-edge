@@ -1,7 +1,7 @@
 #!/bin/bash
 # Claude 稳定使用环境 · 一键部署（macOS + Clash Verge Rev）
 #
-# 客户前提：① 自己有能用的梯子，并在 Clash Verge Rev 里导入了订阅
+# 客户前提：① 自己有能用的代理订阅（没装 Clash Verge Rev 的，脚本自动安装并把原软件里的订阅导入）
 #           ② 有我们发的开通码（CE1- 开头）
 # 链路：客户电脑 → 客户的梯子（自动挑能通的节点）→ 我们的中转 → 客户专属静态 IP → Claude
 # 脚本完成：写入 Clash 分流（Claude、上报、验证、付款、实名全部走专属 IP）→ 关自动时区并改时区
@@ -13,6 +13,10 @@
 #   CE_DRY_RUN=1      不改本机任何东西：配置只写到临时目录，其余只读检查
 #   CE_TEST_ROOT=/path 压测沙箱：所有系统级命令（退出/打开 App、sudo、launchctl、networksetup、defaults 写入）只记日志不执行，
 #                     控制接口只找 $CE_TEST_ROOT/verge-mihomo.sock，时区/语言/定位/launchctl 读写沙箱里的文件
+#   CE_TEST_HOOK=/path 沙箱里代替「下载 / 安装 / 启动 Clash Verge」的测试脚本（只在 CE_TEST_ROOT 下生效）
+#   CE_TEST_TTY=1     沙箱里允许从终端提问（粘贴订阅链接）
+# 没装 Clash Verge Rev 时：自动下载官方固定版本（SHA-256 校验）装到「应用程序」，把原来代理软件（FlClash、Clash for Windows、
+# Clash Party / Mihomo Party、Clash Nyanpasu、v2rayN）里正在用的订阅导入进去，再关掉原来的软件和它设的系统代理。
 set -uo pipefail
 
 GROUP_NAME="Claude静态IP"
@@ -61,17 +65,18 @@ jedit() { osascript -l JavaScript -e 'function run(a){var fm=$.NSFileManager.def
 # Clash 控制接口（unix socket）
 SECRET=""; SOCK=""
 ctl() { # ctl METHOD PATH [BODY]
-  local args=(-s -m 10 -K - --unix-socket "$SOCK" -X "$1")
+  local args=(-s -m "${CTL_MAX:-10}" -K - --unix-socket "$SOCK" -X "$1")
   [ -n "${3:-}" ] && args+=(-H 'Content-Type: application/json' -d "$3")
   printf 'header = "Authorization: Bearer %s"\n' "$SECRET" | curl "${args[@]}" "http://localhost$2"
 }
 find_ctl() {
   SECRET=$(grep -E '^secret:' "$CV_CFG" 2>/dev/null | sed -E "s/^secret: *//; s/^['\"]//; s/['\"]$//")
-  local cfg_sock; cfg_sock=$(grep -E '^external-controller-unix:' "$CV_CFG" 2>/dev/null | awk '{print $2}')
+  # 2.5 起 Clash Verge 自己的内核在每个用户的临时目录（getconf DARWIN_USER_TEMP_DIR），以配置里写的为准
+  local cfg_sock; cfg_sock=$(grep -E '^external-controller-unix:' "$CV_CFG" 2>/dev/null | head -1 | sed -E "s/^external-controller-unix:[[:space:]]*//; s/^['\"]//; s/['\"][[:space:]]*\$//")
   local cands=("/var/run/clash-verge-service/users/$(id -u)/verge-mihomo.sock" "$cfg_sock" /tmp/verge/verge-mihomo.sock)
   [ -n "${CE_TEST_ROOT:-}" ] && cands=("$CE_TEST_ROOT/verge-mihomo.sock")
   for s in "${cands[@]}"; do
-    [ -S "$s" ] && SOCK="$s" && ctl GET /version | grep -q version && return 0
+    [ -S "$s" ] && SOCK="$s" && CTL_MAX=4 ctl GET /version | grep -q version && return 0
   done
   SOCK=""; return 1
 }
@@ -147,6 +152,343 @@ urlenc() { osascript -l JavaScript -e 'function run(a){return encodeURIComponent
 trace_ip() { awk -F= '/^ip=/{print $2}'; }
 # 不经过任何代理设置直接请求：只有 TUN 接管了系统流量，才会从专属 IP 出去
 dtrace() { env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy curl -s -m 15 --noproxy '*' "$@"; }
+# ===== 迁移：没装 Clash Verge Rev → 自动安装 + 搬订阅 + 关旧软件 =====
+# 自动安装的 Clash Verge Rev：官方 GitHub 固定版本 + SHA-256（发布满两周的稳定版）
+VERGE_VER="2.5.8"
+VERGE_UA="clash-verge/v${VERGE_VER}"
+VERGE_URL="https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v${VERGE_VER}/"
+if [ "$(uname -m)" = arm64 ] || [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
+  V_ASSET="Clash.Verge_${VERGE_VER}_aarch64.dmg"; V_SUM=1f7c3a73970f103fc3cb9944744772fa1540160f05911e033ffc57f7c9f860ec
+else
+  V_ASSET="Clash.Verge_${VERGE_VER}_x64.dmg"; V_SUM=8cdf7a01a1c548a081339aff21b2599d60f67730d05485e90831f4bbdbf3b093
+fi
+VERGE_APP="$APPS_DIR/Clash Verge.app"
+# 原来代理软件带的内核进程（退出时一起关）
+OTHER_CORES="FlClash|FlClashCore
+Clash Party|mihomo mihomo-alpha mihomo-smart
+Mihomo Party|mihomo mihomo-alpha mihomo-smart
+Clash Nyanpasu|mihomo mihomo-alpha clash-rs
+Clash for Windows|clash-darwin
+v2rayN|xray v2ray sing-box mihomo
+Hiddify|HiddifyCli hiddify-core
+NekoRay|nekobox_core nekoray_core"
+thook() { [ -n "$TR" ] && [ -n "${CE_TEST_HOOK:-}" ] || return 0; "$CE_PYTHON" "$CE_TEST_HOOK" "$@" >/dev/null 2>&1; }
+verge_present() { [ -d "$VERGE_APP" ] || [ -d "$HOME/Applications/Clash Verge.app" ] || [ -f "$CV_CFG" ]; }
+# 订阅链接只显示到域名，后面的路径和参数（含令牌）一律打码
+mask_url() { printf '%s' "$1" | sed -E 's#^(https?://)([^@/?#]*@)?([^/?#]+).*#\1\3/***#'; }
+SUDO_READY=""
+sudo_once() { # 需要管理员权限的几步共用一次密码：输一次，后台保持到脚本结束
+  [ -n "$SUDO_READY" ] && return 0
+  if [ -n "$TR" ]; then echo "sudo -v" >>"$TR/sys.log"; SUDO_READY=1; return 0; fi
+  sudo -n true 2>/dev/null || printf '  接下来需要输入一次开机密码（输入时不显示）\n'
+  sudo -v || return 1
+  SUDO_READY=1
+  ( while kill -0 $$ 2>/dev/null; do sudo -n -v 2>/dev/null; sleep 50; done ) >/dev/null 2>&1 &
+}
+# 读 YAML 列表（items: / files:）：输出「I<Tab>id<Tab>type<Tab>url」每项一行，顶层简单字段输出「T<Tab>键<Tab>值」
+YLIST_AWK='
+function unq(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s)
+  if (length(s) >= 2 && s ~ /^\047.*\047$/) { s = substr(s, 2, length(s) - 2); gsub(/\047\047/, "\047", s); return s }
+  if (length(s) >= 2 && s ~ /^".*"$/) return substr(s, 2, length(s) - 2)
+  sub(/[ \t]+#.*$/, "", s); return s }
+function flush() { if (have) print "I\t" id "\t" ty "\t" url; have = 0; id = ""; ty = ""; url = "" }
+function setk(k, v) { v = unq(v); if (k == "uid" || k == "id") id = v; else if (k == "type") ty = v; else if (k == "url") url = v }
+BEGIN { ind = -1 }
+{ sub(/\r$/, "") }
+/^[ \t]*(#|$)/ { next }
+/^[A-Za-z_][A-Za-z0-9_-]*:/ { flush(); k = $0; sub(/:.*/, "", k); v = $0; sub(/^[^:]*:/, "", v); v = unq(v)
+  inl = (k == LK); lastk = k; pend = (v == ""); if (!inl && v != "") print "T\t" k "\t" v; next }
+!inl { if (pend && match($0, /^[ \t]*- /)) { print "T\t" lastk "\t" unq(substr($0, RLENGTH + 1)); pend = 0 } next }
+match($0, /^ *- /) { i = RLENGTH - 2
+  if (ind < 0 || i == ind) { if (ind < 0) ind = i; flush(); have = 1; rest = substr($0, RLENGTH + 1)
+    if (match(rest, /^[A-Za-z0-9_-]+:/)) setk(substr(rest, 1, RLENGTH - 1), substr(rest, RLENGTH + 1)); next } }
+have { match($0, /^ */); if (RLENGTH == ind + 2) { kv = substr($0, RLENGTH + 1); if (kv ~ /^[A-Za-z0-9_-]+:/) { k = kv; sub(/:.*/, "", k); v = kv; sub(/^[^:]*:/, "", v); setk(k, v) } } }
+END { flush() }'
+ylist() { [ -f "$1" ] && awk -v LK="$2" "$YLIST_AWK" "$1"; }
+# 只读查询 SQLite：先复制到临时目录再读，原文件不动；列之间用 Tab 分隔
+sqlrows() {
+  [ -f "$1" ] || return 0
+  local d; d=$(mktemp -d)
+  cp "$1" "$d/db" 2>/dev/null && { for x in -wal -shm; do [ -f "$1$x" ] && cp "$1$x" "$d/db$x"; done; sqlite3 -separator "$(printf '\t')" "$d/db" "$2" 2>/dev/null; }
+  rm -rf "$d"
+}
+# ---- 从其他代理软件的本地配置里找订阅（只读）：每行「是否正在使用<Tab>链接」----
+read_flclash() { # FlClash：新版订阅在 database.sqlite 的 profiles 表，旧版在偏好设置的 config 里；正在用的是 currentProfileId
+  local d="$HOME/Library/Application Support/com.follow.clash" pl="$HOME/Library/Preferences/com.follow.clash.plist" cfg="" rows
+  if [ -f "$pl" ]; then
+    cfg=$(plutil -extract flutter.config raw -o - "$pl" 2>/dev/null) || cfg=""
+    [ -n "$cfg" ] || cfg=$(jget "$(plutil -convert json -o - "$pl" 2>/dev/null)" 'o["flutter.config"]')
+  fi
+  [ -n "$cfg" ] && jget "$cfg" 'return (o.profiles||[]).filter(function(p){return p.url}).map(function(p){return String(p.id)+"\t"+p.url}).join("\n")'
+  rows=$(sqlrows "$d/database.sqlite" "SELECT id, url FROM profiles WHERE type = 'url' ORDER BY \"order\"")
+  [ -n "$rows" ] || rows=$(sqlrows "$d/database.sqlite" "SELECT id, url FROM profiles WHERE type = 'url'")
+  [ -n "$rows" ] && printf '%s\n' "$rows"
+} 2>/dev/null
+mark_cur() { # 第 1 列是 id，换成「是否正在使用」
+  awk -F'\t' -v C="$1" 'NF >= 2 { print ((C != "" && ($1 "") == (C "")) ? 1 : 0) "\t" $2 }'
+}
+read_yaml_client() { # file listkey curkey
+  [ -f "$1" ] || return 0
+  ylist "$1" "$2" | awk -F'\t' -v CK="$3" '
+    $1 == "T" && $2 == CK { cur = $3; next }
+    $1 == "I" { n++; id[n] = $2; ty[n] = $3; url[n] = $4 }
+    END { for (i = 1; i <= n; i++) if (url[i] != "" && (ty[i] == "" || ty[i] == "remote")) {
+            c = (CK == "index") ? (cur != "" && i - 1 == cur + 0) : (cur != "" && (id[i] "") == (cur "")); print (c ? 1 : 0) "\t" url[i] } }'
+}
+read_v2rayn() {
+  local d g cur
+  for d in "$HOME/.local/share/v2rayN" "$HOME/Library/Application Support/v2rayN"; do
+    g="$d/guiConfigs"; [ -d "$g" ] || continue
+    cur=$( [ -f "$g/guiNConfig.json" ] && jget "$(cat "$g/guiNConfig.json")" 'o.SubIndexId' )
+    sqlrows "$g/guiNDB.db" "SELECT Id, Url FROM SubItem WHERE Enabled = 1 ORDER BY Sort" | mark_cur "$cur"
+  done
+}
+find_subs() { # 输出「排序<Tab>软件<Tab>是否正在使用<Tab>链接」，正在运行的软件、正在使用的订阅排前面，去重
+  local n p run
+  {
+    { read_flclash | mark_cur "$(flclash_cur)"; } | sed "s/^/FlClash	/"
+    read_yaml_client "$HOME/.config/clash/profiles/list.yml" files index | sed "s/^/Clash for Windows	/"
+    read_yaml_client "$HOME/Library/Application Support/mihomo-party/profile.yaml" items current | sed "s/^/Clash Party	/"
+    for p in "$HOME/.config/clash-nyanpasu" "$HOME/.config/Clash Nyanpasu" "$HOME/Library/Application Support/Clash Nyanpasu" "$HOME/Library/Application Support/clash-nyanpasu"; do
+      read_yaml_client "$p/profiles.yaml" items current | sed "s/^/Clash Nyanpasu	/"
+    done
+    read_v2rayn | sed "s/^/v2rayN	/"
+  } | while IFS="$(printf '\t')" read -r n c u; do
+    printf '%s\n' "$u" | grep -qE '^https?://[^[:space:]]+$' || continue
+    run=2; printf '%s\n' "$OTHER_CLIENTS" | grep -F "$n|" | head -1 | { IFS='|' read -r _ _ pr; proc_running "$pr"; } && run=0
+    printf '%s\t%s\t%s\t%s\n' "$((run + 1 - c))" "$n" "$c" "$u"
+  done | awk -F'\t' '!seen[$4]++' | sort -t "$(printf '\t')" -k1,1n -s
+}
+flclash_cur() {
+  local pl="$HOME/Library/Preferences/com.follow.clash.plist" cfg
+  [ -f "$pl" ] || return 0
+  cfg=$(plutil -extract flutter.config raw -o - "$pl" 2>/dev/null) || cfg=$(jget "$(plutil -convert json -o - "$pl" 2>/dev/null)" 'o["flutter.config"]')
+  printf '%s' "$cfg" | grep -oE '"currentProfileId" *: *"?[^",} ]+' | head -1 | sed -E 's/.*: *"?//'
+}
+# 原来的代理软件开着的本机端口：优先看系统代理设置，再试常见端口。下载订阅和安装包时先走它（国内直连 GitHub 常常很慢）
+np_get() { # kind service
+  if [ -n "$TR" ]; then cat "$TR/np_$1" 2>/dev/null || printf 'Enabled: No\n'; else networksetup "-get$1" "$2" 2>/dev/null; fi; }
+np_field() { awk -F': ' -v K="$1" '$1 == K { print $2; exit }'; }
+find_old_proxy() {
+  local ports="" svc out p
+  while IFS= read -r svc; do
+    [ -n "$svc" ] || continue
+    out=$(np_get webproxy "$svc")
+    [ "$(printf '%s\n' "$out" | np_field Enabled)" = Yes ] && printf '%s\n' "$out" | np_field Server | grep -qE '^(127\.0\.0\.1|localhost)$' && ports="$ports $(printf '%s\n' "$out" | np_field Port)"
+  done < <(sys_services)
+  for p in $ports 7890 7891 10809 7897 1080; do
+    curl -s -m 5 -o /dev/null -x "http://127.0.0.1:$p" https://www.google.com/generate_204 && { echo "http://127.0.0.1:$p"; return 0; }
+  done
+  return 0
+}
+OLDPX=""
+routes() { [ -n "$OLDPX" ] && echo "$OLDPX"; echo direct; }
+# 用 Clash Verge 的身份下载订阅（机场按这个返回 Clash 格式）；链接通过标准输入交给 curl，不出现在命令行里
+fetch_sub() { # url outfile
+  local r code esc
+  esc=$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  for r in $(routes); do
+    if [ "$r" = direct ]; then code=$(printf 'url = "%s"\n' "$esc" | curl -s -L -m 30 -A "$VERGE_UA" --noproxy '*' -o "$2" -w '%{http_code}' -K -)
+    else code=$(printf 'url = "%s"\n' "$esc" | curl -s -L -m 30 -A "$VERGE_UA" -x "$r" -o "$2" -w '%{http_code}' -K -); fi
+    case "$code" in 2*) ;; *) continue ;; esac
+    LC_ALL=C sed -i '' $'1s/^\xef\xbb\xbf//' "$2" 2>/dev/null
+    grep -qE '^(proxies|proxy-providers):' "$2" && return 0
+  done
+  return 1
+}
+manual_fallback() {
+  c_err "$1"
+  local others; others=$(installed_others | paste -sd '、' -)
+  [ -n "$others" ] && printf '  检测到你在用：%s。需要换成 Clash Verge Rev（免费开源），请按下面手动装一下：\n' "$others"
+  printf '  1. 已为你打开下载页：M 芯片下载 aarch64.dmg，Intel 下载 x64.dmg，装好打开\n'
+  printf '  2. 在 Clash Verge Rev「订阅」里粘贴你的订阅链接（机场官网或原软件的订阅设置里能找到），选中它\n'
+  printf '  3. 退出原来的代理软件，确认能打开 google.com 后，重新运行本命令\n'
+  sysrun open "https://github.com/clash-verge-rev/clash-verge-rev/releases/latest"
+  exit 3
+}
+install_verge() {
+  printf '  正在下载 Clash Verge Rev %s（约 85MB，来自官方 GitHub；网络慢的话要几分钟，请稍等）…\n' "$VERGE_VER"
+  if [ -n "$TR" ]; then echo "download $V_ASSET" >>"$TR/sys.log"; thook download || return 1; echo "install $V_ASSET" >>"$TR/sys.log"; thook install; return; fi
+  local d f r ok="" app
+  d=$(mktemp -d); f="$d/$V_ASSET"
+  for r in $(routes) $(routes); do   # 每条路各试两轮（GitHub 偶尔会临时出错）
+    rm -f "$f"
+    if [ "$r" = direct ]; then curl -fsSL --retry 2 -m 900 --noproxy '*' -o "$f" "$VERGE_URL$V_ASSET"; else curl -fsSL --retry 2 -m 900 -x "$r" -o "$f" "$VERGE_URL$V_ASSET"; fi
+    [ -f "$f" ] && [ "$(shasum -a 256 "$f" | awk '{print $1}')" = "$V_SUM" ] && ok=1 && break
+    sleep 3
+  done
+  [ -n "$ok" ] || { rm -rf "$d"; return 1; }
+  c_ok "下载完成，文件校验通过（SHA-256 与官方发布一致）"
+  printf '  正在安装到「应用程序」…\n'
+  mkdir "$d/mnt"
+  hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$d/mnt" "$f" >/dev/null 2>&1 || { rm -rf "$d"; return 1; }
+  app=$(find "$d/mnt" -maxdepth 1 -name '*.app' | head -1)
+  if [ -n "$app" ]; then
+    if [ -w "$APPS_DIR" ]; then rm -rf "$VERGE_APP" && ditto "$app" "$VERGE_APP"
+    else sudo_once && sudo rm -rf "$VERGE_APP" && sudo ditto "$app" "$VERGE_APP"; fi
+  fi
+  hdiutil detach "$d/mnt" -quiet 2>/dev/null || hdiutil detach "$d/mnt" -force -quiet 2>/dev/null
+  rm -rf "$d"
+  [ -d "$VERGE_APP" ] || return 1
+  # 只去掉这个 App 的「来自网络」隔离标记，免得第一次打开被拦
+  xattr -dr com.apple.quarantine "$VERGE_APP" 2>/dev/null || { sudo_once && sudo xattr -dr com.apple.quarantine "$VERGE_APP" 2>/dev/null; }
+  return 0
+}
+start_verge() { if [ -n "$TR" ]; then echo "open Clash Verge" >>"$TR/sys.log"; thook verge-start; else open "$VERGE_APP" 2>/dev/null || open -a "Clash Verge"; fi; }
+stop_verge() {
+  sysrun osascript -e 'quit app "Clash Verge"' 2>/dev/null
+  [ -n "$TR" ] && return 0
+  for _ in $(seq 1 15); do pgrep -f 'Clash Verge.app/Contents/MacOS/' >/dev/null || break; sleep 1; done
+  pgrep -f 'Clash Verge.app/Contents/MacOS/' >/dev/null || return 0
+  pkill -f 'Clash Verge.app/Contents/MacOS/' 2>/dev/null; sleep 2; pkill -x verge-mihomo 2>/dev/null; pkill -x verge-mihomo-alpha 2>/dev/null
+}
+wait_ctl() { local end=$((SECONDS + $1)); while [ "$SECONDS" -lt "$end" ]; do [ -f "$CV_CFG" ] && find_ctl && return 0; sleep 2; done; return 1; }
+quit_old() { # 显示名|App 名|进程名：先正常退出，再结束进程（连同它的内核）
+  local n=$1 a=$2 p=$3 c
+  sysrun osascript -e "quit app \"${a%.app}\"" 2>/dev/null
+  if [ -n "$TR" ]; then sed -i '' "/^${p}\$/d" "$TR/procs"; return 0; fi
+  for _ in 1 2 3 4 5; do pgrep -xq "$p" || break; sleep 1; done
+  pkill -x "$p" 2>/dev/null
+  for c in $(printf '%s\n' "$OTHER_CORES" | grep -F "$n|" | head -1 | cut -d'|' -f2); do pkill -x "$c" 2>/dev/null || sudo -n pkill -x "$c" 2>/dev/null; done
+  return 0
+}
+# 系统代理还指向本机别的端口（原来的软件），就关掉，不然它退出后浏览器上不了网
+reset_sys_proxy() { # keep_port -> 输出关掉的「网络 类型」
+  local svc kind out
+  while IFS= read -r svc; do
+    [ -n "$svc" ] || continue
+    for kind in webproxy securewebproxy socksfirewallproxy; do
+      out=$(np_get "$kind" "$svc")
+      [ "$(printf '%s\n' "$out" | np_field Enabled)" = Yes ] || continue
+      printf '%s\n' "$out" | np_field Server | grep -qE '^(127\.0\.0\.1|localhost|::1)$' || continue
+      [ "$(printf '%s\n' "$out" | np_field Port)" = "$1" ] && continue
+      if [ -n "$TR" ]; then echo "networksetup -set${kind}state $svc off" >>"$TR/sys.log"; printf 'Enabled: No\n' >"$TR/np_$kind"
+      else sudo_once && sudo networksetup "-set${kind}state" "$svc" off; fi
+      echo "$svc $kind"
+    done
+  done < <(sys_services)
+}
+has_current_profile() { [ -n "$(ylist "$CV_DIR/profiles.yaml" items | awk -F'\t' '$1 == "T" && $2 == "current" && $3 != "null" && $3 != "~" { print $3 }')" ]; }
+# 先读有限的随机字节再筛（不能让 tr 无限读 /dev/urandom：父进程忽略 SIGPIPE 时它永远停不下来）
+new_uid() { printf '%s%s' "$1" "$(head -c 400 /dev/urandom | LC_ALL=C tr -dc '0-9a-zA-Z' | cut -c1-11)"; }
+yq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
+# 按 Clash Verge 自己导入订阅的方式写入：订阅文件 + 它配套的 5 个增强项，加进 profiles.yaml 并设为当前订阅
+import_sub() { # url content_file name
+  local pd="$CV_DIR/profiles" uid now m s r p g ef pf="$CV_DIR/profiles.yaml" k T
+  mkdir -p "$pd"
+  uid=$(new_uid R); now=$(date +%s); m=$(new_uid m); s=$(new_uid s); r=$(new_uid r); p=$(new_uid p); g=$(new_uid g)
+  cp "$2" "$pd/$uid.yaml"
+  printf '# Profile Enhancement Merge Template for Clash Verge\n\n' >"$pd/$m.yaml"
+  printf '// Define main function (script entry)\n\nfunction main(config, profileName) {\n  return config;\n}\n' >"$pd/$s.js"
+  for k in "Rules $r" "Proxies $p" "Groups $g"; do
+    printf '# Profile Enhancement %s Template for Clash Verge\n\nprepend: []\n\nappend: []\n\ndelete: []\n' "${k% *}" >"$pd/${k#* }.yaml"
+  done
+  ef=$(mktemp)
+  {
+    printf -- '- uid: %s\n  type: remote\n  name: %s\n  file: %s.yaml\n  url: %s\n  updated: %s\n' "$uid" "$(yq "$3")" "$uid" "$(yq "$1")" "$now"
+    printf '  option:\n    update_interval: 1440\n    allow_auto_update: true\n    merge: %s\n    script: %s\n    rules: %s\n    proxies: %s\n    groups: %s\n' "$m" "$s" "$r" "$p" "$g"
+    printf -- '- uid: %s\n  type: merge\n  file: %s.yaml\n  updated: %s\n' "$m" "$m" "$now"
+    printf -- '- uid: %s\n  type: script\n  file: %s.js\n  updated: %s\n' "$s" "$s" "$now"
+    printf -- '- uid: %s\n  type: rules\n  file: %s.yaml\n  updated: %s\n' "$r" "$r" "$now"
+    printf -- '- uid: %s\n  type: proxies\n  file: %s.yaml\n  updated: %s\n' "$p" "$p" "$now"
+    printf -- '- uid: %s\n  type: groups\n  file: %s.yaml\n  updated: %s\n' "$g" "$g" "$now"
+    # 全局的 Merge / Script 两项：Clash Verge 第一次启动时 profiles.yaml 还是空的就不会补上，没有它们全局扩展脚本（Script.js）不生效
+    if ! grep -qE '^[[:space:]]*- uid: Merge[[:space:]]*$' "$pf" 2>/dev/null; then
+      printf -- '- uid: Merge\n  type: merge\n  file: Merge.yaml\n  updated: %s\n' "$now"
+      [ -f "$pd/Merge.yaml" ] || printf '# Profile Enhancement Merge Template for Clash Verge\n\nprofile:\n  store-selected: true\n' >"$pd/Merge.yaml"
+    fi
+    if ! grep -qE '^[[:space:]]*- uid: Script[[:space:]]*$' "$pf" 2>/dev/null; then
+      printf -- '- uid: Script\n  type: script\n  file: Script.js\n  updated: %s\n' "$now"
+      [ -f "$pd/Script.js" ] || printf '// Define main function (script entry)\n\nfunction main(config, profileName) {\n  return config;\n}\n' >"$pd/Script.js"
+    fi
+  } >"$ef"
+  [ -f "$pf" ] && cp "$pf" "$pf.backup-claude-env-$TS"
+  { [ -f "$pf" ] && cat "$pf"; true; } | awk -v U="$uid" -v EF="$ef" '
+    BEGIN { while ((getline l < EF) > 0) E[++ne] = l; pre = "-" }
+    function emit(  j, p) { p = (pre == "-") ? "" : pre; for (j = 1; j <= ne; j++) print p E[j]; done = 1 }
+    { sub(/\r$/, "") }
+    inl && !done && /^[^ \t#-]/ { emit(); inl = 0 }
+    /^current:/ { print "current: " U; cur = 1; skipc = 1; next }
+    skipc && /^- / { next }
+    { skipc = 0 }
+    /^items:/ { print "items:"; inl = 1; seen = 1; next }
+    inl && pre == "-" && match($0, /^ *- /) { pre = substr($0, 1, RLENGTH - 2) }
+    /^[ \t]*$/ { blank++; next }
+    { while (blank > 0) { print ""; blank-- } print }
+    END { if (!done) { if (!seen) print "items:"; emit() } if (!cur) print "current: " U }' >"$pf.new" && mv "$pf.new" "$pf"
+  rm -f "$ef"
+}
+# 订阅里的节点名（proxies: 下面每项的 name），每行一个
+sub_names() { awk '/^proxies:/ { f = 1; next } /^[^ \t-]/ { f = 0 }
+  f && match($0, /^[ \t]*-[ \t]*\{?[ \t]*name:[ \t]*/) { v = substr($0, RLENGTH + 1)
+    if (v ~ /^"/) { sub(/^"/, "", v); sub(/".*/, "", v) } else if (v ~ /^\047/) { sub(/^\047/, "", v); sub(/\047.*/, "", v) } else { sub(/[,}].*/, "", v) }
+    sub(/[ \t]+$/, "", v); if (v != "") print v }' "$1"; }
+# Clash Verge 内核里实际加载到的、订阅里的节点数
+count_nodes() { # names_file
+  local px; px=$(ctl GET /proxies)
+  if [ -s "$1" ]; then jget "$px" 'return Object.keys(o.proxies||{}).join("\n")' | grep -cxFf "$1"
+  else jget "$px" 'var p=o.proxies||{};return Object.keys(p).filter(function(k){return !/^(Direct|Reject|RejectDrop|Compatible|Pass|Selector|URLTest|Fallback|LoadBalance|Relay|Dns)$/.test(p[k].type)}).length'; fi
+}
+migrate() { # install|import
+  if [ "$1" = install ]; then
+    c_warn "这台电脑还没装 Clash Verge Rev（这套设置要用它）。接下来自动帮你："
+    printf '  ① 从官方下载并安装 Clash Verge Rev  ② 把你原来代理软件里的订阅搬进去  ③ 关掉原来的代理软件（只是退出，不卸载）\n'
+  else
+    c_warn "Clash Verge Rev 里还没有订阅。接下来把你原来代理软件里的订阅导进去，再关掉原来的代理软件（只是退出，不卸载）"
+  fi
+  OLDPX=$(find_old_proxy)
+  [ -n "$OLDPX" ] && c_ok "原来的代理软件能用（本机端口 ${OLDPX##*:}），下载时先借它的网络"
+  local subs subf chosen="" n cl c u tries vport was nn host names
+  subs=$(find_subs); subf=$(mktemp)
+  [ -n "$subs" ] || c_warn "没在电脑上的代理软件里找到订阅"
+  while IFS="$(printf '\t')" read -r _ cl c u; do
+    [ -n "$u" ] || continue
+    printf '  找到 %s 的订阅：%s%s，正在下载…\n' "$cl" "$(mask_url "$u")" "$([ "$c" = 1 ] && echo '（正在使用）')"
+    if fetch_sub "$u" "$subf"; then chosen=$u; break; fi
+    c_warn "这个订阅下载不下来，或者不是 Clash 格式，换下一个"
+  done < <(printf '%s\n' "$subs" | head -6)
+  tries=0
+  while [ -z "$chosen" ] && [ "$tries" -lt 3 ]; do
+    tries=$((tries + 1))
+    # 没有终端可问（或沙箱测试没要求交互）就不问
+    { [ -z "$TR" ] || [ -n "${CE_TEST_TTY:-}" ]; } && ( : </dev/tty ) 2>/dev/null || break
+    u=$(ask "请粘贴你的订阅链接（http 开头，在机场官网或原来软件的订阅设置里复制），回车：" | tr -d ' \r\n')
+    [ -n "$u" ] || break
+    printf '%s\n' "$u" | grep -qE '^https?://[^[:space:]]+$' || { c_warn "这不像订阅链接（应该以 http:// 或 https:// 开头），请再试一次"; continue; }
+    printf '  正在下载订阅 %s …\n' "$(mask_url "$u")"
+    if fetch_sub "$u" "$subf"; then chosen=$u; else c_warn "这个链接下载不到 Clash 格式的订阅。请在机场官网找「Clash」订阅链接再粘贴"; fi
+  done
+  [ -n "$chosen" ] || { rm -f "$subf"; manual_fallback "没拿到能用的订阅，没法自动配置。"; }
+  names=$(mktemp); sub_names "$subf" >"$names"; nn=$(grep -c . "$names")
+  c_ok "订阅下载成功：$(mask_url "$chosen")$([ "${nn:-0}" -gt 0 ] && echo "（约 ${nn} 个节点）")"
+  if [ "$1" = install ]; then
+    install_verge || { rm -f "$subf" "$names"; manual_fallback "自动下载或安装 Clash Verge Rev 没成功（多半是网络问题）。"; }
+    c_ok "Clash Verge Rev ${VERGE_VER} 已安装"
+    printf '  正在第一次打开 Clash Verge Rev…\n'
+    start_verge
+    wait_ctl 90 || die "Clash Verge Rev 装好了，但第一次打开没成功。请手动打开一次 Clash Verge Rev，再重新运行本命令。"
+  fi
+  stop_verge
+  host=$(printf '%s' "$chosen" | sed -E 's#^https?://([^@/?#]*@)?([^/?#:]+).*#\2#')
+  import_sub "$chosen" "$subf" "$host"; rm -f "$subf"
+  c_ok "订阅已导入 Clash Verge Rev，并设为当前使用的订阅"
+  local runold; runold=$(running_others)
+  if [ -n "$runold" ]; then
+    printf '  正在关闭原来的代理软件：%s（两个代理软件同时开会抢网络；以后只用 Clash Verge Rev）\n' "$(printf '%s\n' "$runold" | cut -d'|' -f1 | paste -sd '、' -)"
+    while IFS='|' read -r n a; do quit_old "$n" "$a" "$(printf '%s\n' "$OTHER_CLIENTS" | grep -F "$n|$a|" | head -1 | cut -d'|' -f3)"; done <<<"$runold"
+    c_ok "原来的代理软件已关闭（没有卸载，想用时还能打开，但别和 Clash Verge Rev 同时开）"
+  fi
+  vport=$(grep -E '^mixed-port:' "$CV_CFG" 2>/dev/null | awk '{print $2}'); vport=${vport:-7897}
+  was=$(reset_sys_proxy "$vport")
+  [ -n "$was" ] && c_ok "已关掉原来软件留下的系统代理（$(printf '%s\n' "$was" | paste -sd '、' -)）"
+  printf '  正在打开 Clash Verge Rev 并加载订阅…\n'
+  start_verge
+  SOCK=""; wait_ctl 60 || die "Clash Verge Rev 打开后连不上控制接口。"
+  n=0; for _ in $(seq 1 15); do n=$(count_nodes "$names"); [ "${n:-0}" -gt 0 ] && break; sleep 2; done
+  rm -f "$names"
+  [ "${n:-0}" -gt 0 ] || die "订阅导入后 Clash Verge Rev 里没有读到节点。请打开 Clash Verge Rev「订阅」页看一下是否有报错，截图发给客服。"
+  c_ok "Clash Verge Rev 已读到订阅里的 ${n} 个节点"
+}
 
 [ "$(uname)" = "Darwin" ] || die "这个脚本只支持 macOS。"
 if [ -n "${CE_TEST_ROOT:-}" ]; then
@@ -158,15 +500,15 @@ printf '\n\033[1mClaude 稳定使用环境 · 一键部署\033[0m\n'
 
 # ===== 1. 前提检查 =====
 step 1 "检查梯子和 Clash Verge"
+if ! verge_present; then
+  [ -n "$DRY" ] && manual_fallback "没找到 Clash Verge Rev。"
+  migrate install
+elif [ -f "$CV_DIR/profiles.yaml" ] && ! has_current_profile && [ -z "$DRY" ]; then
+  migrate import
+fi
 if [ ! -f "$CV_CFG" ]; then
-  OTHERS=$(installed_others | paste -sd '、' -)
-  c_err "没找到 Clash Verge Rev。"
-  [ -n "$OTHERS" ] && printf '  检测到你在用：%s。这类软件没法可靠地自动配置「梯子 → 专属 IP」链路，需要换成 Clash Verge Rev（免费开源）。\n' "$OTHERS"
-  printf '  1. 已为你打开下载页：M 芯片下载 aarch64.dmg，Intel 下载 x64.dmg，装好打开\n'
-  printf '  2. 在 Clash Verge Rev「订阅」里粘贴你梯子的订阅链接（机场官网或原软件的订阅设置里能找到），选中它\n'
-  printf '  3. 退出原来的代理软件，确认能打开 google.com 后，重新运行本命令\n'
-  sysrun open "https://github.com/clash-verge-rev/clash-verge-rev/releases/latest"
-  exit 3
+  [ -n "$DRY" ] && die "Clash Verge 没在运行"
+  start_verge; wait_ctl 60 || die "Clash Verge 启动失败或控制接口连不上。"
 fi
 VV=$(verge_version)
 if [ -n "$VV" ] && ! ver_ge "$VV" "$MIN_VERGE"; then
@@ -326,7 +668,7 @@ if [ -z "$DRY" ]; then
   c_ok "TUN（虚拟网卡）设为开启"
   NEED_SUDO=""
   { [ "$(tz_auto)" != 0 ] || [ "$(sys_tz)" != "$TZNAME" ]; } && NEED_SUDO=1
-  [ -n "$NEED_SUDO" ] && printf '  接下来改时区需要输入一次开机密码（输入时不显示）\n'
+  [ -n "$NEED_SUDO" ] && [ -z "$SUDO_READY" ] && printf '  接下来改时区需要输入一次开机密码（输入时不显示）\n'
   [ "$(tz_auto)" = 0 ] || tz_auto_off
   [ "$(sys_tz)" = "$TZNAME" ] || set_tz "$TZNAME"
   c_ok "已关闭「自动设置时区」，电脑时区：$(sys_tz)"
