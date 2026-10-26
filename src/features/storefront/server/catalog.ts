@@ -13,6 +13,7 @@ import {
 	localizeProduct,
 	localizeSellableItem,
 } from "../catalog-localizations";
+import { unlistedProductFilter } from "../unlisted-products";
 import {
 	paymentChannelIsVisible,
 	requestIsFromMainlandChina,
@@ -42,7 +43,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 		const db = getDb(request).$client;
 		const mainlandChina = requestIsFromMainlandChina(request);
 		const search = data.search ? `%${data.search}%` : null;
-		const filters = ["p.status = 'active'"];
+		const filters = ["p.status = 'active'", unlistedProductFilter("p")];
 		const bindings: string[] = [];
 		if (search) {
 			filters.push(`(p.name LIKE ? OR p.description LIKE ? OR EXISTS (
@@ -73,7 +74,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			db.prepare(
 				`SELECT tag.value AS name, COUNT(DISTINCT product.id) AS product_count
 				 FROM products product, json_each(product.tag_names) tag
-				 WHERE product.status = 'active'
+				 WHERE product.status = 'active' AND ${unlistedProductFilter("product")}
 				 GROUP BY tag.value ORDER BY product_count DESC, tag.value`,
 			),
 			db

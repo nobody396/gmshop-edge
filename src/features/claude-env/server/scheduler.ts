@@ -26,6 +26,7 @@ import { formatLabel, needsReplaceAlert, subscriptionLabel } from "./alerts";
 import {
 	enqueueClaudeEnvReadyEmail,
 	type SendExpiryEmail,
+	type SendTrafficEmail,
 } from "./customer-email";
 import {
 	createIproyalClient,
@@ -43,8 +44,17 @@ import {
 	lookupScamScore,
 	lookupTimezone,
 	lookupTrustScore,
+	resolveBuyer,
 	secretPurpose,
 } from "./shared";
+import {
+	deliverTrafficAddons,
+	handleTrafficAddonRefunds,
+	ingestTrafficAddons,
+	promoteWaitingAddons,
+	sendTrafficNotices,
+	type TrafficContext,
+} from "./traffic";
 
 const hourMs = 3_600_000;
 const perTick = 5;
@@ -70,6 +80,8 @@ export type ClaudeEnvCronInput = {
 	sendCustomerEmail?: (subscriptionId: string) => Promise<unknown>;
 	/** Tests inject the expiry-reminder email sender. */
 	sendExpiryEmail?: SendExpiryEmail;
+	/** Tests inject the traffic-notice email sender. */
+	sendTrafficEmail?: SendTrafficEmail;
 	/** Waits between same-tick IP polls; tests inject a no-op. */
 	sleep?: (ms: number) => Promise<void>;
 };
@@ -145,6 +157,12 @@ export async function runClaudeEnv(input: ClaudeEnvCronInput) {
 	// Written only by the admin switch, at the moment it is turned on.
 	const ingestAfter = settings.get(claudeEnvSettingKeys.ingestAfter);
 	const context = await buildContext(input, now);
+	const traffic: TrafficContext = {
+		db: input.db,
+		now,
+		deliver: context.deliver,
+		sendTrafficEmail: input.sendTrafficEmail,
+	};
 	const step = async <T>(work: () => Promise<T>) => {
 		try {
 			return await work();
@@ -177,6 +195,15 @@ export async function runClaudeEnv(input: ClaudeEnvCronInput) {
 				sendEmail: input.sendExpiryEmail,
 			}),
 		),
+		trafficAddons: await step(async () =>
+			typeof ingestAfter === "number" && Number.isSafeInteger(ingestAfter)
+				? await ingestTrafficAddons(traffic, ingestAfter)
+				: ("no_ingest_after" as const),
+		),
+		trafficWaiting: await step(() => promoteWaitingAddons(traffic)),
+		trafficRefunds: await step(() => handleTrafficAddonRefunds(traffic)),
+		trafficDelivered: await step(() => deliverTrafficAddons(traffic)),
+		trafficNotices: await step(() => sendTrafficNotices(traffic)),
 		relays: await step(() => alertOfflineRelays(context)),
 		pruned: await step(() =>
 			context.db
@@ -225,19 +252,6 @@ export async function ingestOrders(context: Context, ingestAfter: number) {
 	for (const row of rows.results)
 		outcome[await processPaidItem(context, row)] += 1;
 	return outcome;
-}
-
-async function resolveBuyer(db: D1Database, row: PaidItem) {
-	if (row.user_id && row.user_email)
-		return { userId: row.user_id, email: row.user_email };
-	if (!row.contact_email) return null;
-	const user = await db
-		.prepare(
-			"SELECT id, email FROM users WHERE lower(email) = lower(?) AND email_verified = 1 LIMIT 1",
-		)
-		.bind(row.contact_email)
-		.first<{ id: string; email: string }>();
-	return user ? { userId: user.id, email: user.email } : null;
 }
 
 const guestReminder = (orderNumber: string, count: number) =>

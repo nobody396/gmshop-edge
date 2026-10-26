@@ -116,6 +116,21 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/ops/guides/a/b", "PUT")).toBe(false);
 	});
 
+	it("lets only the exact bearer-authenticated Claude env traffic routes through", () => {
+		expect(publicRequest("/api/ops/claude-env/traffic", "GET")).toBe(true);
+		expect(publicRequest("/api/ops/claude-env/traffic", "POST")).toBe(false);
+		expect(publicRequest("/api/ops/claude-env/traffic/purchases", "POST")).toBe(
+			true,
+		);
+		expect(publicRequest("/api/ops/claude-env/traffic/purchases", "GET")).toBe(
+			false,
+		);
+		expect(publicRequest("/api/ops/claude-env/traffic/other", "POST")).toBe(
+			false,
+		);
+		expect(publicRequest("/api/ops/claude-env/traffic/", "GET")).toBe(false);
+	});
+
 	it("lets only the exact bearer-authenticated invoice lookup route through", () => {
 		expect(publicRequest("/api/shop/invoice-order", "POST")).toBe(true);
 		expect(publicRequest("/api/shop/invoice-order", "GET")).toBe(false);

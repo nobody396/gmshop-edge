@@ -66,6 +66,31 @@ export function eventStatement(
 		.bind(crypto.randomUUID(), subscriptionId, kind, detail, now);
 }
 
+/**
+ * The account behind a paid order: its own user, else a verified account with
+ * the order's contact email (a guest who registered afterwards); null while
+ * the guest has not registered.
+ */
+export async function resolveBuyer(
+	db: D1Database,
+	row: {
+		user_id: string | null;
+		user_email: string | null;
+		contact_email: string | null;
+	},
+) {
+	if (row.user_id && row.user_email)
+		return { userId: row.user_id, email: row.user_email };
+	if (!row.contact_email) return null;
+	const user = await db
+		.prepare(
+			"SELECT id, email FROM users WHERE lower(email) = lower(?) AND email_verified = 1 LIMIT 1",
+		)
+		.bind(row.contact_email)
+		.first<{ id: string; email: string }>();
+	return user ? { userId: user.id, email: user.email } : null;
+}
+
 const lookupTimeoutMs = 10_000;
 const browserAgent =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";

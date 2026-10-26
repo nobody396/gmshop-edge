@@ -12,6 +12,8 @@ import {
 	parseProductInputDefinitions,
 	serializeInputValue,
 } from "#/features/catalog/input-values";
+import { claudeEnvTrafficSkus } from "#/features/claude-env/domain";
+import { activeClaudeEnvSubscription } from "#/features/claude-env/server/eligibility";
 import { couponScopeSchema } from "#/features/coupons/schema";
 import { pricePromotion } from "#/features/promotions/pricing";
 import {
@@ -215,6 +217,21 @@ export async function createMultiStoreOrder(
 				403,
 				"Sign in to purchase this item",
 			);
+		// Claude env traffic add-ons raise one active subscription's quota.
+		if (claudeEnvTrafficSkus[sellableItem.sellable_item_id]) {
+			if (!access.userId)
+				throw new DomainError(
+					"account_required_for_delivery",
+					403,
+					"Sign in to purchase this item",
+				);
+			if (!(await activeClaudeEnvSubscription(db, access.userId, Date.now())))
+				throw new DomainError(
+					"claude_env_subscription_required",
+					409,
+					"An active Claude environment is required",
+				);
+		}
 		validateQuantity(sellableItem, item.quantity, policy.maxQuantity);
 		await assertPurchaseLimit(
 			db,

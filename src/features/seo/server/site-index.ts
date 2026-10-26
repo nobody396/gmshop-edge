@@ -7,6 +7,7 @@ import {
 	listPublishedGuides,
 } from "#/features/guides/server/store";
 import { retiredTwentyRenewProductId } from "#/features/home/buying-guide-rules";
+import { unlistedProductFilter } from "#/features/storefront/unlisted-products";
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import { SITE_URL } from "#/lib/site-url";
 
@@ -66,7 +67,7 @@ export async function listIndexedProducts(
 			    AND item.fulfillment_source <> 'manual') AS manual_only
 			 FROM products p
 			 WHERE p.status = 'active' AND p.trashed_at IS NULL AND p.sale_disabled = 0
-			  AND p.id NOT IN (?, ?)
+			  AND p.id NOT IN (?, ?) AND ${unlistedProductFilter("p")}
 			 ORDER BY p.sort_order, p.created_at DESC, p.id
 			 LIMIT 500`,
 		)

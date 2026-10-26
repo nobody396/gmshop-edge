@@ -9,7 +9,7 @@ import { Label } from "#/components/ui/label";
 import { Switch } from "#/components/ui/switch";
 import { PageHeader } from "#/layouts/components/page-header";
 import { formatDateTime } from "#/lib/format";
-import { displayCity, formatBytes } from "../domain";
+import { displayCity, formatBytes, formatGb } from "../domain";
 import {
 	claudeEnvSubscriptionActionFn,
 	getClaudeEnvAdminFn,
@@ -114,7 +114,7 @@ export function ClaudeEnvAdminPage() {
 									"IP / 城市",
 									"中转",
 									"到期",
-									"本期流量",
+									"本期流量（客户 / IPRoyal）",
 									"最近检查",
 									"备注",
 									"",
@@ -161,8 +161,7 @@ export function ClaudeEnvAdminPage() {
 												: `待开通 +${num(row.pending_days)} 天`}
 										</td>
 										<td className="px-3 py-2 text-xs tabular-nums">
-											{formatBytes(num(row.traffic_period_bytes))} /{" "}
-											{formatBytes(num(row.traffic_quota_bytes))}
+											<TrafficCell sub={row} />
 										</td>
 										<td className="px-3 py-2 text-xs">
 											{time(row.last_check_at)}
@@ -211,8 +210,203 @@ export function ClaudeEnvAdminPage() {
 			</section>
 			{current ? <SubscriptionActions onDone={refresh} sub={current} /> : null}
 			<PeriodsSection onDone={refresh} periods={value?.periods ?? []} />
+			<AddonsSection
+				addons={value?.addons ?? []}
+				purchases={value?.upstreamPurchases ?? []}
+				subscriptions={value?.subscriptions ?? []}
+			/>
 			<IproyalOrdersSection snapshot={value?.iproyalOrders ?? null} />
 		</div>
+	);
+}
+
+/** Current period: customer used / entitled, and IPRoyal capacity for it. */
+function TrafficCell({ sub }: { sub: Sub }) {
+	const traffic = sub.traffic;
+	if (!traffic)
+		return (
+			<>
+				{formatBytes(num(sub.traffic_period_bytes))} /{" "}
+				{formatBytes(num(sub.traffic_quota_bytes))}
+			</>
+		);
+	const short = traffic.upstreamCapacityBytes < traffic.entitledBytes;
+	return (
+		<div className="grid gap-0.5">
+			<div>
+				{formatGb(traffic.usedBytes)} / {formatGb(traffic.entitledBytes)}
+			</div>
+			{traffic.addonBytes > 0 ? (
+				<div className="text-muted-foreground">
+					基础 {formatGb(traffic.baseBytes)} + 加购{" "}
+					{formatGb(traffic.addonBytes)}
+				</div>
+			) : null}
+			<div className={short ? "text-amber-600" : "text-muted-foreground"}>
+				IPRoyal 容量 {formatGb(traffic.upstreamCapacityBytes)}
+				{traffic.upstreamPurchasedBytes > 0
+					? `（已买 ${formatGb(traffic.upstreamPurchasedBytes)}）`
+					: ""}
+			</div>
+			{typeof sub.upstream_used_bytes === "number" ? (
+				<div className="text-muted-foreground">
+					IPRoyal 已用 {formatGb(sub.upstream_used_bytes)} ·{" "}
+					{time(sub.upstream_used_at)}
+				</div>
+			) : null}
+			<div className="text-muted-foreground">
+				本期到 {time(traffic.periodEnd)}
+			</div>
+		</div>
+	);
+}
+
+const addonStatusLabel: Record<string, string> = {
+	applied: "已生效",
+	waiting: "等客户注册",
+	skipped: "需人工处理",
+	refunded: "已退款",
+};
+
+const addonNoteLabel: Record<string, string> = {
+	via_api: "代理站经 API 下单",
+	guest: "游客订单",
+	no_active_subscription: "客户没有正在使用的环境",
+};
+
+/** Traffic add-on orders and IPRoyal traffic purchases reported by the buyer CLI. */
+function AddonsSection({
+	addons,
+	purchases,
+	subscriptions,
+}: {
+	addons: Data["addons"];
+	purchases: Data["upstreamPurchases"];
+	subscriptions: Sub[];
+}) {
+	const emailOf = new Map(subscriptions.map((sub) => [sub.id, sub.email]));
+	return (
+		<section className="grid gap-4 lg:grid-cols-2">
+			<div className="flex flex-col gap-2">
+				<h2 className="font-medium">加流量订单（{addons.length}）</h2>
+				<div className="overflow-x-auto rounded-lg border">
+					<table className="w-full min-w-[560px] text-sm">
+						<thead className="bg-muted/50 text-muted-foreground">
+							<tr>
+								{["时间", "订单", "客户", "档位", "状态"].map((h) => (
+									<th
+										className="px-3 py-2 text-start font-medium"
+										key={h}
+										scope="col"
+									>
+										{h}
+									</th>
+								))}
+							</tr>
+						</thead>
+						<tbody>
+							{addons.length ? (
+								addons.map((row) => (
+									<tr className="border-t" key={row.order_item_id}>
+										<td className="px-3 py-2 text-xs">
+											{time(row.created_at)}
+										</td>
+										<td className="px-3 py-2 font-mono text-xs">
+											{str(row.order_number)}
+										</td>
+										<td className="px-3 py-2 text-xs">
+											{row.subscription_id
+												? (emailOf.get(row.subscription_id) ?? "—")
+												: "—"}
+										</td>
+										<td className="px-3 py-2 text-xs">
+											{formatGb(num(row.bytes))}
+											{row.period_start
+												? ` · 本期起 ${time(row.period_start)}`
+												: ""}
+										</td>
+										<td className="px-3 py-2 text-xs">
+											{addonStatusLabel[row.status] ?? row.status}
+											{row.status === "applied" && !row.delivered
+												? "（订单未标记发货）"
+												: ""}
+											{row.note
+												? ` · ${addonNoteLabel[row.note] ?? row.note}`
+												: ""}
+										</td>
+									</tr>
+								))
+							) : (
+								<tr>
+									<td
+										className="px-3 py-4 text-center text-muted-foreground"
+										colSpan={5}
+									>
+										还没有加流量订单
+									</td>
+								</tr>
+							)}
+						</tbody>
+					</table>
+				</div>
+			</div>
+			<div className="flex flex-col gap-2">
+				<h2 className="font-medium">
+					IPRoyal 加流量采购（{purchases.length}）
+				</h2>
+				<div className="overflow-x-auto rounded-lg border">
+					<table className="w-full min-w-[560px] text-sm">
+						<thead className="bg-muted/50 text-muted-foreground">
+							<tr>
+								{["时间", "IPRoyal 订单", "客户", "流量", "费用"].map((h) => (
+									<th
+										className="px-3 py-2 text-start font-medium"
+										key={h}
+										scope="col"
+									>
+										{h}
+									</th>
+								))}
+							</tr>
+						</thead>
+						<tbody>
+							{purchases.length ? (
+								purchases.map((row) => (
+									<tr className="border-t" key={row.ref}>
+										<td className="px-3 py-2 text-xs">
+											{time(row.purchased_at)}
+										</td>
+										<td className="px-3 py-2 font-mono text-xs">
+											#{row.iproyal_order_id}
+										</td>
+										<td className="px-3 py-2 text-xs">
+											{row.subscription_id
+												? (emailOf.get(row.subscription_id) ?? "—")
+												: "不属于任何订阅"}
+										</td>
+										<td className="px-3 py-2 text-xs">{row.gb} GB</td>
+										<td className="px-3 py-2 text-xs">
+											{row.cost_usd_cents === null
+												? "—"
+												: `$${(row.cost_usd_cents / 100).toFixed(2)}`}
+										</td>
+									</tr>
+								))
+							) : (
+								<tr>
+									<td
+										className="px-3 py-4 text-center text-muted-foreground"
+										colSpan={5}
+									>
+										采购程序还没有回报过
+									</td>
+								</tr>
+							)}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</section>
 	);
 }
 

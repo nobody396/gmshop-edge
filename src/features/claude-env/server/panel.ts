@@ -1,16 +1,20 @@
 import {
 	type ClaudeEnvStatus,
+	checkoutPath,
 	claudeEnvProductId,
 	claudeEnvSettingKeys,
 	claudeEnvSkuIds,
+	claudeEnvTrafficSkus,
 	customerCommands,
 	daysLeft,
 	displayCity,
 	encodeActivationCode,
 	renewalPath,
-	trafficPeriodMs,
+	renewalSkuIds,
+	trafficLevel,
 } from "../domain";
 import { type Crypt, secretPurpose } from "./shared";
+import { trafficSnapshots } from "./traffic";
 
 type PanelRow = {
 	id: string;
@@ -48,7 +52,8 @@ async function ownedSubscription(
 			 s.traffic_period_start, s.traffic_period_bytes, s.traffic_quota_bytes, s.last_check_at, s.last_exit_ok,
 			 s.relay_port, s.relay_user, s.relay_pass_encrypted, r.hostname
 			 FROM shop_orders o
-			 JOIN claude_env_periods p ON p.order_id = o.id
+			 JOIN (SELECT order_id, subscription_id FROM claude_env_periods
+			  UNION ALL SELECT order_id, subscription_id FROM claude_env_traffic_addons) p ON p.order_id = o.id
 			 JOIN claude_env_subscriptions s ON s.id = p.subscription_id
 			 LEFT JOIN claude_env_relays r ON r.id = s.relay_id
 			 WHERE o.order_number = ? AND o.user_id = ? AND s.user_id = ?
@@ -84,6 +89,68 @@ async function automationEnabled(db: D1Database) {
 
 export type ClaudeEnvPanel = Awaited<ReturnType<typeof loadClaudeEnvPanel>>;
 
+export type PanelOffer = {
+	sku: string;
+	priceMinor: string;
+	currency: string;
+	currencyDecimals: number;
+	href: string;
+};
+
+/** Live prices of the renewal and add-on SKUs that are on sale right now. */
+async function loadOffers(db: D1Database) {
+	const trafficIds = Object.keys(claudeEnvTrafficSkus);
+	const ids = [renewalSkuIds.monthly, renewalSkuIds.quarterly, ...trafficIds];
+	const rows = await db
+		.prepare(
+			`SELECT s.id, s.price_minor, s.currency, s.currency_decimals FROM product_sellable_items s
+			 JOIN products p ON p.id = s.product_id
+			 WHERE s.id IN (${ids.map(() => "?").join(",")}) AND s.enabled = 1 AND s.sale_disabled = 0
+			 AND p.status = 'active' AND p.sale_disabled = 0`,
+		)
+		.bind(...ids)
+		.all<{
+			id: string;
+			price_minor: string;
+			currency: string;
+			currency_decimals: number;
+		}>();
+	const byId = new Map(rows.results.map((row) => [row.id, row]));
+	const offer = (sku: string): PanelOffer[] => {
+		const row = byId.get(sku);
+		return row
+			? [
+					{
+						sku,
+						priceMinor: String(row.price_minor),
+						currency: row.currency,
+						currencyDecimals: Number(row.currency_decimals),
+						href: checkoutPath(sku),
+					},
+				]
+			: [];
+	};
+	return {
+		renew: [
+			...offer(renewalSkuIds.monthly).map((o) => ({
+				...o,
+				period: "monthly" as const,
+			})),
+			...offer(renewalSkuIds.quarterly).map((o) => ({
+				...o,
+				period: "quarterly" as const,
+			})),
+		],
+		traffic: trafficIds.flatMap((sku) =>
+			offer(sku).map((o) => ({
+				...o,
+				gb: claudeEnvTrafficSkus[sku]?.gb ?? 0,
+				label: claudeEnvTrafficSkus[sku]?.label ?? "",
+			})),
+		),
+	};
+}
+
 export async function loadClaudeEnvPanel(
 	db: D1Database,
 	userId: string,
@@ -101,9 +168,9 @@ export async function loadClaudeEnvPanel(
 	// Expired: the IP went back with the upstream order and can never return.
 	const expired = row.status === "expired";
 	const left = row.expires_at === null ? null : daysLeft(row.expires_at, now);
-	const periodCurrent =
-		row.traffic_period_start !== null &&
-		now < row.traffic_period_start + trafficPeriodMs;
+	const traffic = (await trafficSnapshots(db, [row], now)).get(row.id);
+	const offers = await loadOffers(db);
+	const active = row.status === "active";
 	return {
 		state: "subscription" as const,
 		status: row.status,
@@ -122,14 +189,20 @@ export async function loadClaudeEnvPanel(
 			left !== null &&
 			left <= 7,
 		renewUrl: renewalPath(row.plan),
-		trafficUsedBytes: periodCurrent ? row.traffic_period_bytes : 0,
-		trafficQuotaBytes: row.traffic_quota_bytes,
-		trafficResetAt:
-			row.traffic_period_start === null
-				? null
-				: periodCurrent
-					? row.traffic_period_start + trafficPeriodMs
-					: null,
+		/** 「续费」 choice: regular monthly / quarterly SKUs with live prices, straight to checkout. */
+		renewOptions: active ? offers.renew : [],
+		/** 「加流量」 tiers; only while active (they apply to the current period only). */
+		trafficOptions: active && traffic ? offers.traffic : [],
+		trafficUsedBytes: traffic?.usedBytes ?? 0,
+		/** This period's entitlement: base + add-ons bought for this period. */
+		trafficQuotaBytes: traffic?.entitledBytes ?? row.traffic_quota_bytes,
+		trafficBaseBytes: row.traffic_quota_bytes,
+		trafficAddonBytes: traffic?.addonBytes ?? 0,
+		/** 7500 / 9000 / 9750 once usage reaches that share of the entitlement. */
+		trafficLevel: traffic
+			? trafficLevel(traffic.usedBytes, traffic.entitledBytes)
+			: null,
+		trafficResetAt: traffic?.periodEnd ?? null,
 		lastCheckAt: row.last_check_at,
 		lineOk: row.last_exit_ok === null ? null : row.last_exit_ok === 1,
 		codeAvailable: row.status === "active",

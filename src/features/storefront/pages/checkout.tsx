@@ -43,6 +43,7 @@ import {
 } from "#/features/agent-access/products";
 import { authClient } from "#/features/auth/auth-client";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
+import { claudeEnvTrafficSkus } from "#/features/claude-env/domain";
 import {
 	StoreMoney,
 	useCurrency,
@@ -208,7 +209,9 @@ export function StorefrontCheckoutPage() {
 	const signInRequired =
 		!session.data?.user &&
 		items.some(
-			(item) => "deliveryType" in item && item.deliveryType === "automation",
+			(item) =>
+				("deliveryType" in item && item.deliveryType === "automation") ||
+				Boolean(claudeEnvTrafficSkus[item.sellableItemId]),
 		);
 	const checkoutPath = buyNow
 		? `/checkout?mode=buy-now&sellableItemId=${encodeURIComponent(buyNow.sellableItemId)}&quantity=${buyNow.quantity}`

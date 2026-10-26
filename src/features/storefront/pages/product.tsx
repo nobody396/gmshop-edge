@@ -35,6 +35,7 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { AgentAccessCheckout } from "#/features/agent-access/components/access";
 import { agentAccessKind } from "#/features/agent-access/products";
 import { authClient } from "#/features/auth/auth-client";
+import { claudeEnvTrafficSkus } from "#/features/claude-env/domain";
 import {
 	StoreMoney,
 	useCurrency,
@@ -215,8 +216,9 @@ export function StorefrontProductPage({
 			? data.sellableItems.find((item) => item.id === preferredItemId)
 			: data.sellableItems[0]);
 	const requiresSignIn =
-		selectedItem?.deliveryType === "automation" &&
-		!agentAccessKind(selectedItem.id) &&
+		((selectedItem?.deliveryType === "automation" &&
+			!agentAccessKind(selectedItem.id)) ||
+			Boolean(selectedItem && claudeEnvTrafficSkus[selectedItem.id])) &&
 		!session.isPending &&
 		!session.data?.user;
 	const checkoutPath = selectedItem

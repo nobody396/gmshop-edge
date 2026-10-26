@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	canonicalTimezone,
+	checkoutPath,
+	claudeEnvTrafficSkus,
 	customerCommands,
 	dayMs,
 	decodeActivationCode,
@@ -8,6 +10,7 @@ import {
 	encodeActivationCode,
 	evaluateQuality,
 	extendExpiry,
+	formatGb,
 	generateRelayPass,
 	generateRelayUser,
 	generateSubscriptionId,
@@ -20,6 +23,7 @@ import {
 	sha256Hex,
 	signRelayRequest,
 	timezoneForCity,
+	trafficLevel,
 	trafficPeriodStart,
 } from "#/features/claude-env/domain";
 
@@ -289,5 +293,30 @@ describe("review additions", () => {
 		);
 		expect(parseIproyalDate("soon")).toBeNull();
 		expect(parseIproyalDate(null)).toBeNull();
+	});
+});
+
+describe("traffic add-on rules", () => {
+	const GB = 1_000_000_000;
+	it("reports the highest threshold reached of the entitlement", () => {
+		expect(trafficLevel(149.9 * GB, 200 * GB)).toBeNull();
+		expect(trafficLevel(150 * GB, 200 * GB)).toBe(7500);
+		expect(trafficLevel(180 * GB, 200 * GB)).toBe(9000);
+		expect(trafficLevel(195 * GB, 200 * GB)).toBe(9750);
+		expect(trafficLevel(250 * GB, 200 * GB)).toBe(9750);
+		expect(trafficLevel(195 * GB, 300 * GB)).toBeNull();
+		expect(trafficLevel(1, 0)).toBeNull();
+	});
+
+	it("formats GB for customer copy and links straight to checkout", () => {
+		expect(formatGb(150 * GB)).toBe("150 GB");
+		expect(formatGb(52.34 * GB)).toBe("52.3 GB");
+		expect(formatGb(-1)).toBe("0 GB");
+		expect(checkoutPath("c3675807-27e7-4442-a820-e4016b8c0e37")).toBe(
+			"/checkout?mode=buy-now&sellableItemId=c3675807-27e7-4442-a820-e4016b8c0e37&quantity=1",
+		);
+		expect(Object.values(claudeEnvTrafficSkus).map((s) => s.gb)).toEqual([
+			100, 500, 1000,
+		]);
 	});
 });

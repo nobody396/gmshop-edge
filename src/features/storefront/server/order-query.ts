@@ -1,4 +1,5 @@
 import { buildDefinitionListSchema } from "#/features/builds/schema";
+import { claudeEnvTrafficSkus } from "#/features/claude-env/domain";
 import { paymentCheckoutPresentation } from "#/features/shop-payments/providers";
 import { storeOrderLookupSchema } from "#/features/storefront/schema";
 import { DomainError } from "#/lib/domain-error";
@@ -77,7 +78,7 @@ export async function getStoreOrder(
 				`SELECT dr.id, grant_row.entitlement_id, dr.delivery_type, dr.status,
 				 dr.error_code, dr.delivered_at,
 				 dr.content_encrypted IS NOT NULL AS has_content,
-				 oi.show_on_order_page, oi.product_name, oi.sellable_item_name,
+				 oi.show_on_order_page, oi.product_name, oi.sellable_item_name, oi.sellable_item_id,
 				 CASE WHEN supplier_order.id IS NOT NULL THEN 'supplier'
 				 ELSE COALESCE(sellable.fulfillment_source, 'local') END AS fulfillment_source, supplier_order.state AS supplier_state
 				 FROM delivery_records dr
@@ -286,8 +287,13 @@ function presentPayment(row: Record<string, unknown>) {
 	};
 }
 function presentDelivery(row: Record<string, unknown>) {
+	// Claude env traffic add-ons are manual SKUs completed by the cron within a
+	// minute: show them as automatic, never as "send this CDK to support".
 	const fulfillmentSource: "local" | "manual" =
-		row.fulfillment_source === "manual" ? "manual" : "local";
+		row.fulfillment_source === "manual" &&
+		!claudeEnvTrafficSkus[String(row.sellable_item_id)]
+			? "manual"
+			: "local";
 	return {
 		fulfillmentSource,
 		needsReview: row.status === "failed" || row.supplier_state === "failed",

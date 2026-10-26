@@ -18,6 +18,8 @@ const publicGetPatterns = [
 	/^\/api\/ops\/attribution$/,
 	/^\/api\/ops\/guides$/,
 	opsGuidePattern,
+	// Claude env traffic buyer CLI; Bearer RESTOCK_API_TOKEN checked by the handler.
+	/^\/api\/ops\/claude-env\/traffic$/,
 	/^\/api\/support\/web\/(?:status|current)$/,
 	paymentWebhookPattern,
 	new RegExp(`^/api/configuration-logo/payment/${uuidSegment}$`, "i"),
@@ -40,6 +42,7 @@ const publicPostPatterns = [
 	/^\/api\/ops\/agent-access\/ready-email$/,
 	// Gateway / Mac runner bearer tokens are checked by the handlers.
 	/^\/api\/ops\/supplier-topup\/(?:offer|claim|result)$/,
+	/^\/api\/ops\/claude-env\/traffic\/purchases$/,
 	/^\/api\/ops\/guides\/[A-Za-z0-9_-]{1,120}\/(?:publish|unpublish)$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
 	/^\/api\/telegram\/(?:webhook|owner-webhook)$/,

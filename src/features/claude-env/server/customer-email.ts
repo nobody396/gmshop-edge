@@ -1,6 +1,7 @@
 import {
 	claudeEnvExpiryEmailEvent,
 	claudeEnvReadyEmailEvent,
+	claudeEnvTrafficEmailEvent,
 	enqueueEmailNotification,
 	supportReplyEmailSender,
 } from "#/features/notifications/server/delivery";
@@ -14,8 +15,10 @@ import { loadRuntimeConfig } from "#/server/runtime-config";
 import {
 	beijingMinute,
 	displayCity,
+	formatGb,
 	type ReminderPoint,
 	renewalPath,
+	type TrafficNoticeThreshold,
 } from "../domain";
 
 const shopOrigin = "https://laoshirenvip.com";
@@ -325,6 +328,151 @@ export const enqueueClaudeEnvExpiryEmail: SendExpiryEmail = async (
 						},
 					}
 				: {}),
+		},
+	});
+	return delivery.status === "suppressed"
+		? { status: "suppressed", deliveryId: delivery.id }
+		: { status: "queued", deliveryId: delivery.id };
+};
+
+// ---------- traffic usage notices (75% / 90% / 97.5% of the period) ----------
+
+const trafficCopy = {
+	"zh-CN": {
+		subject: (percent: string) =>
+			`【老实人AI VIP】你的 Claude 专属环境本期流量已用 ${percent}`,
+		greeting: "你好，",
+		intro: (percent: string) =>
+			`你的「Claude 稳定使用环境」本期流量已用 ${percent}。`,
+		usage: (used: string, total: string, left: string) =>
+			`已用 ${used} / 本期共 ${total}，剩余 ${left}。`,
+		reset: (at: string) => `本期到 ${at}（北京时间）结束，下一期自动恢复。`,
+		addon:
+			"如果本期不够用，可以随时加流量（100GB / 500GB / 1TB）。加购只在本期有效，付款后立即生效。",
+		button: "加流量",
+		buttonLine: (url: string) => `加流量：${url}`,
+		support: "如有问题，请在订单页点「联系客服」。",
+	},
+	"en-US": {
+		subject: (percent: string) =>
+			`[老实人AI VIP] Your dedicated Claude environment has used ${percent} of this period's traffic`,
+		greeting: "Hello,",
+		intro: (percent: string) =>
+			`Your "Claude stable environment" has used ${percent} of this period's traffic.`,
+		usage: (used: string, total: string, left: string) =>
+			`Used ${used} of ${total} this period; ${left} left.`,
+		reset: (at: string) =>
+			`This period ends at ${at} Beijing time (UTC+8); the next period starts fresh.`,
+		addon:
+			"If this period is not enough, you can add traffic at any time (100GB / 500GB / 1TB). Add-ons apply to the current period only and take effect right after payment.",
+		button: "Add traffic",
+		buttonLine: (url: string) => `Add traffic: ${url}`,
+		support: 'Questions? Open your order page and click "Contact support".',
+	},
+} as const;
+
+export function trafficPercentText(threshold: TrafficNoticeThreshold) {
+	return `${threshold / 100}%`;
+}
+
+/** Usage notice (an approved GMShop transactional event); no upstream details. */
+export function renderClaudeEnvTrafficEmail(input: {
+	locale: SupportedLocale;
+	threshold: TrafficNoticeThreshold;
+	usedBytes: number;
+	entitledBytes: number;
+	periodEnd: number;
+	addTrafficUrl: string;
+}) {
+	const c = trafficCopy[input.locale];
+	const percent = trafficPercentText(input.threshold);
+	const usage = c.usage(
+		formatGb(input.usedBytes),
+		formatGb(input.entitledBytes),
+		formatGb(input.entitledBytes - input.usedBytes),
+	);
+	const reset = c.reset(beijingMinute(input.periodEnd));
+	const subject = c.subject(percent);
+	const text = [
+		c.greeting,
+		c.intro(percent),
+		usage,
+		reset,
+		c.addon,
+		c.buttonLine(input.addTrafficUrl),
+		c.support,
+		"老实人AI VIP",
+	].join("\n\n");
+	const p = (inner: string, style = "") =>
+		`<p style="margin:0 0 12px${style}">${inner}</p>`;
+	const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#111827;font-size:15px;line-height:1.7"><div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px">${[
+		p(escapeHtml(c.greeting)),
+		p(escapeHtml(c.intro(percent))),
+		p(`<strong>${escapeHtml(usage)}</strong>`),
+		p(escapeHtml(reset)),
+		p(escapeHtml(c.addon)),
+		`<p style="margin:20px 0"><a href="${escapeHtml(input.addTrafficUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px">${escapeHtml(c.button)}</a></p>`,
+		p(escapeHtml(c.support)),
+		p("老实人AI VIP"),
+	].join("")}</div></body></html>`;
+	return { subject, text, html };
+}
+
+export type TrafficEmailInput = {
+	subscriptionId: string;
+	to: string;
+	orderNumber: string;
+	threshold: TrafficNoticeThreshold;
+	periodStart: number;
+	periodEnd: number;
+	usedBytes: number;
+	entitledBytes: number;
+	locale: SupportedLocale;
+};
+
+export type SendTrafficEmail = (
+	db: D1Database,
+	input: TrafficEmailInput,
+) => Promise<ExpiryEmailResult>;
+
+/**
+ * Only through the approved Cloudflare sender. One idempotency key per
+ * subscription, period, threshold and entitlement: a new entitlement (after an
+ * add-on) makes a later crossing a distinct notice.
+ */
+export const enqueueClaudeEnvTrafficEmail: SendTrafficEmail = async (
+	db,
+	input,
+) => {
+	const config = await db
+		.prepare(
+			"SELECT id FROM notification_channel_configs WHERE enabled=1 AND channel='email' AND provider='cloudflare_email' AND from_address=? ORDER BY sort_order,id LIMIT 1",
+		)
+		.bind(supportReplyEmailSender)
+		.first<{ id: string }>();
+	if (!config) return { status: "skipped", reason: "sender_unavailable" };
+	const origin = (await loadRuntimeConfig(db)).betterAuthUrl || shopOrigin;
+	const content = renderClaudeEnvTrafficEmail({
+		locale: input.locale,
+		threshold: input.threshold,
+		usedBytes: input.usedBytes,
+		entitledBytes: input.entitledBytes,
+		periodEnd: input.periodEnd,
+		addTrafficUrl: new URL(
+			`/account/orders/${encodeURIComponent(input.orderNumber)}#claude-env-traffic`,
+			origin,
+		).toString(),
+	});
+	const delivery = await enqueueEmailNotification(db, {
+		event: claudeEnvTrafficEmailEvent,
+		idempotencyKey: `claude-env-traffic:${input.subscriptionId}:${input.periodStart}:${input.threshold}:${input.entitledBytes}`,
+		configId: config.id,
+		locale: input.locale,
+		message: {
+			to: input.to,
+			from: supportReplyEmailSender,
+			replyTo: "",
+			...content,
 		},
 	});
 	return delivery.status === "suppressed"

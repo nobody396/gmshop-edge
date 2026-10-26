@@ -677,6 +677,59 @@ describe("storefront order creation", { timeout: 30_000 }, () => {
 		).resolves.toMatchObject({ status: "pending_payment" });
 	});
 
+	it("sells Claude env traffic add-ons only to a signed-in buyer with an active environment", async () => {
+		const trafficProduct = "e07fd8fc-5f0f-416e-9d85-382c091256a2";
+		const trafficItem = "c3675807-27e7-4442-a820-e4016b8c0e37";
+		await database.batch([
+			database.prepare(
+				`INSERT INTO products (id, name, product_type, status, sort_order, created_at, updated_at)
+				 VALUES ('${trafficProduct}', 'Claude 专属环境 · 流量加购', 'stock', 'active', 99000, 1, 1)`,
+			),
+			database.prepare(
+				`INSERT INTO product_sellable_items
+				 (id, product_id, name, fulfillment_source, currency, currency_decimals, price_minor,
+				  minimum_quantity, maximum_quantity, sort_order, enabled, created_at, updated_at)
+				 VALUES ('${trafficItem}', '${trafficProduct}', '100GB', 'manual', 'CNY', 2, '3000', 1, 1, 100, 1, 1, 1)`,
+			),
+			database.prepare(
+				`INSERT INTO users (id, name, email, email_verified, created_at, updated_at)
+				 VALUES ('env-user', 'Env', 'env@example.com', 1, 1, 1), ('plain-user', 'Plain', 'plain@example.com', 1, 1, 1)`,
+			),
+			database.prepare(
+				`INSERT INTO claude_env_subscriptions
+				 (id, user_id, email, order_id, order_item_id, plan, status, iproyal_plan_id, activated_at, expires_at, created_at, updated_at)
+				 VALUES ('sub_env', 'env-user', 'env@example.com', 'o', 'oi', 'monthly', 'active', 22, 1, 9999999999999, 1, 1)`,
+			),
+		]);
+		const buy = (key: string, email: string, userId?: string) =>
+			createStoreOrder(
+				database,
+				{
+					sellableItemId: trafficItem,
+					quantity: 1,
+					email,
+					idempotencyKey: key,
+					customerNote: "",
+				},
+				userId ? { userId } : {},
+			);
+		await expect(
+			buy("traffic-guest", "guest@example.com"),
+		).rejects.toMatchObject({
+			code: "account_required_for_delivery",
+			status: 403,
+		});
+		await expect(
+			buy("traffic-plain", "plain@example.com", "plain-user"),
+		).rejects.toMatchObject({
+			code: "claude_env_subscription_required",
+			status: 409,
+		});
+		await expect(
+			buy("traffic-env", "env@example.com", "env-user"),
+		).resolves.toMatchObject({ status: "pending_payment" });
+	});
+
 	it("snapshots the selected download version when the order is created", async () => {
 		await database
 			.prepare(

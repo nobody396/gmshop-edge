@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { claudeEnvTrafficSkuIds } from "#/features/claude-env/domain";
 import {
 	type RestockSource,
 	restockLabel,
@@ -23,6 +24,12 @@ import {
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 
+// Claude env traffic add-ons are manual SKUs the control-center cron completes
+// itself: never "需要人工采购" (the alert from claude-env carries the details).
+const claudeEnvTrafficSkuList = claudeEnvTrafficSkuIds
+	.map((id) => `'${id}'`)
+	.join(",");
+
 export const ownerSaleAlertsSettingKey =
 	"commerce.sales.feishu_alerts_enabled" as const;
 
@@ -44,6 +51,7 @@ type SaleAlertRow = {
 	local_stock_remaining_summary: string | null;
 	supplier_item_count: number;
 	manual_item_count: number;
+	claude_env_traffic_count?: number;
 	supplier_pending_count: number;
 	supplier_failed_count: number;
 	payment_channel: string | null;
@@ -187,8 +195,13 @@ export async function publishPendingOwnerSaleAlerts(input: {
 			         JOIN product_sellable_items manual_sellable
 			          ON manual_sellable.id = manual_item.sellable_item_id
 			         WHERE manual_item.order_id = orders.id
-			          AND manual_sellable.fulfillment_source = 'manual')
+			          AND manual_sellable.fulfillment_source = 'manual'
+			          AND manual_sellable.id NOT IN (${claudeEnvTrafficSkuList}))
 			         AS manual_item_count,
+			        (SELECT COUNT(*) FROM shop_order_items traffic_item
+			         WHERE traffic_item.order_id = orders.id
+			          AND traffic_item.sellable_item_id IN (${claudeEnvTrafficSkuList}))
+			         AS claude_env_traffic_count,
 			        (SELECT COUNT(*) FROM supplier_orders pending_supplier
 			         WHERE pending_supplier.order_id = orders.id
 			          AND pending_supplier.state IN
@@ -463,7 +476,9 @@ export function formatFeishuOwnerSaleAlert(
 									? "内置库存"
 									: row.manual_item_count > 0
 										? "人工采购"
-										: "待核对";
+										: (row.claude_env_traffic_count ?? 0) > 0
+											? "Claude 环境加流量（系统自动生效，上游按需采购）"
+											: "待核对";
 	// Openings are self-provisioned: no purchase cost.
 	const costMinor = agent ? 0n : BigInt(row.cost_total_minor);
 	const cost = costUnknown ? "待确认" : money(costMinor.toString(), row);

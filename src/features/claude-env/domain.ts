@@ -404,6 +404,58 @@ export function renewalPath(plan: string) {
 	return `/products/${claudeEnvProductId}?item=${renewalSkuForPlan(plan)}#purchase-options`;
 }
 
+/** Straight to checkout with one unit of `sku` (the product page's own "buy now" link). */
+export function checkoutPath(sku: string) {
+	return `/checkout?mode=buy-now&sellableItemId=${encodeURIComponent(sku)}&quantity=1`;
+}
+
+// ---------- traffic add-ons (2026-10-26) ----------
+
+/**
+ * 「Claude 专属环境 · 流量加购」: a separate, unlisted product (never on the
+ * homepage, catalog or sitemap) sold only from the customer panel. Manual
+ * fulfillment without stock; the control-center cron raises the quota and
+ * completes the delivery. Production rows: ops/claude-env-traffic-skus.sql.
+ */
+export const claudeEnvTrafficProductId = "e07fd8fc-5f0f-416e-9d85-382c091256a2";
+
+export const claudeEnvTrafficSkus: Record<
+	string,
+	{ gb: number; label: string }
+> = {
+	"c3675807-27e7-4442-a820-e4016b8c0e37": { gb: 100, label: "100GB" },
+	"f1ea0f36-274a-414c-aa36-c6ebad153d3b": { gb: 500, label: "500GB" },
+	"f69b64f7-36dd-49e2-a07f-9df5a63fb4d2": { gb: 1000, label: "1TB" },
+};
+
+export const claudeEnvTrafficSkuIds = Object.keys(claudeEnvTrafficSkus);
+
+export const gbBytes = 1_000_000_000;
+/** IPRoyal includes this much per IP per 30-day cycle; more is bought on demand. */
+export const iproyalIncludedBytes = 100 * gbBytes;
+/** Owner safety net: relay usage at which IPRoyal capacity should have been raised. */
+export const upstreamAlertBytes = 85 * gbBytes;
+
+/** Customer usage notices, in basis points of the period's entitlement. */
+export const trafficNoticeThresholds = [7500, 9000, 9750] as const;
+export type TrafficNoticeThreshold = (typeof trafficNoticeThresholds)[number];
+
+/** Highest threshold `used` has reached of `entitled`; null below 75%. */
+export function trafficLevel(
+	used: number,
+	entitled: number,
+): TrafficNoticeThreshold | null {
+	let level: TrafficNoticeThreshold | null = null;
+	for (const bps of trafficNoticeThresholds)
+		if (entitled > 0 && used * 10_000 >= entitled * bps) level = bps;
+	return level;
+}
+
+/** "150 GB", "52.3 GB": whole or one-decimal GB for customer copy. */
+export function formatGb(bytes: number) {
+	return `${Number((Math.max(0, bytes) / gbBytes).toFixed(1))} GB`;
+}
+
 // ---------- dates and traffic ----------
 
 /** Renewal: expires = max(now, expires) + days. */
