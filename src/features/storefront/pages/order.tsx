@@ -252,6 +252,11 @@ export function StorefrontOrderPage({
 							{m.store_order_number()} · {data.orderNumber}
 						</p>
 					</div>
+					{/* Claude env needs the customer to act; show it above the order details (first on mobile). */}
+					{accountOrder &&
+					data.items.some((item) => item.productId === claudeEnvProductId) ? (
+						<ClaudeEnvPanel orderNumber={orderNumber} />
+					) : null}
 					<div className="grid overflow-hidden rounded-3xl border bg-card shadow-sm lg:grid-cols-2">
 						<div className="grid min-w-0 content-start gap-8 p-5 sm:p-8 lg:p-10">
 							<h2 className="font-semibold text-xl tracking-tight">
@@ -540,12 +545,6 @@ export function StorefrontOrderPage({
 									),
 								) ? (
 									<AgentAccessDelivery orderNumber={orderNumber} />
-								) : null}
-								{accountOrder &&
-								data.items.some(
-									(item) => item.productId === claudeEnvProductId,
-								) ? (
-									<ClaudeEnvPanel orderNumber={orderNumber} />
 								) : null}
 								{data.items.some(
 									(item) =>
