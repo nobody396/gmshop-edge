@@ -30,11 +30,22 @@ export function renderClaudeEnvReadyEmail(input: {
 	const subject = "你的 Claude 专属环境已开通";
 	const lines = [
 		"你好，",
-		"你购买的「Claude 稳定使用环境」已开通，专属美国 IP 已经准备好。",
+		"你购买的「Claude 稳定使用环境」已开通，专属美国住宅 IP 已经准备好，只给你一个人用。",
 		`到期时间：${input.expiresText}（北京时间）`,
-		`下一步：登录后打开订单页 → ${input.orderUrl}`,
-		"在「Claude 专属环境」里点「显示开通码」，复制对应电脑的一行命令运行即可。",
-		"如有问题，请在订单页点「联系客服」。",
+		"开始使用（大约 5 分钟）：",
+		"① 打开 Clash Verge Rev，确认梯子能正常上网（能打开 google.com）。",
+		`② 登录后打开订单页 → ${input.orderUrl}`,
+		"在「Claude 专属环境」里点「显示开通码」，复制对应电脑的那一行命令：Mac 粘贴到「终端」，Windows 粘贴到管理员身份的「终端」或「PowerShell」，回车运行。",
+		"③ 过程中 Mac 会让你输入一次开机密码（Windows 点一次「是」），中间会让你手动关一下「定位服务」。最后出现「全部验收通过 ✅」就好了；没通过的，把窗口截图发给客服。",
+		`④ 重启电脑一次，然后打开 ${shopOrigin}/ip-check ，确认显示的是你的专属 IP。`,
+		"使用提醒：",
+		"· 用 ProtonMail 邮箱注册 Claude；这套环境可以养 2～3 个号，换号时先退出登录再登另一个",
+		"· 这些号不要在插着国内手机卡的安卓手机上登录，最好只在这台电脑上用",
+		"· 尽量用英文对话；用量控制在 50%～80%",
+		"· 号被限制时先停下来走官方申诉，不要换网络反复尝试",
+		"· 每月含 200GB 流量；到期前 7 天、5 天、3 天会提醒你续费，续费后 IP 不变",
+		"· 不续费的话，到期后环境立即失效，专属 IP 会被释放，无法找回",
+		"开通码就是你的专属线路密码，请不要发给别人。如有问题，请在订单页点「联系客服」。",
 		"老实人AI VIP",
 	];
 	const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#111827;font-size:15px;line-height:1.7"><div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px">${lines

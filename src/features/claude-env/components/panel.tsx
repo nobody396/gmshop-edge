@@ -59,8 +59,8 @@ const copy = {
 		"Copy failed; select and copy manually",
 	],
 	check: [
-		"配置好后，打开 IP 检测页确认：",
-		"After setup, confirm on the IP check page:",
+		"命令跑完后重启电脑一次，再打开 IP 检测页确认：",
+		"When the command finishes, restart the computer once, then confirm on the IP check page:",
 	],
 	revealFailed: [
 		"暂时取不到开通码，请稍后再试",
