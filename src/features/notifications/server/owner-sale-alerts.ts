@@ -352,6 +352,7 @@ export async function publishPendingOwnerSaleAlerts(input: {
 				await deliverOwnerAlert(input.db, text, {
 					fetcher: input.fetcher,
 					uuid: row.id,
+					topic: "orders",
 				});
 			await input.db
 				.prepare(

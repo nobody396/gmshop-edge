@@ -514,7 +514,11 @@ async function publishExceptionAlerts(
 				.bind(row.aggregate_id)
 				.run();
 			if (input.deliver) await input.deliver(payload.text, row.id);
-			else await deliverOwnerAlert(input.db, payload.text, { uuid: row.id });
+			else
+				await deliverOwnerAlert(input.db, payload.text, {
+					uuid: row.id,
+					topic: "general",
+				});
 			await input.db
 				.prepare(`UPDATE outbox_events SET status='published',published_at=?,last_error_code=NULL,next_attempt_at=NULL,updated_at=?
         WHERE id=? AND status='pending' AND next_attempt_at=?`)

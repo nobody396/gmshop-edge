@@ -509,6 +509,7 @@ async function notifyCostCappedBindings(input: {
 					})
 				: sendOwnerAlert(input.db, `${text}\n\n新进价不低于售价，请先调价。`, {
 						fetcher: input.fetcher,
+						topic: "restock",
 					});
 		await send.catch(() => undefined);
 	}
@@ -549,7 +550,7 @@ async function notifyDelistedBindings(input: {
 			await sendOwnerAlert(
 				input.db,
 				`${text}\n\n新商品进价超过上限，请先调价，再到后台「供货」切换来源。`,
-				{ fetcher: input.fetcher },
+				{ fetcher: input.fetcher, topic: "restock" },
 			).catch(() => undefined);
 			continue;
 		}
@@ -571,7 +572,7 @@ async function notifyDelistedBindings(input: {
 		await sendOwnerAlert(
 			input.db,
 			formatDelistedBindingsAlert(input.source.normalizedApiOrigin, plain),
-			{ fetcher: input.fetcher },
+			{ fetcher: input.fetcher, topic: "restock" },
 		);
 }
 

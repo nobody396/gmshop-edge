@@ -393,6 +393,7 @@ export async function runWeeklyReport(input: {
 		input.deliver,
 		"ops-weekly",
 		now,
+		"general",
 	);
 	const retried = await retryUnsent(
 		input.db,

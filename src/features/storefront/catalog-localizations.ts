@@ -248,14 +248,18 @@ After-sales
 The warranty covers the link's validity for 24 hours after delivery: if it says "already used" or "expired" in that time, contact support from the order page with the order number and a screenshot for a replacement after verification. Requests must be made within 24 hours of delivery. Unsupported regions, missing permissions, risk controls, disabled or banned accounts are not covered, and the subscription's duration after activation is not guaranteed.`,
 	},
 	"2ee356de-fe69-4641-94c3-1dfea19b6967": {
-		name: "Muse AI account｜1 billion tokens",
-		description: `A ready-made Muse AI account with 1 billion tokens of creation credit for AI image and video generation, from short clips to videos over an hour long. Delivered automatically after payment: the account email and sign-in access to that email.
+		name: "Muse AI account｜1 billion / 31 billion tokens",
+		description: `A ready-made Muse AI account in two credit tiers, 1 billion or 31 billion tokens, for AI image and video generation, from short clips to videos over an hour long. Delivered automatically after payment: the account email and sign-in access to that email.
+
+Which to choose
+- 1 billion tokens: to try it out, or for occasional images and videos.
+- 31 billion tokens: 31 times the 1 billion tier, for frequent video work and large image batches.
 
 How to use
 1. View the delivered account email and its sign-in details on the order page.
 2. Open https://muse.ai and enter the delivered account email.
 3. Sign in to the delivered email, find the verification email, and enter its code on muse.ai.
-4. After signing in, open Settings to see the 1 billion tokens.
+4. After signing in, open Settings to see the token credit (1 billion or 31 billion, matching the option you bought).
 
 Notes
 - If no verification email arrives, check the spam folder first.
@@ -364,7 +368,7 @@ const claudeRestrictions =
 const claudeMaxRestrictions = `New accounts cannot recharge 5X / 20X; the account must be registered for at least one month, or the subscription may not arrive. This cannot be checked in advance, so confirm before recharging.
 
 Important｜Claude Max identity verification (KYC)
-Claude Max 5X / 20X always requires KYC identity verification. This is Claude's official requirement and unrelated to our recharge. We only recharge the subscription; KYC is the buyer's responsibility and we do not complete or guarantee it. Do not order if you cannot complete it yourself.
+For Claude Max 5X / 20X, use an account that has passed KYC or is KYC-exempt. KYC is Claude's official requirement and unrelated to our recharge; we only recharge the subscription and do not complete or guarantee KYC. Do not order if the account cannot pass verification.
 
 ${claudeRestrictions}`;
 const claudePolicy = (restrictions: string) =>
@@ -572,16 +576,31 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: codexPolicy,
 	},
 	"efa6e9ae-f8a6-4cf7-b99c-72e51e68dace": {
-		name: "Claude Pro｜1 month",
+		name: "Claude Pro｜iOS｜1 month",
 		policy: claudePolicy(claudeRestrictions),
 	},
 	"d3a2050e-1c65-4c7e-9ad7-3c8892ef412e": {
-		name: "Claude Max 5X｜1 month",
+		name: "Claude Max 5X｜iOS｜1 month",
 		policy: claudePolicy(claudeMaxRestrictions),
 	},
 	"34c18e6b-c4d5-4289-9c6b-ab47fa027182": {
 		name: "Claude Max 20X｜1 month",
 		policy: claudePolicy(claudeMaxRestrictions),
+	},
+	"88a570bd-557e-48a1-aa4f-b7e4c5a9b908": {
+		name: "Claude Max 20X｜Physical card｜1 month",
+		policy: policy(
+			automatic,
+			immediate,
+			"Claude Max 20X (paid by physical card), 1 month. To redeem, copy Claude's sessionKey in a desktop browser, then confirm the account email and organization on the redemption page; your current Claude subscription must expire first; accounts subscribed through the App Store / Google Play cannot use it.",
+			"Subscription warranty; a dropped subscription is restored first, otherwise handled by the remaining days",
+			`Important｜Claude Max identity verification (KYC)
+Use an account that has passed KYC or is KYC-exempt. KYC is Claude's official requirement and unrelated to our recharge; we do not complete or guarantee it. If Claude still asks for verification during redemption, the page gives you the official link; nothing is paid and the code is not used until it is done.
+
+New accounts cannot recharge 20X; the account must be registered for at least one month.
+
+${claudeRestrictions}`,
+		),
 	},
 	"b17f05d4-f109-46f2-888a-6f633519d9e7": {
 		name: "Plus｜1 month",
@@ -666,6 +685,16 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 			"Delivered automatically after payment: the account email and sign-in access to that email",
 			"Automatic, usually within 1 minute; view it on the order page",
 			"A ready-made Muse AI account with 1 billion tokens for AI image and video generation",
+			"24-hour warranty; sign in and check soon after delivery",
+			"Tokens are usage credit, not a fixed number of images or minutes of video; never share the email verification code or publish the account details",
+		),
+	},
+	"38d5bd61-1be4-43d7-a358-da62262fdf7b": {
+		name: "Muse AI account｜31 billion tokens",
+		policy: policy(
+			"Delivered automatically after payment: the account email and sign-in access to that email",
+			"Automatic, usually within 1 minute; view it on the order page",
+			"A ready-made Muse AI account with 31 billion tokens for AI image and video generation",
 			"24-hour warranty; sign in and check soon after delivery",
 			"Tokens are usage credit, not a fixed number of images or minutes of video; never share the email verification code or publish the account details",
 		),

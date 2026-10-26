@@ -428,6 +428,71 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		).resolves.toBe("approved");
 	});
 
+	it("posts proposals into their forum topic and replies in the incoming thread", async () => {
+		await db.batch([
+			upsertFeishuAlertSetting(
+				db,
+				telegramOwnerAlertSettingKeys.topics,
+				{ orders: 5, withdrawals: 6, restock: 7 },
+				1,
+			),
+		]);
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		const morning = Date.UTC(2026, 9, 19, 2, 30);
+		webhookNow = morning + 60_000;
+		await runWithdrawalAlerts({
+			db,
+			token: "program-token",
+			now: morning,
+			fetcher,
+		});
+		const sent = () => telegram.filter((call) => call.method === "sendMessage");
+		expect(sent()[0]?.body.message_thread_id).toBe(6);
+		const approve = (
+			sent()[0]?.body.reply_markup as {
+				inline_keyboard: { callback_data: string }[][];
+			}
+		).inline_keyboard[0]?.[0]?.callback_data;
+
+		// A tap inside the topic: the input prompt stays in that topic.
+		await deliver({
+			update_id: 40,
+			callback_query: {
+				id: "cb-40",
+				data: approve,
+				from: { id: ownerId, is_bot: false },
+				message: {
+					message_id: 777,
+					message_thread_id: 6,
+					chat: { id: Number(chatId) },
+				},
+			},
+		});
+		expect(sent()[1]?.body).toMatchObject({ message_thread_id: 6 });
+
+		// A command typed in another topic gets its reply there; the
+		// confirmation goes to the orders topic.
+		const command = (text: string, updateId: number, thread?: number) =>
+			deliver({
+				update_id: updateId,
+				message: {
+					message_id: 950 + updateId,
+					...(thread
+						? { message_thread_id: thread, is_topic_message: true }
+						: {}),
+					chat: { id: Number(chatId) },
+					from: { id: ownerId, is_bot: false },
+					text,
+				},
+			});
+		await command("/topup agent@example.com", 41, 8);
+		expect(sent()[2]?.body).toMatchObject({ message_thread_id: 8 });
+		await command("/topup agent@example.com 300", 42, 8);
+		expect(sent()[3]?.body.message_thread_id).toBe(5);
+		await command("/topup agent@example.com", 43);
+		expect(sent()[4]?.body).not.toHaveProperty("message_thread_id");
+	});
+
 	it("tops up a partner wallet from /topup after the owner confirms, retrying safely", async () => {
 		await ensureOwnerAlertWebhook(db, { fetcher });
 		expect(
