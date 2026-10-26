@@ -58,7 +58,10 @@ export async function handleSupplierTopUpResult(
 ) {
 	return respond(async () => {
 		const db = await authorized(request, env, env.SUPPLIER_TOPUP_RUNNER_TOKEN);
-		return recordSupplierTopUpResult(db, await request.json(), options);
+		return recordSupplierTopUpResult(db, await request.json(), {
+			...options,
+			agentProgramToken: env.AGENT_SHOP_PROGRAM_TOKEN,
+		});
 	});
 }
 

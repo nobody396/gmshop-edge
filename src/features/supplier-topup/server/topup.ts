@@ -36,7 +36,7 @@ type Fetcher = typeof fetch;
 type JobRow = {
 	id: string;
 	topup_id: string;
-	step: "create" | "collect";
+	step: "create" | "collect" | "withdrawal_verify";
 	supplier_id: string;
 	supplier_name: string;
 	amount_cny: number;
@@ -307,6 +307,19 @@ const resultSchema = z.discriminatedUnion("outcome", [
 	z.object({ job_id: z.string().uuid(), outcome: z.literal("unpaid") }),
 	z.object({
 		job_id: z.string().uuid(),
+		outcome: z.literal("withdrawal_matched"),
+		trade_no: z.string().regex(/^[0-9A-Za-z_-]{6,64}$/),
+		amount: z.string().max(32),
+		trans_dt: z.string().max(32),
+		withdrawal_ids: z.array(z.number().int().positive()).min(1).max(20),
+	}),
+	z.object({
+		job_id: z.string().uuid(),
+		outcome: z.literal("withdrawal_unmatched"),
+		reason: z.string().max(500),
+	}),
+	z.object({
+		job_id: z.string().uuid(),
 		// failed: nothing happened upstream; uncertain: it may have.
 		outcome: z.enum(["failed", "uncertain"]),
 		reason: z.string().max(500),
@@ -317,7 +330,7 @@ const resultSchema = z.discriminatedUnion("outcome", [
 export async function recordSupplierTopUpResult(
 	db: D1Database,
 	rawBody: unknown,
-	options: { now?: number; fetcher?: Fetcher } = {},
+	options: { now?: number; fetcher?: Fetcher; agentProgramToken?: string } = {},
 ) {
 	const now = options.now ?? Date.now();
 	const body = resultSchema.parse(rawBody);
@@ -328,6 +341,23 @@ export async function recordSupplierTopUpResult(
 	if (!job) throw new DomainError("supplier_topup_job_missing", 404, "No job");
 	if (job.status !== "running")
 		return { status: "duplicate" as const, jobStatus: job.status };
+	if (job.step === "withdrawal_verify") {
+		if (
+			body.outcome !== "withdrawal_matched" &&
+			body.outcome !== "withdrawal_unmatched" &&
+			body.outcome !== "failed" &&
+			body.outcome !== "uncertain"
+		)
+			throw new DomainError("supplier_topup_bad_outcome", 400, body.outcome);
+		const { recordWithdrawalVerifyResult } = await import(
+			"#/features/agent-program/server/withdrawal-alerts"
+		);
+		return recordWithdrawalVerifyResult(db, job, body, {
+			now,
+			fetcher: options.fetcher,
+			agentProgramToken: options.agentProgramToken,
+		});
+	}
 	const name = job.supplier_name;
 	const say = (text: string) =>
 		sendOwnerAlert(db, text, { fetcher: options.fetcher, topic: "restock" });
