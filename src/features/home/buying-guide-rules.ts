@@ -84,6 +84,14 @@ export const guideProducts = {
 		productId: "3e60e88d-a0bd-4723-bc9e-ff45f6dafa16",
 		itemId: "f3abb17f-5c93-40c6-a8e2-ef80cdfca7d2",
 	},
+	xplus1y: {
+		productId: "3e60e88d-a0bd-4723-bc9e-ff45f6dafa16",
+		itemId: "7a1c2f30-6b1e-4d4a-9e51-0c3a1f2b1001",
+	},
+	xpremium1y: {
+		productId: "3e60e88d-a0bd-4723-bc9e-ff45f6dafa16",
+		itemId: "7a1c2f30-6b1e-4d4a-9e51-0c3a1f2b1002",
+	},
 	smsone: {
 		productId: "cdccd3bc-4504-5521-8761-332c99910c9f",
 		itemId: "25a7ae5b-f437-5461-bfca-669870e3b887",
@@ -389,8 +397,17 @@ export function guideStep(a: readonly string[]): GuideStep {
 		if (current === "x_member") return { kind: "stop", reason: "x_active" };
 		if (current !== "x_none") return { kind: "stop", reason: "rule_pending" };
 		if (!target)
-			return question("x_target", ["xplus", "xpremium", "xsuper", "xultra"]);
-		if (target === "xplus") return result("xplus");
+			return question("x_target", [
+				"xplus",
+				"xpremium",
+				"xsuper",
+				"xultra",
+				"xplus1y",
+				"xpremium1y",
+			]);
+		// Monthly Plus and both yearly plans need no first-month offer.
+		if (target === "xplus" || target === "xplus1y" || target === "xpremium1y")
+			return result(target);
 		if (target !== "xpremium" && target !== "xsuper" && target !== "xultra")
 			return { kind: "stop", reason: "rule_pending" };
 		// Premium and up are paid with the official first-month 50% offer.

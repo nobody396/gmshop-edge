@@ -58,11 +58,11 @@ const productEnglish: Record<string, ProductLocalization> = {
 	},
 	"3e60e88d-a0bd-4723-bc9e-ff45f6dafa16": {
 		name: "X Subscription｜4-in-1｜X Premium + Grok + Grok Bot + Cursor",
-		description: `The new official X subscription (launched October 2026) includes 4 products in one plan: X Premium, Grok, Grok Bot, and Cursor. Billed monthly through an official card payment; the bill is sent to your email. 30-day subscription warranty.
+		description: `The new official X subscription (launched October 2026) includes 4 products in one plan: X Premium, Grok, Grok Bot, and Cursor. Monthly (Plus / Premium / Super / Ultra) or yearly (Plus / Premium, one year at once), paid through an official card payment; the bill is sent to your email. 30-day subscription warranty.
 
 Before you recharge
 · No replacement: the account must not have any active X / Grok membership.
-· Premium, Super and Ultra only work on accounts that can claim the official 50% first-month discount: sign in to the X account, open https://x.com/i/premium_sign_up , and the tier must show “50% off for 1 month”. Otherwise use another account. Plus has no such requirement.
+· Monthly Premium, Super and Ultra only work on accounts that can claim the official 50% first-month discount: sign in to the X account, open https://x.com/i/premium_sign_up , and the tier must show “50% off for 1 month”. Otherwise use another account. Monthly Plus and both yearly plans have no such requirement.
 · Accounts with unpaid bills that have not cancelled renewal cannot be recharged.
 · Some accounts get declined. You can retry; if it keeps failing, use another account.
 
@@ -78,6 +78,7 @@ Which tier
 · Premium: 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits. Enough for most people.
 · Super: everything in Premium, 15x Plus usage. For heavy daily use.
 · Ultra: everything in Premium, 50x Plus usage. For intensive coding and agent tasks.
+· Plus｜1 year, Premium｜1 year: same benefits as the monthly tier, activated for a whole year at once; no first-month discount needed.
 Note: third-party models in Cursor (such as Claude or GPT) are not counted in the subscription and are billed separately by the official service.
 
 How delivery works
@@ -622,6 +623,20 @@ ${claudeRestrictions}`,
 	"f3abb17f-5c93-40c6-a8e2-ef80cdfca7d2": {
 		name: "Ultra｜1 month",
 		policy: xPolicy("Ultra｜1 month; everything in Premium, 50x Plus usage"),
+	},
+	"7a1c2f30-6b1e-4d4a-9e51-0c3a1f2b1001": {
+		name: "Plus｜1 year",
+		policy: xPolicy(
+			"Plus｜1 year; one-year subscription; base usage; Cursor is limited to Grok models; no Grok Bot or video generation",
+			false,
+		),
+	},
+	"7a1c2f30-6b1e-4d4a-9e51-0c3a1f2b1002": {
+		name: "Premium｜1 year",
+		policy: xPolicy(
+			"Premium｜1 year; one-year subscription; 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits",
+			false,
+		),
 	},
 	"e8ff14e3-76a5-46e0-b6d3-1c217130bd99": {
 		name: "Claude compute card｜¥50",
