@@ -463,6 +463,31 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		expect(edit?.body.text).toContain("20261019200040011100340077594769");
 	});
 
+	it("refuses a match whose transfer amount differs from the withdrawals", async () => {
+		const job = await proposeWithdrawalAndTap();
+		await expect(
+			recordSupplierTopUpResult(
+				db,
+				{
+					job_id: job?.id,
+					outcome: "withdrawal_matched",
+					trade_no: "20261019200040011100340000000001",
+					amount: "80.00",
+					trans_dt: "2026-10-19 10:31:02",
+					withdrawal_ids: [12],
+				},
+				{ now: webhookNow + 2, fetcher, agentProgramToken: "program-token" },
+			),
+		).resolves.toMatchObject({ paid: [] });
+		expect(program.filter((call) => call.path.endsWith("/mark-paid"))).toEqual(
+			[],
+		);
+		const fallback = telegram
+			.filter((call) => call.method === "sendMessage")
+			.at(-1);
+		expect(fallback?.body.text).toContain("合计对不上");
+	});
+
 	it("falls back to the trade-number reply when the Alipay check is unsure", async () => {
 		const job = await proposeWithdrawalAndTap();
 		await recordSupplierTopUpResult(

@@ -257,6 +257,13 @@ export async function recordWithdrawalVerifyResult(
 			!ids.includes(order.target.id)
 		)
 			reason = "核对结果对应的提现单不在这次范围内";
+		else if (
+			Math.round(Number(body.amount) * 100) !==
+			ids
+				.map((id) => Math.round(Number(amounts.get(id) ?? Number.NaN) * 100))
+				.reduce((a, b) => a + b, 0)
+		)
+			reason = "支付宝转账金额和这几笔提现的合计对不上";
 		else {
 			for (const id of ids) {
 				try {
