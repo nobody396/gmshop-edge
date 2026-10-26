@@ -56,6 +56,10 @@ type HandlerEntry = {
 	load: () => Promise<OwnerActionHandler>;
 	/** Line shown when the owner presses the reject button. */
 	rejectedLine?: string;
+	/** Runs when the owner presses the reject button; failures are ignored. */
+	loadReject?: () => Promise<
+		(context: OwnerActionContext, payload: unknown) => Promise<void>
+	>;
 	/** A failure leaves the request pending so the same button can retry it. */
 	retryOnFailure?: boolean;
 	/** The approve button asks for one line of text, validated by `pattern`. */
@@ -121,6 +125,23 @@ const handlers: Record<string, HandlerEntry> = {
 				.approveWalletTopUp,
 		rejectedLine: "❌ 已取消，没有充值",
 		retryOnFailure: true,
+	},
+	supplier_topup_offer: {
+		topic: "restock",
+		load: async () =>
+			(await import("#/features/supplier-topup/server/topup"))
+				.approveSupplierTopUpOffer,
+		rejectedLine: "🙅 不充值，这次提醒已关闭",
+	},
+	supplier_topup_paid: {
+		topic: "restock",
+		load: async () =>
+			(await import("#/features/supplier-topup/server/topup"))
+				.approveSupplierTopUpPaid,
+		loadReject: async () =>
+			(await import("#/features/supplier-topup/server/topup"))
+				.rejectSupplierTopUpPaid,
+		rejectedLine: "❌ 不充值了，这笔订单作废（没付款就不用管）",
 	},
 	agent_withdrawal_paid: {
 		topic: "withdrawals",
@@ -546,6 +567,8 @@ async function claimAndRun(
 	let status: "approved" | "rejected" | "failed";
 	let line: string;
 	if (input.choice === null) {
+		const reject = await handlers[row.kind]?.loadReject?.();
+		await reject?.(context, JSON.parse(row.payload)).catch(() => undefined);
 		status = "rejected";
 		line = `${handlers[row.kind]?.rejectedLine ?? "❌ 已选择不处理"}（北京时间 ${clock}）`;
 	} else {
