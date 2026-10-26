@@ -1,7 +1,9 @@
+import { readFile } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	claudeEnvProductId,
+	claudeEnvTrafficProductId,
 	dayMs,
 	decodeActivationCode,
 	signRelayRequest,
@@ -12,7 +14,12 @@ import {
 	saveRelay,
 	setClaudeEnvEnabled,
 } from "#/features/claude-env/server/admin-actions";
-import type { SendExpiryEmail } from "#/features/claude-env/server/customer-email";
+import {
+	enqueueClaudeEnvTrafficEmail,
+	renderClaudeEnvTrafficEmail,
+	type SendExpiryEmail,
+	type SendTrafficEmail,
+} from "#/features/claude-env/server/customer-email";
 import type { IproyalClient } from "#/features/claude-env/server/iproyal";
 import { IproyalError } from "#/features/claude-env/server/iproyal";
 import {
@@ -27,8 +34,11 @@ import {
 	runClaudeEnv,
 } from "#/features/claude-env/server/scheduler";
 import { loadCrypt } from "#/features/claude-env/server/shared";
+import { ingestTrafficForOrder } from "#/features/claude-env/server/traffic";
+import { handleClaudeEnvTrafficOps } from "#/features/claude-env/server/traffic-api";
 import { supportReplyEmailSender } from "#/features/notifications/server/delivery";
 import { recipientHash } from "#/features/notifications/server/recipient-policy";
+import { listIndexedProducts } from "#/features/seo/server/site-index";
 import { applyMigrations } from "./migrations";
 
 const relaySecret =
@@ -169,6 +179,7 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 		quantity?: number;
 		status?: string;
 		email?: string;
+		productId?: string;
 	}) {
 		await db.batch([
 			db
@@ -199,7 +210,7 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 				.bind(
 					`${input.id}-item`,
 					input.id,
-					claudeEnvProductId,
+					input.productId ?? claudeEnvProductId,
 					input.sku,
 					input.quantity ?? 1,
 				),
@@ -1839,6 +1850,559 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 			expect(await reconcileIproyalOrders({ db, now: t0 })).toEqual({
 				status: "no_token",
 			});
+		});
+	});
+
+	describe("renewal SKUs and traffic add-ons", () => {
+		const traffic100 = "c3675807-27e7-4442-a820-e4016b8c0e37";
+		const traffic500 = "f1ea0f36-274a-414c-aa36-c6ebad153d3b";
+		const ebMonthlySku = "979f1ac1-5082-4758-bc3c-90b3230ee03f";
+		const GB = 1_000_000_000;
+		const opsToken = "ops-token-0123456789";
+
+		/** The live catalog rows the panel prices come from, then the ops SQL. */
+		async function seedCatalog() {
+			const now = t0 - dayMs;
+			await db.batch([
+				db
+					.prepare(
+						"INSERT INTO products (id, name, product_type, status, created_at, updated_at) VALUES (?, 'Claude 稳定使用环境', 'stock', 'active', ?, ?)",
+					)
+					.bind(claudeEnvProductId, now, now),
+				db
+					.prepare(
+						`INSERT INTO product_sellable_items (id, product_id, name, currency, currency_decimals, price_minor, sort_order, created_at, updated_at)
+						 VALUES (?, ?, '月付', 'CNY', 2, '29900', 1, ?, ?), (?, ?, '季付', 'CNY', 2, '79900', 2, ?, ?)`,
+					)
+					.bind(
+						monthlySku,
+						claudeEnvProductId,
+						now,
+						now,
+						quarterlySku,
+						claudeEnvProductId,
+						now,
+						now,
+					),
+			]);
+			const sql = await readFile(
+				new URL("../../ops/claude-env-traffic-skus.sql", import.meta.url),
+				"utf8",
+			);
+			for (const statement of sql
+				.split(/;\s*\n/)
+				.map((part) =>
+					part
+						.split("\n")
+						.filter((line) => !line.trim().startsWith("--"))
+						.join("\n")
+						.trim(),
+				)
+				.filter(Boolean))
+				await db.prepare(statement).run();
+		}
+
+		async function activeSubscription(client: IproyalClient) {
+			await seedCatalog();
+			const id = await provision(client);
+			await run(t0 + 6 * minute, client);
+			expect((await sub())?.status).toBe("active");
+			return id;
+		}
+
+		const runT = (
+			now: number,
+			client: IproyalClient,
+			sendTrafficEmail = vi.fn<SendTrafficEmail>(async () => ({
+				status: "queued",
+			})),
+		) =>
+			runClaudeEnv({
+				db,
+				now,
+				iproyal: client,
+				fetcher: qualityFetcher(98, 32),
+				deliver,
+				sendCustomerEmail: vi.fn(async () => undefined),
+				sendTrafficEmail,
+				sleep: async () => undefined,
+			});
+
+		const useTraffic = (id: string, bytes: number, now: number) =>
+			report(`traffic-${crypto.randomUUID()}`, [], now, {
+				traffic: [{ id, up_bytes: bytes, down_bytes: 0 }],
+			});
+
+		async function buyAddon(
+			orderId: string,
+			sku: string,
+			paidAt: number,
+			userId: string | null = "u1",
+		) {
+			await insertOrder({
+				id: orderId,
+				userId,
+				sku,
+				paidAt,
+				status: "paid",
+				productId: claudeEnvTrafficProductId,
+			});
+			await db
+				.prepare(
+					"INSERT INTO delivery_records (id, order_item_id, delivery_type, status, created_at, updated_at) VALUES (?, ?, 'stock', 'awaiting_supply', ?, ?)",
+				)
+				.bind(`${orderId}-delivery`, `${orderId}-item`, paidAt, paidAt)
+				.run();
+		}
+
+		it("any renewal SKU extends any plan, early-bird included", async () => {
+			const { client, calls } = fakeIproyal();
+			await enable();
+			await insertOrder({
+				id: "o1",
+				userId: "u1",
+				sku: ebMonthlySku,
+				paidAt: t0 + 1000,
+			});
+			await run(t0 + 2000, client);
+			await report("rep-eb", [okResult((await sub())?.id)], t0 + 3 * minute);
+			await run(t0 + 4 * minute, client);
+			expect(await sub()).toMatchObject({
+				plan: "eb_monthly",
+				status: "active",
+			});
+			await insertOrder({
+				id: "o2",
+				userId: "u1",
+				sku: quarterlySku,
+				paidAt: t0 + 10 * minute,
+			});
+			await run(t0 + 11 * minute, client);
+			expect(calls.extend).toEqual([["4242", 25]]);
+			expect((await sub())?.expires_at).toBe(iproyalExpiry + 90 * dayMs);
+		});
+
+		it("panel offers live renewal and traffic prices that go straight to checkout", async () => {
+			const { client } = fakeIproyal();
+			await activeSubscription(client);
+			await db
+				.prepare(
+					"UPDATE product_sellable_items SET price_minor = '28800' WHERE id = ?",
+				)
+				.bind(monthlySku)
+				.run();
+			const panel = await loadClaudeEnvPanel(db, "u1", "GMO1", t0 + hour);
+			expect(panel).toMatchObject({
+				renewOptions: [
+					{
+						period: "monthly",
+						sku: monthlySku,
+						priceMinor: "28800",
+						currency: "CNY",
+						href: `/checkout?mode=buy-now&sellableItemId=${monthlySku}&quantity=1`,
+					},
+					{ period: "quarterly", sku: quarterlySku, priceMinor: "79900" },
+				],
+				trafficOptions: [
+					{ label: "100GB", gb: 100, priceMinor: "3000" },
+					{ label: "500GB", gb: 500, priceMinor: "12900" },
+					{ label: "1TB", gb: 1000, priceMinor: "22900" },
+				],
+				trafficQuotaBytes: 200 * GB,
+				trafficLevel: null,
+			});
+			// A SKU taken off sale disappears from the choice.
+			await db
+				.prepare(
+					"UPDATE product_sellable_items SET sale_disabled = 1 WHERE id = ?",
+				)
+				.bind(traffic500)
+				.run();
+			const after = await loadClaudeEnvPanel(db, "u1", "GMO1", t0 + hour);
+			expect(after?.state === "subscription" && after.trafficOptions).toEqual([
+				expect.objectContaining({ label: "100GB" }),
+				expect.objectContaining({ label: "1TB" }),
+			]);
+		});
+
+		it("applies an add-on to the current period at once, completes the order and alerts the owner", async () => {
+			const { client } = fakeIproyal();
+			const id = await activeSubscription(client);
+			await useTraffic(id, 120 * GB, t0 + hour);
+			await buyAddon("a1", traffic100, t0 + 2 * hour);
+			// The buyer opens the add-on order page before the cron runs.
+			expect(
+				await ingestTrafficForOrder(db, "u1", "GMA1", t0 + 2 * hour, deliver),
+			).toBe(1);
+			const panel = await loadClaudeEnvPanel(db, "u1", "GMA1", t0 + 2 * hour);
+			expect(panel).toMatchObject({
+				state: "subscription",
+				trafficUsedBytes: 120 * GB,
+				trafficQuotaBytes: 300 * GB,
+				trafficBaseBytes: 200 * GB,
+				trafficAddonBytes: 100 * GB,
+			});
+			expect(JSON.stringify(panel)).not.toMatch(/iproyal|4242/i);
+			const alert = messages.find((m) => m.includes("加流量（已付款"));
+			expect(alert).toContain("GMA1");
+			expect(alert).toContain("bu****@example.com");
+			expect(alert).toContain("100GB");
+			expect(alert).toContain("#4242");
+			const delivery = await db
+				.prepare("SELECT status FROM delivery_records WHERE id = 'a1-delivery'")
+				.first<Row>();
+			expect(delivery?.status).toBe("delivered");
+			expect(
+				(
+					await db
+						.prepare("SELECT status FROM shop_orders WHERE id = 'a1'")
+						.first<Row>()
+				)?.status,
+			).toBe("completed");
+			// The cron sees it as done: no second application.
+			await runT(t0 + 2 * hour + minute, client);
+			const rows = await db
+				.prepare("SELECT * FROM claude_env_traffic_addons")
+				.all<Row>();
+			expect(rows.results).toHaveLength(1);
+			expect(rows.results[0]).toMatchObject({
+				status: "applied",
+				delivered: 1,
+				bytes: 100 * GB,
+			});
+			// Next 30-day period: back to the base 200 GB.
+			const nextPeriod = t0 + 6 * minute + 30 * dayMs + hour;
+			await useTraffic(id, GB, nextPeriod);
+			expect(
+				await loadClaudeEnvPanel(db, "u1", "GMO1", nextPeriod),
+			).toMatchObject({
+				trafficUsedBytes: GB,
+				trafficQuotaBytes: 200 * GB,
+				trafficAddonBytes: 0,
+			});
+		});
+
+		it("parks guest add-ons, skips buyers without an active environment and takes refunds back", async () => {
+			const { client } = fakeIproyal();
+			await activeSubscription(client);
+			await buyAddon("g1", traffic100, t0 + hour, null);
+			await db
+				.prepare(
+					"UPDATE shop_orders SET normalized_contact_email = 'guest@example.com' WHERE id = 'g1'",
+				)
+				.run();
+			await buyAddon("n1", traffic100, t0 + hour, "u2");
+			await runT(t0 + hour + minute, client);
+			const status = async (orderId: string) =>
+				(
+					await db
+						.prepare(
+							"SELECT status, note FROM claude_env_traffic_addons WHERE order_id = ?",
+						)
+						.bind(orderId)
+						.first<Row>()
+				)?.status;
+			expect(await status("g1")).toBe("waiting");
+			expect(await status("n1")).toBe("skipped");
+			expect(messages.some((m) => m.includes("游客订单 GMG1"))).toBe(true);
+			expect(
+				messages.some(
+					(m) => m.includes("GMN1") && m.includes("没有正在使用的专属环境"),
+				),
+			).toBe(true);
+
+			await buyAddon("r1", traffic100, t0 + 2 * hour);
+			await runT(t0 + 2 * hour + minute, client);
+			expect(
+				await loadClaudeEnvPanel(db, "u1", "GMO1", t0 + 3 * hour),
+			).toMatchObject({ trafficQuotaBytes: 300 * GB });
+			await db
+				.prepare("UPDATE shop_orders SET status = 'refunded' WHERE id = 'r1'")
+				.run();
+			await runT(t0 + 3 * hour, client);
+			expect(await status("r1")).toBe("refunded");
+			expect(
+				await loadClaudeEnvPanel(db, "u1", "GMO1", t0 + 3 * hour),
+			).toMatchObject({ trafficQuotaBytes: 200 * GB });
+			expect(messages.some((m) => m.includes("GMR1 已退款"))).toBe(true);
+		});
+
+		it("emails 75 / 90 / 97.5% once per period and re-arms only on a new crossing after an add-on", async () => {
+			const { client } = fakeIproyal();
+			const id = await activeSubscription(client);
+			const email = vi.fn<SendTrafficEmail>(async () => ({ status: "queued" }));
+			const thresholds = () => email.mock.calls.map((c) => c[1].threshold);
+
+			await useTraffic(id, 150 * GB, t0 + hour);
+			await runT(t0 + hour + minute, client, email);
+			await runT(t0 + hour + 2 * minute, client, email);
+			expect(thresholds()).toEqual([7500]);
+			expect(email.mock.calls[0]?.[1]).toMatchObject({
+				to: "buyer1@example.com",
+				orderNumber: "GMO1",
+				usedBytes: 150 * GB,
+				entitledBytes: 200 * GB,
+				locale: "zh-CN",
+			});
+			expect(
+				await loadClaudeEnvPanel(db, "u1", "GMO1", t0 + hour + 2 * minute),
+			).toMatchObject({ trafficLevel: 7500 });
+
+			// A jump across 90% and 97.5% sends only the highest.
+			await useTraffic(id, 46 * GB, t0 + 2 * hour);
+			await runT(t0 + 2 * hour + minute, client, email);
+			expect(thresholds()).toEqual([7500, 9750]);
+
+			// +500 GB: 196 / 700 GB is below every threshold again.
+			await buyAddon("a5", traffic500, t0 + 3 * hour);
+			await runT(t0 + 3 * hour + minute, client, email);
+			expect(thresholds()).toEqual([7500, 9750]);
+			// A real new crossing of 75% of 700 GB = 525 GB.
+			await useTraffic(id, 330 * GB, t0 + 4 * hour);
+			await runT(t0 + 4 * hour + minute, client, email);
+			expect(thresholds()).toEqual([7500, 9750, 7500]);
+			expect(email.mock.calls[2]?.[1]).toMatchObject({
+				usedBytes: 526 * GB,
+				entitledBytes: 700 * GB,
+			});
+		});
+
+		it("an add-on that leaves usage above a threshold does not resend it", async () => {
+			const { client } = fakeIproyal();
+			const id = await activeSubscription(client);
+			const email = vi.fn<SendTrafficEmail>(async () => ({ status: "queued" }));
+			await useTraffic(id, 260 * GB, t0 + hour);
+			await runT(t0 + hour + minute, client, email);
+			expect(email).toHaveBeenCalledTimes(1);
+			// 260 / 300 GB is still above 75% (and below 90%): nothing new.
+			await buyAddon("a1", traffic100, t0 + 2 * hour);
+			await runT(t0 + 2 * hour + minute, client, email);
+			await runT(t0 + 2 * hour + 2 * minute, client, email);
+			expect(email).toHaveBeenCalledTimes(1);
+		});
+
+		it("real sender: renders the notice through the approved channel only", async () => {
+			const html = renderClaudeEnvTrafficEmail({
+				locale: "zh-CN",
+				threshold: 9000,
+				usedBytes: 180 * GB,
+				entitledBytes: 200 * GB,
+				periodEnd: t0 + 30 * dayMs,
+				addTrafficUrl:
+					"https://laoshirenvip.com/account/orders/GMO1#claude-env-traffic",
+			});
+			expect(html.subject).toContain("90%");
+			expect(html.text).toContain("已用 180 GB / 本期共 200 GB，剩余 20 GB");
+			expect(html.text).toContain("#claude-env-traffic");
+			expect(`${html.text}${html.html}`).not.toMatch(
+				/IPRoyal|住宅|梯子|VPN|翻墙/i,
+			);
+			const en = renderClaudeEnvTrafficEmail({
+				locale: "en-US",
+				threshold: 9750,
+				usedBytes: 195 * GB,
+				entitledBytes: 200 * GB,
+				periodEnd: t0 + 30 * dayMs,
+				addTrafficUrl: "https://laoshirenvip.com/x",
+			});
+			expect(en.subject).toContain("97.5%");
+			expect(
+				await enqueueClaudeEnvTrafficEmail(db, {
+					subscriptionId: "s",
+					to: "buyer1@example.com",
+					orderNumber: "GMO1",
+					threshold: 7500,
+					periodStart: t0,
+					periodEnd: t0 + 30 * dayMs,
+					usedBytes: 150 * GB,
+					entitledBytes: 200 * GB,
+					locale: "zh-CN",
+				}),
+			).toEqual({ status: "skipped", reason: "sender_unavailable" });
+		});
+
+		it("owner safety net: one alert per period at 85 GB without a reported purchase", async () => {
+			const { client } = fakeIproyal();
+			const id = await activeSubscription(client);
+			await useTraffic(id, 84 * GB, t0 + hour);
+			await runT(t0 + hour + minute, client);
+			expect(messages.some((m) => m.includes("自动采购还没回报"))).toBe(false);
+			await useTraffic(id, 2 * GB, t0 + 2 * hour);
+			await runT(t0 + 2 * hour + minute, client);
+			await runT(t0 + 2 * hour + 2 * minute, client);
+			const alerts = messages.filter((m) => m.includes("自动采购还没回报"));
+			expect(alerts).toHaveLength(1);
+			expect(alerts[0]).toContain("已用 86 GB，IPRoyal 订单 #4242 需要加流量");
+
+			// Next period: a purchase reported before 85 GB keeps it quiet.
+			const next = t0 + 6 * minute + 30 * dayMs + hour;
+			const env = { DB: db, RESTOCK_API_TOKEN: opsToken } as never;
+			const post = await handleClaudeEnvTrafficOps(
+				new Request(
+					"https://laoshirenvip.com/api/ops/claude-env/traffic/purchases",
+					{
+						method: "POST",
+						headers: { Authorization: `Bearer ${opsToken}` },
+						body: JSON.stringify({
+							purchases: [
+								{
+									iproyalOrderId: "4242",
+									gb: 100,
+									costUsd: 12.5,
+									ref: "buy-next",
+									at: next,
+								},
+							],
+						}),
+					},
+				),
+				env,
+				"purchases",
+				{ now: next, deliver },
+			);
+			expect(post.status).toBe(200);
+			await useTraffic(id, 90 * GB, next + minute);
+			await runT(next + 2 * minute, client);
+			expect(
+				messages.filter((m) => m.includes("自动采购还没回报")),
+			).toHaveLength(1);
+		});
+
+		it("ops traffic API: bearer auth, current-period numbers, idempotent purchases and usage readings", async () => {
+			const { client } = fakeIproyal();
+			const id = await activeSubscription(client);
+			const env = { DB: db, RESTOCK_API_TOKEN: opsToken } as never;
+			const call = async (
+				route: "list" | "purchases",
+				init: RequestInit & { token?: string | null } = {},
+				now = t0 + 3 * hour,
+			) => {
+				const { token = opsToken, ...rest } = init;
+				const response = await handleClaudeEnvTrafficOps(
+					new Request(
+						`https://laoshirenvip.com/api/ops/claude-env/traffic${route === "purchases" ? "/purchases" : ""}`,
+						{
+							...rest,
+							headers: token ? { Authorization: `Bearer ${token}` } : {},
+						},
+					),
+					env,
+					route,
+					{ now, deliver },
+				);
+				return {
+					status: response.status,
+					// biome-ignore lint/suspicious/noExplicitAny: response JSON in assertions
+					json: (await response.json()) as any,
+				};
+			};
+			expect((await call("list", { token: null })).status).toBe(401);
+			expect((await call("list", { token: "wrong" })).status).toBe(401);
+			expect((await call("list", { method: "POST" })).status).toBe(405);
+
+			await useTraffic(id, 90 * GB, t0 + hour);
+			await buyAddon("a1", traffic100, t0 + 2 * hour);
+			await runT(t0 + 2 * hour + minute, client);
+			const activatedAt = (await sub())?.activated_at as number;
+			const list = await call("list");
+			expect(list).toEqual({
+				status: 200,
+				json: {
+					ok: true,
+					generatedAt: new Date(t0 + 3 * hour).toISOString(),
+					includedBytesPerCycle: 100 * GB,
+					subscriptions: [
+						{
+							subscriptionId: id,
+							iproyalOrderId: "4242",
+							ip: "161.77.8.204",
+							periodStart: new Date(activatedAt).toISOString(),
+							periodEnd: new Date(activatedAt + 30 * dayMs).toISOString(),
+							expiresAt: new Date(iproyalExpiry).toISOString(),
+							entitledBytes: 300 * GB,
+							relayUsedBytes: 90 * GB,
+							upstreamPurchasedBytes: 0,
+							upstreamCapacityBytes: 100 * GB,
+							upstreamUsedBytes: null,
+							upstreamUsedAt: null,
+						},
+					],
+				},
+			});
+
+			const body = {
+				purchases: [
+					{
+						iproyalOrderId: "4242",
+						gb: 100,
+						costUsd: 12.5,
+						ref: "ipr-1",
+						at: "2026-10-24T04:00:00Z",
+					},
+				],
+				usage: [
+					{ iproyalOrderId: "4242", usedBytes: 88 * GB, at: t0 + 3 * hour },
+					{ iproyalOrderId: "999", usedBytes: 1, at: t0 + 3 * hour },
+				],
+			};
+			const first = await call("purchases", {
+				method: "POST",
+				body: JSON.stringify(body),
+			});
+			expect(first).toEqual({
+				status: 200,
+				json: {
+					ok: true,
+					purchases: [{ ref: "ipr-1", status: "recorded", subscriptionId: id }],
+					usage: [
+						{ iproyalOrderId: "4242", status: "recorded" },
+						{ iproyalOrderId: "999", status: "unknown_order" },
+					],
+				},
+			});
+			const again = await call("purchases", {
+				method: "POST",
+				body: JSON.stringify({
+					...body,
+					usage: [{ iproyalOrderId: "4242", usedBytes: 1, at: t0 }],
+				}),
+			});
+			expect(again.json).toMatchObject({
+				purchases: [{ ref: "ipr-1", status: "duplicate" }],
+				usage: [{ iproyalOrderId: "4242", status: "stale" }],
+			});
+			expect(
+				messages.filter((m) => m.includes("IPRoyal 加流量已回报")),
+			).toHaveLength(1);
+			const after = (await call("list")).json.subscriptions[0];
+			expect(after).toMatchObject({
+				upstreamPurchasedBytes: 100 * GB,
+				upstreamCapacityBytes: 200 * GB,
+				upstreamUsedBytes: 88 * GB,
+				upstreamUsedAt: new Date(t0 + 3 * hour).toISOString(),
+			});
+			expect(
+				(await call("purchases", { method: "POST", body: "{}" })).status,
+			).toBe(400);
+			expect(
+				(await call("purchases", { method: "POST", body: "nope" })).status,
+			).toBe(400);
+			const admin = await loadAdmin(db, t0 + 3 * hour);
+			expect(admin.subscriptions[0]?.traffic).toMatchObject({
+				entitledBytes: 300 * GB,
+				upstreamCapacityBytes: 200 * GB,
+			});
+			expect(admin.addons).toHaveLength(1);
+			expect(admin.upstreamPurchases).toHaveLength(1);
+		});
+
+		it("keeps the add-on product off the sitemap", async () => {
+			await seedCatalog();
+			const products = await listIndexedProducts(db);
+			expect(products.map((p) => p.id)).toContain(claudeEnvProductId);
+			expect(products.map((p) => p.id)).not.toContain(
+				claudeEnvTrafficProductId,
+			);
 		});
 	});
 });

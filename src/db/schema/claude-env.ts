@@ -1,6 +1,7 @@
 import {
 	index,
 	integer,
+	primaryKey,
 	real,
 	sqliteTable,
 	text,
@@ -89,6 +90,9 @@ export const claudeEnvSubscriptions = sqliteTable(
 		trafficQuotaBytes: integer("traffic_quota_bytes")
 			.notNull()
 			.default(200_000_000_000),
+		/** Latest IPRoyal usage reading from the traffic buyer CLI (0049). */
+		upstreamUsedBytes: integer("upstream_used_bytes"),
+		upstreamUsedAt: integer("upstream_used_at"),
 		relayCheckOk: integer("relay_check_ok").notNull().default(0),
 		relayCheckFailStreak: integer("relay_check_fail_streak")
 			.notNull()
@@ -222,5 +226,91 @@ export const claudeEnvReminders = sqliteTable(
 			table.expiresAt,
 			table.point,
 		),
+	],
+);
+
+/** Mirrors drizzle/0049_claude_env_traffic.sql. */
+export const claudeEnvTrafficAddons = sqliteTable(
+	"claude_env_traffic_addons",
+	{
+		orderItemId: text("order_item_id").primaryKey(),
+		orderId: text("order_id").notNull(),
+		subscriptionId: text("subscription_id").references(
+			() => claudeEnvSubscriptions.id,
+		),
+		status: text("status", {
+			enum: ["applied", "waiting", "skipped", "refunded"],
+		}).notNull(),
+		gb: integer("gb").notNull(),
+		units: integer("units").notNull().default(1),
+		bytes: integer("bytes").notNull(),
+		periodStart: integer("period_start"),
+		delivered: integer("delivered").notNull().default(0),
+		refundHandled: integer("refund_handled").notNull().default(0),
+		note: text("note"),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		index("claude_env_traffic_addons_period_idx").on(
+			table.subscriptionId,
+			table.periodStart,
+			table.status,
+		),
+		index("claude_env_traffic_addons_status_idx").on(
+			table.status,
+			table.delivered,
+		),
+	],
+);
+
+export const claudeEnvUpstreamPurchases = sqliteTable(
+	"claude_env_upstream_purchases",
+	{
+		ref: text("ref").primaryKey(),
+		iproyalOrderId: text("iproyal_order_id").notNull(),
+		subscriptionId: text("subscription_id").references(
+			() => claudeEnvSubscriptions.id,
+		),
+		periodStart: integer("period_start"),
+		gb: integer("gb").notNull(),
+		bytes: integer("bytes").notNull(),
+		costUsdCents: integer("cost_usd_cents"),
+		purchasedAt: integer("purchased_at").notNull(),
+		createdAt: integer("created_at").notNull(),
+	},
+	(table) => [
+		index("claude_env_upstream_purchases_period_idx").on(
+			table.subscriptionId,
+			table.periodStart,
+		),
+	],
+);
+
+export const claudeEnvTrafficNotices = sqliteTable(
+	"claude_env_traffic_notices",
+	{
+		subscriptionId: text("subscription_id")
+			.notNull()
+			.references(() => claudeEnvSubscriptions.id),
+		periodStart: integer("period_start").notNull(),
+		kind: text("kind", {
+			enum: ["p7500", "p9000", "p9750", "owner_unbought"],
+		}).notNull(),
+		entitledBytes: integer("entitled_bytes").notNull(),
+		usedBytes: integer("used_bytes").notNull(),
+		status: text("status", {
+			enum: ["sending", "sent", "skipped", "failed", "superseded"],
+		})
+			.notNull()
+			.default("sending"),
+		detail: text("detail"),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		primaryKey({
+			columns: [table.subscriptionId, table.periodStart, table.kind],
+		}),
 	],
 );

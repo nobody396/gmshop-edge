@@ -2203,6 +2203,7 @@
 	"notifications_event_agent_access_ready": "Agent access ready",
 	"notifications_event_claude_env_ready": "Claude environment ready",
 	"notifications_event_claude_env_expiring": "Claude environment expiry reminder",
+	"notifications_event_claude_env_traffic": "Claude environment traffic notice",
 	"claude_env_nav": "Claude environment",
 	"agent_access_ready_email_order": "Order number (starts with GM)",
 	"agent_access_ready_email_resend": "Refresh domain and resend activation email",

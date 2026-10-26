@@ -6,6 +6,7 @@ import { DomainError } from "#/lib/domain-error";
 import { getDb } from "#/server/db.server";
 import { loadClaudeEnvPanel, revealClaudeEnvCode } from "./panel";
 import { loadCrypt } from "./shared";
+import { ingestTrafficForOrder } from "./traffic";
 
 const orderSchema = z.object({ orderNumber: z.string().min(1).max(100) });
 
@@ -26,7 +27,12 @@ export const getClaudeEnvPanelFn = createServerFn({ method: "POST" })
 	.validator((input: z.input<typeof orderSchema>) => orderSchema.parse(input))
 	.handler(async ({ data }) => {
 		const { db, user } = await buyer();
-		return loadClaudeEnvPanel(db, user.id, data.orderNumber, Date.now());
+		const now = Date.now();
+		// A just-paid traffic add-on order counts as soon as its page is open.
+		await ingestTrafficForOrder(db, user.id, data.orderNumber, now).catch(
+			() => 0,
+		);
+		return loadClaudeEnvPanel(db, user.id, data.orderNumber, now);
 	});
 
 export const revealClaudeEnvCodeFn = createServerFn({ method: "POST" })

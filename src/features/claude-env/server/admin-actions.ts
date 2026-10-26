@@ -19,6 +19,7 @@ import {
 	lookupTimezone,
 	secretPurpose,
 } from "./shared";
+import { trafficSnapshots } from "./traffic";
 
 export type AdminActor = { userId: string; requestId?: string | null };
 
@@ -78,6 +79,8 @@ export type AdminSubscriptionRow = {
 	needs_replace_reason: Nullable<string>;
 	created_at: number;
 	order_number: Nullable<string>;
+	upstream_used_bytes: Nullable<number>;
+	upstream_used_at: Nullable<number>;
 };
 export type AdminRelayRow = {
 	id: string;
@@ -106,48 +109,87 @@ export type AdminPeriodRow = {
 	order_number: Nullable<string>;
 };
 
+export type AdminAddonRow = {
+	order_item_id: string;
+	subscription_id: Nullable<string>;
+	status: string;
+	gb: number;
+	units: number;
+	bytes: number;
+	period_start: Nullable<number>;
+	delivered: number;
+	note: Nullable<string>;
+	created_at: number;
+	order_number: Nullable<string>;
+};
+export type AdminUpstreamPurchaseRow = {
+	ref: string;
+	iproyal_order_id: string;
+	subscription_id: Nullable<string>;
+	period_start: Nullable<number>;
+	gb: number;
+	cost_usd_cents: Nullable<number>;
+	purchased_at: number;
+};
+
 // ---------- overview ----------
 
 export async function loadClaudeEnvAdmin(db: D1Database, now: number) {
-	const [flag, subs, relays, periods, iproyalOrders] = await Promise.all([
-		db
-			.prepare("SELECT value FROM system_settings WHERE key = ?")
-			.bind(claudeEnvSettingKeys.enabled)
-			.first<{ value: string }>(),
-		db
-			.prepare(
-				`SELECT s.id, s.email, s.status, s.plan, s.ip, s.ip_city, s.ip_tz, s.relay_id, s.relay_port,
+	const [flag, subs, relays, periods, iproyalOrders, addons, purchases] =
+		await Promise.all([
+			db
+				.prepare("SELECT value FROM system_settings WHERE key = ?")
+				.bind(claudeEnvSettingKeys.enabled)
+				.first<{ value: string }>(),
+			db
+				.prepare(
+					`SELECT s.id, s.email, s.status, s.plan, s.ip, s.ip_city, s.ip_tz, s.relay_id, s.relay_port,
 				 s.iproyal_order_id, s.iproyal_order_state, s.iproyal_posting_at, s.expires_at, s.pending_days, s.activated_at,
 				 s.traffic_period_bytes, s.traffic_period_start, s.traffic_total_bytes, s.traffic_quota_bytes,
 				 s.last_check_at, s.last_exit_ok, s.last_anthropic_status, s.last_apply_error, s.last_error,
-				 s.qc_trust_score, s.qc_scam_score, s.qc_note, s.needs_replace_reason, s.created_at, o.order_number
+				 s.qc_trust_score, s.qc_scam_score, s.qc_note, s.needs_replace_reason, s.created_at, o.order_number,
+				 s.upstream_used_bytes, s.upstream_used_at
 				 FROM claude_env_subscriptions s LEFT JOIN shop_orders o ON o.id = s.order_id
 				 ORDER BY CASE s.status WHEN 'needs_replace' THEN 0 WHEN 'awaiting_ip' THEN 1 WHEN 'provisioning' THEN 2 ELSE 3 END,
 				 s.created_at DESC LIMIT 300`,
-			)
-			.all<AdminSubscriptionRow>(),
-		db
-			.prepare(
-				`SELECT r.id, r.hostname, r.status, r.max_customers, r.monthly_quota_bytes, r.host_month,
+				)
+				.all<AdminSubscriptionRow>(),
+			db
+				.prepare(
+					`SELECT r.id, r.hostname, r.status, r.max_customers, r.monthly_quota_bytes, r.host_month,
 				 r.host_rx_bytes, r.host_tx_bytes, r.last_report_at,
 				 (SELECT COUNT(*) FROM claude_env_subscriptions s WHERE s.relay_id = r.id
 				  AND s.status IN (${relaySlotStatuses.map(() => "?").join(",")})) AS customers,
 				 (SELECT COUNT(*) FROM claude_env_subscriptions s WHERE s.relay_id = r.id
 				  AND s.status IN (${desiredStatuses.map(() => "?").join(",")})) AS live_customers
 				 FROM claude_env_relays r ORDER BY r.id`,
-			)
-			.bind(...relaySlotStatuses, ...desiredStatuses)
-			.all<AdminRelayRow>(),
-		db
-			.prepare(
-				`SELECT p.order_item_id, p.subscription_id, p.kind, p.days, p.units, p.units_extended, p.extend_status,
+				)
+				.bind(...relaySlotStatuses, ...desiredStatuses)
+				.all<AdminRelayRow>(),
+			db
+				.prepare(
+					`SELECT p.order_item_id, p.subscription_id, p.kind, p.days, p.units, p.units_extended, p.extend_status,
 				 p.extending_at, p.note, p.created_at, o.order_number FROM claude_env_periods p LEFT JOIN shop_orders o ON o.id = p.order_id
 				 WHERE p.extend_status IN ('failed','extending') OR p.kind IN ('skipped','waiting')
 				 ORDER BY p.created_at DESC LIMIT 100`,
-			)
-			.all<AdminPeriodRow>(),
-		loadReconcileSnapshot(db),
-	]);
+				)
+				.all<AdminPeriodRow>(),
+			loadReconcileSnapshot(db),
+			db
+				.prepare(
+					`SELECT a.order_item_id, a.subscription_id, a.status, a.gb, a.units, a.bytes, a.period_start,
+				 a.delivered, a.note, a.created_at, o.order_number FROM claude_env_traffic_addons a
+				 LEFT JOIN shop_orders o ON o.id = a.order_id ORDER BY a.created_at DESC LIMIT 200`,
+				)
+				.all<AdminAddonRow>(),
+			db
+				.prepare(
+					`SELECT ref, iproyal_order_id, subscription_id, period_start, gb, cost_usd_cents, purchased_at
+				 FROM claude_env_upstream_purchases ORDER BY purchased_at DESC LIMIT 200`,
+				)
+				.all<AdminUpstreamPurchaseRow>(),
+		]);
+	const traffic = await trafficSnapshots(db, subs.results, now);
 	return {
 		now,
 		iproyalOrders,
@@ -156,7 +198,10 @@ export async function loadClaudeEnvAdmin(db: D1Database, now: number) {
 			...row,
 			email: maskEmail(row.email),
 			reorderAllowed: reorderAllowed(row, now),
+			traffic: traffic.get(row.id) ?? null,
 		})),
+		addons: addons.results,
+		upstreamPurchases: purchases.results,
 		relays: relays.results,
 		periods: periods.results.map((row) => ({
 			...row,

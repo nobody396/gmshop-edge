@@ -30,7 +30,10 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { AgentAccessDelivery } from "#/features/agent-access/components/access";
 import { agentAccessProducts } from "#/features/agent-access/products";
 import { ClaudeEnvPanel } from "#/features/claude-env/components/panel";
-import { claudeEnvProductId } from "#/features/claude-env/domain";
+import {
+	claudeEnvProductId,
+	claudeEnvTrafficProductId,
+} from "#/features/claude-env/domain";
 import { shopOrderStatusLabel } from "#/features/shop-orders/labels";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { DeliveryRevealContent } from "#/features/storefront/components/delivery-reveal-content";
@@ -254,7 +257,11 @@ export function StorefrontOrderPage({
 					</div>
 					{/* Claude env needs the customer to act; show it above the order details (first on mobile). */}
 					{accountOrder &&
-					data.items.some((item) => item.productId === claudeEnvProductId) ? (
+					data.items.some(
+						(item) =>
+							item.productId === claudeEnvProductId ||
+							item.productId === claudeEnvTrafficProductId,
+					) ? (
 						<ClaudeEnvPanel orderNumber={orderNumber} />
 					) : null}
 					<div className="grid overflow-hidden rounded-3xl border bg-card shadow-sm lg:grid-cols-2">

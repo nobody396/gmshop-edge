@@ -134,6 +134,7 @@ import { Route as AdminProductsProductIdEditRouteImport } from './routes/admin/p
 import { Route as publicAccountOrdersOrderNumberRouteImport } from './routes/(public)/account/orders/$orderNumber'
 import { Route as ApiSupportWebAttachmentsIndexRouteImport } from './routes/api/support/web/attachments/index'
 import { Route as ApiOpsGuidesSlugIndexRouteImport } from './routes/api/ops/guides/$slug/index'
+import { Route as ApiOpsClaudeEnvTrafficIndexRouteImport } from './routes/api/ops/claude-env/traffic/index'
 import { Route as ApiSupportWebRepliesAckRouteImport } from './routes/api/support/web/replies/ack'
 import { Route as ApiSupportWebAttachmentsAttachmentIdRouteImport } from './routes/api/support/web/attachments/$attachmentId'
 import { Route as ApiSuppliersDujiaoNextCallbackAccountIdRouteImport } from './routes/api/suppliers/dujiao-next/callback/$accountId'
@@ -142,6 +143,7 @@ import { Route as ApiShopPaymentsChannelIdWebhookRouteImport } from './routes/ap
 import { Route as ApiShopOrdersOrderNumberAutomationRouteImport } from './routes/api/shop/orders/$orderNumber/automation'
 import { Route as ApiOpsGuidesSlugUnpublishRouteImport } from './routes/api/ops/guides/$slug/unpublish'
 import { Route as ApiOpsGuidesSlugPublishRouteImport } from './routes/api/ops/guides/$slug/publish'
+import { Route as ApiOpsClaudeEnvTrafficPurchasesRouteImport } from './routes/api/ops/claude-env/traffic/purchases'
 import { Route as ApiClaudeEnvRelayV1ReportRouteImport } from './routes/api/claude-env/relay/v1/report'
 import { Route as ApiClaudeEnvRelayV1DesiredRouteImport } from './routes/api/claude-env/relay/v1/desired'
 import { Route as ApiShopProductsProductIdMediaMediaIdRouteImport } from './routes/api/shop/products/$productId/media/$mediaId'
@@ -802,6 +804,12 @@ const ApiOpsGuidesSlugIndexRoute = ApiOpsGuidesSlugIndexRouteImport.update({
   path: '/api/ops/guides/$slug/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOpsClaudeEnvTrafficIndexRoute =
+  ApiOpsClaudeEnvTrafficIndexRouteImport.update({
+    id: '/api/ops/claude-env/traffic/',
+    path: '/api/ops/claude-env/traffic/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSupportWebRepliesAckRoute = ApiSupportWebRepliesAckRouteImport.update({
   id: '/api/support/web/replies/ack',
   path: '/api/support/web/replies/ack',
@@ -848,6 +856,12 @@ const ApiOpsGuidesSlugPublishRoute = ApiOpsGuidesSlugPublishRouteImport.update({
   path: '/api/ops/guides/$slug/publish',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOpsClaudeEnvTrafficPurchasesRoute =
+  ApiOpsClaudeEnvTrafficPurchasesRouteImport.update({
+    id: '/api/ops/claude-env/traffic/purchases',
+    path: '/api/ops/claude-env/traffic/purchases',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiClaudeEnvRelayV1ReportRoute =
   ApiClaudeEnvRelayV1ReportRouteImport.update({
     id: '/api/claude-env/relay/v1/report',
@@ -1027,6 +1041,7 @@ export interface FileRoutesByFullPath {
   '/api/ops/guides/': typeof ApiOpsGuidesIndexRoute
   '/api/claude-env/relay/v1/desired': typeof ApiClaudeEnvRelayV1DesiredRoute
   '/api/claude-env/relay/v1/report': typeof ApiClaudeEnvRelayV1ReportRoute
+  '/api/ops/claude-env/traffic/purchases': typeof ApiOpsClaudeEnvTrafficPurchasesRoute
   '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
   '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1035,6 +1050,7 @@ export interface FileRoutesByFullPath {
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/ops/claude-env/traffic/': typeof ApiOpsClaudeEnvTrafficIndexRoute
   '/api/ops/guides/$slug/': typeof ApiOpsGuidesSlugIndexRoute
   '/api/support/web/attachments/': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
@@ -1160,6 +1176,7 @@ export interface FileRoutesByTo {
   '/api/ops/guides': typeof ApiOpsGuidesIndexRoute
   '/api/claude-env/relay/v1/desired': typeof ApiClaudeEnvRelayV1DesiredRoute
   '/api/claude-env/relay/v1/report': typeof ApiClaudeEnvRelayV1ReportRoute
+  '/api/ops/claude-env/traffic/purchases': typeof ApiOpsClaudeEnvTrafficPurchasesRoute
   '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
   '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1168,6 +1185,7 @@ export interface FileRoutesByTo {
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/ops/claude-env/traffic': typeof ApiOpsClaudeEnvTrafficIndexRoute
   '/api/ops/guides/$slug': typeof ApiOpsGuidesSlugIndexRoute
   '/api/support/web/attachments': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
@@ -1305,6 +1323,7 @@ export interface FileRoutesById {
   '/api/ops/guides/': typeof ApiOpsGuidesIndexRoute
   '/api/claude-env/relay/v1/desired': typeof ApiClaudeEnvRelayV1DesiredRoute
   '/api/claude-env/relay/v1/report': typeof ApiClaudeEnvRelayV1ReportRoute
+  '/api/ops/claude-env/traffic/purchases': typeof ApiOpsClaudeEnvTrafficPurchasesRoute
   '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
   '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1313,6 +1332,7 @@ export interface FileRoutesById {
   '/api/suppliers/dujiao-next/callback/$accountId': typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   '/api/support/web/attachments/$attachmentId': typeof ApiSupportWebAttachmentsAttachmentIdRoute
   '/api/support/web/replies/ack': typeof ApiSupportWebRepliesAckRoute
+  '/api/ops/claude-env/traffic/': typeof ApiOpsClaudeEnvTrafficIndexRoute
   '/api/ops/guides/$slug/': typeof ApiOpsGuidesSlugIndexRoute
   '/api/support/web/attachments/': typeof ApiSupportWebAttachmentsIndexRoute
   '/api/shop/automation/$jobId/artifacts/$fileName': typeof ApiShopAutomationJobIdArtifactsFileNameRoute
@@ -1449,6 +1469,7 @@ export interface FileRouteTypes {
     | '/api/ops/guides/'
     | '/api/claude-env/relay/v1/desired'
     | '/api/claude-env/relay/v1/report'
+    | '/api/ops/claude-env/traffic/purchases'
     | '/api/ops/guides/$slug/publish'
     | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
@@ -1457,6 +1478,7 @@ export interface FileRouteTypes {
     | '/api/suppliers/dujiao-next/callback/$accountId'
     | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/ops/claude-env/traffic/'
     | '/api/ops/guides/$slug/'
     | '/api/support/web/attachments/'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
@@ -1582,6 +1604,7 @@ export interface FileRouteTypes {
     | '/api/ops/guides'
     | '/api/claude-env/relay/v1/desired'
     | '/api/claude-env/relay/v1/report'
+    | '/api/ops/claude-env/traffic/purchases'
     | '/api/ops/guides/$slug/publish'
     | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
@@ -1590,6 +1613,7 @@ export interface FileRouteTypes {
     | '/api/suppliers/dujiao-next/callback/$accountId'
     | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/ops/claude-env/traffic'
     | '/api/ops/guides/$slug'
     | '/api/support/web/attachments'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
@@ -1726,6 +1750,7 @@ export interface FileRouteTypes {
     | '/api/ops/guides/'
     | '/api/claude-env/relay/v1/desired'
     | '/api/claude-env/relay/v1/report'
+    | '/api/ops/claude-env/traffic/purchases'
     | '/api/ops/guides/$slug/publish'
     | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
@@ -1734,6 +1759,7 @@ export interface FileRouteTypes {
     | '/api/suppliers/dujiao-next/callback/$accountId'
     | '/api/support/web/attachments/$attachmentId'
     | '/api/support/web/replies/ack'
+    | '/api/ops/claude-env/traffic/'
     | '/api/ops/guides/$slug/'
     | '/api/support/web/attachments/'
     | '/api/shop/automation/$jobId/artifacts/$fileName'
@@ -1787,6 +1813,7 @@ export interface RootRouteChildren {
   ApiOpsGuidesIndexRoute: typeof ApiOpsGuidesIndexRoute
   ApiClaudeEnvRelayV1DesiredRoute: typeof ApiClaudeEnvRelayV1DesiredRoute
   ApiClaudeEnvRelayV1ReportRoute: typeof ApiClaudeEnvRelayV1ReportRoute
+  ApiOpsClaudeEnvTrafficPurchasesRoute: typeof ApiOpsClaudeEnvTrafficPurchasesRoute
   ApiOpsGuidesSlugPublishRoute: typeof ApiOpsGuidesSlugPublishRoute
   ApiOpsGuidesSlugUnpublishRoute: typeof ApiOpsGuidesSlugUnpublishRoute
   ApiShopOrdersOrderNumberAutomationRoute: typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1795,6 +1822,7 @@ export interface RootRouteChildren {
   ApiSuppliersDujiaoNextCallbackAccountIdRoute: typeof ApiSuppliersDujiaoNextCallbackAccountIdRoute
   ApiSupportWebAttachmentsAttachmentIdRoute: typeof ApiSupportWebAttachmentsAttachmentIdRoute
   ApiSupportWebRepliesAckRoute: typeof ApiSupportWebRepliesAckRoute
+  ApiOpsClaudeEnvTrafficIndexRoute: typeof ApiOpsClaudeEnvTrafficIndexRoute
   ApiOpsGuidesSlugIndexRoute: typeof ApiOpsGuidesSlugIndexRoute
   ApiSupportWebAttachmentsIndexRoute: typeof ApiSupportWebAttachmentsIndexRoute
   ApiShopAutomationJobIdArtifactsFileNameRoute: typeof ApiShopAutomationJobIdArtifactsFileNameRoute
@@ -2680,6 +2708,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOpsGuidesSlugIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ops/claude-env/traffic/': {
+      id: '/api/ops/claude-env/traffic/'
+      path: '/api/ops/claude-env/traffic'
+      fullPath: '/api/ops/claude-env/traffic/'
+      preLoaderRoute: typeof ApiOpsClaudeEnvTrafficIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/support/web/replies/ack': {
       id: '/api/support/web/replies/ack'
       path: '/api/support/web/replies/ack'
@@ -2734,6 +2769,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ops/guides/$slug/publish'
       fullPath: '/api/ops/guides/$slug/publish'
       preLoaderRoute: typeof ApiOpsGuidesSlugPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/claude-env/traffic/purchases': {
+      id: '/api/ops/claude-env/traffic/purchases'
+      path: '/api/ops/claude-env/traffic/purchases'
+      fullPath: '/api/ops/claude-env/traffic/purchases'
+      preLoaderRoute: typeof ApiOpsClaudeEnvTrafficPurchasesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/claude-env/relay/v1/report': {
@@ -3161,6 +3203,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOpsGuidesIndexRoute: ApiOpsGuidesIndexRoute,
   ApiClaudeEnvRelayV1DesiredRoute: ApiClaudeEnvRelayV1DesiredRoute,
   ApiClaudeEnvRelayV1ReportRoute: ApiClaudeEnvRelayV1ReportRoute,
+  ApiOpsClaudeEnvTrafficPurchasesRoute: ApiOpsClaudeEnvTrafficPurchasesRoute,
   ApiOpsGuidesSlugPublishRoute: ApiOpsGuidesSlugPublishRoute,
   ApiOpsGuidesSlugUnpublishRoute: ApiOpsGuidesSlugUnpublishRoute,
   ApiShopOrdersOrderNumberAutomationRoute:
@@ -3172,6 +3215,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSupportWebAttachmentsAttachmentIdRoute:
     ApiSupportWebAttachmentsAttachmentIdRoute,
   ApiSupportWebRepliesAckRoute: ApiSupportWebRepliesAckRoute,
+  ApiOpsClaudeEnvTrafficIndexRoute: ApiOpsClaudeEnvTrafficIndexRoute,
   ApiOpsGuidesSlugIndexRoute: ApiOpsGuidesSlugIndexRoute,
   ApiSupportWebAttachmentsIndexRoute: ApiSupportWebAttachmentsIndexRoute,
   ApiShopAutomationJobIdArtifactsFileNameRoute:

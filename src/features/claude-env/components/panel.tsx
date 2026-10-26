@@ -8,17 +8,19 @@ import {
 	EyeOff,
 	Headphones,
 	Monitor,
+	Plus,
 	RefreshCw,
 	ShieldCheck,
 	TriangleAlert,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { webSupportOpenEvent } from "#/features/telegram/web-support-contract";
+import { formatMinorAmountWithSymbol } from "#/lib/format";
 import { getLocale } from "#/paraglide/runtime";
-import { type ClaudeEnvStatus, formatBytes } from "../domain";
+import { type ClaudeEnvStatus, formatGb } from "../domain";
 import {
 	getClaudeEnvPanelFn,
 	revealClaudeEnvCodeFn,
@@ -63,10 +65,41 @@ const copy = {
 	traffic: ["本期流量", "Traffic this period"],
 	trafficReset: ["重置日", "Resets"],
 	trafficNote: [
-		(quota: string) => `每期含 ${quota}，到重置日自动清零；用完请联系客服。`,
 		(quota: string) =>
-			`Each period includes ${quota} and resets on the reset date. If you run out, contact support.`,
+			`每期含 ${quota}，到重置日自动清零；不够用可以随时加流量（只在本期有效）。`,
+		(quota: string) =>
+			`Each period includes ${quota} and resets on the reset date. Need more? Add traffic any time (current period only).`,
 	],
+	trafficAddon: [
+		(base: string, addon: string) => `含基础 ${base} + 本期加购 ${addon}`,
+		(base: string, addon: string) =>
+			`Base ${base} + ${addon} added this period`,
+	],
+	trafficBanner: [
+		(percent: string, used: string, total: string, left: string) =>
+			`本期流量已用 ${percent}（${used} / ${total}），剩余 ${left}。`,
+		(percent: string, used: string, total: string, left: string) =>
+			`You have used ${percent} of this period's traffic (${used} of ${total}); ${left} left.`,
+	],
+	trafficBannerHint: [
+		"不够用的话现在就可以加流量，付款后立即生效。",
+		"If it may not be enough, add traffic now; it takes effect right after payment.",
+	],
+	addTraffic: ["加流量", "Add traffic"],
+	addTrafficTitle: [
+		"加流量（只在本期有效）",
+		"Add traffic (current period only)",
+	],
+	addTrafficNote: [
+		(end: string) =>
+			`加购的流量只在本期有效（到 ${end} 为止），不累积到下一期；付款后立即生效。`,
+		(end: string) =>
+			`Added traffic is valid for the current period only (until ${end}) and does not carry over. It takes effect right after payment.`,
+	],
+	renewChoose: ["选择续费时长", "Choose a renewal period"],
+	renewMonth: ["续 1 个月", "Renew 1 month"],
+	renewQuarter: ["续 1 个季度", "Renew 1 quarter"],
+	close: ["收起", "Close"],
 	line: ["线路检查", "Line check"],
 	lineOk: ["正常", "OK"],
 	lineBadTitle: ["线路检测异常", "Line check failed"],
@@ -423,6 +456,7 @@ function ActiveView({
 			{data.expiringSoon && data.daysLeft !== null ? (
 				<RenewBox data={data} urgent />
 			) : null}
+			<TrafficBanner data={data} />
 			<GuideLink />
 			<div className="grid gap-3">
 				<h3 className="font-semibold">{t(copy.start)}</h3>
@@ -487,21 +521,94 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
 	);
 }
 
+type Offer = SubscriptionData["renewOptions"][number];
+type TrafficOffer = SubscriptionData["trafficOptions"][number];
+
+/** "¥299" (drops a zero fraction) in the reader's locale. */
+function price(offer: Offer | TrafficOffer) {
+	return formatMinorAmountWithSymbol(
+		offer.priceMinor,
+		offer.currency,
+		offer.currencyDecimals,
+	).replace(/[.,]0+$/, "");
+}
+
+const trafficAnchor = "claude-env-traffic";
+
+/** Usage ≥ 75%: shown at the top of the panel so it is not missed. */
+function TrafficBanner({ data }: { data: SubscriptionData }) {
+	const t = useText();
+	const zh = isZh();
+	const level = data.trafficLevel;
+	if (level === null) return null;
+	const used = data.trafficUsedBytes;
+	const quota = formatGb(data.trafficQuotaBytes);
+	const options = data.trafficOptions;
+	return (
+		<div
+			className={`grid gap-2 rounded-xl border p-3 text-sm leading-6 ${
+				level >= 9000
+					? "border-destructive/40 bg-destructive/5"
+					: "border-amber-500/50 bg-amber-500/10"
+			}`}
+			role="alert"
+		>
+			<p
+				className={`flex items-center gap-2 font-semibold ${level >= 9000 ? "text-destructive" : ""}`}
+			>
+				<TriangleAlert className="size-4 shrink-0" />
+				{(zh ? copy.trafficBanner[0] : copy.trafficBanner[1])(
+					`${level / 100}%`,
+					formatGb(used),
+					quota,
+					formatGb(Math.max(0, data.trafficQuotaBytes - used)),
+				)}
+			</p>
+			{options.length ? (
+				<>
+					<p>{t(copy.trafficBannerHint)}</p>
+					<div>
+						<Button asChild size="sm">
+							<a href={`#${trafficAnchor}`}>
+								<Plus />
+								{t(copy.addTraffic)}
+							</a>
+						</Button>
+					</div>
+				</>
+			) : null}
+		</div>
+	);
+}
+
 function Traffic({ data }: { data: SubscriptionData }) {
 	const t = useText();
-	const percent = Math.min(
-		100,
-		Math.round(
-			(data.trafficUsedBytes / Math.max(1, data.trafficQuotaBytes)) * 100,
-		),
-	);
-	const quota = formatBytes(data.trafficQuotaBytes);
+	const zh = isZh();
+	const [open, setOpen] = useState(false);
+	// Usage emails link to #claude-env-traffic: open the tiers right away.
+	useEffect(() => {
+		const sync = () => {
+			if (window.location.hash === `#${trafficAnchor}`) setOpen(true);
+		};
+		sync();
+		window.addEventListener("hashchange", sync);
+		return () => window.removeEventListener("hashchange", sync);
+	}, []);
+	const used = data.trafficUsedBytes;
+	const total = Math.max(1, data.trafficQuotaBytes);
+	const percent = Math.min(100, Math.round((used / total) * 100));
+	const quota = formatGb(data.trafficQuotaBytes);
+	const level = data.trafficLevel;
+	const resetText = data.trafficResetAt
+		? formatMinute(data.trafficResetAt)
+		: "—";
+	const options = data.trafficOptions;
 	return (
-		<div className="grid gap-2">
+		<div className="grid scroll-mt-24 gap-2" id={trafficAnchor}>
 			<div className="flex items-center justify-between gap-2 text-sm">
 				<span>{t(copy.traffic)}</span>
 				<span className="tabular-nums">
-					{formatBytes(data.trafficUsedBytes)} / {quota}
+					{formatGb(used)} / {quota}
 				</span>
 			</div>
 			<div
@@ -511,14 +618,131 @@ function Traffic({ data }: { data: SubscriptionData }) {
 				className="h-2 overflow-hidden rounded-full bg-muted"
 				role="progressbar"
 			>
-				<div className="h-full bg-primary" style={{ width: `${percent}%` }} />
+				<div
+					className={`h-full ${level !== null && level >= 9000 ? "bg-destructive" : level !== null ? "bg-amber-500" : "bg-primary"}`}
+					style={{ width: `${percent}%` }}
+				/>
 			</div>
 			<p className="text-muted-foreground text-xs leading-5">
-				{data.trafficResetAt
-					? `${t(copy.trafficReset)}：${formatMinute(data.trafficResetAt)} · `
+				{data.trafficResetAt ? `${t(copy.trafficReset)}：${resetText} · ` : ""}
+				{data.trafficAddonBytes > 0
+					? `${(zh ? copy.trafficAddon[0] : copy.trafficAddon[1])(formatGb(data.trafficBaseBytes), formatGb(data.trafficAddonBytes))} · `
 					: ""}
-				{(isZh() ? copy.trafficNote[0] : copy.trafficNote[1])(quota)}
+				{(zh ? copy.trafficNote[0] : copy.trafficNote[1])(
+					formatGb(data.trafficBaseBytes),
+				)}
 			</p>
+			{options.length ? (
+				open ? (
+					<div className="grid gap-3 rounded-xl bg-muted/50 p-3 text-sm leading-6">
+						<div className="flex items-center justify-between gap-2">
+							<p className="font-medium">{t(copy.addTrafficTitle)}</p>
+							<Button onClick={() => setOpen(false)} size="sm" variant="ghost">
+								{t(copy.close)}
+							</Button>
+						</div>
+						<div className="grid gap-2 sm:grid-cols-3">
+							{options.map((option) => (
+								<Button
+									asChild
+									className="h-auto justify-between py-2"
+									key={option.sku}
+									variant="outline"
+								>
+									<a href={option.href}>
+										<span className="font-semibold">{option.label}</span>
+										<span className="tabular-nums">{price(option)}</span>
+									</a>
+								</Button>
+							))}
+						</div>
+						<p className="text-muted-foreground text-xs">
+							{(zh ? copy.addTrafficNote[0] : copy.addTrafficNote[1])(
+								resetText,
+							)}
+						</p>
+					</div>
+				) : (
+					<div>
+						<Button
+							onClick={() => setOpen(true)}
+							size="sm"
+							variant={level !== null ? "default" : "outline"}
+						>
+							<Plus />
+							{t(copy.addTraffic)}
+						</Button>
+					</div>
+				)
+			) : null}
+		</div>
+	);
+}
+
+/** 「续费」 opens the monthly / quarterly choice; each goes straight to checkout. */
+function RenewChoice({
+	data,
+	label,
+	primary = false,
+}: {
+	data: SubscriptionData;
+	label: readonly [string, string];
+	primary?: boolean;
+}) {
+	const t = useText();
+	const [open, setOpen] = useState(false);
+	const options = data.renewOptions;
+	// Without live renewal SKUs fall back to the product page.
+	if (!options.length)
+		return (
+			<Button asChild size="sm" variant={primary ? "default" : "outline"}>
+				<a href={data.renewUrl}>
+					<RefreshCw />
+					{t(label)}
+				</a>
+			</Button>
+		);
+	if (!open)
+		return (
+			<Button
+				aria-expanded={false}
+				onClick={() => setOpen(true)}
+				size="sm"
+				variant={primary ? "default" : "outline"}
+			>
+				<RefreshCw />
+				{t(label)}
+			</Button>
+		);
+	return (
+		<div className="grid w-full gap-2">
+			<p className="font-medium">{t(copy.renewChoose)}</p>
+			<div className="grid gap-2 sm:grid-cols-2">
+				{options.map((option) => (
+					<Button
+						asChild
+						className="h-auto justify-between py-2"
+						key={option.sku}
+						variant={primary ? "default" : "outline"}
+					>
+						<a href={option.href}>
+							<span className="font-semibold">
+								{t(
+									option.period === "quarterly"
+										? copy.renewQuarter
+										: copy.renewMonth,
+								)}
+							</span>
+							<span className="tabular-nums">{price(option)}</span>
+						</a>
+					</Button>
+				))}
+			</div>
+			<div>
+				<Button onClick={() => setOpen(false)} size="sm" variant="ghost">
+					{t(copy.close)}
+				</Button>
+			</div>
 		</div>
 	);
 }
@@ -545,12 +769,7 @@ function RenewBox({
 				<p>{t(copy.renewKeep)}</p>
 				<p className="font-semibold">{t(copy.renewWarning)}</p>
 				<div>
-					<Button asChild size="sm">
-						<a href={data.renewUrl}>
-							<RefreshCw />
-							{t(copy.renewNow)}
-						</a>
-					</Button>
+					<RenewChoice data={data} label={copy.renewNow} primary />
 				</div>
 			</div>
 		);
@@ -565,12 +784,7 @@ function RenewBox({
 				</p>
 				<p className="text-muted-foreground">{t(copy.renewKeep)}</p>
 			</div>
-			<Button asChild size="sm" variant="outline">
-				<a href={data.renewUrl}>
-					<RefreshCw />
-					{t(copy.renew)}
-				</a>
-			</Button>
+			<RenewChoice data={data} label={copy.renew} />
 		</div>
 	);
 }
