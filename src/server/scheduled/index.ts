@@ -2,6 +2,7 @@ import { reconcileAgentAccess } from "#/features/agent-access/server/fulfillment
 import { runWithdrawalAlerts } from "#/features/agent-program/server/withdrawal-alerts";
 import { publishAuthSecurityAlert } from "#/features/auth/server/security-alerts";
 import { publishPendingBuilds } from "#/features/builds/server/outbox";
+import { reconcileIproyalOrders } from "#/features/claude-env/server/reconcile";
 import { runClaudeEnv } from "#/features/claude-env/server/scheduler";
 import { runCustomerPriceGuard } from "#/features/customer-pricing/server/telegram";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
@@ -157,6 +158,13 @@ export async function runScheduledCommerceWork(
 		iproyalToken: env.IPROYAL_API_TOKEN,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	// Every IPRoyal order must be known; runs even with the flag off (GET only,
+	// at most every 10 minutes) so a purchase from anywhere is noticed.
+	const iproyalReconcile = await reconcileIproyalOrders({
+		db: env.DB,
+		iproyalToken: env.IPROYAL_API_TOKEN,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	// A Claude env activated in this tick queued its ready email after the
 	// publish above ran; send it now instead of a minute later.
 	if (
@@ -172,6 +180,7 @@ export async function runScheduledCommerceWork(
 		).catch(() => undefined);
 	return {
 		claudeEnv,
+		iproyalReconcile,
 		balanceGuard,
 		procurementAlerts,
 		pricingGuard,

@@ -211,7 +211,71 @@ export function ClaudeEnvAdminPage() {
 			</section>
 			{current ? <SubscriptionActions onDone={refresh} sub={current} /> : null}
 			<PeriodsSection onDone={refresh} periods={value?.periods ?? []} />
+			<IproyalOrdersSection snapshot={value?.iproyalOrders ?? null} />
 		</div>
+	);
+}
+
+/** Every ISP order on the IPRoyal account, from the 10-minute reconciliation. */
+function IproyalOrdersSection({
+	snapshot,
+}: {
+	snapshot: Data["iproyalOrders"];
+}) {
+	return (
+		<section className="flex flex-col gap-2">
+			<h2 className="font-medium">IPRoyal 订单对账</h2>
+			<p className="text-muted-foreground text-xs">
+				每 10 分钟只读核对一次 IPRoyal 账号里的全部 ISP
+				订单；不认识的订单（不是自动开通买的、也没登记）会发一次 Telegram
+				提醒。最近核对：{snapshot ? time(snapshot.checkedAt) : "还没有运行"}
+			</p>
+			{snapshot?.orders.length ? (
+				<div className="overflow-x-auto rounded-lg border">
+					<table className="w-full min-w-[800px] text-sm">
+						<thead className="bg-muted/50 text-muted-foreground">
+							<tr>
+								{["订单", "IP", "状态", "到期（UTC）", "自动续费", "归属"].map(
+									(h) => (
+										<th
+											className="px-3 py-2 text-start font-medium"
+											key={h}
+											scope="col"
+										>
+											{h}
+										</th>
+									),
+								)}
+							</tr>
+						</thead>
+						<tbody>
+							{snapshot.orders.map((order) => (
+								<tr className="border-t" key={order.id}>
+									<td className="px-3 py-2 font-mono text-xs">{order.id}</td>
+									<td className="px-3 py-2 font-mono text-xs">
+										{order.ips.join(", ") || "—"}
+									</td>
+									<td className="px-3 py-2">{order.status}</td>
+									<td className="px-3 py-2 text-xs">{str(order.expireDate)}</td>
+									<td className="px-3 py-2">
+										{order.autoExtend ? "开" : "关"}
+									</td>
+									<td
+										className={
+											order.known
+												? "px-3 py-2 text-xs"
+												: "px-3 py-2 font-medium text-destructive text-xs"
+										}
+									>
+										{order.known ?? "未登记"}
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			) : null}
+		</section>
 	);
 }
 

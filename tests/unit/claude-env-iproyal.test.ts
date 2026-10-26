@@ -3,6 +3,7 @@ import {
 	createIproyalClient,
 	IproyalError,
 	parseOrderProxy,
+	parseOrderSummary,
 } from "#/features/claude-env/server/iproyal";
 
 function mockFetch(
@@ -45,6 +46,69 @@ describe("IPRoyal reseller client", () => {
 			quantity: 1,
 			auto_extend: false,
 		});
+	});
+
+	it("lists ISP orders page by page (product_id and page are required) without credentials", async () => {
+		const order = (id: number, ip: string) => ({
+			id,
+			note: null,
+			expire_date: "2026-11-25 11:25:30",
+			plan_name: "30 Days",
+			status: "confirmed",
+			location: "美国",
+			proxy_data: {
+				ports: { "http|https": 12323 },
+				proxies: [{ username: "u", password: "secret-pass", ip }],
+			},
+			auto_extend_settings: null,
+			extended_history: [],
+		});
+		const { fetcher, calls } = mockFetch([
+			{ body: { data: [order(1, "1.1.1.1")], meta: { last_page: 2 } } },
+			{ body: { data: [order(2, "2.2.2.2")], meta: { last_page: 2 } } },
+		]);
+		const orders = await createIproyalClient("tok", fetcher).listOrders();
+		expect(calls.map((c) => [c.init.method, c.url])).toEqual([
+			[
+				"GET",
+				"https://apid.iproyal.com/v1/reseller/orders?product_id=9&page=1&per_page=50",
+			],
+			[
+				"GET",
+				"https://apid.iproyal.com/v1/reseller/orders?product_id=9&page=2&per_page=50",
+			],
+		]);
+		expect(orders.map((o) => [o.id, o.ips])).toEqual([
+			["1", ["1.1.1.1"]],
+			["2", ["2.2.2.2"]],
+		]);
+		expect(JSON.stringify(orders)).not.toContain("secret-pass");
+	});
+
+	it("summarises auto-extend, note and extension history", () => {
+		expect(
+			parseOrderSummary({
+				id: 86547609,
+				note: "gmshop:sub_1",
+				status: "confirmed",
+				expire_date: "2026-11-25 08:55:14",
+				plan_name: "30 Days",
+				locations: "United States",
+				auto_extend_settings: { is_enabled: true, payment_type: "balance" },
+				extended_history: [{}, {}],
+			}),
+		).toEqual({
+			id: "86547609",
+			status: "confirmed",
+			ips: [],
+			expireDate: "2026-11-25 08:55:14",
+			planName: "30 Days",
+			location: "United States",
+			autoExtend: true,
+			note: "gmshop:sub_1",
+			extendedCount: 2,
+		});
+		expect(parseOrderSummary({ note: "no id" })).toBeNull();
 	});
 
 	it("extends with POST /orders/{id}/extend and an empty proxies list", async () => {
