@@ -35,7 +35,10 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { AgentAccessCheckout } from "#/features/agent-access/components/access";
 import { agentAccessKind } from "#/features/agent-access/products";
 import { authClient } from "#/features/auth/auth-client";
-import { claudeEnvTrafficSkus } from "#/features/claude-env/domain";
+import {
+	claudeEnvTrafficProductId,
+	claudeEnvTrafficSkus,
+} from "#/features/claude-env/domain";
 import {
 	StoreMoney,
 	useCurrency,
@@ -93,6 +96,7 @@ const ownUsageGuideProductIds = new Set([
 	"c70d10e8-b781-4782-bc98-1f034bcd069a", // Apple ID 成品号
 	"9e8b2987-1564-417e-8441-5936c5d592fa", // Telegram Premium 礼品链接
 	"f2b92a96-290c-4ffa-aaf5-a26e7a35815d", // Claude 稳定使用（订单码 + 开关打开后自动开通，见 features/claude-env）
+	claudeEnvTrafficProductId, // Claude 环境流量加购：付款后自动加到本期额度
 ]);
 const appleIdProductId = "c70d10e8-b781-4782-bc98-1f034bcd069a";
 
@@ -527,14 +531,16 @@ export function StorefrontProductPage({
 													aria-hidden="true"
 													className={cn(
 														"pointer-events-none absolute -right-9 bottom-3 w-28 -rotate-[32deg] border-y py-0.5 text-center font-semibold text-[9px] leading-none tracking-[0.08em]",
-														item.fulfillmentSource === "supplier"
+														item.fulfillmentSource === "supplier" ||
+															claudeEnvTrafficSkus[item.id]
 															? "border-emerald-400/35 bg-emerald-400/12 text-emerald-300"
 															: item.fulfillmentSource === "manual"
 																? "border-amber-300/35 bg-amber-300/12 text-amber-200"
 																: "border-primary/35 bg-primary/12 text-primary",
 													)}
 												>
-													{item.fulfillmentSource === "supplier"
+													{item.fulfillmentSource === "supplier" ||
+													claudeEnvTrafficSkus[item.id]
 														? m.store_auto_delivery()
 														: item.fulfillmentSource === "manual"
 															? m.store_manual_procurement()
