@@ -21,6 +21,7 @@ describe("Claude env ready email", () => {
 		);
 		expect(mail.text).toContain("重启电脑一次");
 		expect(mail.text).toContain("本月流量、到期时间");
+		expect(mail.text).toContain("交给 AI 助手配置");
 	});
 
 	it("drops the lines the owner removed and never carries the code", () => {

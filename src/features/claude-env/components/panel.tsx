@@ -106,6 +106,14 @@ const copy = {
 	show: ["显示开通码", "Show code"],
 	hide: ["隐藏", "Hide"],
 	codeHidden: ["点「显示开通码」查看", "Click “Show code” to see it"],
+	agentTitle: [
+		"交给 AI 助手配置（可选）",
+		"Let your AI assistant set it up (optional)",
+	],
+	agentHint: [
+		"把下面这段话整段复制给你的 Codex、Claude Code 等 AI 助手，它会帮你把环境配好，最后回复「OK」。输开机密码、关定位服务这两步仍需你本人操作。",
+		'Copy this whole text to your AI assistant (Codex, Claude Code…). It sets everything up and replies "OK". You still type your login password and turn off Location Services yourself.',
+	],
 	codeHint: [
 		"开通码相当于你专属线路的密码，不要发给别人。",
 		"The code works like the password of your private line; do not share it.",
@@ -429,7 +437,7 @@ function ActiveView({
 					</Step>
 					<Step n={3}>
 						<p>{t(copy.step3)}</p>
-						<CodeBlock orderNumber={orderNumber} />
+						<CodeBlock ip={data.ip} orderNumber={orderNumber} />
 					</Step>
 					<Step n={4}>{t(copy.step4)}</Step>
 					<Step n={5}>
@@ -584,7 +592,13 @@ function Item({
 	);
 }
 
-function CodeBlock({ orderNumber }: { orderNumber: string }) {
+function CodeBlock({
+	orderNumber,
+	ip,
+}: {
+	orderNumber: string;
+	ip: string | null;
+}) {
 	const t = useText();
 	const [visible, setVisible] = useState(false);
 	const reveal = useMutation({
@@ -622,6 +636,9 @@ function CodeBlock({ orderNumber }: { orderNumber: string }) {
 					<p className="text-muted-foreground text-xs">{t(copy.code)}</p>
 					<CopyLine value={result.code} />
 					<p className="text-muted-foreground text-xs">{t(copy.codeHint)}</p>
+					<p className="mt-2 font-medium">{t(copy.agentTitle)}</p>
+					<p className="text-muted-foreground text-xs">{t(copy.agentHint)}</p>
+					<CopyLine value={agentPrompt({ ...result, ip }, isZh())} />
 				</>
 			) : (
 				<>
@@ -633,11 +650,54 @@ function CodeBlock({ orderNumber }: { orderNumber: string }) {
 	);
 }
 
-function CopyLine({ value }: { value: string }) {
+/** Text a buyer pastes into their own AI assistant to run the whole setup. */
+export function agentPrompt(
+	input: { mac: string; windows: string; code: string; ip: string | null },
+	zh: boolean,
+) {
+	const ip =
+		input.ip ??
+		(zh ? "订单页上的专属 IP" : "the dedicated IP on the order page");
+	return zh
+		? [
+				"请帮我在这台电脑上配置「Claude 专属环境」。能自己做的全部自己做，只在需要我本人操作时停下来，告诉我具体点哪里。全部完成后只回复「OK」；没完成就列出没通过的项目和要我做什么。",
+				`我的开通码（相当于专属线路密码，不要发到任何网站、日志或别人那里）：${input.code}`,
+				"1. 先看这台电脑是 macOS 还是 Windows；确认已经安装并打开 Clash Verge Rev，并且能访问 https://www.google.com 。没装或打不开就停下告诉我。",
+				"2. 运行下面对应系统的配置命令。它必须在有交互的终端里运行；如果你没法操作交互终端，就让我打开「终端」把命令粘贴进去运行，等我说跑完了再继续。",
+				`macOS（终端）：${input.mac}`,
+				`Windows（管理员身份的终端或 PowerShell）：${input.windows}`,
+				"运行中有两步只能我本人做：输入一次开机密码（Windows 是点一次「是」），以及按提示关掉「定位服务」。遇到时告诉我怎么做。",
+				"3. 命令最后应显示「全部 N 项验收通过 ✅」。有没通过的项目，按命令给出的提示处理好，再重新运行一次命令。",
+				`4. 让我重启电脑；重启后打开 Clash Verge Rev，再访问 https://claude.ai/cdn-cgi/trace ，确认里面 ip= 后面是 ${ip}。`,
+				"5. 只做以上这些：不要改别的系统设置，不要卸载任何软件。",
+			].join("\n")
+		: [
+				'Please set up my "Claude dedicated environment" on this computer. Do everything you can yourself; stop only when I must act, and tell me exactly what to click. When everything passes, reply only "OK"; otherwise list what failed and what I need to do.',
+				`My activation code (it works like a password; never send it to any website, log or person): ${input.code}`,
+				"1. Check whether this is macOS or Windows; confirm Clash Verge Rev is installed and running and https://www.google.com opens. If not, stop and tell me.",
+				"2. Run the command for this OS. It needs an interactive terminal; if you cannot drive one, ask me to paste it into Terminal and wait until I say it finished.",
+				`macOS (Terminal): ${input.mac}`,
+				`Windows (Terminal / PowerShell as administrator): ${input.windows}`,
+				'Two steps need me: typing my login password once (on Windows: clicking "Yes" once) and turning off Location Services when prompted. Tell me when.',
+				'3. The command should end with "all N checks passed ✅". If anything failed, follow its hints and run the command again.',
+				`4. Ask me to restart the computer; after restart open Clash Verge Rev and visit https://claude.ai/cdn-cgi/trace — the ip= line must be ${ip}.`,
+				"5. Do nothing else: don't change other system settings and don't uninstall anything.",
+			].join("\n");
+}
+
+function CopyLine({
+	value,
+	multiline = false,
+}: {
+	value: string;
+	multiline?: boolean;
+}) {
 	const t = useText();
 	return (
 		<div className="flex items-start gap-2">
-			<code className="min-w-0 flex-1 select-all break-all rounded bg-background p-2 font-mono text-xs">
+			<code
+				className={`min-w-0 flex-1 select-all break-all rounded bg-background p-2 font-mono text-xs${multiline ? " max-h-56 overflow-auto whitespace-pre-wrap" : ""}`}
+			>
 				{value}
 			</code>
 			<Button
