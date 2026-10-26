@@ -71,6 +71,15 @@ describe("signed and customer API boundaries", () => {
 		expect(publicRequest("/api/ops/redeem-restock", "POST")).toBe(true);
 		expect(publicRequest("/api/ops/redeem-restock", "GET")).toBe(false);
 		expect(publicRequest("/api/ops/redeem-restock/extra", "POST")).toBe(false);
+		for (const path of ["offer", "claim", "result"]) {
+			expect(publicRequest(`/api/ops/supplier-topup/${path}`, "POST")).toBe(
+				true,
+			);
+			expect(publicRequest(`/api/ops/supplier-topup/${path}`, "GET")).toBe(
+				false,
+			);
+		}
+		expect(publicRequest("/api/ops/supplier-topup/other", "POST")).toBe(false);
 	});
 
 	it("lets the exact cutover endpoint reach its own bearer guard without exposing prefixes or other methods", () => {
