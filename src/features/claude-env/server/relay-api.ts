@@ -43,6 +43,8 @@ export type RelayApiDeps = {
 	crypt?: Crypt;
 	deliver?: Deliver;
 	fetcher?: typeof fetch;
+	/** Called after a report marks a provisioning subscription as passing. */
+	onReady?: () => Promise<unknown>;
 };
 
 function json(body: unknown, status = 200) {
@@ -148,7 +150,9 @@ export async function handleRelayApiRequest(
 		return denied("report_invalid", 400);
 	}
 	if (parsed.relay_id !== relay.id) return denied("report_relay_mismatch", 400);
-	await applyReport(deps, relay, parsed, now);
+	const applied = await applyReport(deps, relay, parsed, now);
+	if (applied.ready > 0 && deps.onReady)
+		await deps.onReady().catch(() => undefined);
 	return json({ ok: true });
 }
 
@@ -272,7 +276,7 @@ export async function applyReport(
 		.prepare("SELECT 1 AS seen FROM claude_env_reports WHERE report_id = ?")
 		.bind(report.report_id)
 		.first<{ seen: number }>();
-	if (seen) return { duplicate: true, alerts: [] as string[] };
+	if (seen) return { duplicate: true, alerts: [] as string[], ready: 0 };
 	// While the feature flag is off the relay keeps being served and its
 	// traffic/heartbeat recorded, but nothing changes subscription states.
 	const enabled =
@@ -308,6 +312,7 @@ export async function applyReport(
 			)
 			.bind(report.report_id, relay.id, now),
 	];
+	let ready = 0;
 	const alerts: Array<{
 		subscriptionId: string;
 		kind: "replace" | "patrol" | "apply";
@@ -377,7 +382,7 @@ export async function applyReport(
 				result.exit_ok === true &&
 				(!result.exit_ip || result.exit_ip === sub.ip) &&
 				result.anthropic_status === 401;
-			if (ok)
+			if (ok) {
 				statements.push(
 					db
 						.prepare(
@@ -385,7 +390,8 @@ export async function applyReport(
 						)
 						.bind(now, sub.id),
 				);
-			else {
+				ready += 1;
+			} else {
 				const streak = sub.relay_check_fail_streak + 1;
 				const reason = `中转自测不通过：出口${result.exit_ok ? "正确" : `不对（${result.exit_ip ?? "无"}）`}，Anthropic 返回 ${result.anthropic_status ?? "无"}（应为 401）`;
 				if (streak >= provisioningFailThreshold) {
@@ -522,5 +528,5 @@ export async function applyReport(
 			6 * 3_600_000,
 		);
 	for (const text of texts) await deliver(text).catch(() => undefined);
-	return { duplicate: false, alerts: texts };
+	return { duplicate: false, alerts: texts, ready };
 }

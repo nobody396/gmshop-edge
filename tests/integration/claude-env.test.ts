@@ -20,7 +20,10 @@ import {
 } from "#/features/claude-env/server/panel";
 import { handleRelayApiRequest } from "#/features/claude-env/server/relay-api";
 import { sendExpiryReminders } from "#/features/claude-env/server/reminders";
-import { runClaudeEnv } from "#/features/claude-env/server/scheduler";
+import {
+	activateReady,
+	runClaudeEnv,
+} from "#/features/claude-env/server/scheduler";
 import { loadCrypt } from "#/features/claude-env/server/shared";
 import { supportReplyEmailSender } from "#/features/notifications/server/delivery";
 import { recipientHash } from "#/features/notifications/server/recipient-policy";
@@ -205,7 +208,12 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 		path: string,
 		body: unknown,
 		now: number,
-		options: { secret?: string; relayId?: string; skewSeconds?: number } = {},
+		options: {
+			secret?: string;
+			relayId?: string;
+			skewSeconds?: number;
+			onReady?: () => Promise<unknown>;
+		} = {},
 	) {
 		const text = body === undefined ? "" : JSON.stringify(body);
 		const timestamp = String(
@@ -229,7 +237,7 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 				},
 				body: method === "POST" ? text : undefined,
 			}),
-			{ db, now, deliver },
+			{ db, now, deliver, onReady: options.onReady },
 		);
 		// biome-ignore lint/suspicious/noExplicitAny: response JSON in assertions
 		return { status: response.status, json: (await response.json()) as any };
@@ -263,7 +271,16 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 		iproyal: IproyalClient | undefined,
 		fetcher = qualityFetcher(98, 32),
 		sendCustomerEmail = vi.fn(async () => undefined),
-	) => runClaudeEnv({ db, now, iproyal, fetcher, deliver, sendCustomerEmail });
+	) =>
+		runClaudeEnv({
+			db,
+			now,
+			iproyal,
+			fetcher,
+			deliver,
+			sendCustomerEmail,
+			sleep: async () => undefined,
+		});
 
 	async function sub(where = "1=1") {
 		return db
@@ -310,6 +327,60 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 		expect(await run(t0 + minute, client)).toEqual({ status: "disabled" });
 		expect(calls.create).toBe(0);
 		expect(await sub()).toBeNull();
+	});
+
+	it("receives the IP in the same tick it was ordered", async () => {
+		const { client, calls } = fakeIproyal();
+		const getOrder = vi.fn(client.getOrder);
+		await enable();
+		await insertOrder({
+			id: "o1",
+			userId: "u1",
+			sku: monthlySku,
+			paidAt: t0 + 1000,
+		});
+		await run(t0 + 2000, { ...client, getOrder });
+		expect(calls.create).toBe(1);
+		// First poll: not assigned yet; second poll (5 s later) has the IP.
+		expect(getOrder).toHaveBeenCalledTimes(2);
+		expect(await sub()).toMatchObject({
+			status: "provisioning",
+			ip: "161.77.8.204",
+		});
+	});
+
+	it("activates and emails as soon as the relay reports a passing self-test", async () => {
+		const { client } = fakeIproyal();
+		await enable();
+		await insertOrder({
+			id: "o1",
+			userId: "u1",
+			sku: monthlySku,
+			paidAt: t0 + 1000,
+		});
+		await run(t0 + 2000, client);
+		const row = await sub();
+		expect(row?.status).toBe("provisioning");
+		const sendCustomerEmail = vi.fn(async () => undefined);
+		const now = t0 + 30_000;
+		await relayCall(
+			"POST",
+			"/api/claude-env/relay/v1/report",
+			{ report_id: "rep-fast", relay_id: "r1", results: [okResult(row?.id)] },
+			now,
+			{
+				onReady: () =>
+					activateReady({
+						db,
+						now,
+						fetcher: qualityFetcher(98, 32),
+						deliver,
+						sendCustomerEmail,
+					}),
+			},
+		);
+		expect((await sub())?.status).toBe("active");
+		expect(sendCustomerEmail).toHaveBeenCalledTimes(1);
 	});
 
 	it("provisions, quality-checks at the 80/40 boundary, takes IPRoyal's expiry and serves the panel only to the owner", async () => {

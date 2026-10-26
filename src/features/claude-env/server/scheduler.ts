@@ -48,6 +48,9 @@ import {
 
 const hourMs = 3_600_000;
 const perTick = 5;
+/** Right after ordering: up to 3 polls, 5 s apart, before falling back to the cron. */
+const samePollAttempts = 3;
+const samePollGapMs = 5_000;
 
 export const reorderHint =
 	"先去 IPRoyal 后台核对有没有这一单，确认没有再点「允许重新下单」；有的话在后台填订单号。";
@@ -67,6 +70,8 @@ export type ClaudeEnvCronInput = {
 	sendCustomerEmail?: (subscriptionId: string) => Promise<unknown>;
 	/** Tests inject the expiry-reminder email sender. */
 	sendExpiryEmail?: SendExpiryEmail;
+	/** Waits between same-tick IP polls; tests inject a no-op. */
+	sleep?: (ms: number) => Promise<void>;
 };
 
 type Context = {
@@ -77,6 +82,7 @@ type Context = {
 	crypt: Crypt;
 	iproyal: IproyalClient | null;
 	sendCustomerEmail: (subscriptionId: string) => Promise<unknown>;
+	sleep: (ms: number) => Promise<void>;
 };
 
 const beijing = (ms: number) =>
@@ -92,19 +98,12 @@ const planLabel: Record<string, string> = {
 const say = (context: Context, text: string) =>
 	context.deliver(text).catch(() => undefined);
 
-/** Every minute (behind `claude_env.automation_enabled`). Each step is isolated. */
-export async function runClaudeEnv(input: ClaudeEnvCronInput) {
-	const now = input.now ?? Date.now();
-	const settings = await loadSettings(input.db, [
-		claudeEnvSettingKeys.enabled,
-		claudeEnvSettingKeys.ingestAfter,
-	]);
-	if (settings.get(claudeEnvSettingKeys.enabled) !== true)
-		return { status: "disabled" as const };
-	// Written only by the admin switch, at the moment it is turned on.
-	const ingestAfter = settings.get(claudeEnvSettingKeys.ingestAfter);
+async function buildContext(
+	input: ClaudeEnvCronInput,
+	now: number,
+): Promise<Context> {
 	const fetcher = input.fetcher ?? fetch;
-	const context: Context = {
+	return {
 		db: input.db,
 		now,
 		fetcher,
@@ -118,7 +117,34 @@ export async function runClaudeEnv(input: ClaudeEnvCronInput) {
 		sendCustomerEmail:
 			input.sendCustomerEmail ??
 			((id) => enqueueClaudeEnvReadyEmail(input.db, id)),
+		sleep: input.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
 	};
+}
+
+/**
+ * Activation right after a relay reports a passing self-test, so the customer
+ * does not wait for the next minute's cron. Same rules as the cron step.
+ */
+export async function activateReady(input: ClaudeEnvCronInput) {
+	const now = input.now ?? Date.now();
+	const settings = await loadSettings(input.db, [claudeEnvSettingKeys.enabled]);
+	if (settings.get(claudeEnvSettingKeys.enabled) !== true)
+		return { activated: 0, rejected: 0 };
+	return activateSubscriptions(await buildContext(input, now));
+}
+
+/** Every minute (behind `claude_env.automation_enabled`). Each step is isolated. */
+export async function runClaudeEnv(input: ClaudeEnvCronInput) {
+	const now = input.now ?? Date.now();
+	const settings = await loadSettings(input.db, [
+		claudeEnvSettingKeys.enabled,
+		claudeEnvSettingKeys.ingestAfter,
+	]);
+	if (settings.get(claudeEnvSettingKeys.enabled) !== true)
+		return { status: "disabled" as const };
+	// Written only by the admin switch, at the moment it is turned on.
+	const ingestAfter = settings.get(claudeEnvSettingKeys.ingestAfter);
+	const context = await buildContext(input, now);
 	const step = async <T>(work: () => Promise<T>) => {
 		try {
 			return await work();
@@ -664,8 +690,34 @@ export async function provisionSubscriptions(context: Context) {
 		}
 		if (row.iproyal_order_state === null) {
 			const placed = await placeOrder(context, row);
-			if (placed) outcome.ordered += 1;
-			else outcome.waiting += 1;
+			if (!placed) {
+				outcome.waiting += 1;
+				continue;
+			}
+			outcome.ordered += 1;
+			// IPRoyal usually assigns the IP within seconds: poll in this tick
+			// instead of waiting for the next minute.
+			const ordered = await db
+				.prepare(
+					"SELECT iproyal_order_id, iproyal_location FROM claude_env_subscriptions WHERE id = ? AND status = 'awaiting_ip' AND iproyal_order_state = 'ordered'",
+				)
+				.bind(row.id)
+				.first<{ iproyal_order_id: string; iproyal_location: string | null }>();
+			if (!ordered) continue;
+			for (let attempt = 0; attempt < samePollAttempts; attempt += 1) {
+				await context.sleep(samePollGapMs);
+				if (
+					await pollOrder(context, {
+						...row,
+						iproyal_order_state: "ordered",
+						iproyal_order_id: ordered.iproyal_order_id,
+						iproyal_location: ordered.iproyal_location,
+					})
+				) {
+					outcome.delivered += 1;
+					break;
+				}
+			}
 			continue;
 		}
 		if (await pollOrder(context, row)) outcome.delivered += 1;
