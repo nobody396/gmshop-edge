@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
+import { claudeEnvProductId } from "#/features/claude-env/domain";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import { enqueueConfiguredEmailNotification } from "#/features/notifications/server/delivery";
 import {
@@ -296,12 +297,18 @@ async function discoverReminders(
 			 LEFT JOIN users u ON u.id = o.user_id
 			 WHERE d.status = 'delivered' AND d.delivered_at >= ?
 			 AND s.reminder_cycle_days IS NOT NULL
+			 AND i.product_id <> ?
 			 AND NOT EXISTS (SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id)
 			 AND NOT ${staffOrderCondition("o.user_id", "o.normalized_contact_email")}
 			 AND NOT EXISTS (SELECT 1 FROM renewal_reminders r WHERE r.delivery_record_id = d.id)
 			 ORDER BY d.delivered_at, d.id LIMIT ?`,
 		)
-		.bind(renewalBackfillSince, Math.max(1, Math.min(100, limit)))
+		// Claude 专属环境 has its own reminders keyed to the real expiry (claude-env/server/reminders.ts).
+		.bind(
+			renewalBackfillSince,
+			claudeEnvProductId,
+			Math.max(1, Math.min(100, limit)),
+		)
 		.all<DiscoveryRow>();
 	let created = 0;
 	for (const row of rows.results) {

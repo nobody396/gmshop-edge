@@ -25,6 +25,7 @@ import { Route as AdminPaymentConfigurationsRouteImport } from './routes/admin/p
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminDeliveryRouteImport } from './routes/admin/delivery'
 import { Route as AdminCouponsRouteImport } from './routes/admin/coupons'
+import { Route as AdminClaudeEnvRouteImport } from './routes/admin/claude-env'
 import { Route as AdminAutomationRouteImport } from './routes/admin/automation'
 import { Route as AdminAuthRouteImport } from './routes/admin/auth'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
@@ -138,6 +139,8 @@ import { Route as ApiShopPaymentsChannelIdWebhookRouteImport } from './routes/ap
 import { Route as ApiShopOrdersOrderNumberAutomationRouteImport } from './routes/api/shop/orders/$orderNumber/automation'
 import { Route as ApiOpsGuidesSlugUnpublishRouteImport } from './routes/api/ops/guides/$slug/unpublish'
 import { Route as ApiOpsGuidesSlugPublishRouteImport } from './routes/api/ops/guides/$slug/publish'
+import { Route as ApiClaudeEnvRelayV1ReportRouteImport } from './routes/api/claude-env/relay/v1/report'
+import { Route as ApiClaudeEnvRelayV1DesiredRouteImport } from './routes/api/claude-env/relay/v1/desired'
 import { Route as ApiShopProductsProductIdMediaMediaIdRouteImport } from './routes/api/shop/products/$productId/media/$mediaId'
 import { Route as ApiShopOrdersOrderNumberDownloadsAssetIdRouteImport } from './routes/api/shop/orders/$orderNumber/downloads/$assetId'
 import { Route as ApiShopAutomationJobIdArtifactsFileNameRouteImport } from './routes/api/shop/automation/$jobId/artifacts/$fileName'
@@ -223,6 +226,11 @@ const AdminDeliveryRoute = AdminDeliveryRouteImport.update({
 const AdminCouponsRoute = AdminCouponsRouteImport.update({
   id: '/coupons',
   path: '/coupons',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminClaudeEnvRoute = AdminClaudeEnvRouteImport.update({
+  id: '/claude-env',
+  path: '/claude-env',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminAutomationRoute = AdminAutomationRouteImport.update({
@@ -819,6 +827,18 @@ const ApiOpsGuidesSlugPublishRoute = ApiOpsGuidesSlugPublishRouteImport.update({
   path: '/api/ops/guides/$slug/publish',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiClaudeEnvRelayV1ReportRoute =
+  ApiClaudeEnvRelayV1ReportRouteImport.update({
+    id: '/api/claude-env/relay/v1/report',
+    path: '/api/claude-env/relay/v1/report',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiClaudeEnvRelayV1DesiredRoute =
+  ApiClaudeEnvRelayV1DesiredRouteImport.update({
+    id: '/api/claude-env/relay/v1/desired',
+    path: '/api/claude-env/relay/v1/desired',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiShopProductsProductIdMediaMediaIdRoute =
   ApiShopProductsProductIdMediaMediaIdRouteImport.update({
     id: '/api/shop/products/$productId/media/$mediaId',
@@ -892,6 +912,7 @@ export interface FileRoutesByFullPath {
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
+  '/admin/claude-env': typeof AdminClaudeEnvRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
@@ -980,6 +1001,8 @@ export interface FileRoutesByFullPath {
   '/account/orders/': typeof publicAccountOrdersIndexRoute
   '/admin/products/$productId/': typeof AdminProductsProductIdIndexRoute
   '/api/ops/guides/': typeof ApiOpsGuidesIndexRoute
+  '/api/claude-env/relay/v1/desired': typeof ApiClaudeEnvRelayV1DesiredRoute
+  '/api/claude-env/relay/v1/report': typeof ApiClaudeEnvRelayV1ReportRoute
   '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
   '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1020,6 +1043,7 @@ export interface FileRoutesByTo {
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
+  '/admin/claude-env': typeof AdminClaudeEnvRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
@@ -1107,6 +1131,8 @@ export interface FileRoutesByTo {
   '/account/orders': typeof publicAccountOrdersIndexRoute
   '/admin/products/$productId': typeof AdminProductsProductIdIndexRoute
   '/api/ops/guides': typeof ApiOpsGuidesIndexRoute
+  '/api/claude-env/relay/v1/desired': typeof ApiClaudeEnvRelayV1DesiredRoute
+  '/api/claude-env/relay/v1/report': typeof ApiClaudeEnvRelayV1ReportRoute
   '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
   '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1158,6 +1184,7 @@ export interface FileRoutesById {
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/automation': typeof AdminAutomationRoute
+  '/admin/claude-env': typeof AdminClaudeEnvRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/delivery': typeof AdminDeliveryRoute
   '/admin/orders': typeof AdminOrdersRouteWithChildren
@@ -1246,6 +1273,8 @@ export interface FileRoutesById {
   '/(public)/account/orders/': typeof publicAccountOrdersIndexRoute
   '/admin/products/$productId/': typeof AdminProductsProductIdIndexRoute
   '/api/ops/guides/': typeof ApiOpsGuidesIndexRoute
+  '/api/claude-env/relay/v1/desired': typeof ApiClaudeEnvRelayV1DesiredRoute
+  '/api/claude-env/relay/v1/report': typeof ApiClaudeEnvRelayV1ReportRoute
   '/api/ops/guides/$slug/publish': typeof ApiOpsGuidesSlugPublishRoute
   '/api/ops/guides/$slug/unpublish': typeof ApiOpsGuidesSlugUnpublishRoute
   '/api/shop/orders/$orderNumber/automation': typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1296,6 +1325,7 @@ export interface FileRouteTypes {
     | '/admin/agents'
     | '/admin/auth'
     | '/admin/automation'
+    | '/admin/claude-env'
     | '/admin/coupons'
     | '/admin/delivery'
     | '/admin/orders'
@@ -1384,6 +1414,8 @@ export interface FileRouteTypes {
     | '/account/orders/'
     | '/admin/products/$productId/'
     | '/api/ops/guides/'
+    | '/api/claude-env/relay/v1/desired'
+    | '/api/claude-env/relay/v1/report'
     | '/api/ops/guides/$slug/publish'
     | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
@@ -1424,6 +1456,7 @@ export interface FileRouteTypes {
     | '/admin/agents'
     | '/admin/auth'
     | '/admin/automation'
+    | '/admin/claude-env'
     | '/admin/coupons'
     | '/admin/delivery'
     | '/admin/orders'
@@ -1511,6 +1544,8 @@ export interface FileRouteTypes {
     | '/account/orders'
     | '/admin/products/$productId'
     | '/api/ops/guides'
+    | '/api/claude-env/relay/v1/desired'
+    | '/api/claude-env/relay/v1/report'
     | '/api/ops/guides/$slug/publish'
     | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
@@ -1561,6 +1596,7 @@ export interface FileRouteTypes {
     | '/admin/agents'
     | '/admin/auth'
     | '/admin/automation'
+    | '/admin/claude-env'
     | '/admin/coupons'
     | '/admin/delivery'
     | '/admin/orders'
@@ -1649,6 +1685,8 @@ export interface FileRouteTypes {
     | '/(public)/account/orders/'
     | '/admin/products/$productId/'
     | '/api/ops/guides/'
+    | '/api/claude-env/relay/v1/desired'
+    | '/api/claude-env/relay/v1/report'
     | '/api/ops/guides/$slug/publish'
     | '/api/ops/guides/$slug/unpublish'
     | '/api/shop/orders/$orderNumber/automation'
@@ -1705,6 +1743,8 @@ export interface RootRouteChildren {
   ApiSupportWebStatusRoute: typeof ApiSupportWebStatusRoute
   ApiV1SupplierSplatRoute: typeof ApiV1SupplierSplatRoute
   ApiOpsGuidesIndexRoute: typeof ApiOpsGuidesIndexRoute
+  ApiClaudeEnvRelayV1DesiredRoute: typeof ApiClaudeEnvRelayV1DesiredRoute
+  ApiClaudeEnvRelayV1ReportRoute: typeof ApiClaudeEnvRelayV1ReportRoute
   ApiOpsGuidesSlugPublishRoute: typeof ApiOpsGuidesSlugPublishRoute
   ApiOpsGuidesSlugUnpublishRoute: typeof ApiOpsGuidesSlugUnpublishRoute
   ApiShopOrdersOrderNumberAutomationRoute: typeof ApiShopOrdersOrderNumberAutomationRouteWithChildren
@@ -1833,6 +1873,13 @@ declare module '@tanstack/react-router' {
       path: '/coupons'
       fullPath: '/admin/coupons'
       preLoaderRoute: typeof AdminCouponsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/claude-env': {
+      id: '/admin/claude-env'
+      path: '/claude-env'
+      fullPath: '/admin/claude-env'
+      preLoaderRoute: typeof AdminClaudeEnvRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/automation': {
@@ -2626,6 +2673,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOpsGuidesSlugPublishRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/claude-env/relay/v1/report': {
+      id: '/api/claude-env/relay/v1/report'
+      path: '/api/claude-env/relay/v1/report'
+      fullPath: '/api/claude-env/relay/v1/report'
+      preLoaderRoute: typeof ApiClaudeEnvRelayV1ReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/claude-env/relay/v1/desired': {
+      id: '/api/claude-env/relay/v1/desired'
+      path: '/api/claude-env/relay/v1/desired'
+      fullPath: '/api/claude-env/relay/v1/desired'
+      preLoaderRoute: typeof ApiClaudeEnvRelayV1DesiredRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/shop/products/$productId/media/$mediaId': {
       id: '/api/shop/products/$productId/media/$mediaId'
       path: '/api/shop/products/$productId/media/$mediaId'
@@ -2925,6 +2986,7 @@ interface AdminRouteRouteChildren {
   AdminAgentsRoute: typeof AdminAgentsRoute
   AdminAuthRoute: typeof AdminAuthRoute
   AdminAutomationRoute: typeof AdminAutomationRoute
+  AdminClaudeEnvRoute: typeof AdminClaudeEnvRoute
   AdminCouponsRoute: typeof AdminCouponsRoute
   AdminDeliveryRoute: typeof AdminDeliveryRoute
   AdminOrdersRoute: typeof AdminOrdersRouteWithChildren
@@ -2944,6 +3006,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminAgentsRoute: AdminAgentsRoute,
   AdminAuthRoute: AdminAuthRoute,
   AdminAutomationRoute: AdminAutomationRoute,
+  AdminClaudeEnvRoute: AdminClaudeEnvRoute,
   AdminCouponsRoute: AdminCouponsRoute,
   AdminDeliveryRoute: AdminDeliveryRoute,
   AdminOrdersRoute: AdminOrdersRouteWithChildren,
@@ -3030,6 +3093,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSupportWebStatusRoute: ApiSupportWebStatusRoute,
   ApiV1SupplierSplatRoute: ApiV1SupplierSplatRoute,
   ApiOpsGuidesIndexRoute: ApiOpsGuidesIndexRoute,
+  ApiClaudeEnvRelayV1DesiredRoute: ApiClaudeEnvRelayV1DesiredRoute,
+  ApiClaudeEnvRelayV1ReportRoute: ApiClaudeEnvRelayV1ReportRoute,
   ApiOpsGuidesSlugPublishRoute: ApiOpsGuidesSlugPublishRoute,
   ApiOpsGuidesSlugUnpublishRoute: ApiOpsGuidesSlugUnpublishRoute,
   ApiShopOrdersOrderNumberAutomationRoute:
@@ -3055,3 +3120,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

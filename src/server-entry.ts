@@ -2,6 +2,7 @@ import {
 	createStartHandler,
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
+import { handleClaudeEnvScriptRequest } from "#/features/claude-env/server/scripts";
 import { handleIpCheck } from "#/features/ip-check/server/lookup";
 import { handleIndexNowKeyRequest } from "#/features/seo/server/indexnow";
 import { handleSiteVerificationRequest } from "#/features/seo/server/site-verification";
@@ -61,6 +62,8 @@ export async function handleAppRequest(request: Request, env: RuntimeEnv) {
 		env.CACHE as KVNamespace | undefined,
 	);
 	if (siteVerification) return applySecurityHeaders(request, siteVerification);
+	const claudeEnvScript = handleClaudeEnvScriptRequest(request);
+	if (claudeEnvScript) return applySecurityHeaders(request, claudeEnvScript);
 	const ipCheck = await handleIpCheck(request, env);
 	if (ipCheck) return applySecurityHeaders(request, ipCheck);
 	const appStartedAt = performance.now();

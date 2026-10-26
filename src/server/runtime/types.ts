@@ -139,6 +139,7 @@ export type RuntimeEnv = {
 	COMMERCE_QUEUE?: RuntimeQueue;
 	EMAIL?: SendEmail;
 	RESTOCK_API_TOKEN?: string;
+	IPROYAL_API_TOKEN?: string;
 	INVOICE_LOOKUP_TOKEN?: string;
 	GMSHOP_EDGEONE_ORIGIN_VERIFY?: string;
 	INDEXNOW_KEY?: string;
