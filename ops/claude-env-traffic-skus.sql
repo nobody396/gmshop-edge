@@ -14,7 +14,8 @@
 -- * Currency must match the monthly Claude env SKU (CNY, 2 decimals): the
 --   SELECT below inserts nothing otherwise — check the verification query.
 -- * Idempotent: INSERT OR IGNORE. Prices are minor units (¥30 = '3000').
--- * cost_minor is left NULL (IPRoyal extra-traffic cost is per purchase and
+-- * cost_minor = IPRoyal add-on list price × 6.75 (estimate; real cost only if bought)
+-- * (was: cost_minor is left NULL (IPRoyal extra-traffic cost is per purchase and
 --   recorded by the buyer CLI); the sale alert then shows cost 待确认.
 
 INSERT OR IGNORE INTO products
@@ -45,12 +46,12 @@ SELECT t.id, 'e07fd8fc-5f0f-416e-9d85-382c091256a2', t.name,
 		'restrictions', '仅限已开通 Claude 专属环境的登录用户购买；可以多次加购'
 	),
 	'disabled', 'none', 1, 0,
-	'manual', m.currency, m.currency_decimals, t.price_minor, NULL,
+	'manual', m.currency, m.currency_decimals, t.price_minor, t.cost_minor,
 	1, 1, t.sort_order, 1, 0, unixepoch() * 1000, unixepoch() * 1000
 FROM (
-	SELECT 'c3675807-27e7-4442-a820-e4016b8c0e37' AS id, '100GB（本期有效）' AS name, '3000' AS price_minor, 100 AS sort_order
-	UNION ALL SELECT 'f1ea0f36-274a-414c-aa36-c6ebad153d3b', '500GB（本期有效）', '12900', 200
-	UNION ALL SELECT 'f69b64f7-36dd-49e2-a07f-9df5a63fb4d2', '1TB（本期有效）', '22900', 300
+	SELECT 'c3675807-27e7-4442-a820-e4016b8c0e37' AS id, '100GB（本期有效）' AS name, '3000' AS price_minor, '1688' AS cost_minor, 100 AS sort_order
+	UNION ALL SELECT 'f1ea0f36-274a-414c-aa36-c6ebad153d3b', '500GB（本期有效）', '12900', '7931', 200
+	UNION ALL SELECT 'f69b64f7-36dd-49e2-a07f-9df5a63fb4d2', '1TB（本期有效）', '22900', '14850', 300
 ) t
 JOIN product_sellable_items m ON m.id = 'c3bab030-0c3c-4451-9c41-3cc32538e778'
 WHERE m.currency = 'CNY' AND m.currency_decimals = 2;
