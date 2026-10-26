@@ -147,6 +147,14 @@ const handlers: Record<string, HandlerEntry> = {
 		topic: "withdrawals",
 		load: async () =>
 			(await import("#/features/agent-program/server/withdrawal-alerts"))
+				.queueWithdrawalVerify,
+		rejectedLine: "⏸ 先不处理，提现仍是待打款",
+	},
+	// Fallback when the automatic Alipay check found no single match.
+	agent_withdrawal_paid_manual: {
+		topic: "withdrawals",
+		load: async () =>
+			(await import("#/features/agent-program/server/withdrawal-alerts"))
 				.markWithdrawalPaidFromTelegram,
 		rejectedLine: "⏸ 先不处理，提现仍是待打款",
 		input: {

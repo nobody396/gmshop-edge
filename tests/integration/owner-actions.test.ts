@@ -1,6 +1,10 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runWithdrawalAlerts } from "#/features/agent-program/server/withdrawal-alerts";
+import {
+	claimSupplierTopUpJob,
+	recordSupplierTopUpResult,
+} from "#/features/supplier-topup/server/topup";
 import { createSupplierCredentialVault } from "#/features/suppliers/secrets";
 import { syncSupplierSource } from "#/features/suppliers/server/source-sync";
 import { upsertFeishuAlertSetting } from "#/features/telegram/server/feishu-alerts";
@@ -373,7 +377,7 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		).toHaveLength(1);
 	});
 
-	it("marks a withdrawal paid after the owner replies with the Alipay trade number", async () => {
+	async function proposeWithdrawalAndTap() {
 		await ensureOwnerAlertWebhook(db, { fetcher });
 		// 10:30 Beijing on 2026-10-19.
 		const morning = Date.UTC(2026, 9, 19, 2, 30);
@@ -399,21 +403,131 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 				inline_keyboard: { callback_data: string }[][];
 			}
 		).inline_keyboard[0]?.[0]?.callback_data;
-
 		await tap(ownerId, approve ?? "", 20);
-		const prompt = telegram.filter((call) => call.method === "sendMessage")[1];
+		await tap(ownerId, approve ?? "", 21);
+		// No trade-number prompt: one Alipay lookup job is queued for the Mac.
+		expect(
+			telegram.filter((call) => call.method === "sendMessage"),
+		).toHaveLength(1);
+		const jobs = await db
+			.prepare("SELECT step, status, order_json FROM supplier_topup_jobs")
+			.all<{ step: string; status: string; order_json: string }>();
+		expect(jobs.results).toHaveLength(1);
+		expect(jobs.results[0]?.step).toBe("withdrawal_verify");
+		const job = await claimSupplierTopUpJob(db, webhookNow + 1);
+		expect(job?.order).toMatchObject({
+			target: { id: 12, amount: "88.00", account: "agent@alipay.example" },
+			group: [{ id: 12 }],
+			used_trade_nos: [],
+		});
+		return job;
+	}
+
+	it("marks a withdrawal paid from the Alipay transfer the Mac found", async () => {
+		const job = await proposeWithdrawalAndTap();
+		const result = {
+			job_id: job?.id,
+			outcome: "withdrawal_matched",
+			trade_no: "20261019200040011100340077594769",
+			amount: "88.00",
+			trans_dt: "2026-10-19 10:31:02",
+			withdrawal_ids: [12],
+		};
+		const options = {
+			now: webhookNow + 2,
+			fetcher,
+			agentProgramToken: "program-token",
+		};
+		await expect(
+			recordSupplierTopUpResult(db, result, options),
+		).resolves.toMatchObject({ status: "recorded", paid: [12] });
+		await expect(
+			recordSupplierTopUpResult(db, result, options),
+		).resolves.toMatchObject({ status: "duplicate" });
+		const marks = program.filter((call) => call.path.endsWith("/mark-paid"));
+		expect(marks).toEqual([
+			{
+				path: "/api/internal/reseller-program/withdrawals/12/mark-paid",
+				body: {
+					alipay_trade_no: "20261019200040011100340077594769",
+					operator: "telegram:auto-alipay",
+				},
+			},
+		]);
+		const edit = telegram
+			.filter((call) => call.method === "editMessageText")
+			.at(-1);
+		expect(edit?.body.text).toContain(
+			"✅ 已自动核对支付宝转账并标记打款：¥88.00",
+		);
+		expect(edit?.body.text).toContain("20261019200040011100340077594769");
+	});
+
+	it("refuses a match whose transfer amount differs from the withdrawals", async () => {
+		const job = await proposeWithdrawalAndTap();
+		await expect(
+			recordSupplierTopUpResult(
+				db,
+				{
+					job_id: job?.id,
+					outcome: "withdrawal_matched",
+					trade_no: "20261019200040011100340000000001",
+					amount: "80.00",
+					trans_dt: "2026-10-19 10:31:02",
+					withdrawal_ids: [12],
+				},
+				{ now: webhookNow + 2, fetcher, agentProgramToken: "program-token" },
+			),
+		).resolves.toMatchObject({ paid: [] });
+		expect(program.filter((call) => call.path.endsWith("/mark-paid"))).toEqual(
+			[],
+		);
+		const fallback = telegram
+			.filter((call) => call.method === "sendMessage")
+			.at(-1);
+		expect(fallback?.body.text).toContain("合计对不上");
+	});
+
+	it("falls back to the trade-number reply when the Alipay check is unsure", async () => {
+		const job = await proposeWithdrawalAndTap();
+		await recordSupplierTopUpResult(
+			db,
+			{
+				job_id: job?.id,
+				outcome: "withdrawal_unmatched",
+				reason: "支付宝里有 2 笔同金额转账，无法确定",
+			},
+			{ now: webhookNow + 2, fetcher, agentProgramToken: "program-token" },
+		);
+		expect(program.some((call) => call.path.endsWith("/mark-paid"))).toBe(
+			false,
+		);
+		const manual = telegram.filter((call) => call.method === "sendMessage")[1];
+		expect(manual?.body.text).toContain(
+			"没有自动核对上：支付宝里有 2 笔同金额转账",
+		);
+		const approve = (
+			manual?.body.reply_markup as {
+				inline_keyboard: { callback_data: string }[][];
+			}
+		).inline_keyboard[0]?.[0]?.callback_data;
+		await deliver({
+			update_id: 30,
+			callback_query: {
+				id: "cb-30",
+				data: approve,
+				from: { id: ownerId, is_bot: false },
+				message: { message_id: 778, chat: { id: Number(chatId) } },
+			},
+		});
+		const prompt = telegram.filter((call) => call.method === "sendMessage")[2];
 		expect(prompt?.body.reply_markup).toMatchObject({ force_reply: true });
+		await reply(memberId, "2026102022001488551234567890", 779, 31);
+		await reply(ownerId, "坏", 779, 32);
 		expect(program.some((call) => call.path.endsWith("/mark-paid"))).toBe(
 			false,
 		);
-
-		await reply(memberId, "2026102022001488551234567890", 778, 21);
-		await reply(ownerId, "坏", 778, 22);
-		expect(program.some((call) => call.path.endsWith("/mark-paid"))).toBe(
-			false,
-		);
-
-		await reply(ownerId, "2026102022001488551234567890", 778, 23);
+		await reply(ownerId, "2026102022001488551234567890", 779, 33);
 		expect(program.find((call) => call.path.endsWith("/mark-paid"))).toEqual({
 			path: "/api/internal/reseller-program/withdrawals/12/mark-paid",
 			body: {
@@ -421,11 +535,6 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 				operator: `telegram:${ownerId}`,
 			},
 		});
-		const edit = telegram.find((call) => call.method === "editMessageText");
-		expect(edit?.body.text).toContain("✅ 已标记打款：¥88.00");
-		await expect(
-			db.prepare("SELECT status FROM owner_action_requests").first("status"),
-		).resolves.toBe("approved");
 	});
 
 	it("posts proposals into their forum topic and replies in the incoming thread", async () => {
@@ -454,21 +563,35 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 			}
 		).inline_keyboard[0]?.[0]?.callback_data;
 
-		// A tap inside the topic: the input prompt stays in that topic.
+		// The automatic Alipay check is unsure: the manual fallback goes to the
+		// withdrawals topic, and its input prompt stays in that topic.
+		await tap(ownerId, approve ?? "", 39);
+		const job = await claimSupplierTopUpJob(db, webhookNow + 1);
+		await recordSupplierTopUpResult(
+			db,
+			{ job_id: job?.id, outcome: "withdrawal_unmatched", reason: "没找到" },
+			{ now: webhookNow + 2, fetcher, agentProgramToken: "program-token" },
+		);
+		expect(sent()[1]?.body.message_thread_id).toBe(6);
+		const manual = (
+			sent()[1]?.body.reply_markup as {
+				inline_keyboard: { callback_data: string }[][];
+			}
+		).inline_keyboard[0]?.[0]?.callback_data;
 		await deliver({
 			update_id: 40,
 			callback_query: {
 				id: "cb-40",
-				data: approve,
+				data: manual,
 				from: { id: ownerId, is_bot: false },
 				message: {
-					message_id: 777,
+					message_id: 778,
 					message_thread_id: 6,
 					chat: { id: Number(chatId) },
 				},
 			},
 		});
-		expect(sent()[1]?.body).toMatchObject({ message_thread_id: 6 });
+		expect(sent()[2]?.body).toMatchObject({ message_thread_id: 6 });
 
 		// A command typed in another topic gets its reply there; the
 		// confirmation goes to the orders topic.
@@ -486,11 +609,11 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 				},
 			});
 		await command("/topup agent@example.com", 41, 8);
-		expect(sent()[2]?.body).toMatchObject({ message_thread_id: 8 });
+		expect(sent()[3]?.body).toMatchObject({ message_thread_id: 8 });
 		await command("/topup agent@example.com 300", 42, 8);
-		expect(sent()[3]?.body.message_thread_id).toBe(5);
+		expect(sent()[4]?.body.message_thread_id).toBe(5);
 		await command("/topup agent@example.com", 43);
-		expect(sent()[4]?.body).not.toHaveProperty("message_thread_id");
+		expect(sent()[5]?.body).not.toHaveProperty("message_thread_id");
 	});
 
 	it("tops up a partner wallet from /topup after the owner confirms, retrying safely", async () => {
