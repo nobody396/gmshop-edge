@@ -41,7 +41,18 @@ const str = (value: unknown) =>
 	typeof value === "string" && value ? value : "—";
 
 function errorText(error: unknown) {
-	return error instanceof Error ? error.message : "操作失败";
+	const code =
+		error && typeof error === "object" && "code" in error ? error.code : null;
+	switch (code) {
+		case "claude_env_action_invalid":
+			return "当前状态不允许这个操作";
+		case "claude_env_relay_secret_required":
+			return "新中转机必须填写密钥";
+		case "claude_env_not_found":
+			return "找不到这条记录";
+		default:
+			return "操作失败";
+	}
 }
 
 export function ClaudeEnvAdminPage() {

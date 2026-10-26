@@ -1,7 +1,4 @@
-import {
-	iproyalIspProductId,
-	parseIproyalDate,
-} from "../domain";
+import { iproyalIspProductId, parseIproyalDate } from "../domain";
 
 /**
  * Minimal IPRoyal reseller REST client (https://apid.iproyal.com/v1/reseller,
