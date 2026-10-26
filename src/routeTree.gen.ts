@@ -109,6 +109,7 @@ import { Route as publicAccountSecurityRouteImport } from './routes/(public)/acc
 import { Route as publicAccountProfileRouteImport } from './routes/(public)/account/profile'
 import { Route as publicAccountNotificationsRouteImport } from './routes/(public)/account/notifications'
 import { Route as publicAccountConnectionsRouteImport } from './routes/(public)/account/connections'
+import { Route as publicAccountClaudeEnvGuideRouteImport } from './routes/(public)/account/claude-env-guide'
 import { Route as AdminProductsProductIdRouteRouteImport } from './routes/admin/products/$productId/route'
 import { Route as ApiOpsGuidesIndexRouteImport } from './routes/api/ops/guides/index'
 import { Route as AdminProductsProductIdIndexRouteImport } from './routes/admin/products/$productId/index'
@@ -663,6 +664,12 @@ const publicAccountConnectionsRoute =
     path: '/connections',
     getParentRoute: () => publicAccountRouteRoute,
   } as any)
+const publicAccountClaudeEnvGuideRoute =
+  publicAccountClaudeEnvGuideRouteImport.update({
+    id: '/claude-env-guide',
+    path: '/claude-env-guide',
+    getParentRoute: () => publicAccountRouteRoute,
+  } as any)
 const AdminProductsProductIdRouteRoute =
   AdminProductsProductIdRouteRouteImport.update({
     id: '/$productId',
@@ -958,6 +965,7 @@ export interface FileRoutesByFullPath {
   '/': typeof publicIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/products/$productId': typeof AdminProductsProductIdRouteRouteWithChildren
+  '/account/claude-env-guide': typeof publicAccountClaudeEnvGuideRoute
   '/account/connections': typeof publicAccountConnectionsRoute
   '/account/notifications': typeof publicAccountNotificationsRoute
   '/account/profile': typeof publicAccountProfileRoute
@@ -1093,6 +1101,7 @@ export interface FileRoutesByTo {
   '/api/site-logo': typeof ApiSiteLogoRoute
   '/': typeof publicIndexRoute
   '/admin': typeof AdminIndexRoute
+  '/account/claude-env-guide': typeof publicAccountClaudeEnvGuideRoute
   '/account/connections': typeof publicAccountConnectionsRoute
   '/account/notifications': typeof publicAccountNotificationsRoute
   '/account/profile': typeof publicAccountProfileRoute
@@ -1240,6 +1249,7 @@ export interface FileRoutesById {
   '/(public)/': typeof publicIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/products/$productId': typeof AdminProductsProductIdRouteRouteWithChildren
+  '/(public)/account/claude-env-guide': typeof publicAccountClaudeEnvGuideRoute
   '/(public)/account/connections': typeof publicAccountConnectionsRoute
   '/(public)/account/notifications': typeof publicAccountNotificationsRoute
   '/(public)/account/profile': typeof publicAccountProfileRoute
@@ -1386,6 +1396,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/'
     | '/admin/products/$productId'
+    | '/account/claude-env-guide'
     | '/account/connections'
     | '/account/notifications'
     | '/account/profile'
@@ -1521,6 +1532,7 @@ export interface FileRouteTypes {
     | '/api/site-logo'
     | '/'
     | '/admin'
+    | '/account/claude-env-guide'
     | '/account/connections'
     | '/account/notifications'
     | '/account/profile'
@@ -1667,6 +1679,7 @@ export interface FileRouteTypes {
     | '/(public)/'
     | '/admin/'
     | '/admin/products/$productId'
+    | '/(public)/account/claude-env-guide'
     | '/(public)/account/connections'
     | '/(public)/account/notifications'
     | '/(public)/account/profile'
@@ -2533,6 +2546,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof publicAccountConnectionsRouteImport
       parentRoute: typeof publicAccountRouteRoute
     }
+    '/(public)/account/claude-env-guide': {
+      id: '/(public)/account/claude-env-guide'
+      path: '/claude-env-guide'
+      fullPath: '/account/claude-env-guide'
+      preLoaderRoute: typeof publicAccountClaudeEnvGuideRouteImport
+      parentRoute: typeof publicAccountRouteRoute
+    }
     '/admin/products/$productId': {
       id: '/admin/products/$productId'
       path: '/$productId'
@@ -2863,6 +2883,7 @@ const authRouteRouteWithChildren = authRouteRoute._addFileChildren(
 )
 
 interface publicAccountRouteRouteChildren {
+  publicAccountClaudeEnvGuideRoute: typeof publicAccountClaudeEnvGuideRoute
   publicAccountConnectionsRoute: typeof publicAccountConnectionsRoute
   publicAccountNotificationsRoute: typeof publicAccountNotificationsRoute
   publicAccountProfileRoute: typeof publicAccountProfileRoute
@@ -2877,6 +2898,7 @@ interface publicAccountRouteRouteChildren {
 }
 
 const publicAccountRouteRouteChildren: publicAccountRouteRouteChildren = {
+  publicAccountClaudeEnvGuideRoute: publicAccountClaudeEnvGuideRoute,
   publicAccountConnectionsRoute: publicAccountConnectionsRoute,
   publicAccountNotificationsRoute: publicAccountNotificationsRoute,
   publicAccountProfileRoute: publicAccountProfileRoute,
@@ -3230,13 +3252,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

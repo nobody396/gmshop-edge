@@ -23,7 +23,9 @@ import {
 
 const shopOrigin = "https://laoshirenvip.com";
 export const claudeEnvGuideSlug = "claude-env-setup";
-const guideUrl = `${shopOrigin}/guides/${claudeEnvGuideSlug}`;
+/** Buyers-only page (login required); the guide itself is never public. */
+export const claudeEnvGuidePath = "/account/claude-env-guide";
+const guideUrl = `${shopOrigin}${claudeEnvGuidePath}`;
 
 const escapeHtml = (value: string) =>
 	value

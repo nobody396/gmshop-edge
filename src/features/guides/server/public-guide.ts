@@ -10,7 +10,7 @@ import {
 } from "#/features/storefront/server/stock-availability";
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import { renderGuideMarkdown } from "./markdown";
-import { getPublishedGuide, listPublishedGuides } from "./store";
+import { getGuide, getPublishedGuide, listPublishedGuides } from "./store";
 
 export type PublicGuideProduct = {
 	id: string;
@@ -156,6 +156,27 @@ export async function loadPublicGuide(
 	if (reservedGuideSlugs.has(slug)) return null;
 	const guide = await getPublishedGuide(db, slug);
 	if (!guide) return null;
+	return renderGuide(db, guide, slug);
+}
+
+/**
+ * A guide kept as a draft on purpose (never public) and shown only to the
+ * buyers allowed to read it — the caller checks who may see it.
+ */
+export async function loadPrivateGuide(
+	db: D1Database,
+	slug: string,
+): Promise<PublicGuide | null> {
+	const guide = await getGuide(db, slug);
+	if (!guide) return null;
+	return renderGuide(db, guide, slug);
+}
+
+async function renderGuide(
+	db: D1Database,
+	guide: NonNullable<Awaited<ReturnType<typeof getGuide>>>,
+	slug: string,
+): Promise<PublicGuide> {
 	const tokens = collectGuideTokens(guide.bodyMd);
 	const productIds = [
 		...new Set([...tokens.productIds, ...guide.relatedProductIds]),
