@@ -8,6 +8,7 @@ import {
 } from "#/features/claude-env/domain";
 import {
 	applySubscriptionAction,
+	loadClaudeEnvAdmin as loadAdmin,
 	saveRelay,
 	setClaudeEnvEnabled,
 } from "#/features/claude-env/server/admin-actions";
@@ -18,6 +19,7 @@ import {
 	loadClaudeEnvPanel,
 	revealClaudeEnvCode,
 } from "#/features/claude-env/server/panel";
+import { reconcileIproyalOrders } from "#/features/claude-env/server/reconcile";
 import { handleRelayApiRequest } from "#/features/claude-env/server/relay-api";
 import { sendExpiryReminders } from "#/features/claude-env/server/reminders";
 import {
@@ -68,6 +70,7 @@ function fakeIproyal(overrides: Partial<IproyalClient> = {}) {
 			],
 		}),
 		price: async () => 5.2,
+		listOrders: async () => [],
 		createOrder: async () => {
 			calls.create += 1;
 			return "4242";
@@ -1621,6 +1624,221 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 			expect((await sub("user_id = 'u1'"))?.relay_port).toBe(20000);
 			expect((await sub("id = 'sub_old'"))?.relay_port).toBeNull();
 			expect((await sub("id = 'sub_new'"))?.relay_port).toBe(20001);
+		});
+	});
+
+	describe("IPRoyal purchase audit", () => {
+		const events = async () =>
+			(
+				await db
+					.prepare(
+						"SELECT kind, detail FROM claude_env_events WHERE kind <> 'created' ORDER BY created_at, rowid",
+					)
+					.all<Row>()
+			).results;
+
+		it("records the purchase attempt before calling IPRoyal, in the claim batch", async () => {
+			let seenDuringCall: Row[] = [];
+			const { client } = fakeIproyal({
+				createOrder: async () => {
+					seenDuringCall = await events();
+					return "4242";
+				},
+			});
+			await enable();
+			await insertOrder({
+				id: "o1",
+				userId: "u1",
+				sku: monthlySku,
+				paidAt: t0 + 1000,
+			});
+			await run(t0 + 2000, client);
+			const id = (await sub())?.id;
+			expect(seenDuringCall).toEqual([
+				{
+					kind: "ip_order_posting",
+					detail: `gmshop:${id} Springfield (Massachusetts) plan 22 $5.20 balance $100.00`,
+				},
+			]);
+			// The attempt comes first, then the result (then IP delivery events).
+			expect((await events()).map((e) => e.kind).slice(0, 2)).toEqual([
+				"ip_order_posting",
+				"ip_ordered",
+			]);
+		});
+
+		it("keeps the attempt trace when the call dies mid-way", async () => {
+			const { client } = fakeIproyal({
+				createOrder: async () => {
+					throw new IproyalError("iproyal_unreachable", null, false);
+				},
+			});
+			await enable();
+			await insertOrder({
+				id: "o1",
+				userId: "u1",
+				sku: monthlySku,
+				paidAt: t0 + 1000,
+			});
+			await run(t0 + 2000, client);
+			expect((await events()).map((e) => e.kind)).toEqual([
+				"ip_order_posting",
+				"order_unknown",
+			]);
+		});
+
+		it("writes no attempt event when the claim is lost", async () => {
+			const { client, calls } = fakeIproyal();
+			await enable();
+			await insertOrder({
+				id: "o1",
+				userId: "u1",
+				sku: monthlySku,
+				paidAt: t0 + 1000,
+			});
+			const original = client.balance;
+			client.balance = async () => {
+				// Another tick claims the slot while this one checks the balance.
+				await db
+					.prepare(
+						"UPDATE claude_env_subscriptions SET iproyal_order_state = 'posting', iproyal_posting_at = 1",
+					)
+					.run();
+				return original();
+			};
+			await run(t0 + 2000, client);
+			expect(calls.create).toBe(0);
+			expect(await events()).toEqual([]);
+		});
+
+		const summary = (
+			id: string,
+			extra: Partial<
+				Awaited<ReturnType<IproyalClient["listOrders"]>>[number]
+			> = {},
+		) => ({
+			id,
+			status: "confirmed",
+			ips: [`10.0.0.${id.length}`],
+			expireDate: "2026-11-25 11:25:30",
+			planName: "30 Days",
+			location: "美国",
+			autoExtend: false,
+			note: null,
+			extendedCount: 0,
+			...extra,
+		});
+		const cityFetcher = vi.fn(async () =>
+			Response.json({
+				status: "success",
+				city: "Springfield",
+				regionName: "Massachusetts",
+			}),
+		) as unknown as typeof fetch;
+		const reconcile = (
+			now: number,
+			orders: ReturnType<typeof summary>[],
+			send: (text: string) => Promise<void> = deliver,
+		) =>
+			reconcileIproyalOrders({
+				db,
+				now,
+				iproyal: fakeIproyal({ listOrders: async () => orders }).client,
+				fetcher: cityFetcher,
+				deliver: send,
+			});
+
+		it("alerts once for an unknown order, even with the automation flag off", async () => {
+			const unknown = summary("86560286", { ips: ["161.77.53.219"] });
+			expect(await reconcile(t0, [unknown])).toMatchObject({
+				status: "ok",
+				unknown: 1,
+				alerted: 1,
+			});
+			expect(messages).toHaveLength(1);
+			expect(messages[0]).toContain("#86560286");
+			expect(messages[0]).toContain(
+				"161.77.53.219（Springfield, Massachusetts）",
+			);
+			expect(messages[0]).toContain("自动续费：关");
+			expect(messages[0]).toContain("约 2026-10-26 19:25 下单（北京时间");
+			expect(messages[0]).toContain("备注：无");
+			// Within 10 minutes the step does not even call IPRoyal.
+			expect(await reconcile(t0 + 5 * minute, [unknown])).toEqual({
+				status: "skipped",
+			});
+			// Later runs still see it but never alert again.
+			expect(await reconcile(t0 + 11 * minute, [unknown])).toMatchObject({
+				unknown: 1,
+				alerted: 0,
+			});
+			expect(await reconcile(t0 + 3 * dayMs, [unknown])).toMatchObject({
+				alerted: 0,
+			});
+			expect(messages).toHaveLength(1);
+		});
+
+		it("knows the seeded manual orders, subscription orders, and ignores refunded ones", async () => {
+			const { client } = fakeIproyal();
+			await provision(client);
+			const result = await reconcile(t0 + hour, [
+				summary("75930342", { autoExtend: true }),
+				summary("86547609", { autoExtend: true }),
+				summary("4242"),
+				summary("75923490", { status: "refunded" }),
+				summary("75926964", { status: "expired" }),
+			]);
+			expect(result).toMatchObject({ orders: 5, unknown: 0, alerted: 0 });
+			expect(messages.filter((m) => m.includes("不认识"))).toEqual([]);
+			const admin = await loadAdmin(db, t0 + hour);
+			expect(admin.iproyalOrders?.checkedAt).toBe(t0 + hour);
+			expect(admin.iproyalOrders?.orders.map((o) => [o.id, o.known])).toEqual([
+				["75930342", "老板自用 161.77.8.204"],
+				["86547609", "客户 GM1E7EC2 161.77.217.39（手动 provision.py）"],
+				["4242", `订阅 ${(await sub())?.id}`],
+				["75923490", null],
+				["75926964", null],
+			]);
+		});
+
+		it("points at an unresolved purchase when one is pending", async () => {
+			const { client } = fakeIproyal({
+				createOrder: async () => {
+					throw new IproyalError("iproyal_unreachable", null, false);
+				},
+			});
+			await enable();
+			await insertOrder({
+				id: "o1",
+				userId: "u1",
+				sku: monthlySku,
+				paidAt: t0 + 1000,
+			});
+			await run(t0 + 2000, client);
+			messages = [];
+			await reconcile(t0 + hour, [summary("999")]);
+			expect(messages[0]).toContain("另有 1 个订阅下单结果不明");
+		});
+
+		it("retries an alert whose delivery failed", async () => {
+			const failing = vi.fn(async () => {
+				throw new Error("telegram down");
+			});
+			expect(await reconcile(t0, [summary("777")], failing)).toMatchObject({
+				alerted: 0,
+			});
+			expect(await reconcile(t0 + 11 * minute, [summary("777")])).toMatchObject(
+				{
+					alerted: 1,
+				},
+			);
+			expect(messages).toHaveLength(1);
+		});
+
+		it("does nothing without a token", async () => {
+			expect(await reconcileIproyalOrders({ db, now: t0 })).toEqual({
+				status: "no_token",
+			});
 		});
 	});
 });

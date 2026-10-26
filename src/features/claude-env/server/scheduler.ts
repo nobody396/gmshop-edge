@@ -779,13 +779,28 @@ async function placeOrder(context: Context, row: AwaitingRow) {
 		return false;
 	}
 	// Idempotency: claim the single POST /orders slot before calling IPRoyal.
-	const claim = await db
-		.prepare(
-			"UPDATE claude_env_subscriptions SET iproyal_order_state = 'posting', iproyal_posting_at = ?, order_unknown_alerted = 0, iproyal_location = ?, updated_at = ? WHERE id = ? AND iproyal_order_state IS NULL AND status = 'awaiting_ip'",
-		)
-		.bind(now, city.name, now, row.id)
-		.run();
-	if (Number(claim.meta.changes ?? 0) !== 1) return false;
+	// The same batch records the attempt, so every purchase leaves a trace in
+	// claude_env_events even if the Worker dies during the HTTP call.
+	const [claim] = await db.batch([
+		db
+			.prepare(
+				"UPDATE claude_env_subscriptions SET iproyal_order_state = 'posting', iproyal_posting_at = ?, order_unknown_alerted = 0, iproyal_location = ?, updated_at = ? WHERE id = ? AND iproyal_order_state IS NULL AND status = 'awaiting_ip'",
+			)
+			.bind(now, city.name, now, row.id),
+		db
+			.prepare(
+				"INSERT INTO claude_env_events (id, subscription_id, kind, detail, created_at) SELECT ?, ?, 'ip_order_posting', ?, ? WHERE EXISTS (SELECT 1 FROM claude_env_subscriptions WHERE id = ? AND iproyal_order_state = 'posting' AND iproyal_posting_at = ?)",
+			)
+			.bind(
+				crypto.randomUUID(),
+				row.id,
+				`gmshop:${row.id} ${city.name} plan ${row.iproyal_plan_id} $${price.toFixed(2)} balance $${balance.toFixed(2)}`,
+				now,
+				row.id,
+				now,
+			),
+	]);
+	if (Number(claim?.meta.changes ?? 0) !== 1) return false;
 	let orderId: string;
 	try {
 		orderId = await iproyal.createOrder(row.iproyal_plan_id, city.id);

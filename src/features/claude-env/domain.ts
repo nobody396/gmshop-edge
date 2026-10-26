@@ -50,6 +50,12 @@ export const claudeEnvSettingKeys = {
 	alertNoToken: "claude_env.alert.no_token_at",
 	alertBalance: "claude_env.alert.balance_short_at",
 	alertBalanceLow: "claude_env.alert.balance_low_at",
+	/** Last IPRoyal order reconciliation (at most every 10 minutes). */
+	reconcileAt: "claude_env.iproyal_reconcile_at",
+	/** Latest reconciliation result shown on /admin/claude-env (no credentials). */
+	reconcileSnapshot: "claude_env.iproyal_orders_snapshot",
+	/** `<prefix><order id>`: one owner alert per unknown IPRoyal order. */
+	alertUnknownOrderPrefix: "claude_env.alert.unknown_order.",
 } as const;
 
 export const dayMs = 86_400_000;

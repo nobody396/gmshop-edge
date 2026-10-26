@@ -12,6 +12,7 @@ import {
 	staleClaimMs,
 	timezoneForCity,
 } from "../domain";
+import { loadReconcileSnapshot } from "./reconcile";
 import {
 	type Crypt,
 	eventStatement,
@@ -108,7 +109,7 @@ export type AdminPeriodRow = {
 // ---------- overview ----------
 
 export async function loadClaudeEnvAdmin(db: D1Database, now: number) {
-	const [flag, subs, relays, periods] = await Promise.all([
+	const [flag, subs, relays, periods, iproyalOrders] = await Promise.all([
 		db
 			.prepare("SELECT value FROM system_settings WHERE key = ?")
 			.bind(claudeEnvSettingKeys.enabled)
@@ -145,9 +146,11 @@ export async function loadClaudeEnvAdmin(db: D1Database, now: number) {
 				 ORDER BY p.created_at DESC LIMIT 100`,
 			)
 			.all<AdminPeriodRow>(),
+		loadReconcileSnapshot(db),
 	]);
 	return {
 		now,
+		iproyalOrders,
 		enabled: flag?.value === "true",
 		subscriptions: subs.results.map((row) => ({
 			...row,

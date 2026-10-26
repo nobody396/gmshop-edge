@@ -97,7 +97,41 @@ export function createIproyalClient(token: string, fetcher: typeof fetch) {
 			const price = Number(value?.price_with_vat ?? value?.total);
 			return Number.isFinite(price) ? price : null;
 		},
-		/** POST /orders — call at most once per subscription (see cron idempotency). */
+		/**
+		 * GET /orders?product_id=9&page=N&per_page=50 (both `product_id` and
+		 * `page` are required, otherwise 422). Read-only; used to reconcile
+		 * every ISP order on the account against the ones we know about.
+		 */
+		async listOrders(maxPages = 10): Promise<IproyalOrderSummary[]> {
+			const orders: IproyalOrderSummary[] = [];
+			for (let page = 1; page <= maxPages; page += 1) {
+				const query = new URLSearchParams({
+					product_id: String(iproyalIspProductId),
+					page: String(page),
+					per_page: "50",
+				});
+				const value = (await call("GET", `/orders?${query}`)) as {
+					data?: unknown;
+					meta?: { last_page?: unknown };
+				} | null;
+				if (!Array.isArray(value?.data))
+					throw new IproyalError("iproyal_bad_orders", 200, false);
+				for (const order of value.data) {
+					const summary = parseOrderSummary(order);
+					if (summary) orders.push(summary);
+				}
+				const lastPage = Number(value?.meta?.last_page ?? page);
+				if (!Number.isFinite(lastPage) || page >= lastPage) break;
+			}
+			return orders;
+		},
+		/**
+		 * POST /orders — call at most once per subscription (see cron idempotency).
+		 * The documented body has no note/label field (docs.iproyal.com ISP
+		 * orders, checked 2026-10-26), so the order cannot carry a source tag;
+		 * traceability comes from the pre-call `ip_order_posting` event and the
+		 * reconciliation in reconcile.ts instead.
+		 */
 		async createOrder(planId: number, locationId: number) {
 			const value = (await call("POST", "/orders", {
 				product_id: iproyalIspProductId,
@@ -141,6 +175,49 @@ export type IproyalOrder = {
 	proxy: IproyalProxy | null;
 	expiresAt: number | null;
 };
+
+/** Owner-facing view of one order; never carries proxy credentials. */
+export type IproyalOrderSummary = {
+	id: string;
+	status: string;
+	ips: string[];
+	expireDate: string | null;
+	planName: string | null;
+	location: string | null;
+	autoExtend: boolean;
+	note: string | null;
+	extendedCount: number;
+};
+
+export function parseOrderSummary(order: unknown): IproyalOrderSummary | null {
+	if (!order || typeof order !== "object") return null;
+	const value = order as Record<string, unknown>;
+	const id = value.id;
+	if (typeof id !== "number" && typeof id !== "string") return null;
+	const proxies = (value.proxy_data as { proxies?: unknown } | null)?.proxies;
+	const autoExtend = value.auto_extend_settings as {
+		is_enabled?: unknown;
+	} | null;
+	const text = (field: unknown) =>
+		typeof field === "string" && field ? field : null;
+	return {
+		id: String(id),
+		status: text(value.status) ?? "unknown",
+		ips: Array.isArray(proxies)
+			? proxies
+					.map((proxy) => (proxy as { ip?: unknown } | null)?.ip)
+					.filter((ip): ip is string => typeof ip === "string" && !!ip)
+			: [],
+		expireDate: text(value.expire_date),
+		planName: text(value.plan_name),
+		location: text(value.location) ?? text(value.locations),
+		autoExtend: autoExtend?.is_enabled === true,
+		note: text(value.note),
+		extendedCount: Array.isArray(value.extended_history)
+			? value.extended_history.length
+			: 0,
+	};
+}
 
 export type IproyalProxy = {
 	ip: string;
