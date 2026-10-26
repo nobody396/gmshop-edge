@@ -38,6 +38,8 @@ const publicPostPatterns = [
 	/^\/api\/ops\/restock\/reconcile$/,
 	/^\/api\/ops\/restock\/swap$/,
 	/^\/api\/ops\/agent-access\/ready-email$/,
+	// Gateway / Mac runner bearer tokens are checked by the handlers.
+	/^\/api\/ops\/supplier-topup\/(?:offer|claim|result)$/,
 	/^\/api\/ops\/guides\/[A-Za-z0-9_-]{1,120}\/(?:publish|unpublish)$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
 	/^\/api\/telegram\/(?:webhook|owner-webhook)$/,
