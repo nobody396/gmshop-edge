@@ -537,6 +537,43 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		});
 	});
 
+	it("retries a failed withdrawal pull and tells the owner once", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		let down = true;
+		const flaky: typeof fetch = async (input, init) => {
+			if (down && String(input).includes("/withdrawals?status=pending"))
+				return new Response("unavailable", { status: 503 });
+			return fetcher(input, init);
+		};
+		const morning = Date.UTC(2026, 9, 19, 2, 0);
+		const run = (now: number) =>
+			runWithdrawalAlerts({ db, token: "program-token", now, fetcher: flaky });
+		const texts = () =>
+			telegram
+				.filter((call) => call.method === "sendMessage")
+				.map((call) => String(call.body.text));
+		await expect(run(morning)).resolves.toEqual({ status: "failed" });
+		await expect(run(morning + 60_000)).resolves.toEqual({
+			status: "retry_wait",
+		});
+		await expect(run(morning + 10 * 60_000)).resolves.toEqual({
+			status: "failed",
+		});
+		expect(texts().filter((t) => t.includes("代理提现推送失败"))).toHaveLength(
+			1,
+		);
+		down = false;
+		await expect(run(morning + 20 * 60_000)).resolves.toMatchObject({
+			status: "ran",
+			proposed: 1,
+		});
+		expect(texts().some((t) => t.includes("代理提现推送已恢复"))).toBe(true);
+		expect(texts().some((t) => t.includes("💸 代理提现待打款 #12"))).toBe(true);
+		await expect(run(morning + 30 * 60_000)).resolves.toEqual({
+			status: "done",
+		});
+	});
+
 	it("posts proposals into their forum topic and replies in the incoming thread", async () => {
 		await db.batch([
 			upsertFeishuAlertSetting(

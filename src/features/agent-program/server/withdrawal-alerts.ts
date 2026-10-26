@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
 	beijingClock,
+	claimInterval,
 	claimPeriod,
 } from "#/features/ops-automation/server/shared";
 import {
@@ -10,6 +11,7 @@ import {
 import {
 	callTelegram,
 	resolveTelegramOwnerAlertCredentials,
+	sendOwnerAlert,
 } from "#/features/telegram/server/owner-alerts";
 import { DomainError } from "#/lib/domain-error";
 import { withdrawalsSchema } from "../schema";
@@ -25,6 +27,24 @@ import { requestProgram } from "./client";
 
 const alertHour = 10;
 const lastDayKey = "ops.withdrawal_alerts.last_day";
+// A failed pull must not burn the day: retry every 10 minutes and tell the
+// owner once per day that the push is failing (2026-10-21..26 it failed
+// silently for five days).
+const lastAttemptKey = "ops.withdrawal_alerts.last_attempt";
+const failureDayKey = "ops.withdrawal_alerts.failure_day";
+const retryMs = 10 * 60_000;
+
+async function settingIs(db: D1Database, key: string, value: string) {
+	const row = await db
+		.prepare("SELECT value FROM system_settings WHERE key = ?")
+		.bind(key)
+		.first<{ value: string }>();
+	return row?.value === JSON.stringify(value);
+}
+
+function beijingTime(now: number) {
+	return new Date(now + 8 * 3_600_000).toISOString().slice(11, 16);
+}
 
 export async function runWithdrawalAlerts(input: {
 	db: D1Database;
@@ -36,16 +56,37 @@ export async function runWithdrawalAlerts(input: {
 	if (!input.token?.trim()) return { status: "unconfigured" as const };
 	const clock = beijingClock(now);
 	if (clock.hour < alertHour) return { status: "waiting" as const };
+	if (await settingIs(input.db, lastDayKey, clock.day))
+		return { status: "done" as const };
+	if (!(await claimInterval(input.db, lastAttemptKey, now, retryMs)))
+		return { status: "retry_wait" as const };
+	let withdrawals: z.infer<typeof withdrawalsSchema>;
+	try {
+		withdrawals = await requestProgram(
+			input.token,
+			"withdrawals?status=pending",
+			withdrawalsSchema,
+			"GET",
+			undefined,
+			input.fetcher,
+		);
+	} catch {
+		if (await claimPeriod(input.db, failureDayKey, clock.day, now))
+			await sendOwnerAlert(
+				input.db,
+				`⚠️ 代理提现推送失败：拉不到 lsrai.shop 的待打款提现（北京时间 ${beijingTime(now)}）。系统每 10 分钟自动重试，恢复后会照常推送。`,
+				{ fetcher: input.fetcher, topic: "withdrawals" },
+			).catch(() => null);
+		return { status: "failed" as const };
+	}
 	if (!(await claimPeriod(input.db, lastDayKey, clock.day, now)))
 		return { status: "done" as const };
-	const withdrawals = await requestProgram(
-		input.token,
-		"withdrawals?status=pending",
-		withdrawalsSchema,
-		"GET",
-		undefined,
-		input.fetcher,
-	);
+	if (await settingIs(input.db, failureDayKey, clock.day))
+		await sendOwnerAlert(
+			input.db,
+			`✅ 代理提现推送已恢复（北京时间 ${beijingTime(now)}），今天待打款 ${withdrawals.length} 笔。`,
+			{ fetcher: input.fetcher, topic: "withdrawals" },
+		).catch(() => null);
 	const open = await input.db
 		.prepare(
 			`SELECT json_extract(payload, '$.withdrawalId') AS withdrawal_id
