@@ -58,7 +58,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	},
 	"3e60e88d-a0bd-4723-bc9e-ff45f6dafa16": {
 		name: "X Subscription｜4-in-1｜X Premium + Grok + Grok Bot + Cursor",
-		description: `The new official X subscription (launched October 2026) includes 4 products in one plan: X Premium, Grok, Grok Bot, and Cursor. Monthly (Plus / Premium / Super / Ultra) or yearly (Plus / Premium, one year at once), paid through an official card payment; the bill is sent to your email. 30-day subscription warranty.
+		description: `The new official X subscription (launched October 2026) includes 4 products in one plan: X Premium, Grok, Grok Bot, and Cursor. Monthly (Plus / Premium / Super / Ultra) or yearly (Plus / Premium, one year at once), paid through an official card payment; the bill is sent to your email. Warranty: 30 days for monthly plans, 1 year for yearly plans.
 
 Before you recharge
 · No replacement: the account must not have any active X / Grok membership.
@@ -78,7 +78,7 @@ Which tier
 · Premium: 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits. Enough for most people.
 · Super: everything in Premium, 15x Plus usage. For heavy daily use.
 · Ultra: everything in Premium, 50x Plus usage. For intensive coding and agent tasks.
-· Plus｜1 year, Premium｜1 year: same benefits as the monthly tier, activated for a whole year at once; no first-month discount needed.
+· Plus｜1 year, Premium｜1 year: same benefits as the monthly tier, activated for a whole year at once; no first-month discount needed; 1-year warranty.
 Note: third-party models in Cursor (such as Claude or GPT) are not counted in the subscription and are billed separately by the official service.
 
 How delivery works
@@ -96,7 +96,7 @@ Notes
 · Usage multiples are the official comparison with Plus; exact limits are not published and follow official rules.
 
 After-sales
-30-day warranty against subscription drops: contact support from the order page.
+Warranty against subscription drops (30 days monthly, 1 year yearly): contact support from the order page.
 Account bans are not covered. No refunds after the code is used.`,
 	},
 	"e5c81556-03be-43fd-bf3f-e248c16cc34d": {
@@ -398,12 +398,12 @@ const computePolicy = (amount: string) =>
 	);
 const xOffer =
 	"Only for accounts that can claim the official 50% first-month discount: sign in to X and open x.com/i/premium_sign_up; the tier must show “50% off for 1 month”. ";
-const xPolicy = (tier: string, needsOffer = true) =>
+const xPolicy = (tier: string, needsOffer = true, yearly = false) =>
 	policy(
 		"24/7 automatic delivery",
 		"A recharge code and redemption link are issued automatically after payment, usually within 1 minute; view them on the order page.",
 		`X 4-in-1 ${tier}: X Premium + Grok + Grok Bot + Cursor`,
-		"30-day warranty against subscription drops; bans are not covered; no refunds after the code is used",
+		`${yearly ? "1-year" : "30-day"} warranty against subscription drops; bans are not covered; no refunds after the code is used`,
 		`${needsOffer ? xOffer : ""}No replacement: the account must have no active X / Grok membership; accounts with unpaid bills that have not cancelled renewal cannot be recharged; some accounts get declined, retry or use another account`,
 	);
 const smsDelivery =
@@ -629,6 +629,7 @@ ${claudeRestrictions}`,
 		policy: xPolicy(
 			"Plus｜1 year; one-year subscription; base usage; Cursor is limited to Grok models; no Grok Bot or video generation",
 			false,
+			true,
 		),
 	},
 	"7a1c2f30-6b1e-4d4a-9e51-0c3a1f2b1002": {
@@ -636,6 +637,7 @@ ${claudeRestrictions}`,
 		policy: xPolicy(
 			"Premium｜1 year; one-year subscription; 4x Plus usage, with all SuperGrok, Cursor Pro, and X Premium+ benefits",
 			false,
+			true,
 		),
 	},
 	"e8ff14e3-76a5-46e0-b6d3-1c217130bd99": {
