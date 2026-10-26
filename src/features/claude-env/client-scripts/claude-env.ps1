@@ -1,17 +1,44 @@
 ﻿# Claude 稳定使用环境 · 一键部署（Windows 10/11 + Clash Verge Rev）
 #
-# 客户前提：① 自己有能用的梯子，并在 Clash Verge Rev 里导入了订阅
+# 客户前提：① 自己有能用的代理订阅（没装 Clash Verge Rev 的，脚本自动安装并把原软件里的订阅导入）
 #           ② 有我们发的开通码（CE1- 开头）
 # 链路：客户电脑 → 客户的梯子（自动挑能通的节点）→ 我们的中转 → 客户专属静态 IP → Claude
-# 需要管理员权限（改时区服务、定位、系统环境变量、网卡 IPv6）；不是管理员时自动请求提权。
+# 需要管理员权限（改时区服务、定位、系统环境变量、网卡 IPv6、安装 Clash Verge Rev）；
+# 不是管理员时什么都不改，提示客户用「终端（管理员）」重新运行，退出码 5。
+# 没装 Clash Verge Rev 时：自动下载官方固定版本（SHA-256 校验）静默安装，把原来代理软件（FlClash、Clash for Windows、
+# Clash Party / Mihomo Party、Clash Nyanpasu、v2rayN）里正在用的订阅导入进去，再关掉原来的软件和它设的系统代理。
 #
 # 测试用环境变量（客户不需要）：
 #   CE_CODE=CE1-...    不交互，直接用这个开通码
 #   CE_TEST_ROOT=/path 压测沙箱：系统级读写全部改为沙箱文件，控制接口走 $CE_TEST_ROOT/verge-mihomo.sock
 #   CE_CURL=/path      测试用的 curl 替身
+#   CE_TEST_HOOK=/path 沙箱里代替「下载 / 安装 / 启动 Clash Verge」的测试脚本（只在 CE_TEST_ROOT 下生效）
+#   CE_SQLITE=/path    沙箱里读 SQLite 用的 sqlite3（真机用系统自带的 winsqlite3.dll）
+#   CE_TEST_NOT_ADMIN=1 模拟不是管理员
 param([string]$Code = "")
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
+
+# ===== 0. 管理员权限：第一件事。不是管理员就什么都不改，告诉客户怎么做（不再自动提权：新窗口一闪就关，客户看不到报错）=====
+# CE_TEST_NOT_ADMIN=1 只给测试用：在本来就是管理员的测试机上模拟「不是管理员」。
+$isAdmin = $false
+if ($env:CE_TEST_NOT_ADMIN -ne "1") {
+  if ($env:CE_TEST_ROOT) { $isAdmin = $true }
+  else { try { $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch {} }
+}
+if (-not $isAdmin) {
+  Write-Host ""
+  Write-Host "✘ 需要用管理员身份运行。请按下面做：" -ForegroundColor Red
+  Write-Host "  1. 先关掉这个窗口"
+  Write-Host "  2. 右键点屏幕左下角的「开始」按钮"
+  Write-Host "  3. 选「终端（管理员）」；没有这一项就选「Windows PowerShell（管理员）」"
+  Write-Host "  4. 弹出「是否允许此应用对你的设备进行更改」时点「是」"
+  Write-Host "  5. 在新打开的窗口里重新粘贴那一行命令，回车"
+  Write-Host ""
+  $canWait = $false; try { $canWait = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected -and -not $env:CI -and -not $env:GITHUB_ACTIONS } catch {}
+  if ($canWait) { try { [void](Read-Host "看完后按回车关闭") } catch {} }
+  exit 5
+}
 
 $GROUP_NAME = "Claude静态IP"
 $NODE_NAME = "Claude静态IP-节点"
@@ -39,11 +66,20 @@ $TZ_MAP = @{
   "America/Indiana/Tell_City"="Central Standard Time"; "America/North_Dakota/New_Salem"="Central Standard Time"; "America/North_Dakota/Beulah"="Central Standard Time"
   "America/Juneau"="Alaskan Standard Time"; "America/Sitka"="Alaskan Standard Time"; "America/Nome"="Alaskan Standard Time"; "America/Adak"="Aleutian Standard Time"
 }
+# 其他代理软件：显示名、进程名、它带的内核进程（退出时一起关，免得内核还占着网卡）
 $OTHER_CLIENTS = @(
-  @("Clash for Windows","Clash for Windows"), @("Clash Party","Clash Party"), @("Mihomo Party","Mihomo Party"), @("FlClash","FlClash"),
-  @("Clash Nyanpasu","clash-nyanpasu"), @("GUI.for.Clash","GUI.for.Clash"), @("v2rayN","v2rayN"), @("NekoRay","nekoray"), @("Hiddify","Hiddify"),
-  @("Karing","karing"), @("sing-box","sing-box"), @("Shadowsocks","Shadowsocks"), @("ShadowsocksR","ShadowsocksR"), @("Clash.Meta","clash-meta")
+  @("Clash for Windows","Clash for Windows","clash-win64 clash-core-service"), @("Clash Party","Clash Party","mihomo mihomo-alpha mihomo-smart"),
+  @("Mihomo Party","Mihomo Party","mihomo mihomo-alpha mihomo-smart"), @("FlClash","FlClash","FlClashCore"),
+  @("Clash Nyanpasu","clash-nyanpasu","mihomo mihomo-alpha clash-rs"), @("GUI.for.Clash","GUI.for.Clash","mihomo mihomo-alpha"),
+  @("v2rayN","v2rayN","xray v2ray sing-box mihomo"), @("NekoRay","nekoray","nekobox_core nekoray_core"), @("Hiddify","Hiddify","HiddifyCli hiddify-core"),
+  @("Karing","karing",""), @("sing-box","sing-box",""), @("Shadowsocks","Shadowsocks",""), @("ShadowsocksR","ShadowsocksR",""), @("Clash.Meta","clash-meta","")
 )
+# 自动安装的 Clash Verge Rev：官方 GitHub 固定版本 + SHA-256（发布满两周的稳定版）
+$VERGE_VER = "2.5.8"
+$VERGE_UA = "clash-verge/v$VERGE_VER"
+$VERGE_URL = "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v$VERGE_VER/"
+$VERGE_X64 = @("Clash.Verge_2.5.8_x64-setup.exe", "821c0f5957f84c8f7d14532044840e8280d708af24a6a143db360b49bd1e7302")
+$VERGE_ARM64 = @("Clash.Verge_2.5.8_arm64-setup.exe", "077efab7874a6be7c48630d19c941ef679fa265f79c243f9d20ce5878eb5a943")
 $TS = Get-Date -Format "yyyyMMdd-HHmmss"
 $TR = $env:CE_TEST_ROOT
 $CURL = if ($env:CE_CURL) { $env:CE_CURL } else { "curl.exe" }
@@ -111,7 +147,7 @@ function Get-VergeExe { foreach ($p in @("$env:ProgramFiles\Clash Verge\clash-ve
 function Get-VergeVersion { if ($TR) { return (TGet "verge_version" "") }; $e = Get-VergeExe; if ($e) { (Get-Item $e).VersionInfo.ProductVersion } else { "" } }
 function Get-Running($name) { if ($TR) { return (((ReadText (TFile "procs")) -split "`n") -contains $name) }; [bool](Get-Process -Name $name -ErrorAction SilentlyContinue) }
 function Stop-App($name) { SysLog "stop $name"; if ($TR) { $p = TFile "procs"; WriteText $p ((((ReadText $p) -split "`n") | Where-Object { $_ -and $_ -ne $name }) -join "`n"); return }; Stop-Process -Name $name -Force -ErrorAction SilentlyContinue }
-function Start-Verge { SysLog "start Clash Verge"; if ($TR) { return }; $e = Get-VergeExe; if ($e) { Start-Process $e } }
+function Start-Verge { SysLog "start Clash Verge"; if ($TR) { $null = THook "verge-start"; return }; $e = Get-VergeExe; if ($e) { Start-Process $e } }
 function Disable-V6 { SysLog "disable ipv6"; if ($TR) { return }; Disable-NetAdapterBinding -Name "*" -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue }
 function Open-Url($u) { SysLog "open $u"; if (-not $TR) { Start-Process $u } }
 
@@ -123,9 +159,14 @@ function Ctl($method, $path, $body) {
     if ($body) { $a += @("-d", $body) }
     return ((& $CURL @a "http://localhost$path") -join "`n")
   }
+  # 管道名以 Clash Verge 写在配置里的为准（2.5 起每个用户不同：verge-mihomo-sidecar-release-…）；YAML 里可能带引号、双引号里反斜杠会转义
   $pipeName = "verge-mihomo"
-  $m = [regex]::Match((ReadText $CV_CFG), '(?m)^external-controller-pipe:\s*[''"]?\\\\\.\\pipe\\([^''"\r\n]+)')
-  if ($m.Success) { $pipeName = $m.Groups[1].Value }
+  $m = [regex]::Match((ReadText $CV_CFG), '(?m)^external-controller-pipe:[ \t]*([^\r\n]+?)[ \t]*\r?$')
+  if ($m.Success) {
+    $v = $m.Groups[1].Value
+    if ($v.StartsWith('"')) { $v = $v.Trim('"').Replace('\\', '\') } elseif ($v.StartsWith("'")) { $v = $v.Trim("'") }
+    $pm = [regex]::Match($v, '^\\\\\.\\pipe\\(.+)$'); if ($pm.Success) { $pipeName = $pm.Groups[1].Value }
+  }
   try {
     $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
     $pipe.Connect(3000)
@@ -135,7 +176,8 @@ function Ctl($method, $path, $body) {
     $hdr += "Content-Length: $($b.Length)`r`n`r`n"
     $h = $UTF8.GetBytes($hdr); $pipe.Write($h, 0, $h.Length); if ($b.Length) { $pipe.Write($b, 0, $b.Length) }; $pipe.Flush()
     $ms = New-Object System.IO.MemoryStream; $buf = New-Object byte[] 65536
-    while (($n = $pipe.Read($buf, 0, $buf.Length)) -gt 0) { $ms.Write($buf, 0, $n) }
+    # 读的时候设上限：对方不回话也不会卡死
+    while ($true) { $t = $pipe.ReadAsync($buf, 0, $buf.Length); if (-not $t.Wait(10000)) { break }; $n = $t.Result; if ($n -le 0) { break }; $ms.Write($buf, 0, $n) }
     $pipe.Dispose()
     $raw = $ms.ToArray(); $sep = -1
     for ($i = 0; $i -lt $raw.Length - 3; $i++) { if ($raw[$i] -eq 13 -and $raw[$i+1] -eq 10 -and $raw[$i+2] -eq 13 -and $raw[$i+3] -eq 10) { $sep = $i; break } }
@@ -172,33 +214,341 @@ function Env-IsBad($name, $val) {
 }
 function JsArr($s) { '[' + ((($s -split " ") | ForEach-Object { '"' + $_ + '"' }) -join ",") + ']' }
 
-Write-Host ""; Write-Host "Claude 稳定使用环境 · 一键部署（Windows）"
-
-# ===== 0. 管理员权限 =====
-if (-not $TR) {
-  $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-  if (-not $admin) {
-    if (-not $PSCommandPath) { DIE "需要管理员权限：请右键「Windows PowerShell」→「以管理员身份运行」，再粘贴命令。" }
-    WARN "需要管理员权限，正在请求（请在弹窗里点「是」）"
-    $argList = "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""   # -NoExit：跑完窗口不关，客户能看到验收结果
-    if ($Code) { $argList += " -Code `"$Code`"" }
-    Start-Process powershell -Verb RunAs -ArgumentList $argList
-    exit 0
+# ===== 迁移：没装 Clash Verge Rev → 自动安装 + 搬订阅 + 关旧软件 =====
+function THook { if ($TR -and $env:CE_TEST_HOOK) { & $env:CE_PYTHON $env:CE_TEST_HOOK @args | Out-Null; return ($LASTEXITCODE -eq 0) }; $true }
+function Test-VergeInstalled { if ($TR) { return ((Test-Path -LiteralPath $CV_CFG) -or (Test-Path -LiteralPath (TFile "verge_installed"))) }; [bool](Get-VergeExe) -or (Test-Path -LiteralPath $CV_CFG) }
+# 订阅链接只显示到域名，后面的路径和参数（含令牌）一律打码
+function MaskUrl($u) { $m = [regex]::Match([string]$u, '^(https?://)(?:[^@/?#]*@)?([^/?#]+)'); if ($m.Success) { $m.Groups[1].Value + $m.Groups[2].Value + "/***" } else { "***" } }
+function YUnq($s) {
+  $s = ([string]$s).Trim()
+  if ($s.Length -ge 2 -and $s.StartsWith("'") -and $s.EndsWith("'")) { return $s.Substring(1, $s.Length - 2).Replace("''", "'") }
+  if ($s.Length -ge 2 -and $s.StartsWith('"') -and $s.EndsWith('"')) { return $s.Substring(1, $s.Length - 2) }
+  [regex]::Replace($s, '\s+#.*$', '')
+}
+# 读 YAML 列表（items: / files:）：每项取同一层的简单字段；顶层的简单字段（current / index）放在 top 里
+function YamlList($text, $listKey) {
+  $items = New-Object System.Collections.ArrayList; $top = @{}; $cur = $null; $ind = -1; $inList = $false; $pend = $false; $lastK = ""
+  foreach ($line in ([string]$text -split "`r?`n")) {
+    if ($line -match '^\s*(#|$)') { continue }
+    $t = [regex]::Match($line, '^([A-Za-z_][\w-]*):(.*)$')
+    if ($t.Success) {
+      if ($cur) { [void]$items.Add($cur); $cur = $null }
+      $k = $t.Groups[1].Value; $v = YUnq $t.Groups[2].Value
+      $inList = ($k -eq $listKey); $lastK = $k; $pend = ($v -eq "")
+      if (-not $inList -and $v -ne "") { $top[$k] = $v }
+      continue
+    }
+    if (-not $inList) { $d = [regex]::Match($line, '^\s*-\s+(.*)$'); if ($pend -and $d.Success) { $top[$lastK] = YUnq $d.Groups[1].Value; $pend = $false }; continue }
+    $d = [regex]::Match($line, '^( *)-\s+(.*)$')
+    if ($d.Success -and ($ind -lt 0 -or $d.Groups[1].Value.Length -eq $ind)) {
+      if ($ind -lt 0) { $ind = $d.Groups[1].Value.Length }
+      if ($cur) { [void]$items.Add($cur) }
+      $cur = @{}; $kv = [regex]::Match($d.Groups[2].Value, '^([\w-]+):(.*)$'); if ($kv.Success) { $cur[$kv.Groups[1].Value] = YUnq $kv.Groups[2].Value }
+      continue
+    }
+    $kv = [regex]::Match($line, '^( *)([\w-]+):(.*)$')
+    if ($cur -and $kv.Success -and $kv.Groups[1].Value.Length -eq $ind + 2) { $cur[$kv.Groups[2].Value] = YUnq $kv.Groups[3].Value }
+  }
+  if ($cur) { [void]$items.Add($cur) }
+  @{ items = $items; top = $top }
+}
+# 只读查询 SQLite：先复制到临时目录再读，原文件不动。返回每行一个字符串，列之间用 Tab 分隔
+function SqlRows($db, $sql) {
+  if (-not (Test-Path -LiteralPath $db)) { return @() }
+  $tmp = Join-Path ([IO.Path]::GetTempPath()) ("ce-db-" + [guid]::NewGuid().ToString("N"))
+  try {
+    New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+    $f = Join-Path $tmp "db.sqlite"; Copy-Item -LiteralPath $db $f -ErrorAction Stop
+    foreach ($x in "-wal", "-shm") { if (Test-Path -LiteralPath "$db$x") { Copy-Item -LiteralPath "$db$x" "$f$x" -ErrorAction SilentlyContinue } }
+    if ($env:CE_SQLITE) { return @(& $env:CE_SQLITE -separator "`t" $f $sql 2>$null) }
+    if (-not ("CeSql" -as [type])) {
+      Add-Type -ErrorAction Stop -TypeDefinition @'
+using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+public static class CeSql {
+  const string D = "winsqlite3.dll";
+  [DllImport(D, EntryPoint="sqlite3_open_v2", CallingConvention=CallingConvention.StdCall)] static extern int Open(byte[] f, out IntPtr db, int flags, IntPtr vfs);
+  [DllImport(D, EntryPoint="sqlite3_prepare_v2", CallingConvention=CallingConvention.StdCall)] static extern int Prepare(IntPtr db, byte[] sql, int n, out IntPtr st, IntPtr tail);
+  [DllImport(D, EntryPoint="sqlite3_step", CallingConvention=CallingConvention.StdCall)] static extern int Step(IntPtr st);
+  [DllImport(D, EntryPoint="sqlite3_column_count", CallingConvention=CallingConvention.StdCall)] static extern int Cols(IntPtr st);
+  [DllImport(D, EntryPoint="sqlite3_column_text", CallingConvention=CallingConvention.StdCall)] static extern IntPtr Text(IntPtr st, int i);
+  [DllImport(D, EntryPoint="sqlite3_column_bytes", CallingConvention=CallingConvention.StdCall)] static extern int Bytes(IntPtr st, int i);
+  [DllImport(D, EntryPoint="sqlite3_finalize", CallingConvention=CallingConvention.StdCall)] static extern int Fin(IntPtr st);
+  [DllImport(D, EntryPoint="sqlite3_close", CallingConvention=CallingConvention.StdCall)] static extern int Close(IntPtr db);
+  static byte[] Z(string s) { return Encoding.UTF8.GetBytes(s + "\0"); }
+  public static string[] Query(string path, string sql) {
+    var rows = new List<string>(); IntPtr db, st;
+    if (Open(Z(path), out db, 2, IntPtr.Zero) != 0) { Close(db); return rows.ToArray(); }
+    try {
+      if (Prepare(db, Z(sql), -1, out st, IntPtr.Zero) != 0) return rows.ToArray();
+      try {
+        while (Step(st) == 100) {
+          int n = Cols(st); var cells = new string[n];
+          for (int i = 0; i < n; i++) { IntPtr p = Text(st, i); int b = Bytes(st, i); var buf = new byte[b > 0 ? b : 0]; if (p != IntPtr.Zero && b > 0) Marshal.Copy(p, buf, 0, b); cells[i] = Encoding.UTF8.GetString(buf).Replace("\t", " ").Replace("\r", " ").Replace("\n", " "); }
+          rows.Add(string.Join("\t", cells));
+        }
+      } finally { Fin(st); }
+    } finally { Close(db); }
+    return rows.ToArray();
   }
 }
+'@
+    }
+    return @([CeSql]::Query($f, $sql))
+  } catch { return @() } finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
-# ===== 1. 前提检查 =====
-STEP 1 "检查梯子和 Clash Verge"
-if (-not (Test-Path -LiteralPath $CV_CFG)) {
+# ---- 从其他代理软件的本地配置里找订阅（只读）----
+$script:SUBS = New-Object System.Collections.ArrayList
+function AddSub($client, $url, $isCur) {
+  $u = ([string]$url).Trim()
+  if ($u -notmatch '^https?://\S+$') { return }
+  foreach ($x in $script:SUBS) { if ($x.Url -eq $u) { return } }
+  $run = $false; foreach ($c in $OTHER_CLIENTS) { if ($c[0] -eq $client -and (Get-Running $c[1])) { $run = $true } }
+  $rank = $(if ($run) { 0 } else { 2 }) + $(if ($isCur) { 0 } else { 1 })
+  [void]$script:SUBS.Add([pscustomobject]@{ Client = $client; Url = $u; Current = [bool]$isCur; Rank = $rank; Idx = $script:SUBS.Count })
+}
+function Read-FlClash {
+  # FlClash：%APPDATA%\com.follow\clash。新版订阅在 database.sqlite 的 profiles 表，旧版在 shared_preferences.json 的 config 里；
+  # 正在用的是 config 里的 currentProfileId
+  $d = Join-Path $env:APPDATA "com.follow\clash"
+  $cfg = ""; $sp = JParse (ReadText (Join-Path $d "shared_preferences.json")); if ($sp -and (Has $sp "flutter.config")) { $cfg = [string]$sp.'flutter.config' }
+  $curId = [regex]::Match($cfg, '"currentProfileId"\s*:\s*"?([^",}\s]+)').Groups[1].Value
+  $cj = JParse $cfg
+  if ($cj -and (Has $cj "profiles")) { foreach ($p in @($cj.profiles)) { if ($p.url) { AddSub "FlClash" $p.url ($curId -and [string]$p.id -eq $curId) } } }
+  $db = Join-Path $d "database.sqlite"
+  $rows = @(SqlRows $db "SELECT id, url FROM profiles WHERE type = 'url' ORDER BY ""order""")
+  if (-not $rows.Count) { $rows = @(SqlRows $db "SELECT id, url FROM profiles WHERE type = 'url'") }
+  foreach ($r in $rows) { $c = ([string]$r) -split "`t"; if ($c.Count -ge 2) { AddSub "FlClash" $c[1] ($curId -and $c[0] -eq $curId) } }
+}
+function Read-YamlClient($client, $path, $listKey, $curKey) {
+  if (-not (Test-Path -LiteralPath $path)) { return }
+  $y = YamlList (ReadText $path) $listKey; $cur = [string]$y.top[$curKey]; $i = 0
+  foreach ($it in $y.items) {
+    $id = if ($it.ContainsKey("uid")) { $it["uid"] } else { $it["id"] }
+    $isCur = if ($curKey -eq "index") { $cur -ne "" -and [string]$i -eq $cur } else { $cur -ne "" -and $id -eq $cur }
+    if ($it["url"] -and ((-not $it.ContainsKey("type")) -or $it["type"] -eq "remote")) { AddSub $client $it["url"] $isCur }
+    $i++
+  }
+}
+function Read-V2rayN {
+  $dirs = @(); foreach ($p in @(Get-Process -Name v2rayN -ErrorAction SilentlyContinue)) { try { if ($p.Path) { $dirs += (Split-Path -Parent $p.Path) } } catch {} }
+  if ($TR) { $dirs = @() }
+  $dirs += @((Join-Path $env:LOCALAPPDATA "v2rayN"), (Join-Path $UH "v2rayN"))
+  foreach ($b in @("Desktop", "Downloads", "Documents")) { $bd = Join-Path $UH $b; if (Test-Path -LiteralPath $bd) { $dirs += @(Get-ChildItem -LiteralPath $bd -Filter "guiConfigs" -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue | ForEach-Object { Split-Path -Parent $_.FullName }) } }
+  foreach ($d in ($dirs | Select-Object -Unique)) {
+    $g = Join-Path $d "guiConfigs"; if (-not (Test-Path -LiteralPath $g)) { continue }
+    $conf = JParse (ReadText (Join-Path $g "guiNConfig.json")); $curId = if ($conf -and (Has $conf "SubIndexId")) { [string]$conf.SubIndexId } else { "" }
+    foreach ($r in @(SqlRows (Join-Path $g "guiNDB.db") "SELECT Id, Url FROM SubItem WHERE Enabled = 1 ORDER BY Sort")) { $c = ([string]$r) -split "`t"; if ($c.Count -ge 2) { AddSub "v2rayN" $c[1] ($curId -and $c[0] -eq $curId) } }
+    if ($conf -and (Has $conf "subItem")) { foreach ($s in @($conf.subItem)) { if ($s.enabled -ne $false) { AddSub "v2rayN" $s.url ($curId -and [string]$s.id -eq $curId) } } }
+  }
+}
+function Find-Subs {
+  Read-FlClash
+  Read-YamlClient "Clash for Windows" (Join-Path $UH ".config\clash\profiles\list.yml") "files" "index"
+  Read-YamlClient "Clash Party" (Join-Path $env:APPDATA "mihomo-party\profile.yaml") "items" "current"
+  foreach ($p in @((Join-Path $UH ".config\clash-nyanpasu\profiles.yaml"), (Join-Path $env:APPDATA "clash-nyanpasu\profiles.yaml"), (Join-Path $env:LOCALAPPDATA "clash-nyanpasu\profiles.yaml"))) { Read-YamlClient "Clash Nyanpasu" $p "items" "current" }
+  Read-V2rayN
+  @($script:SUBS | Sort-Object Rank, Idx)
+}
+
+# 原来的代理软件开着的本机端口：优先看系统代理设置，再试常见端口。下载订阅和安装包时先走它（国内直连 GitHub 常常很慢）
+function Get-WinProxy { if ($TR) { return (JsonRead (TFile "winproxy.json")) }; Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue }
+function Find-OldProxy {
+  $ports = @(); $wp = Get-WinProxy
+  if ($wp -and $wp.ProxyEnable -eq 1) { $m = [regex]::Match([string]$wp.ProxyServer, '(?:^|[=;])(?:127\.0\.0\.1|localhost):(\d+)'); if ($m.Success) { $ports += [int]$m.Groups[1].Value } }
+  $ports += 7890, 7891, 10809, 7897, 1080
+  foreach ($p in ($ports | Select-Object -Unique)) { $null = CurlX -s -m 5 -o NUL -x "http://127.0.0.1:$p" "https://www.google.com/generate_204"; if ($LASTEXITCODE -eq 0) { return "http://127.0.0.1:$p" } }
+  ""
+}
+function Routes { $r = @(); if ($script:OLDPX) { $r += $script:OLDPX }; $r += "direct"; $r }
+# 用 Clash Verge 的身份下载订阅（机场按这个返回 Clash 格式）；链接写进临时的 curl 配置文件交给 curl，不出现在命令行里
+function Fetch-Sub($url) {
+  $tmp = [IO.Path]::GetTempFileName(); $kf = [IO.Path]::GetTempFileName()
+  try {
+    [IO.File]::WriteAllText($kf, 'url = "' + $url.Replace('\', '\\').Replace('"', '\"') + '"' + "`n", $UTF8)
+    foreach ($r in (Routes)) {
+      $a = @("-s", "-L", "-m", "30", "-A", $VERGE_UA, "-o", $tmp, "-w", "%{http_code}", "-K", $kf)
+      if ($r -eq "direct") { $a += @("--noproxy", "*") } else { $a += @("-x", $r) }
+      $code = & $CURL @a 2>$null
+      if ($LASTEXITCODE -eq 0 -and ([string]$code) -match '^2') {
+        $t = ([IO.File]::ReadAllText($tmp, $UTF8)).TrimStart([char]0xFEFF)
+        if ($t -match '(?m)^(proxies|proxy-providers):') { return $t }
+      }
+    }
+    ""
+  } finally { Remove-Item -LiteralPath $tmp, $kf -Force -ErrorAction SilentlyContinue }
+}
+function Manual-Fallback($why) {
+  ERR $why
   $others = @(); foreach ($c in $OTHER_CLIENTS) { if (Get-Running $c[1]) { $others += $c[0] } }
-  ERR "没找到 Clash Verge Rev。"
-  if ($others.Count) { Write-Host ("  检测到你在用：" + ($others -join "、") + "。这类软件没法可靠地自动配置「梯子 → 专属 IP」链路，需要换成 Clash Verge Rev（免费开源）。") }
+  if ($others.Count) { Write-Host ("  检测到你在用：" + ($others -join "、") + "。需要换成 Clash Verge Rev（免费开源），请按下面手动装一下：") }
   Write-Host "  1. 已为你打开下载页：下载 x64-setup.exe（ARM 电脑选 arm64），装好打开"
-  Write-Host "  2. 在 Clash Verge Rev「订阅」里粘贴你梯子的订阅链接，选中它"
+  Write-Host "  2. 在 Clash Verge Rev「订阅」里粘贴你的订阅链接（机场官网或原来软件的订阅设置里能找到），选中它"
   Write-Host "  3. 退出原来的代理软件，确认能打开 google.com 后，重新运行本命令"
   Open-Url "https://github.com/clash-verge-rev/clash-verge-rev/releases/latest"
   exit 3
 }
+function Install-Verge {
+  $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+  $a = if ($arch -eq "ARM64") { $VERGE_ARM64 } else { $VERGE_X64 }
+  Write-Host "  正在下载 Clash Verge Rev $VERGE_VER（约 60MB，来自官方 GitHub；网络慢的话要几分钟，请稍等）…"
+  if ($TR) { SysLog "download $($a[0])"; if (-not (THook "download")) { return $false }; SysLog "install $($a[0]) /S"; return (THook "install") }
+  $f = Join-Path $env:TEMP $a[0]; $ok = $false
+  foreach ($r in @((Routes) + (Routes))) {   # 每条路各试两轮（GitHub 偶尔会临时出错）
+    Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+    $x = if ($r -eq "direct") { @("--noproxy", "*") } else { @("-x", $r) }
+    $null = CurlX -f -s -S -L --retry 2 -m 900 @x -o $f ($VERGE_URL + $a[0])
+    if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $f) -and (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLower() -eq $a[1]) { $ok = $true; break }
+    Start-Sleep -Seconds 3
+  }
+  if (-not $ok) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; return $false }
+  OK "下载完成，文件校验通过（SHA-256 与官方发布一致）"
+  Write-Host "  正在安装（不用点任何按钮，大约半分钟）…"
+  # 只等安装程序本身（-Wait 会连它拉起的子进程一起等）
+  $ip = Start-Process -FilePath $f -ArgumentList "/S" -PassThru
+  if (-not $ip.WaitForExit(600000)) { try { $ip.Kill() } catch {} }
+  Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+  [bool](Get-VergeExe)
+}
+function Stop-VergeAll { Stop-App "clash-verge"; if (-not $TR) { foreach ($n in "verge-mihomo", "verge-mihomo-alpha") { Stop-Process -Name $n -Force -ErrorAction SilentlyContinue } }; Start-Sleep -Seconds 3 }
+function Wait-Ctl($secs) { $sw = [Diagnostics.Stopwatch]::StartNew(); while ($sw.Elapsed.TotalSeconds -lt $secs) { if ((Test-Path -LiteralPath $CV_CFG) -and (Find-Ctl)) { return $true }; Start-Sleep -Seconds 2 }; $false }
+# 关掉原来的代理软件：先正常关窗口，再结束进程（连同它的内核）
+function Quit-Old($c) {
+  if ($TR) { SysLog "quit $($c[0])"; Stop-App $c[1]; return }
+  foreach ($p in @(Get-Process -Name $c[1] -ErrorAction SilentlyContinue)) { try { [void]$p.CloseMainWindow() } catch {} }
+  Start-Sleep -Seconds 3
+  Stop-Process -Name $c[1] -Force -ErrorAction SilentlyContinue
+  foreach ($n in ($c[2] -split " ")) { if ($n) { Stop-Process -Name $n -Force -ErrorAction SilentlyContinue } }
+}
+# 系统代理还指向本机别的端口（原来的软件），就关掉，不然它退出后浏览器上不了网
+function Reset-WinProxy($keepPort) {
+  $wp = Get-WinProxy
+  if (-not ($wp -and $wp.ProxyEnable -eq 1)) { return "" }
+  $m = [regex]::Match([string]$wp.ProxyServer, '(?:^|[=;])(?:127\.0\.0\.1|localhost):(\d+)')
+  if (-not $m.Success -or [int]$m.Groups[1].Value -eq [int]$keepPort) { return "" }
+  SysLog "disable system proxy $($wp.ProxyServer)"
+  if ($TR) { $p = TFile "winproxy.json"; $o = JsonRead $p; SetProp $o "ProxyEnable" 0; JsonWrite $p $o; return [string]$wp.ProxyServer }
+  Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name ProxyEnable -Value 0 -Type DWord
+  try {
+    if (-not ("CeNet.WinInet" -as [type])) { Add-Type -Namespace CeNet -Name WinInet -MemberDefinition '[DllImport("wininet.dll")] public static extern bool InternetSetOption(IntPtr h, int o, IntPtr b, int l);' }
+    [void][CeNet.WinInet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0); [void][CeNet.WinInet]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+  } catch {}
+  [string]$wp.ProxyServer
+}
+function New-Uid($p) { $cs = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".ToCharArray(); $p + (-join (1..11 | ForEach-Object { $cs[(Get-Random -Maximum 62)] })) }
+function YQ($s) { "'" + ([string]$s).Replace("'", "''") + "'" }
+function Has-CurrentProfile { $y = YamlList (ReadText (Join-Path $CV_DIR "profiles.yaml")) "items"; $c = [string]$y.top["current"]; $c -and $c -ne "null" -and $c -ne "~" }
+# 按 Clash Verge 自己导入订阅的方式写入：订阅文件 + 它配套的 5 个增强项，加进 profiles.yaml 并设为当前订阅
+function Import-Sub($url, $content, $name) {
+  $pd = Join-Path $CV_DIR "profiles"; New-Item -ItemType Directory -Force -Path $pd | Out-Null
+  $uid = New-Uid "R"; $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  $sub = [ordered]@{ merge = (New-Uid "m"); script = (New-Uid "s"); rules = (New-Uid "r"); proxies = (New-Uid "p"); groups = (New-Uid "g") }
+  WriteText (Join-Path $pd "$uid.yaml") $content
+  WriteText (Join-Path $pd "$($sub.merge).yaml") "# Profile Enhancement Merge Template for Clash Verge`n`n"
+  WriteText (Join-Path $pd "$($sub.script).js") "// Define main function (script entry)`n`nfunction main(config, profileName) {`n  return config;`n}`n"
+  foreach ($k in "rules", "proxies", "groups") { $T = $k.Substring(0,1).ToUpper() + $k.Substring(1); WriteText (Join-Path $pd "$($sub[$k]).yaml") "# Profile Enhancement $T Template for Clash Verge`n`nprepend: []`n`nappend: []`n`ndelete: []`n" }
+  $e = @("- uid: $uid", "  type: remote", "  name: $(YQ $name)", "  file: $uid.yaml", "  url: $(YQ $url)", "  updated: $now", "  option:", "    update_interval: 1440", "    allow_auto_update: true")
+  foreach ($k in $sub.Keys) { $e += "    ${k}: $($sub[$k])" }
+  foreach ($k in $sub.Keys) { $ext = if ($k -eq "script") { "js" } else { "yaml" }; $e += @("- uid: $($sub[$k])", "  type: $k", "  file: $($sub[$k]).$ext", "  updated: $now") }
+  $pf = Join-Path $CV_DIR "profiles.yaml"; $old = ReadText $pf
+  if ($old) { Copy-Item -LiteralPath $pf "$pf.backup-claude-env-$TS" }
+  # 全局的 Merge / Script 两项：Clash Verge 第一次启动时 profiles.yaml 还是空的就不会补上，没有它们全局扩展脚本（Script.js）不生效
+  foreach ($g in @(@("Merge", "merge", "Merge.yaml", "# Profile Enhancement Merge Template for Clash Verge`n`nprofile:`n  store-selected: true`n"), @("Script", "script", "Script.js", "// Define main function (script entry)`n`nfunction main(config, profileName) {`n  return config;`n}`n"))) {
+    if ($old -notmatch ("(?m)^\s*- uid: " + $g[0] + "\s*$")) {
+      $e += @("- uid: $($g[0])", "  type: $($g[1])", "  file: $($g[2])", "  updated: $now")
+      if (-not (Test-Path -LiteralPath (Join-Path $pd $g[2]))) { WriteText (Join-Path $pd $g[2]) $g[3] }
+    }
+  }
+  $out = New-Object System.Collections.ArrayList; $inItems = $false; $done = $false; $pre = $null; $hasCur = $false; $skipCur = $false
+  foreach ($l in ($old -split "`r?`n")) {
+    if ($inItems -and -not $done -and $l -match '^[^\s#-]') { foreach ($x in $e) { [void]$out.Add("$pre$x") }; $done = $true; $inItems = $false }
+    if ($l -match '^current:') { [void]$out.Add("current: $uid"); $hasCur = $true; $skipCur = $true; continue }
+    if ($skipCur -and $l -match '^- ') { continue }; $skipCur = $false
+    if ($l -match '^items:') { [void]$out.Add("items:"); $inItems = $true; continue }
+    if ($inItems -and $null -eq $pre) { $pm = [regex]::Match($l, '^( *)- '); if ($pm.Success) { $pre = $pm.Groups[1].Value } }
+    [void]$out.Add($l)
+  }
+  while ($out.Count -and -not $out[$out.Count - 1].Trim()) { $out.RemoveAt($out.Count - 1) }
+  if (-not $done) { if (-not $inItems) { [void]$out.Add("items:") }; foreach ($x in $e) { [void]$out.Add("$pre$x") } }
+  if (-not $hasCur) { [void]$out.Add("current: $uid") }
+  WriteText $pf (($out -join "`n") + "`n")
+  $uid
+}
+# 订阅里的节点名（proxies: 下面每项的 name）
+function Sub-Names($content) {
+  $pb = [regex]::Match([string]$content, '(?ms)^proxies:[ \t]*\r?\n(.*?)(?=^[^\s-]|\z)'); if (-not $pb.Success) { return @() }
+  @([regex]::Matches($pb.Groups[1].Value, '(?m)^\s*-\s*\{?\s*name:\s*(?:"([^"]*)"|''([^'']*)''|([^,}\r\n]*))') | ForEach-Object { ($_.Groups[1].Value + $_.Groups[2].Value + $_.Groups[3].Value).Trim() } | Where-Object { $_ })
+}
+# Clash Verge 内核里实际加载到的、订阅里的节点数
+function Count-Nodes($names) {
+  $j = JParse (Ctl "GET" "/proxies" $null); if (-not ($j -and (Has $j "proxies"))) { return 0 }
+  $have = @($j.proxies.PSObject.Properties | ForEach-Object { $_.Name })
+  if (@($names).Count) { return @($names | Where-Object { $have -contains $_ }).Count }
+  @($j.proxies.PSObject.Properties | Where-Object { [string]$_.Value.type -notmatch '^(Direct|Reject|RejectDrop|Compatible|Pass|Selector|URLTest|Fallback|LoadBalance|Relay|Dns)$' }).Count
+}
+function Migrate($needInstall) {
+  if ($needInstall) {
+    WARN "这台电脑还没装 Clash Verge Rev（这套设置要用它）。接下来自动帮你："
+    Write-Host "  ① 从官方下载并安装 Clash Verge Rev  ② 把你原来代理软件里的订阅搬进去  ③ 关掉原来的代理软件（只是退出，不卸载）"
+  } else {
+    WARN "Clash Verge Rev 里还没有订阅。接下来把你原来代理软件里的订阅导进去，再关掉原来的代理软件（只是退出，不卸载）"
+  }
+  $script:OLDPX = Find-OldProxy
+  if ($script:OLDPX) { OK "原来的代理软件能用（本机端口 $(([uri]$script:OLDPX).Port)），下载时先借它的网络" }
+  $subs = @(Find-Subs); $content = ""; $chosen = $null
+  if (-not $subs.Count) { WARN "没在电脑上的代理软件里找到订阅" }
+  foreach ($s in ($subs | Select-Object -First 6)) {
+    Write-Host ("  找到 " + $s.Client + " 的订阅：" + (MaskUrl $s.Url) + $(if ($s.Current) { "（正在使用）" } else { "" }) + "，正在下载…")
+    $content = Fetch-Sub $s.Url
+    if ($content) { $chosen = $s; break }
+    WARN "这个订阅下载不下来，或者不是 Clash 格式，换下一个"
+  }
+  for ($try = 0; -not $chosen -and $try -lt 3; $try++) {
+    $u = ""; try { $u = ([string](Ask "请粘贴你的订阅链接（http 开头，在机场官网或原来软件的订阅设置里复制），回车")).Trim() } catch {}
+    if (-not $u) { break }
+    if ($u -notmatch '^https?://\S+$') { WARN "这不像订阅链接（应该以 http:// 或 https:// 开头），请再试一次"; continue }
+    Write-Host ("  正在下载订阅 " + (MaskUrl $u) + " …")
+    $content = Fetch-Sub $u
+    if ($content) { $chosen = [pscustomobject]@{ Client = "手动粘贴"; Url = $u } } else { WARN "这个链接下载不到 Clash 格式的订阅。请在机场官网找「Clash」订阅链接再粘贴" }
+  }
+  if (-not $chosen) { Manual-Fallback "没拿到能用的订阅，没法自动配置。" }
+  $names = @(Sub-Names $content); $nn = $names.Count
+  OK ("订阅下载成功：" + (MaskUrl $chosen.Url) + $(if ($nn) { "（约 $nn 个节点）" } else { "" }))
+  if ($needInstall) {
+    if (-not (Install-Verge)) { Manual-Fallback "自动下载或安装 Clash Verge Rev 没成功（多半是网络问题）。" }
+    OK "Clash Verge Rev $VERGE_VER 已安装"
+    Write-Host "  正在第一次打开 Clash Verge Rev…"
+    Start-Verge
+    if (-not (Wait-Ctl 90)) { DIE "Clash Verge Rev 装好了，但第一次打开没成功。请手动打开一次 Clash Verge Rev，再重新运行本命令。" }
+  }
+  Stop-VergeAll
+  $host0 = ([uri]$chosen.Url).Host
+  $null = Import-Sub $chosen.Url $content $host0
+  OK "订阅已导入 Clash Verge Rev，并设为当前使用的订阅"
+  $runOld = @(); foreach ($c in $OTHER_CLIENTS) { if (Get-Running $c[1]) { $runOld += ,$c } }
+  if ($runOld.Count) {
+    Write-Host ("  正在关闭原来的代理软件：" + (($runOld | ForEach-Object { $_[0] }) -join "、") + "（两个代理软件同时开会抢网络；以后只用 Clash Verge Rev）")
+    foreach ($c in $runOld) { Quit-Old $c }
+    OK "原来的代理软件已关闭（没有卸载，想用时还能打开，但别和 Clash Verge Rev 同时开）"
+  }
+  $vp = [regex]::Match((ReadText $CV_CFG), '(?m)^mixed-port:\s*(\d+)'); $vport = if ($vp.Success) { [int]$vp.Groups[1].Value } else { 7897 }
+  $was = Reset-WinProxy $vport
+  if ($was) { OK "已关掉原来软件留下的系统代理（$was）" }
+  Write-Host "  正在打开 Clash Verge Rev 并加载订阅…"
+  Start-Verge
+  if (-not (Wait-Ctl 60)) { DIE "Clash Verge Rev 打开后连不上控制接口。" }
+  $n = 0; for ($i = 0; $i -lt 15; $i++) { $n = Count-Nodes $names; if ($n -gt 0) { break }; Start-Sleep -Seconds 2 }
+  if ($n -le 0) { DIE "订阅导入后 Clash Verge Rev 里没有读到节点。请打开 Clash Verge Rev「订阅」页看一下是否有报错，截图发给客服。" }
+  OK "Clash Verge Rev 已读到订阅里的 $n 个节点"
+}
+
+Write-Host ""; Write-Host "Claude 稳定使用环境 · 一键部署（Windows）"
+
+# ===== 1. 前提检查 =====
+STEP 1 "检查梯子和 Clash Verge"
+if (-not (Test-VergeInstalled)) { Migrate $true }
+elseif ((Test-Path -LiteralPath (Join-Path $CV_DIR "profiles.yaml")) -and -not (Has-CurrentProfile)) { Migrate $false }
+if (-not (Test-Path -LiteralPath $CV_CFG)) { Start-Verge; if (-not (Wait-Ctl 60)) { DIE "Clash Verge 启动失败或控制接口连不上。" } }
 $VV = Get-VergeVersion
 if ($VV) { try { if ([version]($VV -replace '[^0-9.].*$','') -lt $MIN_VERGE) { WARN "Clash Verge 版本 $VV 偏旧（我们测过 $MIN_VERGE 及以上），建议在「设置 → 检查更新」升级后再运行" } } catch {} }
 if (-not (Find-Ctl)) {
@@ -370,8 +720,16 @@ if ($deskSeen) { OK "Claude 桌面版：设备标识和本机配置快照已清�
 OK "以上都已备份到 $BK"
 
 STEP 6 "重启 Clash Verge 使配置生效（断网几秒）"
-Stop-App "clash-verge"; Start-Sleep -Seconds 4; Start-Verge
-$ok = $false; for ($i = 0; $i -lt 20; $i++) { Start-Sleep -Seconds 2; if (Find-Ctl) { $ok = $true; break } }
+# Clash Verge 2.5 起：只结束界面进程的话，内核还占着端口和管道，新开的 Clash Verge 会拒绝再起一个内核；所以连内核一起关
+Stop-VergeAll; Start-Sleep -Seconds 1; Start-Verge
+$ok = Wait-Ctl 60
+if (-not $ok) {
+  # 没装「服务模式」时，开着虚拟网卡（TUN）的内核可能起不来：先关掉虚拟网卡让 Clash Verge 正常运行，验收里会提示怎么打开
+  WARN "Clash Verge 开着虚拟网卡（TUN）没能启动（多半是还没安装「服务模式」），先关掉虚拟网卡让它正常运行"
+  WriteText $VERGE_YAML ([regex]::Replace((ReadText $VERGE_YAML), "(?m)^enable_tun_mode:.*$", "enable_tun_mode: false"))
+  Stop-VergeAll; Start-Sleep -Seconds 1; Start-Verge
+  $ok = Wait-Ctl 60
+}
 if (-not $ok) { DIE "Clash Verge 重启后连不上。" }
 $cfgJ = JParse (Ctl "GET" "/configs" $null)
 if ($cfgJ.mode -ne "rule") { $null = Ctl "PATCH" "/configs" '{"mode":"rule"}' }
