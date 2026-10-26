@@ -11,9 +11,16 @@ import {
 } from "#/features/renewals/server/links";
 import type { SupportedLocale } from "#/lib/locales";
 import { loadRuntimeConfig } from "#/server/runtime-config";
-import { beijingMinute, type ReminderPoint, renewalPath } from "../domain";
+import {
+	beijingMinute,
+	displayCity,
+	type ReminderPoint,
+	renewalPath,
+} from "../domain";
 
 const shopOrigin = "https://laoshirenvip.com";
+export const claudeEnvGuideSlug = "claude-env-setup";
+const guideUrl = `${shopOrigin}/guides/${claudeEnvGuideSlug}`;
 
 const escapeHtml = (value: string) =>
 	value
@@ -26,24 +33,27 @@ const escapeHtml = (value: string) =>
 export function renderClaudeEnvReadyEmail(input: {
 	orderUrl: string;
 	expiresText: string;
+	email: string;
+	ip: string | null;
+	city: string | null;
 }) {
 	const subject = "你的 Claude 专属环境已开通";
 	const lines = [
 		"你好，",
 		"你购买的「Claude 稳定使用环境」已开通，专属美国住宅 IP 已经准备好，只给你一个人用。",
+		`专属 IP：${input.ip ?? "—"}${input.city ? `（${input.city}）` : ""}`,
 		`到期时间：${input.expiresText}（北京时间）`,
+		`完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员，一步一步来）：${guideUrl}`,
 		"开始使用（大约 5 分钟）：",
-		"① 打开 Clash Verge Rev，确认梯子能正常上网（能打开 google.com）。",
-		`② 登录后打开订单页 → ${input.orderUrl}`,
+		"① 打开代理软件 Clash Verge Rev，确认能正常打开 google.com。",
+		`② 打开 ${shopOrigin} 点「登录」，输入下单邮箱 ${input.email}，填邮件里的验证码登录（不用密码）。然后打开订单页 → ${input.orderUrl}`,
 		"在「Claude 专属环境」里点「显示开通码」，复制对应电脑的那一行命令：Mac 粘贴到「终端」，Windows 粘贴到管理员身份的「终端」或「PowerShell」，回车运行。",
 		"③ 过程中 Mac 会让你输入一次开机密码（Windows 点一次「是」），中间会让你手动关一下「定位服务」。最后出现「全部验收通过 ✅」就好了；没通过的，把窗口截图发给客服。",
-		`④ 重启电脑一次，然后打开 ${shopOrigin}/ip-check ，确认显示的是你的专属 IP。`,
+		`④ 重启电脑一次，然后打开 ${shopOrigin}/ip-check ，确认显示的 IP 和上面的专属 IP 一样。`,
 		"使用提醒：",
 		"· 用 ProtonMail 邮箱注册 Claude；这套环境可以养 2～3 个号，换号时先退出登录再登另一个",
 		"· 这些号不要在插着国内手机卡的安卓手机上登录，最好只在这台电脑上用",
-		"· 尽量用英文对话；用量控制在 50%～80%",
 		"· 号被限制时先停下来走官方申诉，不要换网络反复尝试",
-		"· 每月含 200GB 流量；到期前 7 天、5 天、3 天会提醒你续费，续费后 IP 不变",
 		"· 不续费的话，到期后环境立即失效，专属 IP 会被释放，无法找回",
 		"开通码就是你的专属线路密码，请不要发给别人。如有问题，请在订单页点「联系客服」。",
 		"老实人AI VIP",
@@ -70,7 +80,7 @@ export async function enqueueClaudeEnvReadyEmail(
 ) {
 	const row = await db
 		.prepare(
-			`SELECT s.id, s.email, s.user_id, s.expires_at, o.order_number
+			`SELECT s.id, s.email, s.user_id, s.expires_at, s.ip, s.ip_city, o.order_number
 			 FROM claude_env_subscriptions s JOIN shop_orders o ON o.id = s.order_id
 			 WHERE s.id = ? AND s.status = 'active'`,
 		)
@@ -80,6 +90,8 @@ export async function enqueueClaudeEnvReadyEmail(
 			email: string;
 			user_id: string;
 			expires_at: number | null;
+			ip: string | null;
+			ip_city: string | null;
 			order_number: string;
 		}>();
 	if (!row) return { status: "skipped" as const, reason: "not_active" };
@@ -104,6 +116,9 @@ export async function enqueueClaudeEnvReadyEmail(
 			origin,
 		).toString(),
 		expiresText,
+		email: row.email,
+		ip: row.ip,
+		city: displayCity(row.ip_city),
 	});
 	const delivery = await enqueueEmailNotification(db, {
 		event: claudeEnvReadyEmailEvent,

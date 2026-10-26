@@ -58,6 +58,10 @@ const copy = {
 		"复制失败，请手动选中复制",
 		"Copy failed; select and copy manually",
 	],
+	guide: [
+		"第一次用？看完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员）：",
+		"First time? Read the full step-by-step guide:",
+	],
 	check: [
 		"命令跑完后重启电脑一次，再打开 IP 检测页确认：",
 		"When the command finishes, restart the computer once, then confirm on the IP check page:",
@@ -308,6 +312,12 @@ function SubscriptionView({
 			) : (
 				<p className="text-muted-foreground text-sm">{t(copy.notReady)}</p>
 			)}
+			<p className="text-sm">
+				{t(copy.guide)}
+				<a className="underline" href="/guides/claude-env-setup">
+					laoshirenvip.com/guides/claude-env-setup
+				</a>
+			</p>
 			<p className="flex flex-wrap items-center gap-1 text-sm">
 				<Globe className="size-4" />
 				{t(copy.check)}
