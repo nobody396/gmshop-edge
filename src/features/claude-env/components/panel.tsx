@@ -30,8 +30,8 @@ const guidePath = "/guides/claude-env-setup";
 const copy = {
 	title: ["Claude 专属环境", "Claude dedicated environment"],
 	preparing: [
-		"付款已收到，正在为你准备专属美国 IP。",
-		"Payment received. We are preparing your dedicated US IP.",
+		"付款已收到，正在为你准备专属环境。",
+		"Payment received. We are preparing your dedicated environment.",
 	],
 	fewMinutes: [
 		"一般几分钟内完成，本页会自动刷新。",
@@ -149,8 +149,8 @@ const statusCopy: Record<
 	awaiting_ip: {
 		label: ["准备中", "Preparing"],
 		text: [
-			"正在为你购买专属美国 IP，不用做任何操作。",
-			"We are buying your dedicated US IP; nothing to do on your side.",
+			"正在为你准备专属环境，不用做任何操作。",
+			"We are preparing your dedicated environment; nothing to do on your side.",
 		],
 		tone: "wait",
 	},
