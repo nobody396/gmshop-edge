@@ -64,6 +64,7 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 			{ name: "supplier_exchange_records" },
 			{ name: "supplier_export_listings" },
 			{ name: "supplier_orders" },
+			{ name: "supplier_topup_jobs" },
 		]);
 		await expect(
 			db
