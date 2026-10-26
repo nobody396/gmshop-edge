@@ -491,6 +491,8 @@ function guideCopy(): Record<string, string> {
 		xplus: m.guide_xplus(),
 		xsuper: m.guide_xsuper(),
 		xultra: m.guide_xultra(),
+		xplus1y: m.guide_xplus1y(),
+		xpremium1y: m.guide_xpremium1y(),
 		x_offer: m.guide_x_offer(),
 		x_offer_help: m.guide_x_offer_help(),
 		offer_yes: m.guide_offer_yes(),

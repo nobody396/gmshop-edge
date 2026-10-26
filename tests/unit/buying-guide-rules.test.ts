@@ -233,6 +233,10 @@ describe("VIP fixed buying guide", () => {
 			kind: "result",
 			product: "xultra",
 		});
+		expect(guideStep(["x", "x_none", "xpremium1y"])).toEqual({
+			kind: "result",
+			product: "xpremium1y",
+		});
 	});
 	it("offers Chile only to Free accounts", () => {
 		expect(guideStep(["gpt", "free", "five", "cl"])).toEqual({
