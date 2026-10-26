@@ -157,6 +157,19 @@ export async function runScheduledCommerceWork(
 		iproyalToken: env.IPROYAL_API_TOKEN,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	// A Claude env activated in this tick queued its ready email after the
+	// publish above ran; send it now instead of a minute later.
+	if (
+		"activated" in claudeEnv &&
+		typeof claudeEnv.activated === "object" &&
+		"activated" in claudeEnv.activated &&
+		claudeEnv.activated.activated > 0
+	)
+		await publishPendingNotifications(
+			env.DB,
+			env.COMMERCE_QUEUE,
+			publishBatchSize,
+		).catch(() => undefined);
 	return {
 		claudeEnv,
 		balanceGuard,
