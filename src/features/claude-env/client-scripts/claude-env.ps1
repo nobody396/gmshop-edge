@@ -340,7 +340,7 @@ if ((Get-TzAuto) -ne "4") { Set-TzAutoOff }
 if ((Get-SysTz) -ne $WINTZ) { Set-SysTz $WINTZ }
 OK "已关闭「自动设置时区」，电脑时区：$(Get-SysTz)"
 if ((Get-LangFirst) -ne "en-US" -or (Get-Culture2) -ne "en-US" -or (Get-Geo) -ne "244") { Set-LangUS }
-OK "系统语言：英语排第一（原来的中文和输入法保留），区域格式和国家/地区：美国。注销一次后生效"
+OK "系统语言：英语排第一（原来的中文和输入法保留），区域格式和国家/地区：美国。重启电脑后生效"
 if ((Get-Loc) -ne "Deny") { Set-LocDeny }
 if ((Get-Loc) -eq "Deny") { OK "定位服务已关闭" } else { WARN "定位服务仍开着（验收会标出）" }
 foreach ($n in $TELEMETRY_ENV) { if ((Get-EnvVar $n "User") -ne "1") { Set-EnvVar $n "1" "User" } }
@@ -430,7 +430,7 @@ Write-Host ""
 if ($script:FAILN -eq 0) {
   Write-Host "全部 $($script:PASS) 项验收通过 ✅" -ForegroundColor Green
   Write-Host "  专属 IP：$PX_IP（$TZNAME）"
-  Write-Host "  最后一步：注销电脑一次（让英文语言生效），然后重开浏览器、Claude 桌面版和终端"
+  Write-Host "  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端"
   Write-Host "  再用浏览器打开 https://laoshirenvip.com/ip-check ，确认浏览器这一侧的时区、语言也一致"
   Write-Host "  提醒：这些 Claude 号不要在插着国内 SIM 卡的安卓手机上登录；Windows 上优先用 Claude Code 和网页版"
   exit 0

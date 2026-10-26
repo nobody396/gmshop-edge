@@ -331,7 +331,7 @@ if [ -z "$DRY" ]; then
   [ "$(sys_tz)" = "$TZNAME" ] || set_tz "$TZNAME"
   c_ok "已关闭「自动设置时区」，电脑时区：$(sys_tz)"
   if [ "$(sys_lang)" != en-US ] || [ "$(sys_locale)" != en_US ]; then set_lang; fi
-  c_ok "系统语言：英语排第一（原来的中文等保留在后面，输入法不变），地区：美国。注销一次后生效"
+  c_ok "系统语言：英语排第一（原来的中文等保留在后面，输入法不变），地区：美国。重启电脑后生效"
   if [ "$(loc_on)" != false ]; then
     printf '  需要你手动关一下「定位服务」：已打开设置页，把最上面「定位服务」的开关关掉（会让你输入开机密码）\n'
     sysrun open "$LOC_PANE"
@@ -443,7 +443,7 @@ printf '\n'
 if [ "$FAILN" = 0 ]; then
   printf '\033[1;32m全部 %s 项验收通过 ✅\033[0m\n' "$PASS"
   printf '  专属 IP：%s（%s）\n' "$PX_IP" "$TZNAME"
-  printf '  最后一步：注销电脑一次（让英文语言生效），然后重开浏览器、Claude 桌面版和终端\n'
+  printf '  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端\n'
   printf '  再用浏览器打开 https://laoshirenvip.com/ip-check ，确认浏览器这一侧的时区、语言也一致\n'
   printf '  提醒：这些 Claude 号不要在插着国内 SIM 卡的安卓手机上登录\n'
   exit 0
