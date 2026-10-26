@@ -1,12 +1,22 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Copy, Eye, EyeOff, Globe, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import {
+	BookOpen,
+	Copy,
+	Eye,
+	EyeOff,
+	Headphones,
+	Monitor,
+	RefreshCw,
+	ShieldCheck,
+	TriangleAlert,
+} from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { formatDateTime } from "#/lib/format";
+import { webSupportOpenEvent } from "#/features/telegram/web-support-contract";
 import { getLocale } from "#/paraglide/runtime";
 import { type ClaudeEnvStatus, formatBytes } from "../domain";
 import {
@@ -14,71 +24,110 @@ import {
 	revealClaudeEnvCodeFn,
 } from "../server/functions";
 
+const guidePath = "/guides/claude-env-setup";
+
 /** Two-locale copy kept with the feature (zh-CN is the primary audience). */
 const copy = {
 	title: ["Claude 专属环境", "Claude dedicated environment"],
 	preparing: [
-		"付款已收到，正在为你准备专属美国 IP，一般几分钟内完成。这个页面会自动刷新。",
-		"Payment received. We are preparing your dedicated US IP; this usually takes a few minutes. This page refreshes automatically.",
+		"付款已收到，正在为你准备专属美国 IP。",
+		"Payment received. We are preparing your dedicated US IP.",
+	],
+	fewMinutes: [
+		"一般几分钟内完成，本页会自动刷新。",
+		"This usually takes a few minutes. This page refreshes automatically.",
+	],
+	autoRefresh: ["本页会自动刷新。", "This page refreshes automatically."],
+	waitPrepare: [
+		"等待时请先完成准备：在要用 Claude 的 Mac / Windows 电脑上装好 Clash Verge Rev，并确认能正常打开 google.com。先不要注册任何账号。",
+		"While you wait, get ready: install Clash Verge Rev on the Mac / Windows computer you will use for Claude and make sure google.com opens. Do not sign up for anything yet.",
+	],
+	guideLink: [
+		"完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员）",
+		"Full step-by-step guide (setup → ProtonMail → Claude → subscription)",
 	],
 	ip: ["专属 IP", "Dedicated IP"],
 	city: ["城市", "City"],
 	timezone: ["时区", "Time zone"],
-	network: ["网络类型", "Network"],
 	residential: [
-		"美国住宅宽带（只给你一个人用）",
-		"US residential broadband (only you)",
+		"美国住宅宽带，只给你一个人用。",
+		"US residential broadband, used only by you.",
+	],
+	scope: [
+		"一个环境给一台电脑用；可以在这台电脑上养 2～3 个 Claude 号，换号先退出登录。",
+		"One environment is for one computer. You can keep 2–3 Claude accounts on it; sign out before switching.",
 	],
 	expires: ["到期时间", "Expires"],
 	daysLeft: ["剩余", "Days left"],
 	days: ["天", "days"],
 	traffic: ["本期流量", "Traffic this period"],
 	trafficReset: ["重置日", "Resets"],
+	trafficNote: [
+		(quota: string) => `每期含 ${quota}，到重置日自动清零；用完请联系客服。`,
+		(quota: string) =>
+			`Each period includes ${quota} and resets on the reset date. If you run out, contact support.`,
+	],
 	line: ["线路检查", "Line check"],
 	lineOk: ["正常", "OK"],
-	lineBad: ["异常，我们正在处理", "Problem detected, we are on it"],
+	lineBadTitle: ["线路检测异常", "Line check failed"],
+	lineBad: [
+		"先不要打开 Claude，我们已收到提醒正在处理；着急可点下方联系客服。",
+		"Do not open Claude for now. We have been alerted and are fixing it. If it is urgent, contact support below.",
+	],
+	support: ["联系客服", "Contact support"],
+	start: ["开始使用", "Get started"],
+	step1: [
+		"准备：这台 Mac / Windows 电脑上已装好 Clash Verge Rev，并能正常打开 google.com。",
+		"Prepare: Clash Verge Rev is installed on this Mac / Windows computer and google.com opens normally.",
+	],
+	step2: [
+		"请在要用 Claude 的电脑上打开本页面。",
+		"Open this page on the computer you will use Claude on.",
+	],
+	phoneTip: [
+		"你现在是在手机上看。命令要在电脑上运行，请用电脑登录 laoshirenvip.com 打开此订单。",
+		"You are on a phone. The command must run on a computer: sign in to laoshirenvip.com on your computer and open this order.",
+	],
+	step3: [
+		"点「显示开通码」，复制你电脑对应的那一行命令，粘贴到终端运行（Mac：启动台搜索「终端」；Windows：右键开始 →「终端（管理员）」）。",
+		"Click “Show code”, copy the line for your computer and paste it into a terminal (Mac: search “Terminal” in Launchpad; Windows: right-click Start → Terminal (Admin)).",
+	],
+	step4: [
+		"先了解会改动什么：命令会把系统语言里的英语排到第一位（中文和输入法保留）、地区改为美国、时区改成和专属 IP 一致、关闭定位；Mac 会要求输入一次开机密码（输入时不显示）。看到「全部验收通过 ✅」就成功；有红色项目请截图发客服。",
+		"What will change: the command puts English first in system languages (Chinese and input methods stay), sets the region to US, matches the time zone to your IP and turns off Location. A Mac asks for your login password once (it is not shown as you type). “All checks passed ✅” means success; if anything is red, send a screenshot to support.",
+	],
+	step5: [
+		(ip: string) =>
+			`重启电脑一次，打开 IP 检测页：显示的 IP 和你的专属 IP（${ip}）一致、没有红色项目，就配好了。`,
+		(ip: string) =>
+			`Restart the computer once and open the IP check page. If it shows your dedicated IP (${ip}) and nothing is red, you are done.`,
+	],
 	code: ["开通码", "Activation code"],
 	show: ["显示开通码", "Show code"],
 	hide: ["隐藏", "Hide"],
+	codeHidden: ["点「显示开通码」查看", "Click “Show code” to see it"],
 	codeHint: [
-		"开通码等于你的专属线路密码，请不要发给别人。",
-		"The code is your private line password; do not share it.",
+		"开通码相当于你专属线路的密码，不要发给别人。",
+		"The code works like the password of your private line; do not share it.",
 	],
-	mac: [
-		"Mac：打开「终端」，粘贴下面一行回车",
-		"Mac: open Terminal, paste this line and press Enter",
-	],
-	windows: [
-		"Windows：右键开始菜单 →「终端（管理员）」或「Windows PowerShell（管理员）」，粘贴下面一行回车",
-		"Windows: right-click Start → Terminal (Admin) or Windows PowerShell (Admin), paste this line and press Enter",
-	],
+	mac: ["Mac 电脑用这一行：", "Mac: use this line"],
+	windows: ["Windows 电脑用这一行：", "Windows: use this line"],
 	copy: ["复制", "Copy"],
 	copied: ["已复制", "Copied"],
 	copyFailed: [
 		"复制失败，请手动选中复制",
 		"Copy failed; select and copy manually",
 	],
-	guide: [
-		"第一次用？看完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员）：",
-		"First time? Read the full step-by-step guide:",
-	],
-	check: [
-		"命令跑完后重启电脑一次，再打开 IP 检测页确认：",
-		"When the command finishes, restart the computer once, then confirm on the IP check page:",
-	],
 	revealFailed: [
 		"暂时取不到开通码，请稍后再试",
 		"Code is not available yet; try again later",
-	],
-	notReady: [
-		"开通完成后这里会显示开通码。",
-		"Your activation code appears here once ready.",
 	],
 	expiring: [
 		(n: number) => `还有 ${n} 天到期`,
 		(n: number) => `Expires in ${n} day${n === 1 ? "" : "s"}`,
 	],
-	renew: ["立即续费", "Renew now"],
+	renew: ["续费", "Renew"],
+	renewNow: ["立即续费", "Renew now"],
 	renewKeep: [
 		"续费后专属 IP 不变，不用重新配置。",
 		"After renewal your dedicated IP stays the same; no need to set anything up again.",
@@ -100,8 +149,8 @@ const statusCopy: Record<
 	awaiting_ip: {
 		label: ["准备中", "Preparing"],
 		text: [
-			"正在为你购买专属美国 IP，一般几分钟内完成，不用做任何操作。",
-			"We are buying your dedicated US IP. It usually takes a few minutes; nothing to do on your side.",
+			"正在为你购买专属美国 IP，不用做任何操作。",
+			"We are buying your dedicated US IP; nothing to do on your side.",
 		],
 		tone: "wait",
 	},
@@ -116,16 +165,16 @@ const statusCopy: Record<
 	needs_replace: {
 		label: ["更换中", "Replacing"],
 		text: [
-			"这个 IP 没通过我们的质量检查，我们正在为你换一个更好的（24 小时内），完成后这里自动更新，无需操作。",
-			"The IP did not pass our quality check. We are replacing it with a better one (within 24 hours); this page updates automatically.",
+			"这个 IP 没通过我们的质量检查，我们正在为你换一个更好的（24 小时内），无需操作。",
+			"The IP did not pass our quality check. We are replacing it with a better one (within 24 hours); nothing to do on your side.",
 		],
 		tone: "wait",
 	},
 	active: {
 		label: ["正常", "Active"],
 		text: [
-			"正常使用中。第一次使用请复制下面的命令在电脑上运行一次。",
-			"Active. On first use, copy the command below and run it once on your computer.",
+			"正常使用中。第一次使用请按下面的步骤做一次。",
+			"Active. On first use, follow the steps below once.",
 		],
 		tone: "ok",
 	},
@@ -152,9 +201,39 @@ const statusCopy: Record<
 	},
 };
 
+const pendingStatuses: ClaudeEnvStatus[] = [
+	"awaiting_ip",
+	"provisioning",
+	"needs_replace",
+];
+
+/** IANA zones the IPs come from, shown as plain words. Unknown zones stay raw. */
+const timezoneLabels: Record<string, [string, string]> = {
+	"America/New_York": ["美国东部时间", "US Eastern Time"],
+	"America/Chicago": ["美国中部时间", "US Central Time"],
+	"America/Denver": ["美国山地时间", "US Mountain Time"],
+	"America/Los_Angeles": ["美国西部时间", "US Pacific Time"],
+};
+
+function isZh() {
+	return getLocale() !== "en-US";
+}
+
 function useText() {
-	const zh = getLocale() !== "en-US";
+	const zh = isZh();
 	return (pair: readonly [string, string]) => (zh ? pair[0] : pair[1]);
+}
+
+/** Date and time to the minute in the reader's locale. */
+function formatMinute(value: number) {
+	return new Intl.DateTimeFormat(getLocale(), {
+		dateStyle: "medium",
+		timeStyle: "short",
+	}).format(new Date(value));
+}
+
+function openSupport() {
+	window.dispatchEvent(new Event(webSupportOpenEvent));
 }
 
 async function copyText(value: string, t: ReturnType<typeof useText>) {
@@ -174,9 +253,7 @@ export function ClaudeEnvPanel({ orderNumber }: { orderNumber: string }) {
 		refetchInterval: (query) =>
 			query.state.data &&
 			(query.state.data.state === "preparing" ||
-				["awaiting_ip", "provisioning", "needs_replace"].includes(
-					query.state.data.status,
-				))
+				pendingStatuses.includes(query.state.data.status))
 				? 20_000
 				: 120_000,
 		retry: false,
@@ -185,22 +262,31 @@ export function ClaudeEnvPanel({ orderNumber }: { orderNumber: string }) {
 	if (!data) return null;
 	return (
 		<section
-			className="grid gap-4 rounded-xl border p-4"
+			className="mb-6 grid gap-5 rounded-3xl border bg-card p-5 shadow-sm sm:p-8"
 			aria-labelledby="claude-env-title"
 		>
 			<h2
-				className="flex items-center gap-2 font-semibold text-lg"
+				className="flex items-center gap-2 font-semibold text-xl tracking-tight"
 				id="claude-env-title"
 			>
-				<ShieldCheck className="size-5" />
+				<ShieldCheck className="size-6 text-primary" />
 				{t(copy.title)}
 			</h2>
 			{data.state === "preparing" ? (
-				<p className="text-muted-foreground text-sm leading-6">
-					{t(copy.preparing)}
-				</p>
+				<PendingView
+					label={statusCopy.awaiting_ip.label}
+					text={copy.preparing}
+				/>
+			) : pendingStatuses.includes(data.status) ? (
+				<PendingView
+					label={statusCopy[data.status].label}
+					minutes={data.status !== "needs_replace"}
+					text={statusCopy[data.status].text}
+				/>
+			) : data.status === "active" ? (
+				<ActiveView data={data} orderNumber={orderNumber} />
 			) : (
-				<SubscriptionView data={data} orderNumber={orderNumber} />
+				<ClosedView data={data} />
 			)}
 		</section>
 	);
@@ -211,7 +297,90 @@ type SubscriptionData = Extract<
 	{ state: "subscription" }
 >;
 
-function SubscriptionView({
+function StatusLine({
+	label,
+	text,
+	tone,
+}: {
+	label: readonly [string, string];
+	text: readonly [string, string];
+	tone: "ok" | "wait" | "bad";
+}) {
+	const t = useText();
+	return (
+		<div className="flex flex-wrap items-center gap-2">
+			<Badge
+				variant={
+					tone === "ok"
+						? "default"
+						: tone === "wait"
+							? "secondary"
+							: "destructive"
+				}
+			>
+				{t(label)}
+			</Badge>
+			<p className="text-sm leading-6">{t(text)}</p>
+		</div>
+	);
+}
+
+function GuideLink() {
+	const t = useText();
+	return (
+		<a
+			className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3 font-medium text-primary text-sm leading-6 hover:bg-primary/10"
+			href={guidePath}
+		>
+			<BookOpen className="size-5 shrink-0" />
+			<span className="underline underline-offset-4">{t(copy.guideLink)}</span>
+		</a>
+	);
+}
+
+function PendingView({
+	label,
+	text,
+	minutes = true,
+}: {
+	label: readonly [string, string];
+	text: readonly [string, string];
+	minutes?: boolean;
+}) {
+	const t = useText();
+	return (
+		<div className="grid gap-4">
+			<StatusLine label={label} text={text} tone="wait" />
+			<p className="text-muted-foreground text-sm leading-6">
+				{t(minutes ? copy.fewMinutes : copy.autoRefresh)}
+			</p>
+			<p className="rounded-xl bg-muted/50 p-3 text-sm leading-6">
+				{t(copy.waitPrepare)}
+			</p>
+			<GuideLink />
+		</div>
+	);
+}
+
+function ClosedView({ data }: { data: SubscriptionData }) {
+	const t = useText();
+	const status = statusCopy[data.status];
+	return (
+		<div className="grid gap-4">
+			<StatusLine label={status.label} text={status.text} tone={status.tone} />
+			{data.status === "suspended" ? (
+				<div>
+					<Button onClick={openSupport} size="sm" variant="outline">
+						<Headphones />
+						{t(copy.support)}
+					</Button>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function ActiveView({
 	data,
 	orderNumber,
 }: {
@@ -219,117 +388,181 @@ function SubscriptionView({
 	orderNumber: string;
 }) {
 	const t = useText();
-	const status = statusCopy[data.status];
+	const status = statusCopy.active;
+	const zoneLabel = data.timezone ? timezoneLabels[data.timezone] : undefined;
+	const timezone = zoneLabel ? t(zoneLabel) : (data.timezone ?? "—");
+	return (
+		<div className="grid gap-5">
+			<StatusLine label={status.label} text={status.text} tone={status.tone} />
+			{data.lineOk === false ? (
+				<div
+					className="grid gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm leading-6"
+					role="alert"
+				>
+					<p className="flex items-center gap-2 font-semibold text-destructive">
+						<TriangleAlert className="size-4" />
+						{t(copy.lineBadTitle)}
+					</p>
+					<p>{t(copy.lineBad)}</p>
+					<div>
+						<Button onClick={openSupport} size="sm">
+							<Headphones />
+							{t(copy.support)}
+						</Button>
+					</div>
+				</div>
+			) : null}
+			{data.expiringSoon && data.daysLeft !== null ? (
+				<RenewBox data={data} urgent />
+			) : null}
+			<GuideLink />
+			<div className="grid gap-3">
+				<h3 className="font-semibold">{t(copy.start)}</h3>
+				<ol className="grid gap-4 text-sm leading-6">
+					<Step n={1}>{t(copy.step1)}</Step>
+					<Step n={2}>
+						<p>{t(copy.step2)}</p>
+						<p className="mt-2 flex gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 font-medium md:hidden">
+							<Monitor className="mt-0.5 size-4 shrink-0" />
+							{t(copy.phoneTip)}
+						</p>
+					</Step>
+					<Step n={3}>
+						<p>{t(copy.step3)}</p>
+						<CodeBlock orderNumber={orderNumber} />
+					</Step>
+					<Step n={4}>{t(copy.step4)}</Step>
+					<Step n={5}>
+						<p>{(isZh() ? copy.step5[0] : copy.step5[1])(data.ip ?? "—")}</p>
+						<a
+							className="break-all underline"
+							href={data.ipCheckUrl}
+							rel="noreferrer"
+							target="_blank"
+						>
+							{data.ipCheckUrl}
+						</a>
+					</Step>
+				</ol>
+			</div>
+			<div className="grid gap-3 border-t pt-5">
+				<dl className="grid gap-3 text-sm sm:grid-cols-3">
+					<Item label={t(copy.ip)} value={data.ip ?? "—"} mono />
+					<Item label={t(copy.city)} value={data.city ?? "—"} />
+					<Item label={t(copy.timezone)} value={timezone} />
+					{data.lineOk !== null && data.lastCheckAt ? (
+						<Item
+							label={t(copy.line)}
+							value={`${data.lineOk ? t(copy.lineOk) : t(copy.lineBadTitle)} · ${formatMinute(data.lastCheckAt)}`}
+						/>
+					) : null}
+				</dl>
+				<p className="text-muted-foreground text-sm leading-6">
+					{t(copy.residential)}
+					{t(copy.scope)}
+				</p>
+			</div>
+			<Traffic data={data} />
+			{data.expiringSoon ? null : <RenewBox data={data} />}
+		</div>
+	);
+}
+
+function Step({ n, children }: { n: number; children: ReactNode }) {
+	return (
+		<li className="flex gap-3">
+			<span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary font-semibold text-primary-foreground text-xs">
+				{n}
+			</span>
+			<div className="grid min-w-0 flex-1 gap-2">{children}</div>
+		</li>
+	);
+}
+
+function Traffic({ data }: { data: SubscriptionData }) {
+	const t = useText();
 	const percent = Math.min(
 		100,
 		Math.round(
 			(data.trafficUsedBytes / Math.max(1, data.trafficQuotaBytes)) * 100,
 		),
 	);
+	const quota = formatBytes(data.trafficQuotaBytes);
 	return (
-		<div className="grid gap-4">
-			<div className="flex flex-wrap items-center gap-2">
-				<Badge
-					variant={
-						status.tone === "ok"
-							? "default"
-							: status.tone === "wait"
-								? "secondary"
-								: "destructive"
-					}
-				>
-					{t(status.label)}
-				</Badge>
-				<p className="text-sm leading-6">{t(status.text)}</p>
+		<div className="grid gap-2">
+			<div className="flex items-center justify-between gap-2 text-sm">
+				<span>{t(copy.traffic)}</span>
+				<span className="tabular-nums">
+					{formatBytes(data.trafficUsedBytes)} / {quota}
+				</span>
 			</div>
-			{data.expiringSoon && data.daysLeft !== null ? (
-				<div
-					className="grid gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"
-					role="alert"
-				>
-					<p className="font-semibold text-destructive">
-						{(getLocale() === "en-US" ? copy.expiring[1] : copy.expiring[0])(
-							data.daysLeft,
-						)}
-						{data.expiresAt ? ` · ${formatDateTime(data.expiresAt)}` : ""}
-					</p>
-					<p>{t(copy.renewKeep)}</p>
-					<p className="font-semibold">{t(copy.renewWarning)}</p>
-					<div>
-						<Button asChild size="sm">
-							<a href={data.renewUrl}>{t(copy.renew)}</a>
-						</Button>
-					</div>
-				</div>
-			) : null}
-			<dl className="grid gap-3 text-sm sm:grid-cols-2">
-				<Item label={t(copy.ip)} value={data.ip ?? "—"} mono />
-				<Item label={t(copy.city)} value={data.city ?? "—"} />
-				<Item label={t(copy.timezone)} value={data.timezone ?? "—"} mono />
-				<Item label={t(copy.network)} value={t(copy.residential)} />
-				<Item
-					label={t(copy.expires)}
-					value={data.expiresAt ? formatDateTime(data.expiresAt) : "—"}
-				/>
-				<Item
-					label={t(copy.daysLeft)}
-					value={
-						data.daysLeft === null ? "—" : `${data.daysLeft} ${t(copy.days)}`
-					}
-				/>
-				{data.lineOk !== null && data.lastCheckAt ? (
-					<Item
-						label={t(copy.line)}
-						value={`${data.lineOk ? t(copy.lineOk) : t(copy.lineBad)} · ${formatDateTime(data.lastCheckAt)}`}
-					/>
-				) : null}
-			</dl>
-			<div className="grid gap-2">
-				<div className="flex items-center justify-between text-sm">
-					<span>{t(copy.traffic)}</span>
-					<span className="tabular-nums">
-						{formatBytes(data.trafficUsedBytes)} /{" "}
-						{formatBytes(data.trafficQuotaBytes)}
-					</span>
-				</div>
-				<div
-					aria-valuemax={100}
-					aria-valuemin={0}
-					aria-valuenow={percent}
-					className="h-2 overflow-hidden rounded-full bg-muted"
-					role="progressbar"
-				>
-					<div className="h-full bg-primary" style={{ width: `${percent}%` }} />
-				</div>
-				{data.trafficResetAt ? (
-					<p className="text-muted-foreground text-xs">
-						{t(copy.trafficReset)}：{formatDateTime(data.trafficResetAt)}
-					</p>
-				) : null}
+			<div
+				aria-valuemax={100}
+				aria-valuemin={0}
+				aria-valuenow={percent}
+				className="h-2 overflow-hidden rounded-full bg-muted"
+				role="progressbar"
+			>
+				<div className="h-full bg-primary" style={{ width: `${percent}%` }} />
 			</div>
-			{data.codeAvailable ? (
-				<CodeBlock orderNumber={orderNumber} />
-			) : (
-				<p className="text-muted-foreground text-sm">{t(copy.notReady)}</p>
-			)}
-			<p className="text-sm">
-				{t(copy.guide)}
-				<a className="underline" href="/guides/claude-env-setup">
-					laoshirenvip.com/guides/claude-env-setup
-				</a>
+			<p className="text-muted-foreground text-xs leading-5">
+				{data.trafficResetAt
+					? `${t(copy.trafficReset)}：${formatMinute(data.trafficResetAt)} · `
+					: ""}
+				{(isZh() ? copy.trafficNote[0] : copy.trafficNote[1])(quota)}
 			</p>
-			<p className="flex flex-wrap items-center gap-1 text-sm">
-				<Globe className="size-4" />
-				{t(copy.check)}
-				<a
-					className="underline"
-					href={data.ipCheckUrl}
-					rel="noreferrer"
-					target="_blank"
-				>
-					{data.ipCheckUrl}
+		</div>
+	);
+}
+
+function RenewBox({
+	data,
+	urgent = false,
+}: {
+	data: SubscriptionData;
+	urgent?: boolean;
+}) {
+	const t = useText();
+	const expiry = data.expiresAt ? formatMinute(data.expiresAt) : "—";
+	if (urgent && data.daysLeft !== null)
+		return (
+			<div
+				className="grid gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm leading-6"
+				role="alert"
+			>
+				<p className="font-semibold text-destructive">
+					{(isZh() ? copy.expiring[0] : copy.expiring[1])(data.daysLeft)} ·{" "}
+					{expiry}
+				</p>
+				<p>{t(copy.renewKeep)}</p>
+				<p className="font-semibold">{t(copy.renewWarning)}</p>
+				<div>
+					<Button asChild size="sm">
+						<a href={data.renewUrl}>
+							<RefreshCw />
+							{t(copy.renewNow)}
+						</a>
+					</Button>
+				</div>
+			</div>
+		);
+	return (
+		<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-3 text-sm leading-6">
+			<div className="min-w-0">
+				<p>
+					{t(copy.expires)}：{expiry}
+					{data.daysLeft === null
+						? ""
+						: ` · ${t(copy.daysLeft)} ${data.daysLeft} ${t(copy.days)}`}
+				</p>
+				<p className="text-muted-foreground">{t(copy.renewKeep)}</p>
+			</div>
+			<Button asChild size="sm" variant="outline">
+				<a href={data.renewUrl}>
+					<RefreshCw />
+					{t(copy.renew)}
 				</a>
-			</p>
+			</Button>
 		</div>
 	);
 }
@@ -346,7 +579,7 @@ function Item({
 	return (
 		<div className="min-w-0">
 			<dt className="text-muted-foreground text-xs">{label}</dt>
-			<dd className={`break-all ${mono ? "font-mono" : ""}`}>{value}</dd>
+			<dd className={mono ? "break-all font-mono" : "break-words"}>{value}</dd>
 		</div>
 	);
 }
@@ -361,9 +594,9 @@ function CodeBlock({ orderNumber }: { orderNumber: string }) {
 	});
 	const result = reveal.data;
 	return (
-		<div className="grid gap-3 rounded-lg bg-muted/40 p-3">
+		<div className="grid gap-3 rounded-xl bg-muted/50 p-3">
 			<div className="flex flex-wrap items-center justify-between gap-2">
-				<span className="font-medium text-sm">{t(copy.code)}</span>
+				<span className="font-medium">{t(copy.code)}</span>
 				{visible && result ? (
 					<Button onClick={() => setVisible(false)} size="sm" variant="ghost">
 						<EyeOff />
@@ -382,17 +615,19 @@ function CodeBlock({ orderNumber }: { orderNumber: string }) {
 			</div>
 			{visible && result ? (
 				<>
+					<p>{t(copy.mac)}</p>
+					<CopyLine value={result.mac} />
+					<p>{t(copy.windows)}</p>
+					<CopyLine value={result.windows} />
+					<p className="text-muted-foreground text-xs">{t(copy.code)}</p>
 					<CopyLine value={result.code} />
 					<p className="text-muted-foreground text-xs">{t(copy.codeHint)}</p>
-					<p className="text-sm">{t(copy.mac)}</p>
-					<CopyLine value={result.mac} />
-					<p className="text-sm">{t(copy.windows)}</p>
-					<CopyLine value={result.windows} />
 				</>
 			) : (
-				<p className="font-mono text-muted-foreground text-sm">
-					CE1-••••••••••••••••
-				</p>
+				<>
+					<p className="text-muted-foreground">{t(copy.codeHidden)}</p>
+					<p className="text-muted-foreground text-xs">{t(copy.codeHint)}</p>
+				</>
 			)}
 		</div>
 	);
