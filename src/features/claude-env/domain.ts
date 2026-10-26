@@ -238,8 +238,6 @@ const cityPreference = [
 
 export const iproyalIspProductId = 9;
 export const iproyalUsLocationId = 16;
-/** Product question 17 = "new IP on renewal"; always false. */
-export const iproyalNewIpQuestionId = "17";
 
 /** In-stock children of US location 16: Springfield MA → east → west → anything. */
 export function pickIproyalCity(products: unknown): IproyalCity | null {

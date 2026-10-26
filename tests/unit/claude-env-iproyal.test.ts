@@ -32,7 +32,7 @@ describe("IPRoyal reseller client", () => {
 		).toBe("tok");
 	});
 
-	it("creates an ISP order: product 9, quantity 1, no auto-extend, never a new IP on renew", async () => {
+	it("creates an ISP order: product 9, quantity 1, no auto-extend, question 17 (new IP on renew) left unanswered", async () => {
 		const { fetcher, calls } = mockFetch([{ body: { id: 4242 } }]);
 		const id = await createIproyalClient("tok", fetcher).createOrder(25, 187);
 		expect(id).toBe("4242");
@@ -44,7 +44,6 @@ describe("IPRoyal reseller client", () => {
 			product_location_id: 187,
 			quantity: 1,
 			auto_extend: false,
-			product_question_answers: { "17": false },
 		});
 	});
 

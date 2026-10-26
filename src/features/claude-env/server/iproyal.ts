@@ -1,6 +1,5 @@
 import {
 	iproyalIspProductId,
-	iproyalNewIpQuestionId,
 	parseIproyalDate,
 } from "../domain";
 
@@ -109,7 +108,9 @@ export function createIproyalClient(token: string, fetcher: typeof fetch) {
 				product_location_id: locationId,
 				quantity: 1,
 				auto_extend: false,
-				product_question_answers: { [iproyalNewIpQuestionId]: false },
+				// Question 17 ("new IP on every renewal") only accepts a string and a
+				// boolean is rejected with 422. Omitting it leaves it unchecked, so
+				// renewals keep the same IP (verified on order 86547609, 2026-10-26).
 			})) as { id?: unknown } | null;
 			const id = value?.id;
 			if (typeof id !== "number" && typeof id !== "string")
