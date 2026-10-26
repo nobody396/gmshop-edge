@@ -14,6 +14,7 @@ const adminServerModules = [
 	"src/features/catalog/server/admin.ts",
 	"src/features/catalog/server/editor.ts",
 	"src/features/catalog/server/workspace.ts",
+	"src/features/claude-env/server/admin.ts",
 	"src/features/coupons/server/admin.ts",
 	"src/features/customer-pricing/server/admin.ts",
 	"src/features/customers/server/admin.ts",
@@ -42,6 +43,8 @@ const adminServerModules = [
 const reviewedPublicServerModules = [
 	"src/features/agent-access/server/functions.ts",
 	"src/features/auth/server/session.ts",
+	// Buyer panel: same-origin check, signed-in session, order ownership checked in SQL.
+	"src/features/claude-env/server/functions.ts",
 	"src/features/exchange-rates/server/public.ts",
 	// Read-only published guides; drafts and reserved slugs resolve to null.
 	"src/features/guides/server/functions.ts",
