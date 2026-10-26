@@ -26,7 +26,7 @@ import {
 	revealClaudeEnvCodeFn,
 } from "../server/functions";
 
-const guidePath = "/guides/claude-env-setup";
+const guidePath = "/account/claude-env-guide";
 
 /** Two-locale copy kept with the feature (zh-CN is the primary audience). */
 const copy = {
