@@ -50,8 +50,8 @@ const copy = {
 	city: ["城市", "City"],
 	timezone: ["时区", "Time zone"],
 	residential: [
-		"美国住宅宽带，只给你一个人用。",
-		"US residential broadband, used only by you.",
+		"专属线路，只给你一个人用。",
+		"A dedicated line, used only by you.",
 	],
 	scope: [
 		"一个环境给一台电脑用；可以在这台电脑上养 2～3 个 Claude 号，换号先退出登录。",
