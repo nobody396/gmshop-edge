@@ -344,8 +344,26 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 		).resolves.toEqual({ duplicate: false, status: "accepted" });
 	});
 
-	it("fans commerce outbox events into localized encrypted deliveries", async () => {
+	it("publishes paid events without sending a customer email", async () => {
 		await seedPaidOrder(database);
+		await expect(fanOutPendingCommerceNotifications(database)).resolves.toEqual(
+			{ processed: 1, deliveries: 0 },
+		);
+		const state = await database
+			.prepare(
+				`SELECT status AS source_status,
+				 (SELECT COUNT(*) FROM notification_deliveries) AS delivery_count
+				 FROM outbox_events WHERE id = 'order-paid-outbox'`,
+			)
+			.first<Record<string, unknown>>();
+		expect(state).toMatchObject({
+			source_status: "published",
+			delivery_count: 0,
+		});
+	});
+
+	it("fans commerce outbox events into localized encrypted deliveries", async () => {
+		await seedRefundEvent(database);
 		await expect(fanOutPendingCommerceNotifications(database)).resolves.toEqual(
 			{ processed: 1, deliveries: 1 },
 		);
@@ -353,11 +371,11 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 			.prepare(
 				`SELECT nd.message_encrypted, nd.event, oe.status AS source_status
 				 FROM notification_deliveries nd JOIN outbox_events oe
-				 ON oe.id = 'order-paid-outbox' WHERE nd.event = 'order_paid'`,
+				 ON oe.id = 'refund-event-1001' WHERE nd.event = 'refund_succeeded'`,
 			)
 			.first<Record<string, unknown>>();
 		expect(state).toMatchObject({
-			event: "order_paid",
+			event: "refund_succeeded",
 			source_status: "published",
 		});
 		expect(String(state?.message_encrypted)).not.toContain(
@@ -367,7 +385,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 	});
 
 	it("publishes customer notifications immediately without waiting for cron", async () => {
-		await seedPaidOrder(database);
+		await seedRefundEvent(database);
 		const sent: NotificationQueueMessage[] = [];
 		const queue = {
 			sendBatch: vi.fn(
@@ -394,11 +412,11 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 				`SELECT nd.status AS delivery_status, oe.status AS source_status,
 				 notification_outbox.status AS notification_outbox_status
 				 FROM notification_deliveries nd
-				 JOIN outbox_events oe ON oe.id = 'order-paid-outbox'
+				 JOIN outbox_events oe ON oe.id = 'refund-event-1001'
 				 JOIN outbox_events notification_outbox
 				 ON notification_outbox.aggregate_id = nd.id
 				 AND notification_outbox.event_type = 'notification.requested'
-				 WHERE nd.event = 'order_paid' LIMIT 1`,
+				 WHERE nd.event = 'refund_succeeded' LIMIT 1`,
 			)
 			.first<Record<string, unknown>>();
 		expect(state).toMatchObject({
@@ -409,7 +427,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 	});
 
 	it("uses the registered user's preferred language instead of the order locale", async () => {
-		await seedPaidOrder(database);
+		await seedRefundEvent(database);
 		await database.batch([
 			database.prepare(
 				`INSERT INTO users
@@ -425,7 +443,7 @@ describe("notification delivery", { timeout: 30_000 }, () => {
 		);
 		const delivery = await database
 			.prepare(
-				"SELECT locale FROM notification_deliveries WHERE event = 'order_paid' LIMIT 1",
+				"SELECT locale FROM notification_deliveries WHERE event = 'refund_succeeded' LIMIT 1",
 			)
 			.first<{ locale: string }>();
 		expect(delivery?.locale).toBe("zh-CN");
@@ -517,6 +535,30 @@ async function configureCloudflareEmail(database: D1Database) {
 			 VALUES ('cloudflare-email', 'email', 'Cloudflare Email',
 			  'cloudflare_email', NULL, NULL, 'GMShop <mail@example.com>',
 			  'support@example.com', 10, 1, 1, 1)`,
+		),
+	]);
+}
+
+async function seedRefundEvent(database: D1Database) {
+	await seedPaidOrder(database);
+	await database.batch([
+		database.prepare(
+			"UPDATE outbox_events SET status = 'published' WHERE id = 'order-paid-outbox'",
+		),
+		database.prepare(
+			`INSERT INTO refunds
+			 (id, order_id, idempotency_key, amount_minor, currency,
+			  payment_amount_minor, payment_currency, payment_currency_decimals,
+			  order_status_before, status, reason, attempt_count, created_at, updated_at)
+			 VALUES ('refund-1001', 'order-1001', 'refund-notification-1001', '1299',
+			  'USD', '1299', 'USD', 2, 'paid', 'succeeded', 'Customer request', 1, 1, 1)`,
+		),
+		database.prepare(
+			`INSERT INTO outbox_events
+			 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+			  status, attempt_count, created_at, updated_at) VALUES
+			 ('refund-event-1001', 'refund.succeeded', 'refund', 'refund-1001',
+			  'refund.succeeded:refund-1001:0', '{"refundId":"refund-1001"}', 'pending', 0, 2, 2)`,
 		),
 	]);
 }
