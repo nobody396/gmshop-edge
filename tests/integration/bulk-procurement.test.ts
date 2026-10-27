@@ -297,7 +297,9 @@ describe("bulk AISOU procurement after a bulk sale", {
 		await tap(String(buttons[1]?.[0]?.callback_data), 701, 2);
 		await run(1_900_000_060_000);
 		expect(await state()).toMatchObject({ state: "skipped" });
-		expect(warehouse).toHaveLength(1);
+		// The warehouse releases the codes for single purchases at redemption.
+		expect(warehouse).toHaveLength(2);
+		expect(warehouse[1]?.body).toEqual({ batch_id: expect.any(String), release: true });
 	});
 
 	it("passes the accepted unit price after the owner agrees to a changed quote", async () => {
@@ -328,7 +330,10 @@ describe("bulk AISOU procurement after a bulk sale", {
 	it("cancels a refunded order before buying and stays silent for SKUs without a bulk source", async () => {
 		await db.prepare("UPDATE shop_orders SET status = 'refunded'").run();
 		await run(1_900_000_000_000);
-		expect(warehouse).toHaveLength(0);
+		// Nothing is bought; the warehouse only releases the codes it was holding for this batch.
+		expect(warehouse).toEqual([
+			{ path: "/api/internal/aisou/bulk", body: { batch_id: expect.any(String), release: true } },
+		]);
 		expect(await state()).toMatchObject({ state: "cancelled" });
 		expect(sent()[0]?.body.text).toContain("订单已退款，这批不进货");
 
@@ -355,6 +360,22 @@ describe("bulk AISOU procurement after a bulk sale", {
 		expect(await state()).toMatchObject({ state: "review" });
 		expect(sent()).toHaveLength(1);
 		expect(sent()[0]?.body.text).toContain("需要人工核对");
+	});
+
+	it("keeps following a trade in review and reports it once the warehouse recovers its cards", async () => {
+		replies.push({ status: "review", need: 3, trade_no: "T1", reason: "no cards delivered" });
+		await run(1_900_000_000_000);
+		expect(await state()).toMatchObject({ state: "review" });
+		await run(1_900_000_060_000);
+		expect(warehouse).toHaveLength(1);
+		const reviewMessages = sent().length;
+		replies.push({ status: "review", need: 3, trade_no: "T1", reason: "no cards delivered" });
+		await run(1_900_000_000_000 + 5 * 60_000);
+		expect(warehouse).toHaveLength(2);
+		expect(sent()).toHaveLength(reviewMessages);
+		replies.push({ status: "verifying", need: 3 });
+		await run(1_900_000_000_000 + 10 * 60_000);
+		expect(await state()).toMatchObject({ state: "verifying" });
 	});
 
 	it("tops owned codes up to 150 for plans sold in bulk once they fall below 100, at most every ten minutes", async () => {

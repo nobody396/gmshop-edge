@@ -24,6 +24,8 @@ import {
 export const bulkMinimumQuantity = 3;
 const maxTransientAttempts = 15;
 const verifyPollMs = 60_000;
+// A trade in review may still deliver (the warehouse reads it again every minute); its result is followed slowly.
+const reviewPollMs = 5 * 60_000;
 const awaitingStates = ["awaiting_funds", "awaiting_stock", "awaiting_price"];
 const rowColumns = `b.id, b.order_id, b.order_item_id, b.warehouse_sku, b.quantity,
 	b.code_hashes_json, b.state, b.accept_unit_minor, b.attempt_count, b.notified_state, b.last_result_json,
@@ -89,7 +91,7 @@ export async function recordBulkSale(
 		now?: number;
 	},
 ) {
-	if (input.codeHashes.length < bulkMinimumQuantity) return;
+	if (input.codeHashes.length < bulkMinimumQuantity) return null;
 	const now = input.now ?? Date.now();
 	await db
 		.prepare(
@@ -110,6 +112,11 @@ export async function recordBulkSale(
 			now,
 		)
 		.run();
+	const row = await db
+		.prepare("SELECT id FROM bulk_procurements WHERE order_item_id = ?")
+		.bind(input.orderItemId)
+		.first<{ id: string }>();
+	return row?.id ?? null;
 }
 
 /** Minute cron: advances due bulk sales one warehouse call each. */
@@ -120,15 +127,46 @@ export async function runBulkProcurements(input: {
 	requester?: typeof requestWarehouse;
 }) {
 	const { db, now } = input;
-	// "这批不进了" pressed: the owner chose single purchases at redemption.
-	await db
+	const requester = input.requester ?? requestWarehouse;
+	let token: string | null = null;
+	const warehouseToken = async () => {
+		if (token) return token;
+		const runtime = await loadRuntimeConfig(db);
+		if (!runtime.commerceSecret) return null;
+		token = await loadDeliveryWarehouseToken(db, runtime.commerceSecret);
+		return token;
+	};
+	// The warehouse keeps a bulk line's codes for its wholesale trade only. They are released for single
+	// purchases when the owner presses "这批不进了", or when the order was refunded before the trade.
+	const giveUps = await db
 		.prepare(
-			`UPDATE bulk_procurements SET state = 'skipped', updated_at = ?
-			 WHERE state IN ('awaiting_funds','awaiting_stock','awaiting_price')
-			  AND owner_action_id IN (SELECT id FROM owner_action_requests WHERE status = 'rejected')`,
+			`SELECT b.id, b.state, CASE WHEN o.status IN ('refunding','refunded','cancelled') THEN 'cancelled' ELSE 'skipped' END AS next_state
+			 FROM bulk_procurements b JOIN shop_orders o ON o.id = b.order_id
+			 WHERE (b.state IN ('awaiting_funds','awaiting_stock','awaiting_price')
+			    AND b.owner_action_id IN (SELECT id FROM owner_action_requests WHERE status = 'rejected'))
+			   OR (b.state IN ('pending','awaiting_funds','awaiting_stock','awaiting_price','verifying','review')
+			    AND o.status IN ('refunding','refunded','cancelled'))
+			 LIMIT 10`,
 		)
-		.bind(now)
-		.run();
+		.all<{ id: string; state: string; next_state: string }>();
+	for (const row of giveUps.results) {
+		const key = await warehouseToken();
+		if (!key) break;
+		try {
+			await requester(key, "/api/internal/aisou/bulk", {
+				method: "POST",
+				body: JSON.stringify({ batch_id: row.id, release: true }),
+			});
+		} catch {
+			continue; // Released on the next minute; the line keeps its state meanwhile.
+		}
+		await db
+			.prepare(
+				"UPDATE bulk_procurements SET state = ?, updated_at = ? WHERE id = ? AND state = ?",
+			)
+			.bind(row.next_state, now, row.id, row.state)
+			.run();
+	}
 	// Messages that did not go out (Telegram down) are sent again.
 	const unsent = await db
 		.prepare(
@@ -156,19 +194,17 @@ export async function runBulkProcurements(input: {
 			 JOIN shop_orders o ON o.id = b.order_id
 			 JOIN shop_order_items i ON i.id = b.order_item_id
 			 LEFT JOIN payment_channels c ON c.id = o.pricing_channel_id
-			 WHERE b.state IN ('pending','verifying') AND b.next_attempt_at <= ?
+			 WHERE b.state IN ('pending','verifying','review') AND b.next_attempt_at <= ?
 			 ORDER BY b.next_attempt_at, b.created_at LIMIT 5`,
 		)
 		.bind(now)
 		.all<BulkRow>();
 	if (due.results.length === 0)
 		return { status: "idle" as const, processed: 0 };
-	const runtime = await loadRuntimeConfig(db);
-	if (!runtime.commerceSecret) return { status: "unavailable" as const };
-	const token = await loadDeliveryWarehouseToken(db, runtime.commerceSecret);
-	const requester = input.requester ?? requestWarehouse;
+	const key = await warehouseToken();
+	if (!key) return { status: "unavailable" as const };
 	for (const row of due.results)
-		await advance(db, row, token, now, requester, input.fetcher);
+		await advance(db, row, key, now, requester, input.fetcher);
 	return { status: "ran" as const, processed: due.results.length };
 }
 
@@ -180,11 +216,9 @@ async function advance(
 	requester: typeof requestWarehouse,
 	fetcher: typeof fetch | undefined,
 ) {
-	if (
-		["refunding", "refunded", "cancelled"].includes(row.order_status) &&
-		row.state === "pending"
-	)
-		return settle(db, row, "cancelled", { status: "cancelled" }, now, fetcher);
+	// A refunded order is cancelled by the release step above, once the warehouse let its codes go.
+	if (["refunding", "refunded", "cancelled"].includes(row.order_status))
+		return;
 	let result: BulkResult;
 	try {
 		const body = envelopeSchema.parse(
@@ -217,7 +251,7 @@ async function advance(
 		case "supplied":
 			return settle(db, row, "supplied", result, now, fetcher);
 		case "review":
-			return settle(db, row, "review", result, now, fetcher);
+			return settle(db, row, "review", result, now, fetcher, now + reviewPollMs);
 		case "funds_short":
 		case "failed":
 			return settle(db, row, "awaiting_funds", result, now, fetcher);
@@ -240,6 +274,7 @@ async function advance(
 					{ ...result, reason: `${result.status} after ${attempts} tries` },
 					now,
 					fetcher,
+					now + reviewPollMs,
 				);
 			await db
 				.prepare(

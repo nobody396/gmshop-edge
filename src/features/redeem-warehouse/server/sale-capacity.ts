@@ -81,15 +81,30 @@ export async function notifyWarehouseSale(
 			coded.push({ id: entry.id, hash: await sha256Hex(code.toLowerCase()) });
 	}
 	if (coded.length === 0) return;
-	// A bulk sale is bought from AISOU in one wholesale trade by the minute cron.
-	if (item)
-		await recordBulkSale(db, {
-			orderId: item.order_id,
-			orderItemId,
-			sellableItemId: item.sellable_item_id,
-			sku,
-			codeHashes: coded.map((entry) => entry.hash),
-		}).catch(() => undefined);
+	// A bulk sale is bought from AISOU in one wholesale trade by the minute cron. The warehouse holds its codes
+	// for that trade right away, so a customer redeeming at once can never trigger a single purchase.
+	const batchId = item
+		? await recordBulkSale(db, {
+				orderId: item.order_id,
+				orderItemId,
+				sellableItemId: item.sellable_item_id,
+				sku,
+				codeHashes: coded.map((entry) => entry.hash),
+			}).catch(() => null)
+		: null;
+	if (batchId)
+		await loadDeliveryWarehouseToken(db, commerceSecret)
+			.then((token) =>
+				requester(token, "/api/internal/aisou/bulk", {
+					method: "POST",
+					body: JSON.stringify({
+						batch_id: batchId,
+						code_hashes: coded.map((entry) => entry.hash),
+						hold_only: true,
+					}),
+				}),
+			)
+			.catch(() => undefined); // The minute cron holds them on its first call.
 	const mark = (
 		id: string,
 		source: string,
