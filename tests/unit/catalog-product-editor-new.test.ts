@@ -75,8 +75,8 @@ describe("catalog product editor creation flow", () => {
 		);
 	});
 
-	it("starts new delivery configurations with email disabled", () => {
-		expect(editorSource).toContain('emailMode: "none"');
+	it("starts new delivery configurations with the delivery email on", () => {
+		expect(editorSource).toContain('emailMode: "link"');
 	});
 
 	it("queues text inventory and download files before the first save", () => {

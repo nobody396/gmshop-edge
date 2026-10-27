@@ -1880,7 +1880,7 @@ function newComponent(type: Component["type"]): Component {
 		usageLimit: null,
 		accessLimit: null,
 		renewalMode: "stack",
-		emailMode: "none",
+		emailMode: "link",
 		showOnOrderPage: true,
 		allowResend: true,
 		lowStockThreshold: 5,
