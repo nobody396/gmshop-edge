@@ -91,7 +91,7 @@ export async function recordBulkSale(
 		now?: number;
 	},
 ) {
-	if (input.codeHashes.length < bulkMinimumQuantity) return;
+	if (input.codeHashes.length < bulkMinimumQuantity) return null;
 	const now = input.now ?? Date.now();
 	await db
 		.prepare(
@@ -112,6 +112,11 @@ export async function recordBulkSale(
 			now,
 		)
 		.run();
+	const row = await db
+		.prepare("SELECT id FROM bulk_procurements WHERE order_item_id = ?")
+		.bind(input.orderItemId)
+		.first<{ id: string }>();
+	return row?.id ?? null;
 }
 
 /** Minute cron: advances due bulk sales one warehouse call each. */
@@ -137,9 +142,10 @@ export async function runBulkProcurements(input: {
 		.prepare(
 			`SELECT b.id, b.state, CASE WHEN o.status IN ('refunding','refunded','cancelled') THEN 'cancelled' ELSE 'skipped' END AS next_state
 			 FROM bulk_procurements b JOIN shop_orders o ON o.id = b.order_id
-			 WHERE b.state IN ('pending','awaiting_funds','awaiting_stock','awaiting_price')
-			  AND (b.owner_action_id IN (SELECT id FROM owner_action_requests WHERE status = 'rejected')
-			   OR o.status IN ('refunding','refunded','cancelled'))
+			 WHERE (b.state IN ('awaiting_funds','awaiting_stock','awaiting_price')
+			    AND b.owner_action_id IN (SELECT id FROM owner_action_requests WHERE status = 'rejected'))
+			   OR (b.state IN ('pending','awaiting_funds','awaiting_stock','awaiting_price','review')
+			    AND o.status IN ('refunding','refunded','cancelled'))
 			 LIMIT 10`,
 		)
 		.all<{ id: string; state: string; next_state: string }>();
@@ -210,11 +216,9 @@ async function advance(
 	requester: typeof requestWarehouse,
 	fetcher: typeof fetch | undefined,
 ) {
-	if (
-		["refunding", "refunded", "cancelled"].includes(row.order_status) &&
-		row.state === "pending"
-	)
-		return settle(db, row, "cancelled", { status: "cancelled" }, now, fetcher);
+	// A refunded order is cancelled by the release step above, once the warehouse let its codes go.
+	if (["refunding", "refunded", "cancelled"].includes(row.order_status))
+		return;
 	let result: BulkResult;
 	try {
 		const body = envelopeSchema.parse(
