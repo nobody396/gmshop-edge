@@ -217,8 +217,7 @@ async function advance(
 	fetcher: typeof fetch | undefined,
 ) {
 	// A refunded order is cancelled by the release step above, once the warehouse let its codes go.
-	if (["refunding", "refunded", "cancelled"].includes(row.order_status))
-		return;
+	if (["refunding", "refunded", "cancelled"].includes(row.order_status)) return;
 	let result: BulkResult;
 	try {
 		const body = envelopeSchema.parse(
@@ -251,7 +250,15 @@ async function advance(
 		case "supplied":
 			return settle(db, row, "supplied", result, now, fetcher);
 		case "review":
-			return settle(db, row, "review", result, now, fetcher, now + reviewPollMs);
+			return settle(
+				db,
+				row,
+				"review",
+				result,
+				now,
+				fetcher,
+				now + reviewPollMs,
+			);
 		case "funds_short":
 		case "failed":
 			return settle(db, row, "awaiting_funds", result, now, fetcher);

@@ -299,7 +299,10 @@ describe("bulk AISOU procurement after a bulk sale", {
 		expect(await state()).toMatchObject({ state: "skipped" });
 		// The warehouse releases the codes for single purchases at redemption.
 		expect(warehouse).toHaveLength(2);
-		expect(warehouse[1]?.body).toEqual({ batch_id: expect.any(String), release: true });
+		expect(warehouse[1]?.body).toEqual({
+			batch_id: expect.any(String),
+			release: true,
+		});
 	});
 
 	it("passes the accepted unit price after the owner agrees to a changed quote", async () => {
@@ -332,7 +335,10 @@ describe("bulk AISOU procurement after a bulk sale", {
 		await run(1_900_000_000_000);
 		// Nothing is bought; the warehouse only releases the codes it was holding for this batch.
 		expect(warehouse).toEqual([
-			{ path: "/api/internal/aisou/bulk", body: { batch_id: expect.any(String), release: true } },
+			{
+				path: "/api/internal/aisou/bulk",
+				body: { batch_id: expect.any(String), release: true },
+			},
 		]);
 		expect(await state()).toMatchObject({ state: "cancelled" });
 		expect(sent()[0]?.body.text).toContain("订单已退款，这批不进货");
@@ -363,13 +369,23 @@ describe("bulk AISOU procurement after a bulk sale", {
 	});
 
 	it("keeps following a trade in review and reports it once the warehouse recovers its cards", async () => {
-		replies.push({ status: "review", need: 3, trade_no: "T1", reason: "no cards delivered" });
+		replies.push({
+			status: "review",
+			need: 3,
+			trade_no: "T1",
+			reason: "no cards delivered",
+		});
 		await run(1_900_000_000_000);
 		expect(await state()).toMatchObject({ state: "review" });
 		await run(1_900_000_060_000);
 		expect(warehouse).toHaveLength(1);
 		const reviewMessages = sent().length;
-		replies.push({ status: "review", need: 3, trade_no: "T1", reason: "no cards delivered" });
+		replies.push({
+			status: "review",
+			need: 3,
+			trade_no: "T1",
+			reason: "no cards delivered",
+		});
 		await run(1_900_000_000_000 + 5 * 60_000);
 		expect(warehouse).toHaveLength(2);
 		expect(sent()).toHaveLength(reviewMessages);
