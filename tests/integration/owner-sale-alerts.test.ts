@@ -687,7 +687,7 @@ it("formats API openings and opening failures", () => {
 		order_status: "completed",
 		currency: "CNY",
 		currency_decimals: 2,
-		total_minor: "1990",
+		total_minor: "2000",
 		contact_email: "agent@example.test",
 		items_summary: "API 对接一次性开通 · 一次性开通 × 1",
 		cost_total_minor: "0",
@@ -700,7 +700,7 @@ it("formats API openings and opening failures", () => {
 		supplier_pending_count: 0,
 		supplier_failed_count: 0,
 		payment_channel: "支付宝",
-		payment_amount_minor: "1990",
+		payment_amount_minor: "2000",
 		payment_currency: "CNY",
 		payment_currency_decimals: 2,
 		payment_fee_bps: 100,
@@ -731,7 +731,7 @@ it("formats API openings and opening failures", () => {
 	);
 	expect(api).toContain("货源：自动开通（API 对接）");
 	expect(api).toContain("成本：¥0.00");
-	expect(api).toContain("利润：¥19.70");
+	expect(api).toContain("利润：¥19.80");
 	expect(api).toContain("开通：✅ API 已开通");
 	expect(api).not.toContain("剩余卡密");
 	const failed = formatFeishuOwnerSaleAlert(

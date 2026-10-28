@@ -9,7 +9,7 @@ export const agentAccessProducts = {
 	api: {
 		productId: "09900000-0000-4000-8000-000000000001",
 		itemId: "09900000-0000-4000-8000-000000000002",
-		priceMinor: "1990",
+		priceMinor: "2000",
 		name: "API 对接一次性开通",
 	},
 } as const;
