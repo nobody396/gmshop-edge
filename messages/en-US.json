@@ -2195,7 +2195,7 @@
 	"agent_access_guide": "Guides and secure credential claim",
 	"agent_access_api_guide": "Sign in, claim credentials securely, configure and test your protocol, sync products, then fund purchasing credit separately. Access activation does not mean your third-party integration has been tested.",
 	"agent_access_subsite_guide": "Sign in, open the storefront console, review products and prices, share the link, then manage orders, earnings and payouts. Existing settings are preserved.",
-	"agent_access_draft_notice": "Create draft products only: ¥199 storefront and ¥9.90 API. Configure the service key, default pricing and support policy before acceptance and publication. Existing agents and child shops are not governed by this sales switch.",
+	"agent_access_draft_notice": "Create draft products only: ¥199 storefront and ¥20.00 API. Configure the service key, default pricing and support policy before acceptance and publication. Existing agents and child shops are not governed by this sales switch.",
 	"agent_access_prepare_drafts": "Prepare two draft products (do not publish)",
 	"agent_access_drafts_ready": "Drafts prepared. Repeating this does not overwrite existing products.",
 	"agent_access_enable": "Enable agent access checkout",
