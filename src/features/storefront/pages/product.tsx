@@ -457,8 +457,8 @@ export function StorefrontProductPage({
 																	pricing={pricing.data?.[item.id]}
 																/>
 															</span>
-															<span className="flex items-baseline justify-between gap-2">
-																<span className="font-semibold text-primary text-sm">
+															<span className="flex flex-wrap items-baseline justify-between gap-x-2">
+																<span className="whitespace-nowrap font-semibold text-primary text-sm">
 																	<StoreMoney
 																		amountMinor={item.priceMinor}
 																		currency={item.currency}
