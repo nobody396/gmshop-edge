@@ -302,7 +302,7 @@ export function AgentAccessDrafts() {
 					href={`/admin/products/${p.productId}`}
 				>
 					{p.priceMinor === agentAccessProducts.api.priceMinor
-						? "API · ¥19.90"
+						? "API · ¥20.00"
 						: "Subsite · ¥199"}
 				</a>
 			))}
