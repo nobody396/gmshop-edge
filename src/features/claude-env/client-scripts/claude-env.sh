@@ -2,6 +2,8 @@
 # Claude 稳定使用环境 · 一键部署（macOS + Clash Verge Rev）
 #
 # 客户前提：① 自己有能用的代理订阅（没装 Clash Verge Rev 的，脚本自动安装并把原软件里的订阅导入）
+#             梯子装在路由器上（软路由）、电脑上没有代理软件的：找不到订阅时输入 R，脚本只装 Clash Verge Rev，
+#             不要订阅，到中转的那一跳由路由器代理出国
 #           ② 有我们发的开通码（CE1- 开头）
 # 链路：客户电脑 → 客户的梯子（自动挑能通的节点）→ 我们的中转 → 客户专属静态 IP → Claude
 # 脚本完成：写入 Clash 分流（Claude、上报、验证、付款、实名全部走专属 IP）→ 关自动时区并改时区
@@ -15,6 +17,7 @@
 #                     控制接口只找 $CE_TEST_ROOT/verge-mihomo.sock，时区/语言/定位/launchctl 读写沙箱里的文件
 #   CE_TEST_HOOK=/path 沙箱里代替「下载 / 安装 / 启动 Clash Verge」的测试脚本（只在 CE_TEST_ROOT 下生效）
 #   CE_TEST_TTY=1     沙箱里允许从终端提问（粘贴订阅链接）
+#   CE_ROUTER=1       梯子在路由器上（软路由）：需要导入订阅时不找订阅也不问，直接按软路由配置（客服可让客户这样运行）
 # 没装 Clash Verge Rev 时：自动下载官方固定版本（SHA-256 校验）装到「应用程序」，把原来代理软件（FlClash、Clash for Windows、
 # Clash Party / Mihomo Party、Clash Nyanpasu、v2rayN）里正在用的订阅导入进去，再关掉原来的软件和它设的系统代理。
 set -uo pipefail
@@ -31,6 +34,9 @@ MIN_VERGE="2.4.0"
 CV_DIR="$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
 CV_CFG="$CV_DIR/clash-verge.yaml"
 VERGE_YAML="$CV_DIR/verge.yaml"
+# 软路由模式标记：梯子在路由器上，Clash 里没有订阅节点，到中转的这一跳直接连（由路由器代理出国）
+ROUTER_MARK="$CV_DIR/claude-env-router"
+ROUTER=""; [ -f "$ROUTER_MARK" ] && ROUTER=1
 MARK_BEGIN="// >>> claude-env BEGIN"
 MARK_END="// <<< claude-env END"
 RC_BEGIN="# >>> claude-env BEGIN"
@@ -362,8 +368,12 @@ manual_fallback() {
   local others; others=$(installed_others | paste -sd '、' -)
   [ -n "$others" ] && printf '  检测到你在用：%s。需要换成 Clash Verge Rev（免费开源），请按下面手动装一下：\n' "$others"
   printf '  1. 已为你打开下载页：M 芯片下载 aarch64.dmg，Intel 下载 x64.dmg，装好打开\n'
-  printf '  2. 在 Clash Verge Rev「订阅」里粘贴你的订阅链接（机场官网或原软件的订阅设置里能找到），选中它\n'
-  printf '  3. 退出原来的代理软件，确认能打开 google.com 后，重新运行本命令\n'
+  if [ -n "$ROUTER" ]; then
+    printf '  2. 装好后打开 Clash Verge Rev 一次，退出，然后重新运行本命令，看到提问时再输入 R（梯子在路由器上不需要订阅）\n'
+  else
+    printf '  2. 在 Clash Verge Rev「订阅」里粘贴你的订阅链接（机场官网或原软件的订阅设置里能找到），选中它\n'
+    printf '  3. 退出原来的代理软件，确认能打开 google.com 后，重新运行本命令\n'
+  fi
   sysrun open "https://github.com/clash-verge-rev/clash-verge-rev/releases/latest"
   exit 3
 }
@@ -434,7 +444,7 @@ has_current_profile() { [ -n "$(ylist "$CV_DIR/profiles.yaml" items | awk -F'\t'
 new_uid() { printf '%s%s' "$1" "$(head -c 400 /dev/urandom | LC_ALL=C tr -dc '0-9a-zA-Z' | cut -c1-11)"; }
 yq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
 # 按 Clash Verge 自己导入订阅的方式写入：订阅文件 + 它配套的 5 个增强项，加进 profiles.yaml 并设为当前订阅
-import_sub() { # url content_file name
+import_sub() { # url content_file name [local]：local = 本地配置（软路由模式，没有订阅链接）
   local pd="$CV_DIR/profiles" uid now m s r p g ef pf="$CV_DIR/profiles.yaml" k T
   mkdir -p "$pd"
   uid=$(new_uid R); now=$(date +%s); m=$(new_uid m); s=$(new_uid s); r=$(new_uid r); p=$(new_uid p); g=$(new_uid g)
@@ -446,8 +456,13 @@ import_sub() { # url content_file name
   done
   ef=$(mktemp)
   {
-    printf -- '- uid: %s\n  type: remote\n  name: %s\n  file: %s.yaml\n  url: %s\n  updated: %s\n' "$uid" "$(yq "$3")" "$uid" "$(yq "$1")" "$now"
-    printf '  option:\n    update_interval: 1440\n    allow_auto_update: true\n    merge: %s\n    script: %s\n    rules: %s\n    proxies: %s\n    groups: %s\n' "$m" "$s" "$r" "$p" "$g"
+    if [ "${4:-}" = local ]; then
+      printf -- '- uid: %s\n  type: local\n  name: %s\n  file: %s.yaml\n  updated: %s\n' "$uid" "$(yq "$3")" "$uid" "$now"
+      printf '  option:\n    merge: %s\n    script: %s\n    rules: %s\n    proxies: %s\n    groups: %s\n' "$m" "$s" "$r" "$p" "$g"
+    else
+      printf -- '- uid: %s\n  type: remote\n  name: %s\n  file: %s.yaml\n  url: %s\n  updated: %s\n' "$uid" "$(yq "$3")" "$uid" "$(yq "$1")" "$now"
+      printf '  option:\n    update_interval: 1440\n    allow_auto_update: true\n    merge: %s\n    script: %s\n    rules: %s\n    proxies: %s\n    groups: %s\n' "$m" "$s" "$r" "$p" "$g"
+    fi
     printf -- '- uid: %s\n  type: merge\n  file: %s.yaml\n  updated: %s\n' "$m" "$m" "$now"
     printf -- '- uid: %s\n  type: script\n  file: %s.js\n  updated: %s\n' "$s" "$s" "$now"
     printf -- '- uid: %s\n  type: rules\n  file: %s.yaml\n  updated: %s\n' "$r" "$r" "$now"
@@ -500,8 +515,12 @@ migrate() { # install|import
   OLDPX=$(find_old_proxy)
   [ -n "$OLDPX" ] && c_ok "原来的代理软件能用（本机端口 ${OLDPX##*:}），下载时先借它的网络"
   local subs subf chosen="" n cl c u tries vport was nn host names
-  subs=$(find_subs); subf=$(mktemp)
-  [ -n "$subs" ] || c_warn "没在电脑上的代理软件里找到订阅"
+  [ "${CE_ROUTER:-}" = 1 ] && ROUTER=1
+  subf=$(mktemp)
+  if [ -z "$ROUTER" ]; then
+    subs=$(find_subs)
+    [ -n "$subs" ] || c_warn "没在电脑上的代理软件里找到订阅"
+  fi
   while IFS="$(printf '\t')" read -r _ cl c u; do
     [ -n "$u" ] || continue
     printf '  找到 %s 的订阅：%s%s，正在下载…\n' "$cl" "$(mask_url "$u")" "$([ "$c" = 1 ] && echo '（正在使用）')"
@@ -509,19 +528,28 @@ migrate() { # install|import
     c_warn "这个订阅下载不下来，或者不是 Clash 格式，换下一个"
   done < <(printf '%s\n' "$subs" | head -6)
   tries=0
-  while [ -z "$chosen" ] && [ "$tries" -lt 3 ]; do
+  while [ -z "$chosen" ] && [ -z "$ROUTER" ] && [ "$tries" -lt 3 ]; do
     tries=$((tries + 1))
     # 没有终端可问（或沙箱测试没要求交互）就不问
     { [ -z "$TR" ] || [ -n "${CE_TEST_TTY:-}" ]; } && ( : </dev/tty ) 2>/dev/null || break
-    u=$(ask "请粘贴你的订阅链接（http 开头，在机场官网或原来软件的订阅设置里复制），回车：" | tr -d ' \r\n')
+    u=$(ask "请粘贴你的订阅链接（http 开头，在机场官网或原来软件的订阅设置里复制）。如果你的梯子装在路由器上（软路由），电脑上没有代理软件，请输入大写 R，回车：" | tr -d ' \r\n')
+    case "$u" in r|R) ROUTER=1; break;; esac
     [ -n "$u" ] || break
     printf '%s\n' "$u" | grep -qE '^https?://[^[:space:]]+$' || { c_warn "这不像订阅链接（应该以 http:// 或 https:// 开头），请再试一次"; continue; }
     printf '  正在下载订阅 %s …\n' "$(mask_url "$u")"
     if fetch_sub "$u" "$subf"; then chosen=$u; else c_warn "这个链接下载不到 Clash 格式的订阅。请在机场官网找「Clash」订阅链接再粘贴"; fi
   done
-  [ -n "$chosen" ] || { rm -f "$subf"; manual_fallback "没拿到能用的订阅，没法自动配置。"; }
-  names=$(mktemp); sub_names "$subf" >"$names"; nn=$(grep -c . "$names")
-  c_ok "订阅下载成功：$(mask_url "$chosen")$([ "${nn:-0}" -gt 0 ] && echo "（约 ${nn} 个节点）")"
+  [ -n "$chosen" ] || [ -n "$ROUTER" ] || { rm -f "$subf"; manual_fallback "没拿到能用的订阅，没法自动配置。"; }
+  names=$(mktemp)
+  if [ -n "$ROUTER" ]; then
+    # 软路由：梯子在路由器上，Clash 里不放订阅节点，只放一个空配置（其余流量直连，由路由器代理）；到中转的那一跳也直连
+    printf '# 软路由模式：梯子在路由器上，这里不需要订阅节点\nproxies: []\nproxy-groups: []\nrules:\n  - MATCH,DIRECT\n' >"$subf"
+    c_ok "软路由模式：不需要订阅。电脑到我们中转的这一跳，由你路由器上的梯子代理出国"
+    printf '  请确认：路由器上的梯子对海外网站是开着的（这台电脑现在能打开 google.com 就说明是通的）\n'
+  else
+    sub_names "$subf" >"$names"; nn=$(grep -c . "$names")
+    c_ok "订阅下载成功：$(mask_url "$chosen")$([ "${nn:-0}" -gt 0 ] && echo "（约 ${nn} 个节点）")"
+  fi
   if [ "$1" = install ]; then
     install_verge || { rm -f "$subf" "$names"; manual_fallback "自动下载或安装 Clash Verge Rev 没成功（多半是网络问题）。"; }
     c_ok "Clash Verge Rev ${VERGE_VER} 已安装"
@@ -530,9 +558,15 @@ migrate() { # install|import
     wait_ctl 90 || die "Clash Verge Rev 装好了，但第一次打开没成功。请手动打开一次 Clash Verge Rev，再重新运行本命令。"
   fi
   stop_verge
-  host=$(printf '%s' "$chosen" | sed -E 's#^https?://([^@/?#]*@)?([^/?#:]+).*#\2#')
-  import_sub "$chosen" "$subf" "$host"; rm -f "$subf"
-  c_ok "订阅已导入 Clash Verge Rev，并设为当前使用的订阅"
+  if [ -n "$ROUTER" ]; then
+    import_sub "" "$subf" "软路由（梯子在路由器上）" local; rm -f "$subf"
+    [ -n "$DRY" ] || printf '软路由模式：梯子在路由器上，Clash 里没有订阅节点\n' >"$ROUTER_MARK"
+    c_ok "已在 Clash Verge Rev 里建好软路由配置，并设为当前使用"
+  else
+    host=$(printf '%s' "$chosen" | sed -E 's#^https?://([^@/?#]*@)?([^/?#:]+).*#\2#')
+    import_sub "$chosen" "$subf" "$host"; rm -f "$subf"
+    c_ok "订阅已导入 Clash Verge Rev，并设为当前使用的订阅"
+  fi
   local runold; runold=$(running_others)
   if [ -n "$runold" ]; then
     printf '  正在关闭原来的代理软件：%s（两个代理软件同时开会抢网络；以后只用 Clash Verge Rev）\n' "$(printf '%s\n' "$runold" | cut -d'|' -f1 | paste -sd '、' -)"
@@ -546,10 +580,16 @@ migrate() { # install|import
   start_verge
   # 刚退出的 Clash Verge 偶尔还没完全关掉，这次打开会落空：再打开一次
   SOCK=""; wait_ctl 60 || { start_verge; wait_ctl 60; } || die "Clash Verge Rev 打开后连不上控制接口。"
-  n=0; for _ in $(seq 1 15); do n=$(count_nodes "$names"); [ "${n:-0}" -gt 0 ] && break; sleep 2; done
-  rm -f "$names"
-  [ "${n:-0}" -gt 0 ] || die "订阅导入后 Clash Verge Rev 里没有读到节点。请打开 Clash Verge Rev「订阅」页看一下是否有报错，截图发给客服。"
-  c_ok "Clash Verge Rev 已读到订阅里的 ${n} 个节点"
+  if [ -n "$ROUTER" ]; then
+    rm -f "$names"
+    find_ctl || die "Clash Verge Rev 打开后连不上控制接口。"
+    c_ok "Clash Verge Rev 已加载软路由配置"
+  else
+    n=0; for _ in $(seq 1 15); do n=$(count_nodes "$names"); [ "${n:-0}" -gt 0 ] && break; sleep 2; done
+    rm -f "$names"
+    [ "${n:-0}" -gt 0 ] || die "订阅导入后 Clash Verge Rev 里没有读到节点。请打开 Clash Verge Rev「订阅」页看一下是否有报错，截图发给客服。"
+    c_ok "Clash Verge Rev 已读到订阅里的 ${n} 个节点"
+  fi
 }
 
 [ "$(uname)" = "Darwin" ] || die "这个脚本只支持 macOS。"
@@ -593,8 +633,13 @@ if [ -n "$RUN_OTHERS" ]; then
   fi
 fi
 MIXED_PORT=$(jget "$(ctl GET /configs)" 'o["mixed-port"]'); MIXED_PORT=${MIXED_PORT:-7897}
-curl -s -m 10 -o /dev/null -x "http://127.0.0.1:$MIXED_PORT" https://www.google.com/generate_204 || die "梯子不通：通过 Clash 打不开 Google。请先确认你的梯子能正常使用。"
-c_ok "梯子可用"
+if [ -n "$ROUTER" ]; then
+  curl -s -m 10 -o /dev/null -x "http://127.0.0.1:$MIXED_PORT" https://www.google.com/generate_204 || die "路由器的梯子不通：这台电脑通过路由器打不开 Google。请先确认路由器上的梯子是开着的、这台电脑接的就是这个路由器，再重新运行。"
+  c_ok "路由器上的梯子可用（这台电脑能经路由器打开 Google）"
+else
+  curl -s -m 10 -o /dev/null -x "http://127.0.0.1:$MIXED_PORT" https://www.google.com/generate_204 || die "梯子不通：通过 Clash 打不开 Google。请先确认你的梯子能正常使用。"
+  c_ok "梯子可用"
+fi
 
 # ===== 2. 开通码 =====
 step 2 "读取开通码"
@@ -676,8 +721,16 @@ if node -e 1 2>/dev/null; then
     const r=c.main({proxies:[],"proxy-groups":[{name:"节点选择",type:"select",proxies:["a"]}],rules:["MATCH,节点选择"],dns:{enable:true}},"t");
     if(!r.proxies.find(p=>p["dialer-proxy"]==="节点选择")||!r.rules.includes("DOMAIN-SUFFIX,claude.ai,'"$GROUP_NAME"'")||!r.dns["nameserver-policy"]["+.claude.ai"])process.exit(1)' "$SCRIPT_JS" \
     && c_ok "扩展脚本自检通过" || die "扩展脚本自检失败（原文件已备份）"
+  # 软路由（没有任何订阅节点）：到中转的这一跳必须是直连，规则照样生成
+  node -e '
+    const fs=require("fs"),vm=require("vm");const c={};vm.createContext(c);vm.runInContext(fs.readFileSync(process.argv[1],"utf8"),c);
+    const r=c.main({proxies:[],"proxy-groups":[],rules:["MATCH,DIRECT"],dns:{enable:true}},"t");
+    const n=r.proxies.find(p=>p.name==="'"$NODE_NAME"'");
+    if(!n||"dialer-proxy" in n||!r.rules.includes("DOMAIN-SUFFIX,claude.ai,'"$GROUP_NAME"'")||r.rules[r.rules.length-1]!=="MATCH,DIRECT")process.exit(1)' "$SCRIPT_JS" \
+    && c_ok "扩展脚本自检通过（无前置梯子的情形）" || die "扩展脚本自检失败（无前置梯子的情形，原文件已备份）"
 fi
-c_ok "已写入全局扩展脚本：Claude、后台上报、人机验证、付款、实名都走专属 IP；你原来的订阅和节点不变"
+if [ -n "$ROUTER" ]; then c_ok "已写入全局扩展脚本：Claude、后台上报、人机验证、付款、实名都走专属 IP；到中转的这一跳由你路由器上的梯子代理"
+else c_ok "已写入全局扩展脚本：Claude、后台上报、人机验证、付款、实名都走专属 IP；你原来的订阅和节点不变"; fi
 
 # ===== 4. 清理环境变量 =====
 step 4 "清理环境变量（中转地址、指向别处的代理等）"
@@ -828,7 +881,11 @@ if [ -z "$DRY" ]; then
   [ "$(jget "$RULES" 'return o.rules.some(r=>r.type==="AND"&&r.proxy==="REJECT"&&/claude\.ai/.test(r.payload))')" = "true" ] && chk "Claude 的 UDP/QUIC 已拦截" ok || chk "Claude 的 UDP/QUIC 已拦截" "规则没加载"
   [ "$(jget "$RULES" 'return o.rules.some(r=>r.proxy==="REJECT"&&/2607:6bc0/.test(r.payload))')" = "true" ] && chk "Anthropic IPv6 已拒绝（只走 IPv4）" ok || chk "Anthropic IPv6 已拒绝" "规则没加载"
   DELAY=$(jget "$(ctl GET "/proxies/$(urlenc "$NODE_NAME")/delay?timeout=8000&url=$(urlenc https://claude.ai/cdn-cgi/trace)")" 'o.delay')
-  [ -n "$DELAY" ] && chk "链路 梯子→中转→专属IP 连通（${DELAY}ms）" ok || chk "链路 梯子→中转→专属IP 连通" "不通，请截图发给客服"
+  if [ -n "$ROUTER" ]; then
+    [ -n "$DELAY" ] && chk "链路 路由器→中转→专属IP 连通（${DELAY}ms）" ok || chk "链路 路由器→中转→专属IP 连通" "不通。多半是路由器没让这台电脑到 ${PX_HOST} 的流量走梯子（它在海外，国内直连会被墙）：请在路由器里让 ${PX_HOST} 走代理，再重新运行；还不行就截图发给客服"
+  else
+    [ -n "$DELAY" ] && chk "链路 梯子→中转→专属IP 连通（${DELAY}ms）" ok || chk "链路 梯子→中转→专属IP 连通" "不通，请截图发给客服"
+  fi
 fi
 for d in claude.ai claude.com anthropic.com challenges.cloudflare.com; do
   IP_T=$(dtrace "https://$d/cdn-cgi/trace" | trace_ip)
