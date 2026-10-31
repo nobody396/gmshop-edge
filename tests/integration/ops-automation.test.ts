@@ -6,11 +6,13 @@ import {
 } from "#/features/ops-automation/server/balance-guard";
 import {
 	approvePricingRaise,
+	ceilNiceMinor,
 	ceilYuanMinor,
 	followPlan,
 	parseCostFactors,
 	planPrice,
 	realCostMinor,
+	roundNiceMinor,
 	runPricingGuard,
 	shouldFollow,
 } from "#/features/ops-automation/server/pricing-guard";
@@ -97,6 +99,14 @@ describe("ops automation pure helpers", () => {
 		expect(ceilYuanMinor(6001)).toBe(6100);
 		expect(ceilYuanMinor(99_850)).toBe(99_900);
 		expect(ceilYuanMinor(109_100)).toBe(109_100);
+		// Grid: ¥1 under ¥100, ¥5 under ¥500, ¥10 from ¥500.
+		expect(roundNiceMinor(4249)).toBe(4200);
+		expect(roundNiceMinor(11697)).toBe(11500);
+		expect(roundNiceMinor(35090)).toBe(35000);
+		expect(roundNiceMinor(63186)).toBe(63000);
+		expect(roundNiceMinor(106765)).toBe(107000);
+		expect(ceilNiceMinor(10037)).toBe(10500);
+		expect(ceilNiceMinor(50001)).toBe(51000);
 	});
 
 	it("computes real cost with factors and never plans a lower price", () => {
@@ -112,7 +122,7 @@ describe("ops automation pure helpers", () => {
 				floorMinor: 300,
 			}),
 		).toBeNull();
-		// Only 支付宝 is short: USDT stays, 支付宝 rises to ≥ USDT × 1.02.
+		// Only 支付宝 is short: USDT stays, 支付宝 rises to the next ¥5 grid price.
 		expect(
 			planPrice({
 				usdtMinor: 10400,
@@ -124,7 +134,7 @@ describe("ops automation pure helpers", () => {
 			usdtOld: 10400,
 			usdtNew: 10400,
 			alipayOld: 10500,
-			alipayNew: 10700,
+			alipayNew: 11000,
 			auto: true,
 		});
 	});
@@ -446,7 +456,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			"· Claude · Pro：成本 ¥141.66；USDT ¥142.00→¥145.00，支付宝 ¥152.00（不变）",
 		);
 		expect(text).toContain(
-			"· AISOU · Plus：成本 ¥100.37；USDT ¥104.00（不变），支付宝 ¥105.00→¥107.00",
+			"· AISOU · Plus：成本 ¥100.37；USDT ¥104.00（不变），支付宝 ¥105.00→¥110.00",
 		);
 		expect(text).toContain("需要你确认（未改价）：");
 		expect(text).toContain(
@@ -482,7 +492,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			version: 2,
 			revision: 2,
 			usdt: "10400",
-			alipay: "10700",
+			alipay: "11000",
 		});
 		// >10% is only proposed; generous prices are never lowered.
 		await expect(item("gpt-plus")).resolves.toEqual({
@@ -609,7 +619,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 					messages.push(text);
 				},
 			}),
-		).resolves.toMatchObject({ status: "ran", applied: 2, proposed: 1 });
+		).resolves.toMatchObject({ status: "ran", applied: 4, proposed: 0 });
 
 		const item = (id: string) =>
 			db
@@ -621,38 +631,45 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				)
 				.bind(id)
 				.first();
-		// Cost fell ¥30.43: every price drops by that, rounded up to whole yuan.
+		// Cost fell ¥30.43: every price drops by that, snapped to the ¥10 grid.
 		await expect(item("pro100")).resolves.toEqual({
 			price_minor: "63000",
 			cost_minor: "57000",
-			alipay: "64800",
+			alipay: "65000",
 			agent: "61000",
 		});
-		// Cost rose ¥10.14 (≤10%): prices follow up automatically, rounded up.
+		// Cost rose ¥10.14 (≤10%): prices follow up automatically on the ¥5 grid.
 		await expect(item("plus")).resolves.toEqual({
-			price_minor: "14600",
+			price_minor: "14500",
 			cost_minor: "12000",
-			alipay: "15600",
-			agent: "14100",
+			alipay: "15500",
+			agent: "14000",
 		});
-		// A ¥1 drop on a ¥150 price is below ¥5 / 3%: nothing moves.
+		// A ¥1 drop on a ¥150 price does not reach the next ¥5 step: nothing moves.
 		await expect(item("max")).resolves.toMatchObject({
 			price_minor: "15000",
 			alipay: "15500",
 		});
-		// A 14.7% drop is only proposed.
+		// A 14.7% drop applies on its own but stops at cost + floor.
 		await expect(item("pro200")).resolves.toMatchObject({
-			price_minor: "140000",
-			alipay: "150000",
+			price_minor: "131000",
+			alipay: "133000",
 		});
-		await expect(item("go")).resolves.toMatchObject({ price_minor: "4300" });
+		// A ¥0.51 drop under ¥100 moves the price by the nearest whole yuan.
+		await expect(item("go")).resolves.toMatchObject({
+			price_minor: "4200",
+			alipay: "4400",
+		});
 
+		// Drops reach only the channel notice; the owner report lists the rise.
+		expect(messages).toHaveLength(1);
 		const text = messages[0] ?? "";
 		expect(text).toContain(
-			`· ChatGPT · Pro 100：成本 ¥608.55→¥578.12；USDT ¥660.00→¥630.00，支付宝 ¥678.00→¥648.00，代理 ¥640.00→¥610.00`,
+			"· ChatGPT · Plus：成本 ¥111.57→¥121.71；USDT ¥135.00→¥145.00，支付宝 ¥145.00→¥155.00，代理 ¥130.00→¥140.00",
 		);
-		expect(text).toContain("需要你确认（未改价）：");
-		expect(text).toContain("USDT ¥1400.00→¥1302.00（-7.0%）");
+		expect(text).not.toContain("Pro 100");
+		expect(text).not.toContain("Pro 200");
+		expect(text).not.toContain("需要你确认");
 
 		const baselines = JSON.parse(
 			(await db
@@ -665,8 +682,8 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			pro100: cost(570),
 			plus: cost(120),
 			pro200: cost(1280),
-			// Unfollowed moves keep the old baseline so they can add up.
-			go: cost(35.5),
+			go: cost(35),
+			// Moves too small to change a price keep the old baseline so they add up.
 			max: cost(135),
 			new: cost(10),
 		});
@@ -682,11 +699,9 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 	});
 
 	it("follow plans keep agents under retail and nets above the floor", () => {
-		expect(shouldFollow(100, 15000)).toBe(true);
-		expect(shouldFollow(99, 15000)).toBe(false);
-		expect(shouldFollow(-101, 15000)).toBe(false);
-		expect(shouldFollow(-500, 15000)).toBe(true);
-		expect(shouldFollow(-500, 20000)).toBe(false);
+		expect(shouldFollow(100)).toBe(true);
+		expect(shouldFollow(99)).toBe(false);
+		expect(shouldFollow(-1)).toBe(true);
 		// Gemini 2026-10-23: cost ¥5.20→¥6.83 must not turn ¥10.80 into ¥18.
 		expect(
 			followPlan({
@@ -699,10 +714,11 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			}),
 		).toMatchObject({
 			usdtNew: 1200,
-			alipayNew: 1300,
+			alipayNew: 1200,
 			agentNew: 1100,
 			auto: false,
 		});
+		// Agents pushed up to retail drop one grid step under it.
 		expect(
 			followPlan({
 				usdtMinor: 10000,
@@ -712,8 +728,8 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				baselineMinor: 8000,
 				floorMinor: 300,
 			}),
-		).toMatchObject({ usdtNew: 11000, agentNew: 10800, auto: false });
-		// A drop stops at cost + floor (without becoming a raise) and keeps agents ≥ cost + ¥1.
+		).toMatchObject({ usdtNew: 11000, agentNew: 10500, auto: false });
+		// A drop stops at the floor's grid price without becoming a raise.
 		expect(
 			followPlan({
 				usdtMinor: 10400,
@@ -723,7 +739,39 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				baselineMinor: 10300,
 				floorMinor: 300,
 			}),
-		).toMatchObject({ usdtNew: 10200, alipayNew: 10500, agentNew: 10000 });
+		).toMatchObject({
+			usdtNew: 10400,
+			alipayNew: 10500,
+			agentNew: 10000,
+			auto: true,
+		});
+		// 2026-10-31 Pro 200 菲区: −¥30.35 lands on ¥10 grid prices, applied however large.
+		expect(
+			followPlan({
+				usdtMinor: 109_800,
+				alipayMinor: 113_800,
+				agentMinor: 107_500,
+				costMinor: 103_206,
+				baselineMinor: 106_241,
+				floorMinor: 300,
+			}),
+		).toMatchObject({
+			usdtNew: 107_000,
+			alipayNew: 111_000,
+			agentNew: 104_000,
+			auto: true,
+		});
+		// Off-grid ¥119 with a ¥0.50 drop: rounding never turns it into a raise.
+		expect(
+			followPlan({
+				usdtMinor: 11_900,
+				alipayMinor: 12_500,
+				agentMinor: null,
+				costMinor: 11_083,
+				baselineMinor: 11_133,
+				floorMinor: 300,
+			}),
+		).toBeNull();
 	});
 
 	it("pricing guard applies a proposed raise only while the price is unchanged", async () => {

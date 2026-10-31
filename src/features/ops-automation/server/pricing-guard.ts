@@ -41,9 +41,6 @@ export const pricingGuardHour = 9;
 const autoChangeLimitPercent = 10;
 /** Cost rises at or above this are followed; smaller ones add up first. */
 const followMinRiseMinor = 100;
-/** Cost drops are followed only at or above both of these. */
-const followMinDropMinor = 500;
-const followMinDropPercent = 3;
 const alipayKeepPercent = 98;
 const alipayOverUsdtPercent = 102;
 
@@ -85,21 +82,39 @@ export function realCostMinor(
 	return Number((numerator + denominator - 1n) / denominator);
 }
 
-/** Smallest whole-yuan price ≥ minor. Prices are plain integers, no 8/9 tails. */
+/** Smallest whole-yuan price ≥ minor. */
 export function ceilYuanMinor(minor: number) {
 	return Math.ceil(minor / 100) * 100;
 }
 
 /**
- * Rises of ¥1 or more are always followed. Drops are followed only once they
- * reach both ¥5 and 3% of the USDT price, so ¥150 does not turn into ¥149.
+ * Price grid by size: whole yuan under ¥100, ¥5 steps under ¥500, ¥10 steps
+ * from ¥500, so followed prices read 115 / 355 / 1070 instead of 117 / 351 / 1068.
  */
-export function shouldFollow(deltaMinor: number, usdtMinor: number) {
-	if (deltaMinor > 0) return deltaMinor >= followMinRiseMinor;
-	return (
-		-deltaMinor >= followMinDropMinor &&
-		-deltaMinor * 100 >= usdtMinor * followMinDropPercent
-	);
+export function niceStepMinor(minor: number) {
+	if (minor < 10_000) return 100;
+	if (minor < 50_000) return 500;
+	return 1_000;
+}
+
+/** Smallest grid price ≥ minor. */
+export function ceilNiceMinor(minor: number) {
+	const step = niceStepMinor(minor);
+	return Math.ceil(minor / step) * step;
+}
+
+/** Nearest grid price; halves round up. */
+export function roundNiceMinor(minor: number) {
+	const step = niceStepMinor(minor);
+	return Math.floor(minor / step + 0.5) * step;
+}
+
+/**
+ * Rises of ¥1 or more are followed; smaller ones add up first. Every drop is
+ * followed — the grid decides whether it is big enough to move the price.
+ */
+export function shouldFollow(deltaMinor: number) {
+	return deltaMinor < 0 || deltaMinor >= followMinRiseMinor;
 }
 
 const ceilDiv = (a: number, b: number) => Math.ceil(a / b);
@@ -128,7 +143,7 @@ export function planPrice(input: {
 		input.alipayMinor * alipayKeepPercent < need * 100;
 	if (!usdtLow && !alipayLow) return null;
 	const usdtNew = usdtLow
-		? Math.max(input.usdtMinor, ceilYuanMinor(need))
+		? Math.max(input.usdtMinor, ceilNiceMinor(need))
 		: input.usdtMinor;
 	let alipayNew: number | null = null;
 	if (input.alipayMinor !== null) {
@@ -139,7 +154,7 @@ export function planPrice(input: {
 		alipayNew =
 			input.alipayMinor >= required
 				? input.alipayMinor
-				: Math.max(input.alipayMinor, ceilYuanMinor(required));
+				: Math.max(input.alipayMinor, ceilNiceMinor(required));
 	}
 	const within = (oldMinor: number, newMinor: number) =>
 		(newMinor - oldMinor) * 100 <= oldMinor * autoChangeLimitPercent;
@@ -157,9 +172,10 @@ export function planPrice(input: {
 }
 
 /**
- * Shifts USDT, 支付宝 and agent prices by the supplier cost change, rounded up
- * to whole yuan so no order nets less than before, then re-applies the floors.
- * Moves up and down; 支付宝 keeps its gap over USDT.
+ * Shifts USDT, 支付宝 and agent prices by the supplier cost change and snaps
+ * each to the nearest grid price, then re-applies the floors. A drop never
+ * becomes a raise and a rise never becomes a cut. Drops always apply on their
+ * own; rises above the limit wait for the owner.
  */
 export function followPlan(input: {
 	usdtMinor: number;
@@ -171,12 +187,14 @@ export function followPlan(input: {
 }): PricePlan | null {
 	const delta = input.costMinor - input.baselineMinor;
 	const need = input.costMinor + input.floorMinor;
-	// A floor may stop a drop short, but never turns it into a raise.
 	const settle = (oldMinor: number, required: number) => {
-		const next = ceilYuanMinor(Math.max(oldMinor + delta, required));
-		return delta < 0
-			? Math.min(next, Math.max(oldMinor, ceilYuanMinor(required)))
-			: next;
+		const moved = roundNiceMinor(oldMinor + delta);
+		const next =
+			delta < 0 ? Math.min(moved, oldMinor) : Math.max(moved, oldMinor);
+		// A floor may stop a drop short, but never turns it into a raise.
+		if (next >= required) return next;
+		const floor = ceilNiceMinor(required);
+		return delta < 0 ? Math.min(Math.max(oldMinor, next), floor) : floor;
 	};
 	const usdtNew = settle(input.usdtMinor, need);
 	const alipayNew =
@@ -189,10 +207,10 @@ export function followPlan(input: {
 	let agentNew: number | null = null;
 	if (input.agentMinor !== null) {
 		const minimum = ceilYuanMinor(input.costMinor + agentMinNetMinor);
-		agentNew = ceilYuanMinor(input.agentMinor + delta);
+		agentNew = settle(input.agentMinor, minimum);
 		// Agents must still undercut our own USDT price.
-		if (agentNew >= usdtNew) agentNew = usdtNew - 100;
-		agentNew = Math.max(agentNew, minimum);
+		if (agentNew >= usdtNew)
+			agentNew = Math.max(usdtNew - niceStepMinor(usdtNew), minimum);
 	}
 	if (
 		usdtNew === input.usdtMinor &&
@@ -207,7 +225,8 @@ export function followPlan(input: {
 		alipayNew,
 		agentOld: input.agentMinor,
 		agentNew,
-		auto: Math.abs(delta) * 100 <= input.baselineMinor * autoChangeLimitPercent,
+		auto:
+			delta < 0 || delta * 100 <= input.baselineMinor * autoChangeLimitPercent,
 	};
 }
 
@@ -332,10 +351,7 @@ export async function runPricingGuard(input: {
 		const label = `${row.product_name} · ${row.item_name}`;
 		const baseline = baselines[row.id];
 		baselines[row.id] = cost;
-		if (
-			baseline !== undefined &&
-			shouldFollow(cost - baseline, Number(row.price_minor))
-		) {
+		if (baseline !== undefined && shouldFollow(cost - baseline)) {
 			const plan = followPlan({
 				usdtMinor: Number(row.price_minor),
 				alipayMinor:
@@ -346,7 +362,11 @@ export async function runPricingGuard(input: {
 				baselineMinor: baseline,
 				floorMinor,
 			});
-			if (!plan) continue;
+			// Too small to move any price: keep the old baseline so drops add up.
+			if (!plan) {
+				baselines[row.id] = baseline;
+				continue;
+			}
 			const applied = plan.auto
 				? await applyPlan(input.db, row, plan, {
 						costMinor: cost,
@@ -403,9 +423,18 @@ export async function runPricingGuard(input: {
 		now,
 	).run();
 
+	// Applied drops go straight to the channel notice; the owner hears only of
+	// rises, proposals and agent warnings.
 	const text = formatPricingReport(
 		clock.day,
-		outcomes,
+		outcomes.filter(
+			(outcome) =>
+				!(
+					outcome.applied &&
+					outcome.baselineMinor !== undefined &&
+					outcome.costMinor < outcome.baselineMinor
+				),
+		),
 		agentWarnings,
 		floorMinor,
 	);
