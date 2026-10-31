@@ -232,7 +232,8 @@ type ItemRow = {
 	usdt_price_id: string | null;
 	alipay_price_id: string | null;
 	alipay_minor: string | null;
-	aisou_cost_minor: string | null;
+	bound_cost_minor: string | null;
+	bound_origin: string | null;
 	agent_listing_id: string | null;
 	agent_price_minor: string | null;
 };
@@ -500,13 +501,20 @@ function supplierCost(
 					costMinor: realCostMinor(price, source, factors),
 				};
 	}
-	if (row.aisou_cost_minor === null) return null;
-	const price = Number(row.aisou_cost_minor);
+	const bound = row.bound_origin ? boundSources[row.bound_origin] : undefined;
+	if (row.bound_cost_minor === null || !bound) return null;
+	const price = Number(row.bound_cost_minor);
 	return {
 		supplierMinor: price,
-		costMinor: realCostMinor(price, "aisou", factors),
+		costMinor: realCostMinor(price, bound, factors),
 	};
 }
+
+/** Shops GMShop buys from directly, priced with that wallet's cost factor. */
+const boundSources: Record<string, CostSource> = {
+	"https://aisou.pro": "aisou",
+	"https://faka.redeemgpt.com": "86",
+};
 
 const baselinesSchema = z.record(z.string(), z.number().int().nonnegative());
 
@@ -589,8 +597,13 @@ async function loadItems(db: D1Database, onlyItemId?: string) {
 			  (SELECT binding.reference_cost_minor FROM supplier_bindings binding
 			   WHERE binding.sellable_item_id = item.id AND binding.enabled = 1
 			    AND binding.provider = 'shared_stock'
-			    AND binding.normalized_api_origin = 'https://aisou.pro'
-			   ORDER BY binding.updated_at DESC LIMIT 1) AS aisou_cost_minor,
+			    AND binding.normalized_api_origin IN ('https://aisou.pro', 'https://faka.redeemgpt.com')
+			   ORDER BY binding.updated_at DESC LIMIT 1) AS bound_cost_minor,
+			  (SELECT binding.normalized_api_origin FROM supplier_bindings binding
+			   WHERE binding.sellable_item_id = item.id AND binding.enabled = 1
+			    AND binding.provider = 'shared_stock'
+			    AND binding.normalized_api_origin IN ('https://aisou.pro', 'https://faka.redeemgpt.com')
+			   ORDER BY binding.updated_at DESC LIMIT 1) AS bound_origin,
 			  (SELECT listing.id FROM supplier_export_listings listing
 			   WHERE listing.sellable_item_id = item.id AND listing.enabled = 1
 			    AND listing.currency = 'CNY' AND listing.currency_decimals = 2
