@@ -69,6 +69,8 @@ export type AssessInput = {
 	languages: string[];
 	lookup: IpCheck | null;
 	dns: DnsExit | null | "error";
+	// Claude exit differs from this site's exit (the DNS probe follows the latter).
+	split?: boolean;
 	webrtc: string[] | "disabled" | null;
 	knownExits: string[];
 	chinaIp: string | null;
@@ -208,9 +210,13 @@ export function networkCard(lookup: IpCheck | null): Card {
 	};
 }
 
+// The probe domain is not a Claude domain, so with split routing it measures
+// the DNS of the visitor's other traffic, not Claude's; a domestic resolver
+// there says nothing about Claude and must not sink the Claude verdict.
 export function dnsCard(
 	dns: DnsExit | null | "error",
 	claudeCountry: string | null,
+	split = false,
 ): Card {
 	if (dns === null || dns === "error")
 		return {
@@ -221,6 +227,18 @@ export function dnsCard(
 			advice: "dns_unknown",
 		};
 	const exitInChina = ["CN", "HK", "MO"].includes(claudeCountry ?? "");
+	if (
+		split &&
+		!exitInChina &&
+		(isChinaGeo(dns.resolverGeo) || isChinaGeo(dns.subnetGeo))
+	)
+		return {
+			id: "dns",
+			level: "good",
+			status: "split",
+			current: dns.resolverGeo,
+			advice: "dns_split",
+		};
 	if (!exitInChina && isChinaGeo(dns.resolverGeo))
 		return {
 			id: "dns",
@@ -346,7 +364,7 @@ export function buildCards(input: AssessInput): Card[] {
 		timezoneCard(input.browserTimezone, input.lookup?.networkTimezone ?? null),
 		languageCard(input.languages, input.claudeCountry),
 		networkCard(input.lookup),
-		dnsCard(input.dns, input.claudeCountry),
+		dnsCard(input.dns, input.claudeCountry, input.split),
 		webrtcCard(input.webrtc, input.knownExits, input.chinaIp),
 		environmentCard(input.environment, input.findings),
 	];
