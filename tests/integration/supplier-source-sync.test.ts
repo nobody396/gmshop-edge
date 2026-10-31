@@ -463,6 +463,77 @@ describe("supplier source synchronization", { timeout: 30_000 }, () => {
 		expect(alerts[0]).toContain("Old upstream item");
 	});
 
+	it("tells the owner once about new upstream products, silently on the first sync", async () => {
+		await enableOwnerAlerts(db);
+		await db.batch([
+			db.prepare(
+				`INSERT INTO products
+				 (id, name, description, product_type, status, created_at, updated_at)
+				 VALUES ('sold-product', 'Sold', '', 'stock', 'active', 1, 1)`,
+			),
+			db.prepare(
+				`INSERT INTO product_sellable_items
+				 (id, product_id, name, fulfillment_source, supplier_status,
+				  currency, currency_decimals, price_minor, cost_minor,
+				  created_at, updated_at)
+				 VALUES ('sold-item', 'sold-product', 'Sold', 'supplier',
+				  'available', 'CNY', 2, '1000', '500', 1, 1)`,
+			),
+			db.prepare(
+				`INSERT INTO supplier_bindings
+				 (id, sellable_item_id, provider, normalized_api_origin,
+				  protocol_version, upstream_product_id, upstream_sku_id,
+				  upstream_product_name, upstream_sku_name, reference_cost_minor,
+				  max_cost_minor, stock_quantity, remote_status, last_synced_at,
+				  enabled, created_at, updated_at)
+				 VALUES ('sold-binding', 'sold-item', 'dujiao_next',
+				  'https://supplier.example', '1.3.1-upstream-v1', '7', '1007',
+				  '已在卖', '已在卖', '500', '680', 5, 'active', 1, 1, 1, 1)`,
+			),
+		]);
+		const alerts: string[] = [];
+		let items = [product(1, "旧商品")];
+		const fetcher: typeof fetch = async (input, init) => {
+			const url = new URL(String(input));
+			if (url.host === "api.telegram.org") {
+				alerts.push(JSON.parse(String(init?.body)).text);
+				return Response.json({ ok: true, result: { message_id: 1 } });
+			}
+			return url.pathname.endsWith("/categories")
+				? categoriesResponse()
+				: Response.json({ total: items.length, items });
+		};
+		const sync = (now: number) =>
+			syncSupplierSource({
+				db,
+				runtime,
+				source,
+				trigger: "scheduled",
+				full: true,
+				now,
+				fetcher,
+			});
+		await sync(1_800_010_000_000);
+		expect(alerts).toEqual([]);
+
+		items = [
+			product(1, "旧商品"),
+			product(3, "Gemini Ultra 成品号", "490.00"),
+			// Already bound by id, or a same-name relisting of a bound product.
+			product(7, "已在卖"),
+			product(9, "已在卖"),
+			{ ...product(11, "停售新品"), is_active: false },
+		];
+		await sync(1_800_011_000_000);
+		await sync(1_800_012_000_000);
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0]).toContain("🆕 上游新品（supplier.example）");
+		expect(alerts[0]).toContain("- Gemini Ultra 成品号\n  · SKU：¥490.00，库存 10");
+		expect(alerts[0]).not.toContain("旧商品");
+		expect(alerts[0]).not.toContain("已在卖");
+		expect(alerts[0]).not.toContain("停售新品");
+	});
+
 	it("refreshes a staged manual binding without enabling supplier fulfillment", async () => {
 		await db.batch([
 			db.prepare(
@@ -581,6 +652,62 @@ function catalogResponse(
 			},
 		],
 	});
+}
+
+function product(id: number, title: string, priceAmount = "1.00") {
+	return {
+		id,
+		title: { "zh-CN": title },
+		description: {},
+		images: [],
+		tags: [],
+		currency: "CNY",
+		is_active: true,
+		skus: [
+			{
+				id: id + 1000,
+				sku_code: "SKU",
+				spec_values: {},
+				price_amount: priceAmount,
+				stock_quantity: 10,
+				is_active: true,
+			},
+		],
+	};
+}
+
+async function enableOwnerAlerts(db: D1Database) {
+	await db
+		.prepare(
+			`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+			 VALUES ('runtime.data_encryption_secret', ?, 1, 1, 1)`,
+		)
+		.bind(JSON.stringify(createInitialRuntimeConfig().dataEncryptionSecret))
+		.run();
+	await db.batch([
+		upsertFeishuAlertSetting(
+			db,
+			telegramOwnerAlertSettingKeys.enabled,
+			true,
+			1,
+		),
+		upsertFeishuAlertSetting(
+			db,
+			telegramOwnerAlertSettingKeys.chatId,
+			"-5101401750",
+			1,
+		),
+		upsertFeishuAlertSetting(
+			db,
+			telegramOwnerAlertSettingKeys.botToken,
+			await encryptTelegramOwnerAlertBotToken(
+				db,
+				"1234567890:AAtest-only-owner-alert-token_abcdefgh",
+			),
+			1,
+			true,
+		),
+	]);
 }
 
 function categoriesResponse() {

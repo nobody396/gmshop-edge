@@ -4,7 +4,7 @@ import { proposeOwnerAction } from "#/features/telegram/server/owner-actions";
 import { sendOwnerAlert } from "#/features/telegram/server/owner-alerts";
 import { DomainError } from "#/lib/domain-error";
 import type { RuntimeConfig } from "#/server/runtime-config";
-import type { SupplierProduct } from "../providers/types";
+import type { SupplierProduct, SupplierSku } from "../providers/types";
 import type { SupplierProvider } from "../schema";
 import {
 	adapterForSupplierAccount,
@@ -154,6 +154,13 @@ export async function syncSupplierSource(input: {
 					now,
 					fetcher: input.fetcher,
 				}).catch(() => undefined);
+			await notifyNewSupplierProducts({
+				db: input.db,
+				source: input.source,
+				products,
+				now,
+				fetcher: input.fetcher,
+			}).catch(() => undefined);
 			return {
 				skipped: false,
 				accountId,
@@ -587,6 +594,123 @@ export function formatDelistedBindingsAlert(
 				`- ${item.productName}｜${item.sellableItemName}（上游：${item.upstreamProductName}，编号 ${item.upstreamProductId}）`,
 		),
 		"上游若换了新商品，请到后台「供货」切换来源后恢复销售。",
+	].join("\n");
+}
+
+const seenProductsPrefix = "suppliers.seen_products.";
+const MAX_SEEN_PRODUCTS = 5_000;
+const MAX_LISTED_NEW_PRODUCTS = 20;
+const seenProductsSchema = z.array(z.string()).max(MAX_SEEN_PRODUCTS);
+
+/**
+ * Tells the owner about supplier products we have never seen and do not sell,
+ * once each; listing them stays the owner's call. The first sync of a source
+ * only records what is already there. Same-name relistings of a bound product
+ * are left to the delist/rebind flow.
+ */
+export async function notifyNewSupplierProducts(input: {
+	db: D1Database;
+	source: SupplierSourceIdentity;
+	products: SupplierProduct[];
+	now: number;
+	fetcher?: typeof fetch;
+}) {
+	const key = `${seenProductsPrefix}${await sourceDigest(input.source)}`;
+	const listed = input.products.filter(
+		(product) => product.active && product.skus.some((sku) => sku.active),
+	);
+	const stored = await input.db
+		.prepare("SELECT value FROM system_settings WHERE key = ?")
+		.bind(key)
+		.first<{ value: string }>();
+	const previous = stored ? parseSeenProducts(stored.value) : null;
+	let fresh: SupplierProduct[] = [];
+	if (previous) {
+		const bindings = await input.db
+			.prepare(
+				`SELECT upstream_product_id, upstream_product_name FROM supplier_bindings
+				 WHERE provider = ? AND normalized_api_origin = ? AND protocol_version = ?`,
+			)
+			.bind(
+				input.source.provider,
+				input.source.normalizedApiOrigin,
+				input.source.protocolVersion,
+			)
+			.all<{ upstream_product_id: string; upstream_product_name: string }>();
+		const boundIds = new Set(
+			bindings.results.map((row) => row.upstream_product_id),
+		);
+		const boundNames = new Set(
+			bindings.results.map((row) => row.upstream_product_name.trim()),
+		);
+		const seen = new Set(previous);
+		fresh = listed.filter(
+			(product) =>
+				!seen.has(product.id) &&
+				!boundIds.has(product.id) &&
+				!boundNames.has(product.name.trim()),
+		);
+		// A failed send throws before the ids are saved, so the next sync retries.
+		if (fresh.length)
+			await sendOwnerAlert(
+				input.db,
+				formatNewSupplierProductsAlert(input.source.normalizedApiOrigin, fresh),
+				{ fetcher: input.fetcher, topic: "restock" },
+			);
+	}
+	const ids = [
+		...new Set([...listed.map((product) => product.id), ...(previous ?? [])]),
+	];
+	await input.db
+		.prepare(
+			`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+			 VALUES (?, ?, 0, ?, ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+			 updated_at = excluded.updated_at`,
+		)
+		.bind(
+			key,
+			JSON.stringify(ids.slice(0, MAX_SEEN_PRODUCTS)),
+			input.now,
+			input.now,
+		)
+		.run();
+	return { initialized: previous === null, fresh: fresh.length };
+}
+
+function parseSeenProducts(value: string) {
+	try {
+		const parsed = seenProductsSchema.safeParse(JSON.parse(value));
+		return parsed.success ? parsed.data : null;
+	} catch {
+		return null;
+	}
+}
+
+export function formatNewSupplierProductsAlert(
+	origin: string,
+	products: SupplierProduct[],
+) {
+	const line = (product: SupplierProduct) => {
+		const skus = product.skus.filter((sku) => sku.active);
+		const price = (sku: SupplierSku) =>
+			`¥${(Number(sku.costMinor) / 100).toFixed(2)}，库存 ${sku.stockQuantity}`;
+		const only = skus.length === 1 ? skus[0] : undefined;
+		return only && (only.name === product.name || !only.name)
+			? `- ${product.name}：${price(only)}`
+			: [
+					`- ${product.name}`,
+					...skus.map((sku) => `  · ${sku.name}：${price(sku)}`),
+				].join("\n");
+	};
+	const shown = products.slice(0, MAX_LISTED_NEW_PRODUCTS);
+	return [
+		`🆕 上游新品（${new URL(origin).host}），我们还没上：`,
+		...shown.map(line),
+		...(products.length > shown.length
+			? [`……另有 ${products.length - shown.length} 个，见后台「供货」`]
+			: []),
+		"要上架就回复要上哪个，定价、封面和两站上架照常走流程。",
 	].join("\n");
 }
 
