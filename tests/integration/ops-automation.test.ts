@@ -699,6 +699,48 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("pricing guard follows items GMShop buys from 86 directly", async () => {
+		const factors = parseCostFactors(undefined);
+		await db.batch([
+			product(db, "tg", "Telegram"),
+			...sellable(db, "tg12", "tg", "12 months", "27500", "28500"),
+			aisouBinding(
+				db,
+				"tg12-binding",
+				"tg12",
+				"21000",
+				"https://faka.redeemgpt.com",
+			),
+		]);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		await setSetting(db, "pricing.cost_baselines", {
+			tg12: realCostMinor(23000, "86", factors),
+		});
+		await expect(
+			runPricingGuard({
+				db,
+				now: monday,
+				readStats: async () => null,
+				readPrices: async () => null,
+				deliver: async () => undefined,
+			}),
+		).resolves.toMatchObject({ status: "ran", applied: 1 });
+		// 86 cost ¥230→¥210 (real −¥20.28): ¥275 / ¥285 snap to ¥255 / ¥265.
+		await expect(
+			db
+				.prepare(
+					`SELECT item.price_minor, item.cost_minor,
+					  (SELECT price_minor FROM sellable_item_channel_prices WHERE sellable_item_id = item.id AND channel_id = 'alipay') AS alipay
+					 FROM product_sellable_items item WHERE item.id = 'tg12'`,
+				)
+				.first(),
+		).resolves.toEqual({
+			price_minor: "25500",
+			cost_minor: "21000",
+			alipay: "26500",
+		});
+	});
+
 	it("follow plans keep agents under retail and nets above the floor", () => {
 		expect(shouldFollow(100)).toBe(true);
 		expect(shouldFollow(99)).toBe(false);
@@ -1001,6 +1043,7 @@ function aisouBinding(
 	id: string,
 	itemId: string,
 	cost: string,
+	origin = "https://aisou.pro",
 ) {
 	return db
 		.prepare(
@@ -1008,10 +1051,10 @@ function aisouBinding(
 			 (id, sellable_item_id, provider, normalized_api_origin, protocol_version,
 			  upstream_product_id, upstream_sku_id, upstream_product_name, upstream_sku_name,
 			  reference_cost_minor, max_cost_minor, enabled, created_at, updated_at)
-			 VALUES (?, ?, 'shared_stock', 'https://aisou.pro', 'acg-sharedstock-v1',
+			 VALUES (?, ?, 'shared_stock', ?, 'acg-sharedstock-v1',
 			  'p', ?, 'P', 'S', ?, ?, 1, 1, 1)`,
 		)
-		.bind(id, itemId, id, cost, cost);
+		.bind(id, itemId, origin, id, cost, cost);
 }
 
 async function seedAisou(db: D1Database) {
