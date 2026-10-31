@@ -121,6 +121,70 @@ set_lang() { # 英语放第一位，原来的其他语言按原顺序保留（�
   defaults write -g AppleLanguages -array en-US ${rest[@]+"${rest[@]}"}
   defaults write -g AppleLocale -string en_US
 }
+# 浏览器语言：Chromium 系和 Firefox 各存一份自己的语言列表，不跟系统走（Safari 跟系统）
+# 显示名|App 名|进程名|数据目录（相对 ~/Library/Application Support）；Firefox 单独处理
+BROWSERS="Chrome|Google Chrome|Google Chrome|Google/Chrome
+Edge|Microsoft Edge|Microsoft Edge|Microsoft Edge
+Brave|Brave Browser|Brave Browser|BraveSoftware/Brave-Browser
+Arc|Arc|Arc|Arc/User Data
+Chromium|Chromium|Chromium|Chromium
+Vivaldi|Vivaldi|Vivaldi|Vivaldi
+Firefox|Firefox|firefox|Firefox/Profiles"
+# 英语排第一，原来的其他语言按原顺序留在后面（网页翻译等不受影响）
+EN_LANGS_JS='function en(v){return ["en-US","en"].concat(String(v||"").split(",").map(function(x){return x.trim()}).filter(function(x){return x&&x!=="en-US"&&x!=="en"})).join(",")}'
+jread() { osascript -l JavaScript -e 'function run(a){var s=$.NSString.stringWithContentsOfFileEncodingError(a[0],$.NSUTF8StringEncoding,null);if(!s)return "";var v;try{v=new Function("o",a[1])(JSON.parse(s.js))}catch(e){v=null}return (v===undefined||v===null)?"":String(v)}' "$1" "$2" 2>/dev/null; }
+browser_profiles() { # 数据目录 -> 每个用户资料的语言设置文件（Chromium：Preferences；Firefox：prefs.js）
+  local d="$HOME/Library/Application Support/$1"
+  [ -d "$d" ] || return 0
+  case "$1" in Firefox/*) find "$d" -mindepth 2 -maxdepth 2 -name prefs.js 2>/dev/null ;;
+    *) find "$d" -mindepth 2 -maxdepth 2 -name Preferences 2>/dev/null | grep -v '/System Profile/' ;; esac
+}
+browser_lang_ok() { # 设置文件 -> 0 表示英语已排第一；新版 Chrome 以 selected_languages 为准，旧版只有 accept_languages
+  case "$1" in
+    */prefs.js) grep -qE '^user_pref\("intl\.accept_languages", "en-US, en' "$(dirname "$1")/user.js" 2>/dev/null ;;
+    *) [ "$(jread "$1" 'var i=o.intl||{},v=i.selected_languages!==undefined?i.selected_languages:i.accept_languages;return /^en(-US)?(,|$)/.test(v||"")')" = true ] ;;
+  esac
+}
+set_browser_lang() { # 设置文件（浏览器必须已退出，否则它退出时会写回旧值）
+  case "$1" in
+    */prefs.js)
+      local cur u; u="$(dirname "$1")/user.js"
+      cur=$(sed -nE 's/^user_pref\("intl\.accept_languages", "([^"]*)"\);.*/\1/p' "$1" 2>/dev/null | tail -1)
+      [ -f "$u" ] && sed -i '' '/^user_pref("intl\.accept_languages"/d' "$u"
+      printf 'user_pref("intl.accept_languages", "%s");\n' "$(osascript -l JavaScript -e "$EN_LANGS_JS"'
+function run(a){return en(a[0]).split(",").join(", ")}' "$cur")" >>"$u" ;;
+    *) cp "$1" "$1.backup-claude-env-$TS"
+       jedit "$1" "$EN_LANGS_JS"'
+o.intl=o.intl||{};var v=en(o.intl.selected_languages||o.intl.accept_languages);o.intl.selected_languages=v;o.intl.accept_languages=v;' ;;
+  esac
+}
+browser_bad() { # 输出语言还不是英语优先的浏览器（显示名）
+  printf '%s\n' "$BROWSERS" | while IFS='|' read -r n a p d; do
+    browser_profiles "$d" | while IFS= read -r f; do browser_lang_ok "$f" || { echo "$n"; break; }; done
+  done
+}
+fix_browser_langs() {
+  local n a p d f reopen="" left=""
+  while IFS='|' read -r n a p d <&3; do
+    [ -n "$(browser_profiles "$d")" ] || continue
+    if ! browser_profiles "$d" | while IFS= read -r f; do browser_lang_ok "$f" || exit 1; done; then
+      if proc_running "$p"; then
+        printf '  正在关闭 %s 来改它的语言（改完自动重新打开）\n' "$n"
+        sysrun osascript -e "quit app \"$a\"" 2>/dev/null
+        if [ -n "$TR" ]; then [ -f "$TR/browser_stuck" ] || sed -i '' "/^${p}\$/d" "$TR/procs"; else for _ in $(seq 1 15); do pgrep -xq "$p" || break; sleep 1; done; fi
+        if proc_running "$p"; then left="${left:+$left、}$n"; continue; fi
+        reopen="$reopen|$a"
+      fi
+      browser_profiles "$d" | while IFS= read -r f; do browser_lang_ok "$f" || set_browser_lang "$f"; done
+      c_ok "${n}：网页语言改成英语优先（原来的语言保留在后面）"
+    fi
+  done 3<<<"$BROWSERS"
+  # Safari 跟系统语言走，要重开才读到新的系统语言
+  if proc_running Safari; then sysrun osascript -e 'quit app "Safari"' 2>/dev/null; [ -n "$TR" ] && sed -i '' '/^Safari$/d' "$TR/procs"; reopen="$reopen|Safari"; fi
+  [ -n "$left" ] && c_warn "这些浏览器没能自动关闭，语言没改：${left}。请手动退出后重新运行本命令"
+  printf '%s\n' "$reopen" | tr '|' '\n' | while IFS= read -r a; do [ -n "$a" ] && sysrun open -a "$a"; done
+  return 0
+}
 # 定位服务总开关：true 开 / false 关（直接问系统，不需要权限）
 loc_on() { if [ -n "$TR" ]; then cat "$TR/location" 2>/dev/null || echo true; return; fi
            osascript -l JavaScript -e 'ObjC.import("CoreLocation");ObjC.bindFunction("objc_msgSend",["bool",["id","SEL"]]);String($.objc_msgSend($.CLLocationManager,"locationServicesEnabled"))' 2>/dev/null; }
@@ -799,6 +863,7 @@ if [ -z "$DRY" ]; then
   c_ok "已关闭「自动设置时区」，电脑时区：$(sys_tz)"
   if [ "$(sys_lang)" != en-US ] || [ "$(sys_locale)" != en_US ]; then set_lang; fi
   c_ok "系统语言：英语排第一（原来的中文等保留在后面，输入法不变），地区：美国。重启电脑后生效"
+  fix_browser_langs
   if [ "$(loc_on)" != false ]; then
     printf '  需要你手动关一下「定位服务」：已打开设置页，把最上面「定位服务」的开关关掉（会让你输入开机密码）\n'
     sysrun open "$LOC_PANE"
@@ -908,6 +973,8 @@ else chk "Claude 信任评分" "只有 ${TRUST}，请截图发给客服"; fi
 [ "$(sys_tz)" = "$TZNAME" ] && chk "电脑时区 = IP 时区（${TZNAME}）" ok || chk "电脑时区 = IP 时区" "电脑是 $(sys_tz)，IP 是 $TZNAME"
 [ "$(tz_auto)" = 0 ] && chk "「自动设置时区」已关闭" ok || chk "「自动设置时区」已关闭" "还开着，换网络后时区可能被改回去"
 { [ "$(sys_lang)" = en-US ] && [ "$(sys_locale)" = en_US ]; } && chk "系统语言英语、地区美国" ok || chk "系统语言英语、地区美国" "当前是 $(sys_lang) / $(sys_locale)"
+BADB=$(browser_bad | paste -sd '、' -)
+[ -z "$BADB" ] && chk "浏览器网页语言英语优先" ok || chk "浏览器网页语言英语优先" "还不是：${BADB}。请退出这些浏览器后重新运行本命令"
 [ "$(loc_on)" = false ] && chk "定位服务已关闭" ok || chk "定位服务已关闭" "还开着：系统设置 → 隐私与安全性 → 定位服务，关掉总开关"
 # 以「新开一个终端」实际带的环境变量为准
 LEFT=""
