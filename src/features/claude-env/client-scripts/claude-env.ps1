@@ -136,6 +136,69 @@ function Set-LangUS {
   Set-Culture en-US
   Set-WinHomeLocation -GeoId 244
 }
+# 浏览器语言：Chromium 系和 Firefox 各存一份自己的语言列表，不跟系统走
+# 显示名, 进程名, 数据目录；Chromium 改 Preferences（文本替换，不整体重写，避免 PowerShell 5.1 改坏 JSON），Firefox 写 user.js
+$BROWSERS = @(
+  @("Chrome", "chrome", (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data")),
+  @("Edge", "msedge", (Join-Path $env:LOCALAPPDATA "Microsoft\Edge\User Data")),
+  @("Brave", "brave", (Join-Path $env:LOCALAPPDATA "BraveSoftware\Brave-Browser\User Data")),
+  @("Vivaldi", "vivaldi", (Join-Path $env:LOCALAPPDATA "Vivaldi\User Data")),
+  @("Firefox", "firefox", (Join-Path $env:APPDATA "Mozilla\Firefox\Profiles")))
+# 英语排第一，原来的其他语言按原顺序留在后面
+function EnLangs($v) { (@("en-US", "en") + @(([string]$v) -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "en-US" -and $_ -ne "en" })) }
+function Get-BrowserProfiles($d) {
+  if (-not (Test-Path -LiteralPath $d)) { return @() }
+  $name = if ($d -like "*Firefox*") { "prefs.js" } else { "Preferences" }
+  @(Get-ChildItem -LiteralPath $d -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "System Profile" } | ForEach-Object { Join-Path $_.FullName $name } | Where-Object { Test-Path -LiteralPath $_ })
+}
+function Get-PrefStr($t, $k) { $m = [regex]::Match($t, '"' + $k + '":"([^"]*)"'); if ($m.Success) { $m.Groups[1].Value } else { $null } }
+# 新版 Chrome 以 selected_languages 为准，旧版只有 accept_languages
+function Test-BrowserLang($f) {
+  if ($f -like "*prefs.js") { return ((ReadText (Join-Path (Split-Path -Parent $f) "user.js")) -match '(?m)^user_pref\("intl\.accept_languages", "en-US, en') }
+  $t = ReadText $f; $v = Get-PrefStr $t "selected_languages"; if ($null -eq $v) { $v = Get-PrefStr $t "accept_languages" }
+  [bool]($v -match '^en(-US)?(,|$)')
+}
+function Set-BrowserLang($f) {
+  if ($f -like "*prefs.js") {
+    $m = [regex]::Matches((ReadText $f), '(?m)^user_pref\("intl\.accept_languages", "([^"]*)"\);'); $cur = if ($m.Count) { $m[$m.Count - 1].Groups[1].Value } else { "" }
+    $u = Join-Path (Split-Path -Parent $f) "user.js"
+    $keep = @((ReadText $u) -split "`r?`n" | Where-Object { $_ -and $_ -notmatch '^user_pref\("intl\.accept_languages"' })
+    WriteText $u (((@($keep) + ('user_pref("intl.accept_languages", "' + ((EnLangs $cur) -join ", ") + '");')) -join "`n") + "`n"); return
+  }
+  $t = ReadText $f; if ($t.Trim() -notmatch '^\{\s*"') { return }
+  Copy-Item -LiteralPath $f -Destination "$f.backup-claude-env-$TS" -Force
+  $cur = Get-PrefStr $t "selected_languages"; if ($null -eq $cur) { $cur = Get-PrefStr $t "accept_languages" }
+  $v = (EnLangs $cur) -join ","
+  foreach ($k in "selected_languages", "accept_languages") {
+    if ($null -ne (Get-PrefStr $t $k)) { $t = [regex]::Replace($t, '"' + $k + '":"[^"]*"', ('"' + $k + '":"' + $v + '"')) }
+    elseif ($t -match '"intl":\{\s*\}') { $t = [regex]::Replace($t, '"intl":\{\s*\}', ('"intl":{"' + $k + '":"' + $v + '"}')) }
+    elseif ($t -match '"intl":\{') { $t = ([regex]'"intl":\{').Replace($t, ('"intl":{"' + $k + '":"' + $v + '",'), 1) }
+    else { $t = ([regex]'^\s*\{').Replace($t, ('{"intl":{"' + $k + '":"' + $v + '"},'), 1) }
+  }
+  WriteText $f $t
+}
+function Get-BadBrowsers { @($BROWSERS | Where-Object { @(Get-BrowserProfiles $_[2] | Where-Object { -not (Test-BrowserLang $_) }).Count } | ForEach-Object { $_[0] }) }
+function Fix-BrowserLangs {
+  $reopen = @(); $left = @()
+  foreach ($b in $BROWSERS) {
+    $bad = @(Get-BrowserProfiles $b[2] | Where-Object { -not (Test-BrowserLang $_) }); if (-not $bad.Count) { continue }
+    if (Get-Running $b[1]) {
+      Write-Host "  正在关闭 $($b[0]) 来改它的语言（改完自动重新打开）"
+      $exe = $null
+      if ($TR) { if (-not (Test-Path (TFile "browser_stuck"))) { Stop-App $b[1] } } else {
+        foreach ($p in @(Get-Process -Name $b[1] -ErrorAction SilentlyContinue)) { try { if (-not $exe -and $p.Path) { $exe = $p.Path }; [void]$p.CloseMainWindow() } catch {} }
+        for ($i = 0; $i -lt 10 -and (Get-Running $b[1]); $i++) { Start-Sleep -Seconds 1 }
+        Stop-Process -Name $b[1] -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2
+      }
+      if (Get-Running $b[1]) { $left += $b[0]; continue }
+      $reopen += , @($b[1], $exe)
+    }
+    foreach ($f in $bad) { Set-BrowserLang $f }
+    OK "$($b[0])：网页语言改成英语优先（原来的语言保留在后面）"
+  }
+  if ($left.Count) { WARN ("这些浏览器没能自动关闭，语言没改：" + ($left -join "、") + "。请手动退出后重新运行本命令") }
+  foreach ($r in $reopen) { SysLog "start $($r[0])"; if (-not $TR) { try { if ($r[1]) { Start-Process $r[1] } else { Start-Process $r[0] } } catch {} } }
+}
 $LOC_KEY = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location"
 function Get-Loc { if ($TR) { TGet "location" "Allow" } else { try { (Get-ItemProperty $LOC_KEY -ErrorAction Stop).Value } catch { "Allow" } } }
 function Set-LocDeny { SysLog "deny location"; if ($TR) { if (-not (Test-Path (TFile "location_stuck"))) { WriteText (TFile "location") "Deny" }; return }
@@ -757,6 +820,7 @@ if ((Get-SysTz) -ne $WINTZ) { Set-SysTz $WINTZ }
 OK "已关闭「自动设置时区」，电脑时区：$(Get-SysTz)"
 if ((Get-LangFirst) -ne "en-US" -or (Get-Culture2) -ne "en-US" -or (Get-Geo) -ne "244") { Set-LangUS }
 OK "系统语言：英语排第一（原来的中文和输入法保留），区域格式和国家/地区：美国。重启电脑后生效"
+Fix-BrowserLangs
 if ((Get-Loc) -ne "Deny") { Set-LocDeny }
 if ((Get-Loc) -eq "Deny") { OK "定位服务已关闭" } else { WARN "定位服务仍开着（验收会标出）" }
 foreach ($n in $TELEMETRY_ENV) { if ((Get-EnvVar $n "User") -ne "1") { Set-EnvVar $n "1" "User" } }
@@ -846,6 +910,8 @@ elseif ([int]$tm.Groups[1].Value -ge 80) { Chk "Claude 信任评分 $($tm.Groups
 if ((Get-SysTz) -eq $WINTZ) { Chk "电脑时区 = IP 时区（$WINTZ）" "ok" } else { Chk "电脑时区 = IP 时区" "电脑是 $(Get-SysTz)，IP 是 $WINTZ" }
 if ((Get-TzAuto) -eq "4") { Chk "「自动设置时区」已关闭" "ok" } else { Chk "「自动设置时区」已关闭" "还开着，换网络后时区可能被改回去" }
 if ((Get-LangFirst) -eq "en-US" -and (Get-Culture2) -eq "en-US" -and (Get-Geo) -eq "244") { Chk "系统语言英语、区域和国家美国" "ok" } else { Chk "系统语言英语、区域和国家美国" "当前是 $(Get-LangFirst) / $(Get-Culture2) / $(Get-Geo)" }
+$badB = Get-BadBrowsers
+if (-not $badB.Count) { Chk "浏览器网页语言英语优先" "ok" } else { Chk "浏览器网页语言英语优先" ("还不是：" + ($badB -join "、") + "。请退出这些浏览器后重新运行本命令") }
 if ((Get-Loc) -eq "Deny") { Chk "定位服务已关闭" "ok" } else { Chk "定位服务已关闭" "还开着：设置 → 隐私和安全性 → 位置，关掉「定位服务」" }
 $left = @()
 foreach ($scope in "User", "Machine") { foreach ($n in $BAD_ENV_NAMES) { $v = Get-EnvVar $n $scope; if ($v -and (Env-IsBad $n $v)) { $left += "$n($scope)" } } }
