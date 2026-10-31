@@ -823,6 +823,11 @@ $missing = @(); foreach ($d in "claude.ai", "sentry.io", "hcaptcha.com", "stripe
 if (-not $missing.Count) { Chk "分流规则已加载（Claude、上报、验证、付款、实名）" "ok" } else { Chk "分流规则已加载" ("缺少： " + ($missing -join " ") + "。Clash Verge「订阅」页确认「全局扩展脚本」已启用") }
 if ($rules | Where-Object { $_.type -eq "AND" -and $_.proxy -eq "REJECT" -and $_.payload -match "claude\.ai" }) { Chk "Claude 的 UDP/QUIC 已拦截" "ok" } else { Chk "Claude 的 UDP/QUIC 已拦截" "规则没加载" }
 if ($rules | Where-Object { $_.proxy -eq "REJECT" -and $_.payload -match "2607:6bc0" }) { Chk "Anthropic IPv6 已拒绝（只走 IPv4）" "ok" } else { Chk "Anthropic IPv6 已拒绝" "规则没加载" }
+# 以 Clash Verge 实际生效的配置为准：「DNS 覆写」开着时会盖掉扩展脚本写的 nameserver-policy
+$rt = if (Test-Path -LiteralPath $CV_CFG) { ReadText $CV_CFG } else { "" }
+if ($rt.Contains("dns-query#$GROUP_NAME")) { Chk "Claude 域名走海外加密 DNS（不经过国内 DNS）" "ok" }
+elseif ($rt -match '(?m)^\s*enhanced-mode:\s*fake-ip') { Chk "Claude 域名不在本机解析（Fake-IP，交给专属 IP 远端解析）" "ok" }
+else { Chk "Claude 域名走海外加密 DNS" "没生效，多半是 Clash Verge「设置」里开了「DNS 覆写」：关掉后重新运行本命令" }
 $delay = (JParse (Ctl "GET" ("/proxies/" + [uri]::EscapeDataString($NODE_NAME) + "/delay?timeout=8000&url=" + [uri]::EscapeDataString("https://claude.ai/cdn-cgi/trace")) $null)).delay
 if ($delay) { Chk "链路 梯子→中转→专属IP 连通（${delay}ms）" "ok" } else { Chk "链路 梯子→中转→专属IP 连通" "不通，请截图发给客服" }
 foreach ($d in "claude.ai", "claude.com", "anthropic.com", "challenges.cloudflare.com") {

@@ -156,6 +156,22 @@ it("DNS flags a domestic resolver only when the Claude exit is abroad", () => {
 			.level,
 	).toBe("warn");
 	expect(dnsCard("error", "US").level).toBe("unknown");
+	// Split routing: the probe follows the non-Claude exit, so a domestic
+	// resolver there is not a Claude leak.
+	expect(dnsCard(dns("China - China Telecom"), "US", true)).toMatchObject({
+		level: "good",
+		status: "split",
+	});
+	expect(
+		dnsCard(
+			dns("United States - Google LLC", "China - China Telecom"),
+			"US",
+			true,
+		).status,
+	).toBe("split");
+	expect(dnsCard(dns("United States - Google LLC"), "US", true).status).toBe(
+		"normal",
+	);
 	expect(isChinaGeo("Hong Kong - HKT")).toBe(true);
 	expect(isChinaGeo("Chinatown Networks - X")).toBe(false);
 });
@@ -246,6 +262,19 @@ it("overall verdict never approves without a Claude exit and follows worst card"
 	};
 	expect(overallVerdict("161.77.8.204", buildCards(base))).toBe("good");
 	expect(overallVerdict(null, buildCards(base))).toBe("unknown");
+	const domesticDns = {
+		...base.dns,
+		resolverGeo: "China - China Telecom",
+	};
+	expect(
+		overallVerdict("161.77.8.204", buildCards({ ...base, dns: domesticDns })),
+	).toBe("bad");
+	expect(
+		overallVerdict(
+			"161.77.8.204",
+			buildCards({ ...base, dns: domesticDns, split: true }),
+		),
+	).toBe("good");
 	expect(
 		overallVerdict(
 			"161.77.8.204",

@@ -880,6 +880,10 @@ if [ -z "$DRY" ]; then
   [ -z "$MISSING" ] && chk "分流规则已加载（Claude、上报、验证、付款、实名）" ok || chk "分流规则已加载" "缺少：${MISSING}。Clash Verge「订阅」页确认「全局扩展脚本」已启用"
   [ "$(jget "$RULES" 'return o.rules.some(r=>r.type==="AND"&&r.proxy==="REJECT"&&/claude\.ai/.test(r.payload))')" = "true" ] && chk "Claude 的 UDP/QUIC 已拦截" ok || chk "Claude 的 UDP/QUIC 已拦截" "规则没加载"
   [ "$(jget "$RULES" 'return o.rules.some(r=>r.proxy==="REJECT"&&/2607:6bc0/.test(r.payload))')" = "true" ] && chk "Anthropic IPv6 已拒绝（只走 IPv4）" ok || chk "Anthropic IPv6 已拒绝" "规则没加载"
+  # 以 Clash Verge 实际生效的配置为准：「DNS 覆写」开着时会盖掉扩展脚本写的 nameserver-policy
+  if grep -qF "dns-query#$GROUP_NAME" "$CV_CFG" 2>/dev/null; then chk "Claude 域名走海外加密 DNS（不经过国内 DNS）" ok
+  elif grep -qE '^[[:space:]]*enhanced-mode:[[:space:]]*fake-ip' "$CV_CFG" 2>/dev/null; then chk "Claude 域名不在本机解析（Fake-IP，交给专属 IP 远端解析）" ok
+  else chk "Claude 域名走海外加密 DNS" "没生效，多半是 Clash Verge「设置」里开了「DNS 覆写」：关掉后重新运行本命令"; fi
   DELAY=$(jget "$(ctl GET "/proxies/$(urlenc "$NODE_NAME")/delay?timeout=8000&url=$(urlenc https://claude.ai/cdn-cgi/trace)")" 'o.delay')
   if [ -n "$ROUTER" ]; then
     [ -n "$DELAY" ] && chk "链路 路由器→中转→专属IP 连通（${DELAY}ms）" ok || chk "链路 路由器→中转→专属IP 连通" "不通。多半是路由器没让这台电脑到 ${PX_HOST} 的流量走梯子（它在海外，国内直连会被墙）：请在路由器里让 ${PX_HOST} 走代理，再重新运行；还不行就截图发给客服"
