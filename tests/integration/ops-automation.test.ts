@@ -420,7 +420,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		expect(messages[0]).not.toContain("小九");
 	});
 
-	it("pricing guard auto-raises ≤10%, proposes >10%, never lowers below baseline-less floors and flags agent prices", async () => {
+	it("pricing guard raises to the floor automatically however large, never lowers baseline-less prices and flags agent prices", async () => {
 		await seedPricing(db);
 		const messages: string[] = [];
 		const run = (now: number) =>
@@ -443,8 +443,8 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		await expect(run(monday)).resolves.toMatchObject({
 			status: "ran",
 			delivery: "sent",
-			applied: 2,
-			proposed: 1,
+			applied: 3,
+			proposed: 0,
 			agentWarnings: 1,
 			skipped: 1,
 		});
@@ -458,9 +458,10 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		expect(text).toContain(
 			"· AISOU · Plus：成本 ¥100.37；USDT ¥104.00（不变），支付宝 ¥105.00→¥110.00",
 		);
-		expect(text).toContain("需要你确认（未改价）：");
+		// Owner 2026-10-31: raises over 10% apply too, no approval button.
+		expect(text).not.toContain("需要你确认");
 		expect(text).toContain(
-			"· ChatGPT · Plus：成本 ¥50.72；建议 USDT ¥48.00→¥54.00（+12.5%），支付宝 ¥50.00→¥56.00（+12.0%）",
+			"· ChatGPT · Plus：成本 ¥50.72；USDT ¥48.00→¥54.00，支付宝 ¥50.00→¥56.00",
 		);
 		expect(text).toContain("代理价需要调整（仅建议，未改动）：");
 		expect(text).toContain(
@@ -494,13 +495,12 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			usdt: "10400",
 			alipay: "11000",
 		});
-		// >10% is only proposed; generous prices are never lowered.
 		await expect(item("gpt-plus")).resolves.toEqual({
-			price_minor: "4800",
-			version: 1,
-			revision: 1,
-			usdt: "4800",
-			alipay: "5000",
+			price_minor: "5400",
+			version: 2,
+			revision: 2,
+			usdt: "5400",
+			alipay: "5600",
 		});
 		await expect(item("aisou-cheap")).resolves.toEqual({
 			price_minor: "9900",
@@ -525,6 +525,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		expect(audits.results.map((row) => row.target_id)).toEqual([
 			"aisou-plus",
 			"claude",
+			"gpt-plus",
 		]);
 		expect(JSON.parse(audits.results[1]?.before ?? "{}")).toMatchObject({
 			priceMinor: "14200",
@@ -716,7 +717,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			usdtNew: 1200,
 			alipayNew: 1200,
 			agentNew: 1100,
-			auto: false,
+			auto: true,
 		});
 		// Agents pushed up to retail drop one grid step under it.
 		expect(
@@ -728,7 +729,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				baselineMinor: 8000,
 				floorMinor: 300,
 			}),
-		).toMatchObject({ usdtNew: 11000, agentNew: 10500, auto: false });
+		).toMatchObject({ usdtNew: 11000, agentNew: 10500, auto: true });
 		// A drop stops at the floor's grid price without becoming a raise.
 		expect(
 			followPlan({

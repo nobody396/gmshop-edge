@@ -37,8 +37,6 @@ export const defaultMinNetMinor = 300;
 /** Agent supply prices below this net are flagged for review. */
 export const agentMinNetMinor = 100;
 export const pricingGuardHour = 9;
-/** Changes at or under this share apply automatically; above it they need the owner. */
-const autoChangeLimitPercent = 10;
 /** Cost rises at or above this are followed; smaller ones add up first. */
 const followMinRiseMinor = 100;
 const alipayKeepPercent = 98;
@@ -156,26 +154,21 @@ export function planPrice(input: {
 				? input.alipayMinor
 				: Math.max(input.alipayMinor, ceilNiceMinor(required));
 	}
-	const within = (oldMinor: number, newMinor: number) =>
-		(newMinor - oldMinor) * 100 <= oldMinor * autoChangeLimitPercent;
+	// Owner 2026-10-31: every price change applies on its own.
 	return {
 		usdtOld: input.usdtMinor,
 		usdtNew,
 		alipayOld: input.alipayMinor,
 		alipayNew,
-		auto:
-			within(input.usdtMinor, usdtNew) &&
-			(input.alipayMinor === null ||
-				alipayNew === null ||
-				within(input.alipayMinor, alipayNew)),
+		auto: true,
 	};
 }
 
 /**
  * Shifts USDT, 支付宝 and agent prices by the supplier cost change and snaps
  * each to the nearest grid price, then re-applies the floors. A drop never
- * becomes a raise and a rise never becomes a cut. Drops always apply on their
- * own; rises above the limit wait for the owner.
+ * becomes a raise and a rise never becomes a cut. Every change applies on
+ * its own; only rises are reported to the owner.
  */
 export function followPlan(input: {
 	usdtMinor: number;
@@ -225,8 +218,7 @@ export function followPlan(input: {
 		alipayNew,
 		agentOld: input.agentMinor,
 		agentNew,
-		auto:
-			delta < 0 || delta * 100 <= input.baselineMinor * autoChangeLimitPercent,
+		auto: true,
 	};
 }
 
