@@ -528,7 +528,9 @@ describe("supplier source synchronization", { timeout: 30_000 }, () => {
 		await sync(1_800_012_000_000);
 		expect(alerts).toHaveLength(1);
 		expect(alerts[0]).toContain("🆕 上游新品（supplier.example）");
-		expect(alerts[0]).toContain("- Gemini Ultra 成品号\n  · SKU：¥490.00，库存 10");
+		expect(alerts[0]).toContain(
+			"- Gemini Ultra 成品号\n  · SKU：¥490.00，库存 10",
+		);
 		expect(alerts[0]).not.toContain("旧商品");
 		expect(alerts[0]).not.toContain("已在卖");
 		expect(alerts[0]).not.toContain("停售新品");
