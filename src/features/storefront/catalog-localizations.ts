@@ -195,12 +195,13 @@ Warranty
 - If a recharge has a problem, contact support instead of resubmitting.`,
 	},
 	"9e8b2987-1564-417e-8441-5936c5d592fa": {
-		name: "Telegram Premium｜Gift link｜3 / 6 months",
+		name: "Telegram Premium｜Gift link｜3 / 6 / 12 months",
 		description: `A Telegram Premium gift link. Delivered automatically after payment; claim it in your own Telegram to activate Premium on your account. No account password is needed.
 
 Options
 - 3 months: Telegram Premium for 3 months.
 - 6 months: Telegram Premium for 6 months, cheaper per month.
+- 12 months: Telegram Premium for a full year, the lowest price per month.
 
 How to use
 1. After payment, copy the whole gift link from the order page.
@@ -216,6 +217,33 @@ Before you buy
 Warranty
 - Within 24 hours of delivery, if an unclaimed link cannot be claimed, contact support for a replacement after verification.
 - Links already claimed (including by someone else after posting in a group) and banned or restricted accounts are not covered.`,
+	},
+	"b99dfd6a-2206-4dc9-aea9-85e86c3f8d66": {
+		name: "Gemini Ultra ready-made account｜1 month",
+		description: `A ready-made Google account with Google AI Ultra active for 1 month. Delivered automatically after payment. This is a ready-made account; it cannot be applied to your own account.
+
+Included
+- Google AI Ultra for 1 month: Gemini's top models and highest usage limits; Google's official page decides the exact benefits.
+
+What you receive
+Account, password, recovery email and 2FA key, in the format "account----password----recovery email----2FA key". Sign-in asks for a 2FA code: add the 2FA key to an authenticator app (such as Google Authenticator) to generate it.
+
+How to use
+1. View the delivered account details on the order page.
+2. Add the 2FA key to your authenticator app.
+3. Open https://gemini.google.com , sign in with the delivered account and password, and enter the 6-digit code from the app.
+4. After signing in, check that the plan shows Ultra.
+5. We suggest adding your own recovery email or phone and keeping the details safe.
+
+Before you buy
+- This is a ready-made account; it cannot be applied to your own account.
+- Sign in from a stable network, avoid frequent IP or device changes, and do not share the account; otherwise Google's risk controls are more likely to trigger.
+- Follow Google's rules; nothing can guarantee the account is never restricted or banned.
+
+After-sales
+- Only delivered details that cannot sign in are covered. Sign in and check soon after delivery; if sign-in fails, keep a screenshot of the error and contact support from the order page.
+- Restrictions or bans caused by account sharing, unusual networks, device switching or rule violations are not covered.
+- No no-reason refunds after delivery.`,
 	},
 	"64812c48-9026-4ef7-874d-b332d2a39b1a": {
 		name: "Gemini Pro｜18 months｜Activation link",
@@ -685,6 +713,20 @@ ${claudeRestrictions}`,
 	"58c5634b-89b4-4e61-a6ae-d3c9c7da87f3": {
 		name: "Telegram Premium｜6 months gift link",
 		policy: telegramPremiumPolicy("6 months"),
+	},
+	"d7ed6530-1f43-452f-b424-6aaf8800643c": {
+		name: "Telegram Premium｜12 months gift link",
+		policy: telegramPremiumPolicy("12 months"),
+	},
+	"a3fc7472-b5f5-45b2-93e4-0123a8d2c9e4": {
+		name: "Gemini Ultra｜Ready-made account｜1 month",
+		policy: policy(
+			"Delivered automatically after payment: a Google account with Ultra active (account, password, recovery email, 2FA key)",
+			"Automatic, usually within 1 minute; view it on the order page",
+			"Gemini Ultra ready-made account with Google AI Ultra for 1 month; it cannot be applied to your own account",
+			"Only delivered details that cannot sign in are covered; sign in and check soon after delivery",
+			"Do not share the account or switch IPs or devices frequently; restrictions or bans are not covered",
+		),
 	},
 	"39d831df-4919-49a4-8896-8ccfdbd33d83": {
 		name: "Gemini Pro｜18 months｜Activation link",
