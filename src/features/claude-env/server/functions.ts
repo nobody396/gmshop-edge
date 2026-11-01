@@ -6,7 +6,11 @@ import { resolveStoreAccount } from "#/features/storefront/server/account";
 import { DomainError } from "#/lib/domain-error";
 import { getDb } from "#/server/db.server";
 import { claudeEnvGuideSlug } from "./customer-email";
-import { loadClaudeEnvPanel, revealClaudeEnvCode } from "./panel";
+import {
+	listOwnClaudeEnvs,
+	loadClaudeEnvPanel,
+	revealClaudeEnvCode,
+} from "./panel";
 import { loadCrypt } from "./shared";
 import { ingestTrafficForOrder } from "./traffic";
 
@@ -75,5 +79,18 @@ export const getClaudeEnvGuideFn = createServerFn({ method: "GET" }).handler(
 			allowed: true as const,
 			guide: await loadPrivateGuide(db, claudeEnvGuideSlug),
 		};
+	},
+);
+
+/** The signed-in user's own environments (agent-site customers land here from the email). */
+export const getOwnClaudeEnvsFn = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const request = getRequest();
+		setResponseHeader("Cache-Control", "private, no-store");
+		const db = getDb(request).$client;
+		const account = await resolveStoreAccount(db, request, { required: true });
+		if (!account)
+			throw new DomainError("authentication_required", 401, "Sign in required");
+		return { orderNumbers: await listOwnClaudeEnvs(db, account.user.id) };
 	},
 );

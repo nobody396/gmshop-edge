@@ -387,6 +387,9 @@ export function beijingMinute(ms: number) {
 		.replace("T", " ");
 }
 
+/** The customer's own environments page (agent-site customers have no order of their own). */
+export const claudeEnvAccountPath = "/account/claude-env";
+
 /** Renewals always use the regular price of the same duration (early-bird is first period only). */
 export const renewalSkuIds = {
 	monthly: "c3bab030-0c3c-4451-9c41-3cc32538e778",

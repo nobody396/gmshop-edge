@@ -23,6 +23,7 @@ import {
 import type { IproyalClient } from "#/features/claude-env/server/iproyal";
 import { IproyalError } from "#/features/claude-env/server/iproyal";
 import {
+	listOwnClaudeEnvs,
 	loadClaudeEnvPanel,
 	revealClaudeEnvCode,
 } from "#/features/claude-env/server/panel";
@@ -1188,6 +1189,75 @@ describe("Claude 专属环境 control center", { timeout: 60_000 }, () => {
 				status: "awaiting_ip",
 			});
 			expect((await period("g0-item"))?.kind).toBe("initial");
+		});
+	});
+
+	describe("agent-site orders", () => {
+		async function agentOrder(id: string, buyerEmail: string | null) {
+			await insertOrder({
+				id,
+				userId: "agent",
+				sku: monthlySku,
+				paidAt: t0 + 1,
+				email: "agent@example.com",
+			});
+			await db.batch([
+				db.prepare(
+					"INSERT OR IGNORE INTO supplier_api_keys (id, user_id, name, key_id, secret_encrypted) VALUES ('k1','agent','n','kid','s')",
+				),
+				db
+					.prepare(
+						"INSERT INTO supplier_api_orders (id, shop_order_id, user_id, api_key_id, downstream_order_no, downstream_buyer_email, request_digest, created_at, updated_at) VALUES (?, ?, 'agent', 'k1', ?, ?, 'x', 1, 1)",
+					)
+					.bind(`sa-${id}`, id, `d-${id}`, buyerEmail),
+			]);
+		}
+
+		it("provision the end customer once they verify the reported email; never the agent", async () => {
+			await enable();
+			await agentOrder("ag1", "end@example.com");
+			await run(t0 + minute, undefined);
+			expect(await sub()).toBeNull();
+			expect((await period("ag1-item"))?.kind).toBe("waiting");
+			expect(messages.some((m) => m.includes("代理站订单 GMAG1"))).toBe(true);
+
+			await db
+				.prepare(
+					"INSERT INTO users (id, name, email, email_verified, enabled) VALUES ('end','E','end@example.com',1,1)",
+				)
+				.run();
+			await run(t0 + 2 * minute, undefined);
+			expect(await sub()).toMatchObject({
+				user_id: "end",
+				email: "end@example.com",
+				order_id: "ag1",
+				status: "awaiting_ip",
+			});
+			expect((await period("ag1-item"))?.kind).toBe("initial");
+
+			// The customer opens the panel from their own account; the agent sees nothing.
+			expect(await listOwnClaudeEnvs(db, "end")).toEqual(["GMAG1"]);
+			expect(await listOwnClaudeEnvs(db, "agent")).toEqual([]);
+			expect(
+				await loadClaudeEnvPanel(db, "end", "GMAG1", t0 + 3 * minute),
+			).toMatchObject({ state: "subscription", status: "awaiting_ip" });
+			expect(
+				await loadClaudeEnvPanel(db, "agent", "GMAG1", t0 + 3 * minute),
+			).toBeNull();
+
+			// A second agent-site purchase by the same customer renews it.
+			await agentOrder("ag2", "END@example.com");
+			await run(t0 + 4 * minute, undefined);
+			expect((await period("ag2-item"))?.kind).toBe("renewal");
+		});
+
+		it("still alerts for manual handling when the agent site sent no email", async () => {
+			await enable();
+			await agentOrder("ag3", null);
+			await run(t0 + minute, undefined);
+			expect(await sub()).toBeNull();
+			expect((await period("ag3-item"))?.kind).toBe("skipped");
+			expect(messages.some((m) => m.includes("没有回传客户邮箱"))).toBe(true);
 		});
 	});
 

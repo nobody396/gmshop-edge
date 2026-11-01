@@ -227,11 +227,28 @@ type PaidItem = {
 	user_email: string | null;
 	contact_email: string | null;
 	via_api: number;
+	/** The reseller's end customer, as the agent site reported it (lower-cased). */
+	downstream_email: string | null;
 };
 
 const paidItemColumns = `oi.id AS order_item_id, oi.order_id, o.order_number, oi.sellable_item_id, oi.quantity,
  o.user_id, u.email AS user_email, o.normalized_contact_email AS contact_email,
- EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) AS via_api`;
+ EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) AS via_api,
+ (SELECT sa.downstream_buyer_email FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id LIMIT 1) AS downstream_email`;
+
+/**
+ * Who the environment is for. An agent-site (supplier API) order is placed by
+ * the agent's account, so it belongs to the end customer the agent site
+ * reported: treated like a guest order under that email, provisioned once the
+ * customer has a verified account with it. Null when the agent site sent no email.
+ */
+function buyerSource(row: PaidItem) {
+	if (!row.via_api) return row;
+	const email = row.downstream_email?.trim().toLowerCase();
+	return email
+		? { user_id: null, user_email: null, contact_email: email }
+		: null;
+}
 const paidItemFrom = `FROM shop_order_items oi JOIN shop_orders o ON o.id = oi.order_id
  LEFT JOIN users u ON u.id = o.user_id`;
 
@@ -254,8 +271,10 @@ export async function ingestOrders(context: Context, ingestAfter: number) {
 	return outcome;
 }
 
-const guestReminder = (orderNumber: string, count: number) =>
-	`⚠️ Claude 专属环境游客订单 ${orderNumber}（第 ${count}/3 次提醒）：客户还没用下单邮箱注册/验证主站账号，面板只对登录用户开放。客户登录并验证邮箱后系统会自动开通；可以让客服提醒客户注册。`;
+const guestReminder = (row: PaidItem, count: number) =>
+	row.via_api
+		? `⚠️ Claude 专属环境代理站订单 ${row.order_number}（第 ${count}/3 次提醒）：客户 ${maskEmail(row.downstream_email ?? "")} 还没用这个邮箱在主站注册并验证。客户注册验证后系统会自动开通；可以让代理提醒客户注册。`
+		: `⚠️ Claude 专属环境游客订单 ${row.order_number}（第 ${count}/3 次提醒）：客户还没用下单邮箱注册/验证主站账号，面板只对登录用户开放。客户登录并验证邮箱后系统会自动开通；可以让客服提醒客户注册。`;
 
 async function processPaidItem(
 	context: Context,
@@ -266,9 +285,10 @@ async function processPaidItem(
 	if (!sku) return "skipped";
 	const quantity = Math.max(1, row.quantity);
 	const days = sku.days * quantity;
-	if (row.via_api) {
+	const source = buyerSource(row);
+	if (!source) {
 		const reason =
-			"代理站（lsrai.shop）经供货 API 下的单（下单账号是代理，不是最终客户），系统不自动开通";
+			"代理站经供货 API 下的单，但代理站没有回传客户邮箱，系统不知道给谁开通";
 		await periodInsert(db, row, null, "skipped", sku, days, quantity, now, {
 			note: reason,
 		}).run();
@@ -278,7 +298,7 @@ async function processPaidItem(
 		);
 		return "skipped";
 	}
-	const buyer = await resolveBuyer(db, row);
+	const buyer = await resolveBuyer(db, source);
 	if (!buyer) {
 		// Guest checkout: claimed onto an account once the buyer verifies the
 		// order email. Reminders on day 1, 3 and 7 only.
@@ -286,7 +306,7 @@ async function processPaidItem(
 			remindCount: 1,
 			nextRemindAt: now + 2 * dayMs,
 		}).run();
-		await say(context, guestReminder(row.order_number, 1));
+		await say(context, guestReminder(row, 1));
 		return "waiting";
 	}
 	const existing = await db
@@ -446,7 +466,8 @@ export async function promoteWaitingOrders(context: Context) {
 				.run();
 			continue;
 		}
-		if (await resolveBuyer(db, row)) {
+		const source = buyerSource(row);
+		if (source && (await resolveBuyer(db, source))) {
 			const removed = await db
 				.prepare(
 					"DELETE FROM claude_env_periods WHERE order_item_id = ? AND kind = 'waiting'",
@@ -477,7 +498,7 @@ export async function promoteWaitingOrders(context: Context) {
 				)
 				.run();
 			if (Number(claimed.meta.changes ?? 0) === 1)
-				await say(context, guestReminder(row.order_number, count));
+				await say(context, guestReminder(row, count));
 		}
 	}
 	return promoted;
