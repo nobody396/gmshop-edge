@@ -447,4 +447,84 @@ describe("proactive redemption exception todos", { timeout: 30_000 }, () => {
 		expect(result).not.toMatchObject({ accepted: 1 });
 		expect(send).not.toHaveBeenCalled();
 	});
+	it("adds the upstream site and Key in plain text and sends the Session only privately", async () => {
+		await enable();
+		const send = deliver();
+		const files: Array<{ name: string; content: string; caption: string }> = [];
+		await runRedemptionExceptionTodos({
+			db,
+			now: clock,
+			readFeed: async () => feed([snapshot], clock),
+			deliver: send,
+			readSecrets: async (codeId) => {
+				expect(codeId).toBe(id);
+				return {
+					open: true,
+					sku: "GPT_20X_RENEW_PH",
+					upstream: "aiee（兑换站 aiee.fun）",
+					upstream_key: "GPROX20-AAAA-BBBB-CCCC",
+					session: '{"accessToken":"SESSION-TEXT"}',
+					session_kind: "gpt_session",
+				};
+			},
+			sendPrivateFile: async (file) => {
+				files.push(file);
+			},
+		});
+		const text = String(send.mock.calls[0]?.[0]);
+		expect(text).toContain("上游：aiee（兑换站 aiee.fun）");
+		expect(text).toContain("上游 Key：GPROX20-AAAA-BBBB-CCCC");
+		expect(text).toContain("客户 Session：已私发给你");
+		expect(text).not.toContain("SESSION-TEXT");
+		expect(files).toEqual([
+			expect.objectContaining({
+				name: `session-${snapshot.reference.slice(0, 8)}.txt`,
+				content: '{"accessToken":"SESSION-TEXT"}',
+			}),
+		]);
+		const stored =
+			JSON.stringify(
+				(await db.prepare("SELECT payload FROM outbox_events").all()).results,
+			) +
+			JSON.stringify(
+				(await db.prepare("SELECT snapshot FROM redeem_exception_todos").all())
+					.results,
+			);
+		expect(stored).not.toMatch(/GPROX20|SESSION-TEXT/);
+	});
+	it("still sends the todo when the secrets or private file fail", async () => {
+		await enable();
+		const send = deliver();
+		await runRedemptionExceptionTodos({
+			db,
+			now: clock,
+			readFeed: async () => feed([snapshot], clock),
+			deliver: send,
+			readSecrets: async () => ({
+				open: true,
+				sku: "GPT_PLUS_PH",
+				upstream: "aiee（兑换站 aiee.fun）",
+				upstream_key: "K",
+				session: "S",
+				session_kind: "gpt_session",
+			}),
+			sendPrivateFile: async () => {
+				throw new Error("403");
+			},
+		});
+		expect(String(send.mock.calls[0]?.[0])).toContain("私发失败");
+		const again = deliver();
+		await runRedemptionExceptionTodos({
+			db,
+			now: clock + 1,
+			readFeed: async () => feed([{ ...snapshot, severity: 2 }], clock + 1),
+			deliver: again,
+			readSecrets: async () => {
+				throw new Error("down");
+			},
+		});
+		expect(String(again.mock.calls[0]?.[0])).toContain(
+			"上游 Key：暂时读取失败",
+		);
+	});
 });

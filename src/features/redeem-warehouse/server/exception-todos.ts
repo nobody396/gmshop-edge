@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
 	deliverOwnerAlert,
 	ownerAlertErrorCode,
+	resolveTelegramOwnerAlertCredentials,
+	sendTelegramOwnerPrivateFile,
 } from "#/features/telegram/server/owner-alerts";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import {
@@ -244,6 +246,7 @@ async function applySnapshot(
 	const payload = JSON.stringify({
 		revision,
 		state: s.state,
+		reference: s.reference,
 		text: formatExceptionTodo(s, change),
 	});
 	const stateWrite = previous
@@ -315,7 +318,97 @@ type Input = {
 		tracked_ids: string[];
 	}) => Promise<unknown>;
 	deliver?: (text: string, uuid: string) => Promise<void>;
+	readSecrets?: (codeId: string) => Promise<unknown>;
+	sendPrivateFile?: (file: {
+		name: string;
+		content: string;
+		caption: string;
+	}) => Promise<void>;
 };
+
+// Owner decision 2026-11-01: an open todo carries the upstream Key in plain text and names the
+// upstream site; the customer's submitted login goes only to the owner privately, as a file.
+// Fetched at send time, so neither ever lands in this database or the outbox.
+const secretsSchema = z.union([
+	z.object({ open: z.literal(false) }).strict(),
+	z
+		.object({
+			open: z.literal(true),
+			sku: z.string().max(64),
+			upstream: z.string().max(100).nullable(),
+			upstream_key: z.string().max(500).nullable(),
+			session: z.string().max(60_000).nullable(),
+			session_kind: z.string().max(64).nullable(),
+		})
+		.strict(),
+]);
+
+async function readRecoverySecrets(input: Input, codeId: string) {
+	if (input.readSecrets)
+		return secretsSchema.parse(await input.readSecrets(codeId));
+	const runtime = await loadRuntimeConfig(input.db);
+	const token = await loadDeliveryWarehouseToken(
+		input.db,
+		runtime.commerceSecret,
+	);
+	const reply = z
+		.object({ success: z.literal(true), data: secretsSchema })
+		.parse(
+			await requestWarehouse(
+				token,
+				"/api/internal/attempts/exception-secrets",
+				{
+					method: "POST",
+					body: JSON.stringify({ code_id: codeId }),
+				},
+			),
+		);
+	return reply.data;
+}
+
+async function sendPrivateFile(
+	input: Input,
+	file: { name: string; content: string; caption: string },
+) {
+	if (input.sendPrivateFile) return input.sendPrivateFile(file);
+	const credentials = await resolveTelegramOwnerAlertCredentials(input.db);
+	if (!credentials) throw new Error("telegram_owner_alerts_disabled");
+	await sendTelegramOwnerPrivateFile(credentials, file);
+}
+
+export async function withRecoverySecrets(
+	input: Input,
+	codeId: string,
+	reference: string,
+	text: string,
+) {
+	let secrets: z.infer<typeof secretsSchema>;
+	try {
+		secrets = await readRecoverySecrets(input, codeId);
+	} catch {
+		return `${text}\n上游 Key：暂时读取失败，可用核查编号找我取`;
+	}
+	if (!secrets.open) return text;
+	const lines = [
+		`上游：${secrets.upstream || "未知"}`,
+		`上游 Key：${secrets.upstream_key || "没有绑定"}`,
+	];
+	if (!secrets.session)
+		lines.push("客户 Session：没有保存（超过 24 小时或更早的单）");
+	else {
+		try {
+			await sendPrivateFile(input, {
+				name: `session-${reference.slice(0, 8)}.txt`,
+				content: secrets.session,
+				caption: `核查编号 ${reference}｜${secrets.sku}｜客户最后一次提交的登录内容（${secrets.session_kind || "session"}），24 小时内有效`,
+			});
+			lines.push("客户 Session：已私发给你（.txt 文件）");
+		} catch {
+			lines.push("客户 Session：私发失败，请先私聊 Bot 点“开始”，或找我取");
+		}
+	}
+	return `${text}\n${lines.join("\n")}`;
+}
 
 export async function runRedemptionExceptionTodos(input: Input) {
 	const now = input.now ?? Date.now();
@@ -531,9 +624,18 @@ async function publishExceptionAlerts(
 				)
 				.bind(row.aggregate_id)
 				.run();
-			if (input.deliver) await input.deliver(payload.text, row.id);
+			const text =
+				payload.state === "open"
+					? await withRecoverySecrets(
+							input,
+							row.aggregate_id,
+							String(JSON.parse(row.payload).reference ?? row.aggregate_id),
+							payload.text,
+						)
+					: payload.text;
+			if (input.deliver) await input.deliver(text, row.id);
 			else
-				await deliverOwnerAlert(input.db, payload.text, {
+				await deliverOwnerAlert(input.db, text, {
 					uuid: row.id,
 					topic: "general",
 				});
