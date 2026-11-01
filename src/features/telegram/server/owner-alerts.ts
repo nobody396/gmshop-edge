@@ -209,6 +209,7 @@ export async function callTelegram(
 		| "sendMessage"
 		| "getChat"
 		| "getChatMember"
+		| "getChatAdministrators"
 		| "editMessageText"
 		| "answerCallbackQuery"
 		| "getWebhookInfo"
@@ -240,6 +241,63 @@ export async function callTelegram(
 				: failureCode,
 		);
 	return payload.data.result;
+}
+
+/**
+ * Sends a file to the creator of the owner-alert chat in a private chat, never to the group.
+ * Telegram only allows this after the creator has opened the bot once (pressed Start).
+ */
+export async function sendTelegramOwnerPrivateFile(
+	credentials: TelegramOwnerAlertCredentials,
+	file: { name: string; content: string; caption: string },
+	request: Fetcher = fetch,
+) {
+	const admins = z
+		.array(
+			z.object({
+				status: z.string(),
+				user: z.object({ id: z.number().int(), is_bot: z.boolean() }),
+			}),
+		)
+		.safeParse(
+			await callTelegram(
+				credentials,
+				"getChatAdministrators",
+				{ chat_id: credentials.chatId },
+				request,
+				"telegram_alert_chat_unavailable",
+			),
+		);
+	const owner = admins.data?.find(
+		(member) => member.status === "creator" && !member.user.is_bot,
+	);
+	if (!owner) throw new OwnerAlertError("telegram_owner_unknown");
+	const form = new FormData();
+	form.set("chat_id", String(owner.user.id));
+	form.set("caption", file.caption.slice(0, 1_000));
+	form.set(
+		"document",
+		new Blob([file.content], { type: "text/plain;charset=utf-8" }),
+		file.name,
+	);
+	// The URL embeds the bot token: it is never logged or put in an error.
+	const response = await request(
+		`${telegramApiBase}/bot${credentials.botToken}/sendDocument`,
+		{
+			method: "POST",
+			body: form,
+			signal: AbortSignal.timeout(requestTimeoutMs),
+		},
+	).catch(() => null);
+	const payload = apiResponseSchema.safeParse(
+		await response?.json().catch(() => null),
+	);
+	if (!response || !payload.success || !payload.data.ok || !response.ok)
+		throw new OwnerAlertError(
+			payload.data?.error_code
+				? `telegram_private_file_${payload.data.error_code}`
+				: "telegram_private_file_failed",
+		);
 }
 
 export async function sendTelegramOwnerAlertText(
