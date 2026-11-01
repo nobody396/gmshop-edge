@@ -38,7 +38,9 @@ type PanelRow = {
 
 /**
  * The subscription behind one order, but only when the logged-in user owns
- * both the order and the subscription. Never keyed by anything the client
+ * the subscription. The order itself may belong to an agent (agent-site
+ * orders are placed by the agent's account for the end customer), so only
+ * the subscription's owner is checked. Never keyed by anything the client
  * controls except the order number.
  */
 async function ownedSubscription(
@@ -56,10 +58,10 @@ async function ownedSubscription(
 			  UNION ALL SELECT order_id, subscription_id FROM claude_env_traffic_addons) p ON p.order_id = o.id
 			 JOIN claude_env_subscriptions s ON s.id = p.subscription_id
 			 LEFT JOIN claude_env_relays r ON r.id = s.relay_id
-			 WHERE o.order_number = ? AND o.user_id = ? AND s.user_id = ?
+			 WHERE o.order_number = ? AND s.user_id = ?
 			 ORDER BY s.created_at DESC LIMIT 1`,
 		)
-		.bind(orderNumber, userId, userId)
+		.bind(orderNumber, userId)
 		.first<PanelRow>();
 }
 
@@ -72,6 +74,7 @@ async function orderHasClaudeEnvItem(
 		.prepare(
 			`SELECT o.status FROM shop_orders o JOIN shop_order_items oi ON oi.order_id = o.id
 			 WHERE o.order_number = ? AND o.user_id = ? AND (oi.product_id = ? OR oi.sellable_item_id IN (${claudeEnvSkuIds.map(() => "?").join(",")}))
+			 AND NOT EXISTS (SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id)
 			 LIMIT 1`,
 		)
 		.bind(orderNumber, userId, claudeEnvProductId, ...claudeEnvSkuIds)
@@ -241,4 +244,22 @@ export async function revealClaudeEnvCode(
 		tz: row.ip_tz,
 	});
 	return { code, ...customerCommands(code) };
+}
+
+/**
+ * The signed-in user's environments with the order number each panel is keyed
+ * by (the order that created it). Lets agent-site customers, whose order is on
+ * the agent's account, open their panel from their own account.
+ */
+export async function listOwnClaudeEnvs(db: D1Database, userId: string) {
+	const rows = await db
+		.prepare(
+			`SELECT o.order_number FROM claude_env_subscriptions s
+			 JOIN shop_orders o ON o.id = s.order_id
+			 WHERE s.user_id = ? AND s.status <> 'cancelled'
+			 ORDER BY s.created_at DESC LIMIT 10`,
+		)
+		.bind(userId)
+		.all<{ order_number: string }>();
+	return rows.results.map((row) => row.order_number);
 }

@@ -23,6 +23,7 @@ type Candidate = {
 	account_email: string | null;
 	subscription_email: string;
 	contact_email: string | null;
+	via_api: number;
 	order_locale: string | null;
 };
 
@@ -45,7 +46,9 @@ export async function sendExpiryReminders(input: {
 	const rows = await db
 		.prepare(
 			`SELECT s.id, s.user_id, s.plan, s.ip, s.expires_at, u.email AS account_email, s.email AS subscription_email,
-			 o.normalized_contact_email AS contact_email, o.locale AS order_locale
+			 CASE WHEN EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) THEN NULL
+			  ELSE o.normalized_contact_email END AS contact_email, o.locale AS order_locale,
+			 EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) AS via_api
 			 FROM claude_env_subscriptions s
 			 LEFT JOIN users u ON u.id = s.user_id
 			 LEFT JOIN shop_orders o ON o.id = s.order_id
@@ -104,6 +107,7 @@ export async function sendExpiryReminders(input: {
 				expiresAt: row.expires_at,
 				plan: row.plan,
 				locale,
+				viaReseller: Boolean(row.via_api),
 			};
 			try {
 				const result = await sendEmail(db, email);

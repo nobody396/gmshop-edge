@@ -14,6 +14,7 @@ import type { SupportedLocale } from "#/lib/locales";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import {
 	beijingMinute,
+	claudeEnvAccountPath,
 	displayCity,
 	formatGb,
 	type ReminderPoint,
@@ -36,13 +37,20 @@ const escapeHtml = (value: string) =>
 
 /** Plain notice with no secrets: the activation code stays behind the logged-in order page. */
 export function renderClaudeEnvReadyEmail(input: {
+	/** The order page, or for an agent-site customer the 「我的 Claude 专属环境」 page. */
 	orderUrl: string;
+	/** Bought through an agent site: the order is on the agent's account, not in 「我的订单」. */
+	viaReseller?: boolean;
 	expiresText: string;
 	email: string;
 	ip: string | null;
 	city: string | null;
 }) {
 	const subject = "你的 Claude 专属环境已开通";
+	const reseller = input.viaReseller === true;
+	const panelPlace = reseller
+		? "「我的 Claude 专属环境」页面"
+		: "订单页「Claude 专属环境」";
 	const lines = [
 		"你好，",
 		"你购买的「Claude 稳定使用环境」已开通，可以开始使用了。",
@@ -51,18 +59,22 @@ export function renderClaudeEnvReadyEmail(input: {
 		`完整图文教程（配环境 → 注册 ProtonMail → 注册 Claude → 开通会员，一步一步来）：${guideUrl}`,
 		"开始使用（大约 5 分钟）：",
 		"① 确认电脑上的代理软件能正常打开 google.com。没装 Clash Verge Rev 也没关系，命令会自动装好，并把你原来软件里的订阅搬过来。",
-		`② 打开 ${shopOrigin} 点「登录」，用下单邮箱 ${input.email} 登录：Gmail 邮箱可以直接点「Google 登录」；没设过密码的，在登录页点「忘记密码」，用这个邮箱收验证码设一个密码。登录后点顶部「我的订单」，打开这一单 → ${input.orderUrl}`,
-		"在「Claude 专属环境」里点「显示开通码」，复制对应电脑的那一行命令：Mac 粘贴到「终端」，Windows 粘贴到管理员身份的「终端」或「PowerShell」，回车运行。",
+		`② 打开 ${shopOrigin} 点「登录」，用下单邮箱 ${input.email} 登录：Gmail 邮箱可以直接点「Google 登录」；没设过密码的，在登录页点「忘记密码」，用这个邮箱收验证码设一个密码。${reseller ? `登录后打开「我的 Claude 专属环境」→ ${input.orderUrl}` : `登录后点顶部「我的订单」，打开这一单 → ${input.orderUrl}`}`,
+		`在${reseller ? "这个页面" : "「Claude 专属环境」"}里点「显示开通码」，复制对应电脑的那一行命令：Mac 粘贴到「终端」，Windows 粘贴到管理员身份的「终端」或「PowerShell」，回车运行。`,
 		"③ 过程中 Mac 会让你输入一次开机密码（Windows 点一次「是」），中间会让你手动关一下「定位服务」。最后出现「全部验收通过 ✅」就好了；没通过的，把窗口截图发给客服。",
 		`④ 重启电脑一次，然后打开 ${shopOrigin}/ip-check ，确认显示的 IP 和上面的专属 IP 一样。`,
-		"省事做法：订单页「Claude 专属环境」里有一段「交给 AI 助手配置」的话，整段复制给你的 Codex、Claude Code 等 AI 助手，它会帮你把上面这些做完，最后回复「OK」（输开机密码、关定位服务仍需你本人操作）。",
+		`省事做法：${panelPlace}里有一段「交给 AI 助手配置」的话，整段复制给你的 Codex、Claude Code 等 AI 助手，它会帮你把上面这些做完，最后回复「OK」（输开机密码、关定位服务仍需你本人操作）。`,
 		"使用提醒：",
 		"· 用 ProtonMail 邮箱注册 Claude；这套环境可以养 2～3 个号，换号时先退出登录再登另一个",
 		"· 这些号不要在插着国内手机卡的安卓手机上登录，最好只在这台电脑上用",
 		"· 号被限制时先停下来走官方申诉，不要换网络反复尝试",
 		"· 不续费的话，到期后环境立即失效，专属 IP 会被释放，无法找回",
-		"以后随时登录本站 →「我的订单」→ 打开这一单，在「Claude 专属环境」里能看到本月流量、到期时间和线路状态，也可以直接续费。",
-		"开通码就是你的专属线路密码，请不要发给别人。如有问题，请在订单页点「联系客服」。",
+		reseller
+			? `以后随时登录本站打开 ${input.orderUrl} ，能看到本月流量、到期时间和线路状态，也可以直接续费。`
+			: "以后随时登录本站 →「我的订单」→ 打开这一单，在「Claude 专属环境」里能看到本月流量、到期时间和线路状态，也可以直接续费。",
+		reseller
+			? "开通码就是你的专属线路密码，请不要发给别人。如有问题，请在本站点右下角「联系客服」。"
+			: "开通码就是你的专属线路密码，请不要发给别人。如有问题，请在订单页点「联系客服」。",
 		"老实人AI VIP",
 	];
 	const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#111827;font-size:15px;line-height:1.7"><div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px">${lines
@@ -87,7 +99,8 @@ export async function enqueueClaudeEnvReadyEmail(
 ) {
 	const row = await db
 		.prepare(
-			`SELECT s.id, s.email, s.user_id, s.expires_at, s.ip, s.ip_city, o.order_number
+			`SELECT s.id, s.email, s.user_id, s.expires_at, s.ip, s.ip_city, o.order_number,
+			 EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) AS via_api
 			 FROM claude_env_subscriptions s JOIN shop_orders o ON o.id = s.order_id
 			 WHERE s.id = ? AND s.status = 'active'`,
 		)
@@ -100,6 +113,7 @@ export async function enqueueClaudeEnvReadyEmail(
 			ip: string | null;
 			ip_city: string | null;
 			order_number: string;
+			via_api: number;
 		}>();
 	if (!row) return { status: "skipped" as const, reason: "not_active" };
 	const config = await db
@@ -119,9 +133,12 @@ export async function enqueueClaudeEnvReadyEmail(
 		: "—";
 	const content = renderClaudeEnvReadyEmail({
 		orderUrl: new URL(
-			`/account/orders/${encodeURIComponent(row.order_number)}`,
+			row.via_api
+				? claudeEnvAccountPath
+				: `/account/orders/${encodeURIComponent(row.order_number)}`,
 			origin,
 		).toString(),
+		viaReseller: Boolean(row.via_api),
 		expiresText,
 		email: row.email,
 		ip: row.ip,
@@ -158,6 +175,7 @@ const expiryCopy = {
 		renew: "立即续费",
 		renewLine: (url: string) => `立即续费：${url}`,
 		support: "如有问题，请在订单页点「联系客服」。",
+		resellerSupport: "如有问题，请在本站点右下角「联系客服」。",
 		unsubscribe: (url: string) => `不想再收到到期提醒：${url}`,
 		unsubscribeLabel: "不想再收到到期提醒",
 		monthly: "月付",
@@ -176,6 +194,8 @@ const expiryCopy = {
 		renew: "Renew now",
 		renewLine: (url: string) => `Renew now: ${url}`,
 		support: 'Questions? Open your order page and click "Contact support".',
+		resellerSupport:
+			'Questions? Click "Contact support" at the bottom right of our site.',
 		unsubscribe: (url: string) => `Stop expiry reminders: ${url}`,
 		unsubscribeLabel: "Stop expiry reminders",
 		monthly: "monthly",
@@ -194,8 +214,11 @@ export function renderClaudeEnvExpiryEmail(input: {
 	plan: string;
 	renewUrl: string;
 	unsubscribeUrl: string | null;
+	/** Agent-site customer: the order is not theirs, so no 「订单页」 wording. */
+	viaReseller?: boolean;
 }) {
 	const c = expiryCopy[input.locale];
+	const support = input.viaReseller ? c.resellerSupport : c.support;
 	const plan = input.plan.endsWith("quarterly") ? c.quarterly : c.monthly;
 	const expires = c.expires(beijingMinute(input.expiresAt));
 	const subject = c.subject(input.daysLeft);
@@ -206,7 +229,7 @@ export function renderClaudeEnvExpiryEmail(input: {
 		c.renewLine(input.renewUrl),
 		c.keep,
 		c.warning,
-		c.support,
+		support,
 		"老实人AI VIP",
 		...(input.unsubscribeUrl ? [c.unsubscribe(input.unsubscribeUrl)] : []),
 	].join("\n\n");
@@ -222,7 +245,7 @@ export function renderClaudeEnvExpiryEmail(input: {
 			`<strong>${escapeHtml(c.warning)}</strong>`,
 			";padding:12px;border-radius:8px;background:#fef2f2;color:#b91c1c",
 		),
-		p(escapeHtml(c.support)),
+		p(escapeHtml(support)),
 		p("老实人AI VIP"),
 		input.unsubscribeUrl
 			? p(
@@ -244,6 +267,7 @@ export type ExpiryEmailInput = {
 	expiresAt: number;
 	plan: string;
 	locale: SupportedLocale;
+	viaReseller?: boolean;
 };
 
 export type ExpiryEmailResult = {
@@ -311,6 +335,7 @@ export const enqueueClaudeEnvExpiryEmail: SendExpiryEmail = async (
 		plan: input.plan,
 		renewUrl: new URL(renewalPath(input.plan), origin).toString(),
 		unsubscribeUrl,
+		viaReseller: input.viaReseller,
 	});
 	const delivery = await enqueueEmailNotification(db, {
 		event: claudeEnvExpiryEmailEvent,
@@ -354,6 +379,7 @@ const trafficCopy = {
 		button: "加流量",
 		buttonLine: (url: string) => `加流量：${url}`,
 		support: "如有问题，请在订单页点「联系客服」。",
+		resellerSupport: "如有问题，请在本站点右下角「联系客服」。",
 	},
 	"en-US": {
 		subject: (percent: string) =>
@@ -370,6 +396,8 @@ const trafficCopy = {
 		button: "Add traffic",
 		buttonLine: (url: string) => `Add traffic: ${url}`,
 		support: 'Questions? Open your order page and click "Contact support".',
+		resellerSupport:
+			'Questions? Click "Contact support" at the bottom right of our site.',
 	},
 } as const;
 
@@ -385,8 +413,10 @@ export function renderClaudeEnvTrafficEmail(input: {
 	entitledBytes: number;
 	periodEnd: number;
 	addTrafficUrl: string;
+	viaReseller?: boolean;
 }) {
 	const c = trafficCopy[input.locale];
+	const support = input.viaReseller ? c.resellerSupport : c.support;
 	const percent = trafficPercentText(input.threshold);
 	const usage = c.usage(
 		formatGb(input.usedBytes),
@@ -402,7 +432,7 @@ export function renderClaudeEnvTrafficEmail(input: {
 		reset,
 		c.addon,
 		c.buttonLine(input.addTrafficUrl),
-		c.support,
+		support,
 		"老实人AI VIP",
 	].join("\n\n");
 	const p = (inner: string, style = "") =>
@@ -414,7 +444,7 @@ export function renderClaudeEnvTrafficEmail(input: {
 		p(escapeHtml(reset)),
 		p(escapeHtml(c.addon)),
 		`<p style="margin:20px 0"><a href="${escapeHtml(input.addTrafficUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px">${escapeHtml(c.button)}</a></p>`,
-		p(escapeHtml(c.support)),
+		p(escapeHtml(support)),
 		p("老实人AI VIP"),
 	].join("")}</div></body></html>`;
 	return { subject, text, html };
@@ -423,7 +453,8 @@ export function renderClaudeEnvTrafficEmail(input: {
 export type TrafficEmailInput = {
 	subscriptionId: string;
 	to: string;
-	orderNumber: string;
+	/** Null for an agent-site customer: the link goes to 「我的 Claude 专属环境」 instead. */
+	orderNumber: string | null;
 	threshold: TrafficNoticeThreshold;
 	periodStart: number;
 	periodEnd: number;
@@ -461,9 +492,12 @@ export const enqueueClaudeEnvTrafficEmail: SendTrafficEmail = async (
 		entitledBytes: input.entitledBytes,
 		periodEnd: input.periodEnd,
 		addTrafficUrl: new URL(
-			`/account/orders/${encodeURIComponent(input.orderNumber)}#claude-env-traffic`,
+			input.orderNumber
+				? `/account/orders/${encodeURIComponent(input.orderNumber)}#claude-env-traffic`
+				: `${claudeEnvAccountPath}#claude-env-traffic`,
 			origin,
 		).toString(),
+		viaReseller: input.orderNumber === null,
 	});
 	const delivery = await enqueueEmailNotification(db, {
 		event: claudeEnvTrafficEmailEvent,

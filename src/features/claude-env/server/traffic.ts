@@ -528,6 +528,7 @@ type NoticeRow = TrafficRow & {
 	ip: string | null;
 	order_number: string | null;
 	order_locale: string | null;
+	via_api: number;
 };
 
 const noticeKind = (bps: TrafficNoticeThreshold) => `p${bps}` as const;
@@ -545,7 +546,8 @@ export async function sendTrafficNotices(context: TrafficContext) {
 		.prepare(
 			`SELECT s.id, s.user_id, s.email, s.activated_at, s.traffic_period_start, s.traffic_period_bytes,
 			 s.traffic_quota_bytes, s.iproyal_order_id, s.ip, u.email AS account_email,
-			 o.order_number, o.locale AS order_locale
+			 o.order_number, o.locale AS order_locale,
+			 EXISTS(SELECT 1 FROM supplier_api_orders sa WHERE sa.shop_order_id = o.id) AS via_api
 			 FROM claude_env_subscriptions s
 			 LEFT JOIN users u ON u.id = s.user_id
 			 LEFT JOIN shop_orders o ON o.id = s.order_id
@@ -619,7 +621,8 @@ async function notifyCustomer(
 		const result = await sendEmail(db, {
 			subscriptionId: row.id,
 			to: (row.account_email ?? row.email).trim().toLowerCase(),
-			orderNumber: row.order_number,
+			// An agent-site order sits on the agent's account; the customer opens their own page.
+			orderNumber: row.via_api ? null : row.order_number,
 			threshold: level,
 			periodStart: snapshot.periodStart,
 			periodEnd: snapshot.periodEnd,
