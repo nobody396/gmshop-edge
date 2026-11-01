@@ -41,6 +41,13 @@ const diagnosisSchema = z
 		next_step: safeText(600),
 	})
 	.strict();
+const explanationSchema = z
+	.object({
+		summary: safeText(300),
+		timeline: z.array(safeText(300)).max(4),
+		action: safeText(300).nullable(),
+	})
+	.strict();
 const snapshotSchema = z
 	.object({
 		id: z.string().uuid(),
@@ -57,6 +64,8 @@ const snapshotSchema = z
 		reason: safeText(600),
 		resolution: z.enum(["completed", "voided", "customer_action"]).nullable(),
 		diagnosis: diagnosisSchema.nullable(),
+		// Older warehouse releases do not send it; the todo then reads as before.
+		explanation: explanationSchema.nullable().optional(),
 	})
 	.strict();
 const feedSchema = z
@@ -155,10 +164,19 @@ export function formatExceptionTodo(
 			? [`结果：${resolution[snapshot.resolution]}`]
 			: [
 					`优先级：${snapshot.severity === 2 ? "高" : "普通"}`,
+					...(snapshot.explanation
+						? [
+								`怎么回事：${snapshot.explanation.summary}`,
+								...snapshot.explanation.timeline.map((line) => `· ${line}`),
+							]
+						: []),
 					`原因：${snapshot.reason}`,
 					`阶段：${snapshot.diagnosis?.stage || "尚未定位"}`,
 					`提交情况：${snapshot.diagnosis ? submissionLabels[snapshot.diagnosis.submission] : "未确认"}`,
 					`卡密使用：${snapshot.diagnosis ? usageLabels[snapshot.diagnosis.card_usage] : "未确认"}`,
+					...(snapshot.explanation?.action
+						? [`我们怎么处理：${snapshot.explanation.action}`]
+						: []),
 					`建议：${snapshot.diagnosis?.next_step || "核对原订单，不要重复充值"}`,
 					"需要决定：无法确认结果时先查证；退款、换卡或重充仍须另行授权。",
 				]),

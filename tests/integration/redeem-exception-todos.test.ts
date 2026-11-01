@@ -408,4 +408,43 @@ describe("proactive redemption exception todos", { timeout: 30_000 }, () => {
 			/fixture-session|fixture-cookie|PRIVATE|key_ciphertext|upstream_order_id/,
 		);
 	});
+	it("tells the owner what actually happened when the warehouse explains the case", async () => {
+		await enable();
+		const send = deliver();
+		const explanation = {
+			summary:
+				"卡在付款安全验证：2次提交里有2次弹出安全验证，客户打开过1次验证窗口，但付款仍没有成功。",
+			timeline: [
+				"第1次提交 14:14:28 → 14:15:45 弹出安全验证 → 客户没有打开验证窗口 → 14:16:15 上游返回“付款未完成”",
+				"第2次提交 14:16:50 → 14:18:08 弹出安全验证 → 客户 14:18:11 打开了验证窗口 → 14:18:40 上游返回“付款未完成”",
+			],
+			action: "用同一张上游凭证在上游重新提交，弹出验证后当场做完。",
+		};
+		await run([{ ...snapshot, explanation }], clock, send);
+		const text = String(send.mock.calls[0]?.[0]);
+		expect(text).toContain(`怎么回事：${explanation.summary}`);
+		expect(text).toContain(`· ${explanation.timeline[1]}`);
+		expect(text).toContain(`我们怎么处理：${explanation.action}`);
+		expect(text.indexOf("怎么回事")).toBeLessThan(text.indexOf("原因："));
+	});
+	it("rejects an explanation carrying private data", async () => {
+		await enable();
+		const send = deliver();
+		const result = await run(
+			[
+				{
+					...snapshot,
+					explanation: {
+						summary: "联系 private@example.com",
+						timeline: [],
+						action: null,
+					},
+				},
+			],
+			clock,
+			send,
+		);
+		expect(result).not.toMatchObject({ accepted: 1 });
+		expect(send).not.toHaveBeenCalled();
+	});
 });
