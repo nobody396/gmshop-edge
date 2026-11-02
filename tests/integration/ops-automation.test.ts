@@ -804,6 +804,18 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			agentNew: 104_000,
 			auto: true,
 		});
+		// 2026-10-31 Plus 菲区: −¥2 took USDT ¥119→¥115 but left 支付宝 at ¥125;
+		// 支付宝 now stays within the old ¥6 gap: ¥121 → ¥120.
+		expect(
+			followPlan({
+				usdtMinor: 11_900,
+				alipayMinor: 12_500,
+				agentMinor: null,
+				costMinor: 11_130,
+				baselineMinor: 11_330,
+				floorMinor: 300,
+			}),
+		).toMatchObject({ usdtNew: 11_500, alipayNew: 12_000, auto: true });
 		// Off-grid ¥119 with a ¥0.50 drop: rounding never turns it into a raise.
 		expect(
 			followPlan({
