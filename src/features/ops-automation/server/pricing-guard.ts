@@ -166,7 +166,9 @@ export function planPrice(input: {
 
 /**
  * Shifts USDT, 支付宝 and agent prices by the supplier cost change and snaps
- * each to the nearest grid price, then re-applies the floors. A drop never
+ * each to the nearest grid price, then re-applies the floors. 支付宝 also never
+ * ends above the new USDT price plus its old gap (owner 2026-11-02: ¥119/¥125
+ * snapped on their own to ¥115/¥125). A drop never
  * becomes a raise and a rise never becomes a cut. Every change applies on
  * its own; only rises are reported to the owner.
  */
@@ -180,8 +182,8 @@ export function followPlan(input: {
 }): PricePlan | null {
 	const delta = input.costMinor - input.baselineMinor;
 	const need = input.costMinor + input.floorMinor;
-	const settle = (oldMinor: number, required: number) => {
-		const moved = roundNiceMinor(oldMinor + delta);
+	const settle = (oldMinor: number, targetMinor: number, required: number) => {
+		const moved = roundNiceMinor(targetMinor);
 		const next =
 			delta < 0 ? Math.min(moved, oldMinor) : Math.max(moved, oldMinor);
 		// A floor may stop a drop short, but never turns it into a raise.
@@ -189,18 +191,22 @@ export function followPlan(input: {
 		const floor = ceilNiceMinor(required);
 		return delta < 0 ? Math.min(Math.max(oldMinor, next), floor) : floor;
 	};
-	const usdtNew = settle(input.usdtMinor, need);
+	const usdtNew = settle(input.usdtMinor, input.usdtMinor + delta, need);
 	const alipayNew =
 		input.alipayMinor === null
 			? null
 			: settle(
 					input.alipayMinor,
+					Math.min(
+						input.alipayMinor + delta,
+						usdtNew + (input.alipayMinor - input.usdtMinor),
+					),
 					Math.max(ceilDiv(need * 100, alipayKeepPercent), usdtNew),
 				);
 	let agentNew: number | null = null;
 	if (input.agentMinor !== null) {
 		const minimum = ceilYuanMinor(input.costMinor + agentMinNetMinor);
-		agentNew = settle(input.agentMinor, minimum);
+		agentNew = settle(input.agentMinor, input.agentMinor + delta, minimum);
 		// Agents must still undercut our own USDT price.
 		if (agentNew >= usdtNew)
 			agentNew = Math.max(usdtNew - niceStepMinor(usdtNew), minimum);
