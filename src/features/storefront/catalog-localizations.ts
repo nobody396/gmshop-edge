@@ -125,6 +125,28 @@ Notes
 - Codes are digital goods and are not refundable once delivered
 - If redemption fails, contact us through Support`,
 	},
+	"e4acdd84-af47-45fd-99c6-29cb7a2d38b1": {
+		name: "Gmail｜US personal account｜New with 2FA",
+		description: `US personal Gmail account. Brand new and unused, registered in the US, with 2-step verification (2FA) turned on and no original phone number attached. Delivered automatically after payment.
+
+What you receive
+One line of details: email----password----recovery email----2FA key.
+The recovery email is the address set at registration; only the address is given, not its password. Replace it with your own after signing in.
+
+How to sign in
+1. Use a clean US network, ideally a US node and a private window, and open gmail.com.
+2. Enter the email and password.
+3. When asked for a 6-digit code, add the 2FA key to an authenticator app (such as Google Authenticator, "Enter a setup key") and enter the code it shows.
+4. After signing in, change the password and replace the recovery email with your own.
+
+Before you buy
+- Switching IPs often, juggling several accounts in one browser, or signing in to many at once can trigger Google's risk checks and a phone verification request.
+- Up to 5 per order; sign in to each account separately.
+
+Warranty
+- First sign-in is covered: if an account cannot sign in within 24 hours of delivery (wrong password or disabled), contact Support and we will replace it after checking.
+- Bans, risk checks, or phone verification after a successful sign-in are not covered.`,
+	},
 	"c70d10e8-b781-4782-bc98-1f034bcd069a": {
 		name: "Apple ID｜US / Japan / Turkey｜Aged account",
 		description: `Accounts registered over a year ago, one buyer per account, with security questions; you can change the password yourself. Delivered automatically after payment, for downloading and buying apps from other regions on the App Store.
@@ -683,6 +705,16 @@ ${claudeRestrictions}`,
 	"bb584d1c-4444-4581-a2e1-5ddeab2f0f87": {
 		name: "Claude compute card｜¥500",
 		policy: computePolicy("500"),
+	},
+	"20a6011a-779d-43fa-a843-47fa76e31abf": {
+		name: "US personal Gmail｜New, unused｜2FA on",
+		policy: policy(
+			"Delivered automatically after payment: email, password, recovery email, and 2FA key",
+			"Automatic, usually within 1 minute; view it on the order page",
+			"US personal Gmail, brand new and unused, 2FA turned on, no original phone number",
+			"First sign-in is covered: if it cannot sign in within 24 hours of delivery, we replace it after checking",
+			"Bans, risk checks, or phone verification after a successful sign-in are not covered; sign in from a clean US network",
+		),
 	},
 	"d387ff70-1566-444a-9c75-fe4934df7d47": {
 		name: "US Apple ID｜Aged account (over 1 year)",

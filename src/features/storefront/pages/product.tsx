@@ -94,6 +94,7 @@ const ownUsageGuideProductIds = new Set([
 	"2ee356de-fe69-4641-94c3-1dfea19b6967", // Muse AI 成品号
 	"64812c48-9026-4ef7-874d-b332d2a39b1a", // Gemini Pro 18个月 激活链接
 	"c70d10e8-b781-4782-bc98-1f034bcd069a", // Apple ID 成品号
+	"e4acdd84-af47-45fd-99c6-29cb7a2d38b1", // 美区个人 Gmail：详情里自带登录步骤
 	"9e8b2987-1564-417e-8441-5936c5d592fa", // Telegram Premium 礼品链接
 	"f2b92a96-290c-4ffa-aaf5-a26e7a35815d", // Claude 稳定使用（订单码 + 开关打开后自动开通，见 features/claude-env）
 	claudeEnvTrafficProductId, // Claude 环境流量加购：付款后自动加到本期额度
