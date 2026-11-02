@@ -18,14 +18,18 @@ import { withdrawalsSchema } from "../schema";
 import { requestProgram } from "./client";
 
 /**
- * Once a day (from 10:00 Beijing) every pending lsrai.shop withdrawal that has
- * no open request gets a Telegram message. The owner pays in Alipay and taps
- * "已打款": the Mac runner looks the transfer up with alipay-source and, when
- * exactly one transfer matches, the withdrawal is marked paid with it. Any
- * doubt falls back to asking the owner for the Alipay trade number.
+ * Every Monday (from 10:00 Beijing) one Telegram message lists every pending
+ * lsrai.shop withdrawal with lsrai.shop's pre-payout checks and the total
+ * (owner 2026-11-02: weekly, not one message per request). The owner pays in
+ * Alipay and taps "已全部打款": the Mac runner looks each transfer up and,
+ * when exactly one transfer matches, the withdrawal is marked paid with it;
+ * results are appended to the same message. Any doubt falls back to asking
+ * the owner for that withdrawal's Alipay trade number.
  */
 
 const alertHour = 10;
+const settlementWeekday = 1; // Monday
+const batchTtlMs = 6 * 86_400_000; // gone before next Monday's summary
 const lastDayKey = "ops.withdrawal_alerts.last_day";
 // A failed pull must not burn the day: retry every 10 minutes and tell the
 // owner once per day that the push is failing (2026-10-21..26 it failed
@@ -55,6 +59,8 @@ export async function runWithdrawalAlerts(input: {
 	const now = input.now ?? Date.now();
 	if (!input.token?.trim()) return { status: "unconfigured" as const };
 	const clock = beijingClock(now);
+	if (clock.weekday !== settlementWeekday)
+		return { status: "not_settlement_day" as const };
 	if (clock.hour < alertHour) return { status: "waiting" as const };
 	if (await settingIs(input.db, lastDayKey, clock.day))
 		return { status: "done" as const };
@@ -100,34 +106,68 @@ export async function runWithdrawalAlerts(input: {
 		.bind(now, withdrawalVerifyStep)
 		.all<{ withdrawal_id: number }>();
 	const known = new Set(open.results.map((row) => Number(row.withdrawal_id)));
-	let proposed = 0;
-	for (const withdrawal of withdrawals) {
-		if (withdrawal.status !== "pending" || known.has(withdrawal.id)) continue;
-		await proposeOwnerAction(input.db, {
-			kind: "agent_withdrawal_paid",
-			payload: {
-				withdrawalId: withdrawal.id,
-				amount: withdrawal.amount,
-				requestKey: crypto.randomUUID(),
-			},
-			text: [
-				`💸 代理提现待打款 #${withdrawal.id}`,
-				`代理：${withdrawal.label}（${withdrawal.email}）`,
-				`金额：¥${withdrawal.amount}`,
-				`支付宝账号：${withdrawal.account}`,
-				`申请时间：${withdrawal.created_at}`,
-				"在支付宝转账后点「已打款」，系统会自动核对支付宝转账并标记。",
-			].join("\n"),
-			choices: ["✅ 已打款"],
-			rejectLabel: "⏸ 先不处理",
-			fallback: "转账后请到后台「代理」标记已打款。",
-			now,
-			fetcher: input.fetcher,
-		});
-		proposed += 1;
-	}
-	return { status: "ran" as const, pending: withdrawals.length, proposed };
+	const batches = await input.db
+		.prepare(
+			`SELECT payload FROM owner_action_requests
+			 WHERE kind = 'agent_withdrawal_batch_paid'
+			  AND status IN ('pending', 'processing') AND expires_at > ?`,
+		)
+		.bind(now)
+		.all<{ payload: string }>();
+	for (const row of batches.results)
+		for (const id of batchPayloadSchema.parse(JSON.parse(row.payload))
+			.withdrawalIds)
+			known.add(id);
+	const fresh = withdrawals.filter(
+		(w) => w.status === "pending" && !known.has(w.id),
+	);
+	if (!fresh.length)
+		return { status: "ran" as const, pending: withdrawals.length, proposed: 0 };
+	const cents = (amount: string) => Math.round(Number(amount) * 100);
+	const total = fresh.reduce((sum, w) => sum + cents(w.amount), 0);
+	const flagged = fresh.filter((w) => w.checks.length).length;
+	const lines = [
+		`💸 本周代理提现待打款：${fresh.length} 笔，合计 ¥${(total / 100).toFixed(2)}`,
+		`（北京时间 ${beijingStamp(now)} 已核对：收款账号是否为代理登记账号、代理状态、冻结余额${flagged ? `；⚠️ ${flagged} 笔有问题，先别打` : ""}）`,
+	];
+	fresh.forEach((w, index) => {
+		lines.push(
+			"",
+			`${index + 1}. ${w.label}（${w.email}）`,
+			`支付宝：${w.account}`,
+			`金额：¥${w.amount}`,
+			w.checks.length ? `⚠️ ${w.checks.join("；")}` : "✅ 核对通过",
+		);
+	});
+	lines.push(
+		"",
+		"转完后点「已全部打款」：系统去支付宝逐笔找转账、回填订单号并标记已打款；对不上的会单独问你。",
+	);
+	await proposeOwnerAction(input.db, {
+		kind: "agent_withdrawal_batch_paid",
+		payload: {
+			withdrawalIds: fresh.map((w) => w.id),
+			requestKey: crypto.randomUUID(),
+		},
+		text: lines.join("\n"),
+		choices: ["✅ 已全部打款"],
+		rejectLabel: "⏸ 先不处理",
+		fallback: "转账后请到后台「代理」逐笔标记已打款。",
+		ttlMs: batchTtlMs,
+		now,
+		fetcher: input.fetcher,
+	});
+	return {
+		status: "ran" as const,
+		pending: withdrawals.length,
+		proposed: fresh.length,
+	};
 }
+
+const batchPayloadSchema = z.object({
+	withdrawalIds: z.array(z.number().int().positive()).min(1).max(50),
+	requestKey: z.string().uuid(),
+});
 
 const payloadSchema = z.object({
 	withdrawalId: z.number().int().positive(),
@@ -211,6 +251,57 @@ export async function queueWithdrawalVerify(
 			409,
 			"这笔提现已经不是待打款",
 		);
+	await insertVerifyJob(
+		context,
+		all,
+		target,
+		`withdrawal:${target.id}:${payload.requestKey ?? "legacy"}`,
+	);
+	return "⏳ 正在自动核对支付宝转账（约 20 秒）";
+}
+
+/** "已全部打款" on the Monday summary: one Alipay lookup per withdrawal. */
+export async function queueWithdrawalBatchVerify(
+	context: OwnerActionContext & { fetcher?: typeof fetch },
+	rawPayload: unknown,
+) {
+	const payload = batchPayloadSchema.parse(rawPayload);
+	const all = await requestProgram(
+		context.agentProgramToken,
+		"withdrawals",
+		withdrawalsSchema,
+		"GET",
+		undefined,
+		context.fetcher,
+	);
+	const pending = payload.withdrawalIds
+		.map((id) => all.find((w) => w.id === id && w.status === "pending"))
+		.filter((w): w is Withdrawal => Boolean(w));
+	if (!pending.length)
+		throw new DomainError(
+			"withdrawal_not_pending",
+			409,
+			"这些提现都已经不是待打款",
+		);
+	for (const target of pending)
+		await insertVerifyJob(
+			context,
+			all,
+			target,
+			`withdrawal:${target.id}:${payload.requestKey}`,
+			payload.requestKey,
+		);
+	const skipped = payload.withdrawalIds.length - pending.length;
+	return `⏳ 正在去支付宝核对 ${pending.length} 笔转账（约 1 分钟），结果逐行写在下面${skipped ? `；另有 ${skipped} 笔已处理过，跳过` : ""}`;
+}
+
+async function insertVerifyJob(
+	context: OwnerActionContext,
+	all: Withdrawal[],
+	target: Withdrawal,
+	actionKey: string,
+	batchKey?: string,
+) {
 	const group = all.filter(
 		(w) => w.status === "pending" && w.account.trim() === target.account.trim(),
 	);
@@ -229,17 +320,17 @@ export async function queueWithdrawalVerify(
 			id,
 			id,
 			withdrawalVerifyStep,
-			`withdrawal:${target.id}:${payload.requestKey ?? "legacy"}`,
+			actionKey,
 			JSON.stringify({
 				target: { ...verifyItem(target), label: target.label },
 				group: group.map(verifyItem),
 				used_trade_nos: used,
+				...(batchKey ? { batch_key: batchKey } : {}),
 			}),
 			context.now,
 			context.now,
 		)
 		.run();
-	return "⏳ 正在自动核对支付宝转账（约 20 秒）";
 }
 
 type VerifyJob = { id: string; order_json: string | null };
@@ -255,6 +346,7 @@ const verifyOrderSchema = z.object({
 	group: z.array(
 		z.object({ id: z.number().int().positive(), amount: z.string() }),
 	),
+	batch_key: z.string().uuid().optional(),
 });
 
 /** The runner's lookup result: mark paid on one exact match, else ask the owner. */
@@ -346,8 +438,19 @@ export async function recordWithdrawalVerifyResult(
 		...body,
 		paid,
 	});
-	if (reason && !paid.includes(order.target.id))
-		await proposeManual(db, order.target, reason, options);
+	const manual = Boolean(reason && !paid.includes(order.target.id));
+	if (order.batch_key) {
+		const who = order.target.label ? `${order.target.label} ` : "";
+		const line =
+			paid.length && body.outcome === "withdrawal_matched"
+				? `✅ #${paid.join("、#")} ${who}¥${paid
+						.map((id) => Number(amounts.get(id) ?? 0))
+						.reduce((a, b) => a + b, 0)
+						.toFixed(2)} 已标记打款，订单号 ${body.trade_no}`
+				: `⚠️ #${order.target.id} ${who}¥${order.target.amount} 没对上：${reason}（已单独发消息，回复订单号即可）`;
+		await appendBatchLine(db, order.batch_key, line, options);
+	}
+	if (manual) await proposeManual(db, order.target, reason, options);
 	return { status: "recorded" as const, paid };
 }
 
@@ -371,6 +474,52 @@ async function proposeManual(
 		now: options.now,
 		fetcher: options.fetcher,
 	});
+}
+
+/** Appends one result line to the Monday summary message. */
+async function appendBatchLine(
+	db: D1Database,
+	batchKey: string,
+	line: string,
+	options: { now: number; fetcher?: Fetcher },
+) {
+	await db
+		.prepare(
+			`UPDATE owner_action_requests
+			 SET result = COALESCE(result, '') || char(10) || ?, updated_at = ?
+			 WHERE kind = 'agent_withdrawal_batch_paid'
+			  AND json_extract(payload, '$.requestKey') = ?`,
+		)
+		.bind(line, options.now, batchKey)
+		.run();
+	const row = await db
+		.prepare(
+			`SELECT chat_id, message_id, message_text, result FROM owner_action_requests
+			 WHERE kind = 'agent_withdrawal_batch_paid'
+			  AND json_extract(payload, '$.requestKey') = ? AND message_id IS NOT NULL`,
+		)
+		.bind(batchKey)
+		.first<{
+			chat_id: string;
+			message_id: number;
+			message_text: string;
+			result: string | null;
+		}>();
+	const credentials = await resolveTelegramOwnerAlertCredentials(db);
+	if (!row || !credentials) return;
+	await callTelegram(
+		credentials,
+		"editMessageText",
+		{
+			chat_id: row.chat_id,
+			message_id: row.message_id,
+			text: `${row.message_text}\n\n${row.result ?? ""}`.slice(0, 4096),
+			link_preview_options: { is_disabled: true },
+			reply_markup: { inline_keyboard: [] },
+		},
+		options.fetcher ?? fetch,
+		"telegram_alert_delivery_failed",
+	).catch(() => undefined);
 }
 
 /** Adds the result line to each withdrawal's original alert. */

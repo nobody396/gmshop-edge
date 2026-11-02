@@ -143,6 +143,15 @@ const handlers: Record<string, HandlerEntry> = {
 				.rejectSupplierTopUpPaid,
 		rejectedLine: "❌ 不充值了，这笔订单作废（没付款就不用管）",
 	},
+	// Monday summary of every pending withdrawal: one tap queues an Alipay
+	// lookup per withdrawal; results are appended to the same message.
+	agent_withdrawal_batch_paid: {
+		topic: "withdrawals",
+		load: async () =>
+			(await import("#/features/agent-program/server/withdrawal-alerts"))
+				.queueWithdrawalBatchVerify,
+		rejectedLine: "⏸ 先不处理，提现仍是待打款（下周一会再列出来）",
+	},
 	agent_withdrawal_paid: {
 		topic: "withdrawals",
 		load: async () =>
