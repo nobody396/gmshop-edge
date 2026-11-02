@@ -2377,6 +2377,7 @@
 	"agent_program_rules_rebate": "开通费 {fee}：{days} 天内，最多返还实际已交开通费。",
 	"agent_program_rules_count": "拿货额只算已发货订单，退款会扣掉；包含在主站的自购。窗口从开通日与 {start} 较晚的一天开始。",
 	"agent_program_rules_withdraw": "随时可申请，每{day}统一结算打款，单笔最低 {minimum}。",
+	"agent_program_rules_withdraw_any": "随时可申请，每{day}统一结算打款，不限金额。",
 	"agent_program_rules_leaderboard": "每月拿货额前三名奖励 {rewards}，老板审核后入账。",
 	"agent_program_rules_markup": "最低加价 {min}%，默认 {default}%。",
 	"agent_program_rules_disabled": "当前未启用",

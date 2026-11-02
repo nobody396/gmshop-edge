@@ -467,10 +467,12 @@ export function ProgramRulesView({ rules }: { rules: ProgramRules }) {
 			<section className="space-y-2">
 				<h3 className="font-semibold">{m.agent_program_withdrawals()}</h3>
 				<p>
-					{m.agent_program_rules_withdraw({
-						day: weekday,
-						minimum: money(rules.withdraw_min_amount, rules.currency),
-					})}
+					{Number(rules.withdraw_min_amount) > 0
+						? m.agent_program_rules_withdraw({
+								day: weekday,
+								minimum: money(rules.withdraw_min_amount, rules.currency),
+							})
+						: m.agent_program_rules_withdraw_any({ day: weekday })}
 				</p>
 			</section>
 			<p>
