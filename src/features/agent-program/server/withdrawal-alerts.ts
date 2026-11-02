@@ -123,14 +123,68 @@ export async function runWithdrawalAlerts(input: {
 	);
 	if (!fresh.length)
 		return { status: "ran" as const, pending: withdrawals.length, proposed: 0 };
-	const cents = (amount: string) => Math.round(Number(amount) * 100);
-	const total = fresh.reduce((sum, w) => sum + cents(w.amount), 0);
-	const flagged = fresh.filter((w) => w.checks.length).length;
+	// One account's withdrawals stay in the same message (one transfer may pay
+	// them together); at most ~batchSize per message keeps it under Telegram's
+	// 4,096-character limit.
+	const byAccount = new Map<string, Withdrawal[]>();
+	for (const w of fresh) {
+		const key = w.account.trim();
+		byAccount.set(key, [...(byAccount.get(key) ?? []), w]);
+	}
+	const chunks: Withdrawal[][] = [];
+	let current: Withdrawal[] = [];
+	for (const group of byAccount.values()) {
+		if (current.length && current.length + group.length > batchSize) {
+			chunks.push(current);
+			current = [];
+		}
+		current.push(...group);
+	}
+	if (current.length) chunks.push(current);
+	const grandTotal = fresh.reduce((sum, w) => sum + cents(w.amount), 0);
+	try {
+		for (const [index, chunk] of chunks.entries())
+			await proposeBatch(input.db, chunk, {
+				part: chunks.length > 1 ? `第 ${index + 1}/${chunks.length} 条，` : "",
+				grand:
+					chunks.length > 1
+						? `；本周共 ${fresh.length} 笔 ¥${yuan(grandTotal)}`
+						: "",
+				now,
+				fetcher: input.fetcher,
+			});
+	} catch {
+		// Not burned: the 10-minute retry resends what was not posted (posted
+		// summaries are open batches and are skipped).
+		await input.db
+			.prepare("DELETE FROM system_settings WHERE key = ?")
+			.bind(lastDayKey)
+			.run();
+		return { status: "failed" as const };
+	}
+	return {
+		status: "ran" as const,
+		pending: withdrawals.length,
+		proposed: fresh.length,
+	};
+}
+
+const batchSize = 20;
+const cents = (amount: string) => Math.round(Number(amount) * 100);
+const yuan = (minor: number) => (minor / 100).toFixed(2);
+
+async function proposeBatch(
+	db: D1Database,
+	chunk: Withdrawal[],
+	options: { part: string; grand: string; now: number; fetcher?: typeof fetch },
+) {
+	const total = chunk.reduce((sum, w) => sum + cents(w.amount), 0);
+	const flagged = chunk.filter((w) => w.checks.length).length;
 	const lines = [
-		`💸 本周代理提现待打款：${fresh.length} 笔，合计 ¥${(total / 100).toFixed(2)}`,
-		`（北京时间 ${beijingStamp(now)} 已核对：收款账号是否为代理登记账号、代理状态、冻结余额${flagged ? `；⚠️ ${flagged} 笔有问题，先别打` : ""}）`,
+		`💸 本周代理提现待打款：${options.part}${chunk.length} 笔，合计 ¥${yuan(total)}${options.grand}`,
+		`（北京时间 ${beijingStamp(options.now)} 已核对：收款账号是否为代理登记账号、代理状态、冻结余额${flagged ? `；⚠️ ${flagged} 笔有问题，先别打` : ""}）`,
 	];
-	fresh.forEach((w, index) => {
+	chunk.forEach((w, index) => {
 		lines.push(
 			"",
 			`${index + 1}. ${w.label}（${w.email}）`,
@@ -143,10 +197,10 @@ export async function runWithdrawalAlerts(input: {
 		"",
 		"转完后点「已全部打款」：系统去支付宝逐笔找转账、回填订单号并标记已打款；对不上的会单独问你。",
 	);
-	await proposeOwnerAction(input.db, {
+	await proposeOwnerAction(db, {
 		kind: "agent_withdrawal_batch_paid",
 		payload: {
-			withdrawalIds: fresh.map((w) => w.id),
+			withdrawalIds: chunk.map((w) => w.id),
 			requestKey: crypto.randomUUID(),
 		},
 		text: lines.join("\n"),
@@ -154,18 +208,13 @@ export async function runWithdrawalAlerts(input: {
 		rejectLabel: "⏸ 先不处理",
 		fallback: "转账后请到后台「代理」逐笔标记已打款。",
 		ttlMs: batchTtlMs,
-		now,
-		fetcher: input.fetcher,
+		now: options.now,
+		fetcher: options.fetcher,
 	});
-	return {
-		status: "ran" as const,
-		pending: withdrawals.length,
-		proposed: fresh.length,
-	};
 }
 
 const batchPayloadSchema = z.object({
-	withdrawalIds: z.array(z.number().int().positive()).min(1).max(50),
+	withdrawalIds: z.array(z.number().int().positive()).min(1).max(200),
 	requestKey: z.string().uuid(),
 });
 
@@ -283,14 +332,25 @@ export async function queueWithdrawalBatchVerify(
 			409,
 			"这些提现都已经不是待打款",
 		);
-	for (const target of pending)
+	// One lookup per account: a transfer can then never settle two withdrawals
+	// from separate jobs (2026-11-02 review). The runner tries the first
+	// withdrawal alone, then the account's withdrawals together.
+	const byAccount = new Map<string, Withdrawal[]>();
+	for (const w of pending) {
+		const key = w.account.trim();
+		byAccount.set(key, [...(byAccount.get(key) ?? []), w]);
+	}
+	for (const group of byAccount.values()) {
+		const target = group[0] as Withdrawal;
 		await insertVerifyJob(
 			context,
 			all,
 			target,
 			`withdrawal:${target.id}:${payload.requestKey}`,
 			payload.requestKey,
+			group,
 		);
+	}
 	const skipped = payload.withdrawalIds.length - pending.length;
 	return `⏳ 正在去支付宝核对 ${pending.length} 笔转账（约 1 分钟），结果逐行写在下面${skipped ? `；另有 ${skipped} 笔已处理过，跳过` : ""}`;
 }
@@ -301,10 +361,14 @@ async function insertVerifyJob(
 	target: Withdrawal,
 	actionKey: string,
 	batchKey?: string,
+	only?: Withdrawal[],
 ) {
-	const group = all.filter(
-		(w) => w.status === "pending" && w.account.trim() === target.account.trim(),
-	);
+	const group =
+		only ??
+		all.filter(
+			(w) =>
+				w.status === "pending" && w.account.trim() === target.account.trim(),
+		);
 	const used = [
 		...new Set(all.map((w) => w.alipay_trade_no.trim()).filter(Boolean)),
 	];
@@ -434,23 +498,51 @@ export async function recordWithdrawalVerifyResult(
 			options,
 		);
 	}
+	if (order.batch_key) {
+		// Batch jobs cover a whole account: every withdrawal of it that was not
+		// paid by this transfer gets its own trade-number prompt.
+		const who = order.target.label ? `${order.target.label} ` : "";
+		const left = [order.target, ...order.group]
+			.map((w) => w.id)
+			.filter((id, index, ids) => ids.indexOf(id) === index)
+			.filter((id) => !paid.includes(id));
+		const leftReason =
+			reason ||
+			(paid.length ? "同一账号还有别的提现，这笔需要你回复订单号" : "没找到");
+		const lines: string[] = [];
+		if (paid.length && body.outcome === "withdrawal_matched")
+			lines.push(
+				`✅ #${paid.join("、#")} ${who}¥${yuan(paid.map((id) => cents(amounts.get(id) ?? "0")).reduce((a, b) => a + b, 0))} 已标记打款，订单号 ${body.trade_no}`,
+			);
+		for (const id of left)
+			lines.push(
+				`⚠️ #${id} ${who}¥${amounts.get(id)} 没对上：${leftReason}（已单独发消息，回复订单号即可）`,
+			);
+		await finish(left.length ? "unmatched" : "done", {
+			...body,
+			paid,
+			line: lines.join("\n"),
+		});
+		await refreshBatchMessage(db, order.batch_key, options);
+		for (const id of left)
+			await proposeManual(
+				db,
+				{
+					...order.target,
+					id,
+					amount: amounts.get(id) ?? order.target.amount,
+				},
+				leftReason,
+				options,
+			);
+		return { status: "recorded" as const, paid };
+	}
 	await finish(paid.length && !reason ? "done" : "unmatched", {
 		...body,
 		paid,
 	});
-	const manual = Boolean(reason && !paid.includes(order.target.id));
-	if (order.batch_key) {
-		const who = order.target.label ? `${order.target.label} ` : "";
-		const line =
-			paid.length && body.outcome === "withdrawal_matched"
-				? `✅ #${paid.join("、#")} ${who}¥${paid
-						.map((id) => Number(amounts.get(id) ?? 0))
-						.reduce((a, b) => a + b, 0)
-						.toFixed(2)} 已标记打款，订单号 ${body.trade_no}`
-				: `⚠️ #${order.target.id} ${who}¥${order.target.amount} 没对上：${reason}（已单独发消息，回复订单号即可）`;
-		await appendBatchLine(db, order.batch_key, line, options);
-	}
-	if (manual) await proposeManual(db, order.target, reason, options);
+	if (reason && !paid.includes(order.target.id))
+		await proposeManual(db, order.target, reason, options);
 	return { status: "recorded" as const, paid };
 }
 
@@ -476,22 +568,15 @@ async function proposeManual(
 	});
 }
 
-/** Appends one result line to the Monday summary message. */
-async function appendBatchLine(
+/**
+ * Rebuilds the Monday summary from its finished jobs, so results arriving in
+ * any order (or while the tap is still being recorded) are never lost.
+ */
+async function refreshBatchMessage(
 	db: D1Database,
 	batchKey: string,
-	line: string,
 	options: { now: number; fetcher?: Fetcher },
 ) {
-	await db
-		.prepare(
-			`UPDATE owner_action_requests
-			 SET result = COALESCE(result, '') || char(10) || ?, updated_at = ?
-			 WHERE kind = 'agent_withdrawal_batch_paid'
-			  AND json_extract(payload, '$.requestKey') = ?`,
-		)
-		.bind(line, options.now, batchKey)
-		.run();
 	const row = await db
 		.prepare(
 			`SELECT chat_id, message_id, message_text, result FROM owner_action_requests
@@ -505,15 +590,25 @@ async function appendBatchLine(
 			message_text: string;
 			result: string | null;
 		}>();
+	const jobs = await db
+		.prepare(
+			`SELECT json_extract(result, '$.line') AS line FROM supplier_topup_jobs
+			 WHERE step = ? AND json_extract(order_json, '$.batch_key') = ?
+			  AND status IN ('done', 'unmatched') ORDER BY updated_at, id`,
+		)
+		.bind(withdrawalVerifyStep, batchKey)
+		.all<{ line: string | null }>();
 	const credentials = await resolveTelegramOwnerAlertCredentials(db);
 	if (!row || !credentials) return;
+	const tapped = row.result ?? "⏳ 正在去支付宝核对转账";
+	const lines = jobs.results.map((j) => j.line).filter(Boolean);
 	await callTelegram(
 		credentials,
 		"editMessageText",
 		{
 			chat_id: row.chat_id,
 			message_id: row.message_id,
-			text: `${row.message_text}\n\n${row.result ?? ""}`.slice(0, 4096),
+			text: [row.message_text, "", tapped, ...lines].join("\n").slice(0, 4096),
 			link_preview_options: { is_disabled: true },
 			reply_markup: { inline_keyboard: [] },
 		},

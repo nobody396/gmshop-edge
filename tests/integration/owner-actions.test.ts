@@ -678,6 +678,84 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		).resolves.toEqual({ status: "done" });
 	});
 
+	it("one transfer never settles two same-account withdrawals from separate jobs", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		withdrawalList = [
+			{ ...withdrawal, id: 12, amount: "50.00" },
+			{ ...withdrawal, id: 14, amount: "50.00" },
+		];
+		const monday = Date.UTC(2026, 9, 19, 2, 30);
+		webhookNow = monday + 60_000;
+		await runWithdrawalAlerts({
+			db,
+			token: "program-token",
+			now: monday,
+			fetcher,
+		});
+		const sent = () => telegram.filter((call) => call.method === "sendMessage");
+		const approve = (
+			sent()[0]?.body.reply_markup as {
+				inline_keyboard: { callback_data: string }[][];
+			}
+		).inline_keyboard[0]?.[0]?.callback_data;
+		await tap(ownerId, approve ?? "", 60);
+		const jobs = await db
+			.prepare("SELECT order_json FROM supplier_topup_jobs")
+			.all<{ order_json: string }>();
+		expect(jobs.results).toHaveLength(1);
+		const job = await claimSupplierTopUpJob(db, webhookNow + 1);
+		expect(job?.order).toMatchObject({
+			target: { id: 12 },
+			group: [{ id: 12 }, { id: 14 }],
+		});
+		// Runner found one ¥50 transfer for the first withdrawal only.
+		await recordSupplierTopUpResult(
+			db,
+			{
+				job_id: job?.id,
+				outcome: "withdrawal_matched",
+				trade_no: "20261019200040011100340000000050",
+				amount: "50.00",
+				trans_dt: "10-19 10:31:02",
+				withdrawal_ids: [12],
+			},
+			{ now: webhookNow + 2, fetcher, agentProgramToken: "program-token" },
+		);
+		expect(
+			program
+				.filter((call) => call.path.endsWith("/mark-paid"))
+				.map((call) => call.path),
+		).toEqual(["/api/internal/reseller-program/withdrawals/12/mark-paid"]);
+		expect(sent().at(-1)?.body.text).toContain("提现 #14");
+		const last = String(
+			telegram.filter((call) => call.method === "editMessageText").at(-1)?.body
+				.text,
+		);
+		expect(last).toContain("✅ #12");
+		expect(last).toContain("⚠️ #14");
+	});
+
+	it("splits a large week into messages of at most 20 withdrawals", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		withdrawalList = Array.from({ length: 45 }, (_, i) => ({
+			...withdrawal,
+			id: 100 + i,
+			account: `acct-${i}@alipay.example`,
+		}));
+		const monday = Date.UTC(2026, 9, 19, 2, 30);
+		await expect(
+			runWithdrawalAlerts({ db, token: "program-token", now: monday, fetcher }),
+		).resolves.toEqual({ status: "ran", pending: 45, proposed: 45 });
+		const texts = telegram
+			.filter((call) => call.method === "sendMessage")
+			.map((call) => String(call.body.text));
+		expect(texts).toHaveLength(3);
+		expect(texts[0]).toContain("第 1/3 条，20 笔");
+		expect(texts[2]).toContain("第 3/3 条，5 笔");
+		expect(texts[0]).toContain("本周共 45 笔 ¥3960.00");
+		for (const text of texts) expect(text.length).toBeLessThan(4096);
+	});
+
 	it("posts proposals into their forum topic and replies in the incoming thread", async () => {
 		await db.batch([
 			upsertFeishuAlertSetting(
