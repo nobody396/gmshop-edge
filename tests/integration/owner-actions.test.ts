@@ -54,6 +54,7 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 	let cache: KVNamespace;
 	let telegram: TelegramCall[];
 	let program: { path: string; body: unknown }[];
+	let withdrawalList: Record<string, unknown>[];
 	let webhookNow: number;
 	let topUpFailures: number;
 	let webhookUrl: string;
@@ -121,7 +122,7 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 					status_code: 0,
 					data: { id: 12, status: "paid" },
 				});
-			return Response.json({ status_code: 0, data: [withdrawal] });
+			return Response.json({ status_code: 0, data: withdrawalList });
 		}
 		if (url.pathname.endsWith("/categories"))
 			return Response.json({ ok: true, categories: [] });
@@ -131,6 +132,7 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 	beforeEach(async () => {
 		telegram = [];
 		program = [];
+		withdrawalList = [withdrawal];
 		webhookNow = 1_800_011_000_000;
 		topUpFailures = 0;
 		webhookUrl = "";
@@ -396,8 +398,11 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 		});
 		await expect(run()).resolves.toEqual({ status: "done" });
 		const proposal = telegram.find((call) => call.method === "sendMessage");
-		expect(proposal?.body.text).toContain("💸 代理提现待打款 #12");
-		expect(proposal?.body.text).toContain("支付宝账号：agent@alipay.example");
+		expect(proposal?.body.text).toContain(
+			"💸 本周代理提现待打款：1 笔，合计 ¥88.00",
+		);
+		expect(proposal?.body.text).toContain("支付宝：agent@alipay.example");
+		expect(proposal?.body.text).toContain("✅ 核对通过");
 		const approve = (
 			proposal?.body.reply_markup as {
 				inline_keyboard: { callback_data: string }[][];
@@ -458,9 +463,9 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 			.filter((call) => call.method === "editMessageText")
 			.at(-1);
 		expect(edit?.body.text).toContain(
-			"✅ 已自动核对支付宝转账并标记打款：¥88.00",
+			"✅ #12 777 子站 ¥88.00 已标记打款，订单号 20261019200040011100340077594769",
 		);
-		expect(edit?.body.text).toContain("20261019200040011100340077594769");
+		expect(edit?.body.text).toContain("💸 本周代理提现待打款");
 	});
 
 	it("refuses a match whose transfer amount differs from the withdrawals", async () => {
@@ -568,10 +573,187 @@ describe("owner actions: switch a delisted supplier SKU from Telegram", {
 			proposed: 1,
 		});
 		expect(texts().some((t) => t.includes("代理提现推送已恢复"))).toBe(true);
-		expect(texts().some((t) => t.includes("💸 代理提现待打款 #12"))).toBe(true);
+		expect(texts().some((t) => t.includes("💸 本周代理提现待打款"))).toBe(true);
 		await expect(run(morning + 30 * 60_000)).resolves.toEqual({
 			status: "done",
 		});
+	});
+
+	it("sends one Monday summary with checks, one tap verifies every withdrawal", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		withdrawalList = [
+			withdrawal,
+			{
+				...withdrawal,
+				id: 13,
+				reseller_id: 6,
+				label: "苍柏",
+				amount: "27.00",
+				account: "13700000000",
+				email: "b@example.com",
+				checks: ["收款账号和代理当前登记的不一致"],
+			},
+		];
+		// Sunday 2026-10-18 10:30 Beijing: nothing is sent.
+		await expect(
+			runWithdrawalAlerts({
+				db,
+				token: "program-token",
+				now: Date.UTC(2026, 9, 18, 2, 30),
+				fetcher,
+			}),
+		).resolves.toEqual({ status: "not_settlement_day" });
+		const monday = Date.UTC(2026, 9, 19, 2, 30);
+		webhookNow = monday + 60_000;
+		await expect(
+			runWithdrawalAlerts({ db, token: "program-token", now: monday, fetcher }),
+		).resolves.toEqual({ status: "ran", pending: 2, proposed: 2 });
+		const sent = () => telegram.filter((call) => call.method === "sendMessage");
+		expect(sent()).toHaveLength(1);
+		const text = String(sent()[0]?.body.text);
+		expect(text).toContain("💸 本周代理提现待打款：2 笔，合计 ¥115.00");
+		expect(text).toContain("⚠️ 1 笔有问题，先别打");
+		expect(text).toContain("⚠️ 收款账号和代理当前登记的不一致");
+		const keyboard = (
+			sent()[0]?.body.reply_markup as {
+				inline_keyboard: { text: string; callback_data: string }[][];
+			}
+		).inline_keyboard;
+		expect(keyboard.map((row) => row[0]?.text)).toEqual([
+			"✅ 已全部打款",
+			"⏸ 先不处理",
+		]);
+		await tap(ownerId, keyboard[0]?.[0]?.callback_data ?? "", 50);
+		const first = await claimSupplierTopUpJob(db, webhookNow + 1);
+		const second = await claimSupplierTopUpJob(db, webhookNow + 2);
+		expect(
+			[first?.order, second?.order].map(
+				(o) => (o as { target: { id: number } }).target.id,
+			),
+		).toEqual(expect.arrayContaining([12, 13]));
+		const options = {
+			now: webhookNow + 3,
+			fetcher,
+			agentProgramToken: "program-token",
+		};
+		const jobFor = (id: number) =>
+			[first, second].find(
+				(j) => (j?.order as { target: { id: number } }).target.id === id,
+			);
+		await recordSupplierTopUpResult(
+			db,
+			{
+				job_id: jobFor(12)?.id,
+				outcome: "withdrawal_matched",
+				trade_no: "20261019200040011100340077594769",
+				amount: "88.00",
+				trans_dt: "10-19 10:31:02",
+				withdrawal_ids: [12],
+			},
+			options,
+		);
+		await recordSupplierTopUpResult(
+			db,
+			{
+				job_id: jobFor(13)?.id,
+				outcome: "withdrawal_unmatched",
+				reason: "支付宝里没找到",
+			},
+			options,
+		);
+		const edits = telegram.filter((call) => call.method === "editMessageText");
+		const last = String(edits.at(-1)?.body.text);
+		expect(last).toContain("⏳ 正在去支付宝核对 2 笔转账");
+		expect(last).toContain("✅ #12 777 子站 ¥88.00 已标记打款");
+		expect(last).toContain("⚠️ #13 苍柏 ¥27.00 没对上：支付宝里没找到");
+		expect(sent().at(-1)?.body.text).toContain("提现 #13");
+		// Already listed in an open summary: a rerun the same Monday sends nothing.
+		await expect(
+			runWithdrawalAlerts({
+				db,
+				token: "program-token",
+				now: monday + 3_600_000,
+				fetcher,
+			}),
+		).resolves.toEqual({ status: "done" });
+	});
+
+	it("one transfer never settles two same-account withdrawals from separate jobs", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		withdrawalList = [
+			{ ...withdrawal, id: 12, amount: "50.00" },
+			{ ...withdrawal, id: 14, amount: "50.00" },
+		];
+		const monday = Date.UTC(2026, 9, 19, 2, 30);
+		webhookNow = monday + 60_000;
+		await runWithdrawalAlerts({
+			db,
+			token: "program-token",
+			now: monday,
+			fetcher,
+		});
+		const sent = () => telegram.filter((call) => call.method === "sendMessage");
+		const approve = (
+			sent()[0]?.body.reply_markup as {
+				inline_keyboard: { callback_data: string }[][];
+			}
+		).inline_keyboard[0]?.[0]?.callback_data;
+		await tap(ownerId, approve ?? "", 60);
+		const jobs = await db
+			.prepare("SELECT order_json FROM supplier_topup_jobs")
+			.all<{ order_json: string }>();
+		expect(jobs.results).toHaveLength(1);
+		const job = await claimSupplierTopUpJob(db, webhookNow + 1);
+		expect(job?.order).toMatchObject({
+			target: { id: 12 },
+			group: [{ id: 12 }, { id: 14 }],
+		});
+		// Runner found one ¥50 transfer for the first withdrawal only.
+		await recordSupplierTopUpResult(
+			db,
+			{
+				job_id: job?.id,
+				outcome: "withdrawal_matched",
+				trade_no: "20261019200040011100340000000050",
+				amount: "50.00",
+				trans_dt: "10-19 10:31:02",
+				withdrawal_ids: [12],
+			},
+			{ now: webhookNow + 2, fetcher, agentProgramToken: "program-token" },
+		);
+		expect(
+			program
+				.filter((call) => call.path.endsWith("/mark-paid"))
+				.map((call) => call.path),
+		).toEqual(["/api/internal/reseller-program/withdrawals/12/mark-paid"]);
+		expect(sent().at(-1)?.body.text).toContain("提现 #14");
+		const last = String(
+			telegram.filter((call) => call.method === "editMessageText").at(-1)?.body
+				.text,
+		);
+		expect(last).toContain("✅ #12");
+		expect(last).toContain("⚠️ #14");
+	});
+
+	it("splits a large week into messages of at most 20 withdrawals", async () => {
+		await ensureOwnerAlertWebhook(db, { fetcher });
+		withdrawalList = Array.from({ length: 45 }, (_, i) => ({
+			...withdrawal,
+			id: 100 + i,
+			account: `acct-${i}@alipay.example`,
+		}));
+		const monday = Date.UTC(2026, 9, 19, 2, 30);
+		await expect(
+			runWithdrawalAlerts({ db, token: "program-token", now: monday, fetcher }),
+		).resolves.toEqual({ status: "ran", pending: 45, proposed: 45 });
+		const texts = telegram
+			.filter((call) => call.method === "sendMessage")
+			.map((call) => String(call.body.text));
+		expect(texts).toHaveLength(3);
+		expect(texts[0]).toContain("第 1/3 条，20 笔");
+		expect(texts[2]).toContain("第 3/3 条，5 笔");
+		expect(texts[0]).toContain("本周共 45 笔 ¥3960.00");
+		for (const text of texts) expect(text.length).toBeLessThan(4096);
 	});
 
 	it("posts proposals into their forum topic and replies in the incoming thread", async () => {

@@ -174,6 +174,8 @@ export const withdrawalsSchema = z.array(
 		created_at: z.string(),
 		alipay_trade_no: z.string(),
 		processed_operator: z.string(),
+		/** Pre-payout check problems from lsrai.shop; empty means it passed. */
+		checks: z.array(z.string()).optional().default([]),
 	}),
 );
 export const feeInputSchema = z.object({
