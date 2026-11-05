@@ -91,6 +91,11 @@ $VERGE_YAML = Join-Path $CV_DIR "verge.yaml"
 $CS = Join-Path $UH ".claude\settings.json"
 $CCJ = Join-Path $UH ".claude.json"
 $DESKTOP_DIRS = @((Join-Path $env:APPDATA "Claude"), (Join-Path $env:LOCALAPPDATA "Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude"), (Join-Path $env:LOCALAPPDATA "Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Claude"))
+# 桌面版「第三方 API 模式」开关文件（deploymentMode：3p=接第三方 API、登录不了自己的账号；1p=官方登录）。
+# 桌面版读的是 %LOCALAPPDATA%\Claude-3p 里那份；API 一键配置（含老实人AI）还会写 Claude 目录那份，一并改回
+$DESKTOP_MODE_FILES = @("Claude-3p", "Claude", "Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Claude-3p", "Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Claude") | ForEach-Object { Join-Path (Join-Path $env:LOCALAPPDATA $_) "claude_desktop_config.json" }
+$DESKTOP_MODE_FILES += @($DESKTOP_DIRS | ForEach-Object { Join-Path $_ "claude_desktop_config.json" })
+$DESKTOP_3P_RE = '("deploymentMode"\s*:\s*)"3p"'
 $UTF8 = New-Object System.Text.UTF8Encoding($false)
 
 function OK($m)   { Write-Host "✔ $m" -ForegroundColor Green }
@@ -847,6 +852,13 @@ foreach ($d in $DESKTOP_DIRS) {
   foreach ($n in "ant-did", "ant-device-registry.json", "sentry", "Crashpad", "machine-id", ".machine-id") { $p = Join-Path $d $n; if (Test-Path -LiteralPath $p) { Move-Item -LiteralPath $p $dst -Force } }
 }
 if ($deskSeen) { OK "Claude 桌面版：设备标识和本机配置快照已清理（登录状态保留）" }
+$mode3p = @($DESKTOP_MODE_FILES | Select-Object -Unique | Where-Object { (ReadText $_) -match $DESKTOP_3P_RE })
+if ($mode3p.Count) {
+  Stop-App "Claude"; Start-Sleep -Seconds 2
+  $dst = Join-Path $BK "desktop-mode"; New-Item -ItemType Directory -Force -Path $dst | Out-Null
+  $i = 0; foreach ($f in $mode3p) { $i++; Copy-Item -LiteralPath $f (Join-Path $dst "$i-claude_desktop_config.json"); WriteText $f ([regex]::Replace((ReadText $f), $DESKTOP_3P_RE, '$1"1p"')) }
+  OK "Claude 桌面版：已从「第三方 API 模式」改回官方登录，打开后用你自己的 Claude 账号登录（原设置已备份）"
+}
 OK "以上都已备份到 $BK"
 
 STEP 6 "重启 Clash Verge 使配置生效（断网几秒）"
@@ -925,6 +937,8 @@ $res = @(); foreach ($p in $old) { if (Test-Path -LiteralPath $p) { $res += $p }
 if (-not $res.Count) { Chk "旧配置备份和遥测缓存已清除" "ok" } else { Chk "旧配置备份和遥测缓存已清除" ("还在：" + ($res -join " ")) }
 $dleft = @(); foreach ($d in $DESKTOP_DIRS) { foreach ($n in "ant-did", "sentry", "machine-id") { if (Test-Path -LiteralPath (Join-Path $d $n)) { $dleft += $n } } }
 if (-not $dleft.Count) { Chk "Claude 桌面版设备标识已清除" "ok" } else { Chk "Claude 桌面版设备标识已清除" "还在" }
+$m3 = @($DESKTOP_MODE_FILES | Select-Object -Unique | Where-Object { (ReadText $_) -match $DESKTOP_3P_RE })
+if (-not $m3.Count) { Chk "Claude 桌面版用官方账号登录（没接第三方 API）" "ok" } else { Chk "Claude 桌面版用官方账号登录（没接第三方 API）" "还在第三方 API 模式，请把本窗口截图发客服" }
 $still = @(); foreach ($c in $OTHER_CLIENTS) { if (Get-Running $c[1]) { $still += $c[0] } }
 if (-not $still.Count) { Chk "没有其他代理软件同时运行" "ok" } else { Chk "没有其他代理软件同时运行" ("还在运行：" + ($still -join "、") + "，请退出") }
 

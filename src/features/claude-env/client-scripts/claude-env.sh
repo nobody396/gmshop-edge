@@ -49,6 +49,9 @@ BAD_ENV_RE_ANY="^[[:space:]]+(export[[:space:]]+)?($BAD_ENV_ALT)="  # 缩进的�
 # 关遥测：Claude Code 读 ~/.claude/settings.json 的 env，也写进终端启动别名
 TELEMETRY_ENV="DISABLE_TELEMETRY DISABLE_ERROR_REPORTING DO_NOT_TRACK CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
 CLAUDE_DESKTOP_DIR="$HOME/Library/Application Support/Claude"
+# 桌面版「第三方 API 模式」开关（deploymentMode：3p=接第三方 API、登录不了自己的账号；1p=官方登录）；读的是 Claude-3p 那份，API 一键配置也会写 Claude 那份
+DESKTOP_MODE_FILES="$HOME/Library/Application Support/Claude-3p/claude_desktop_config.json|$CLAUDE_DESKTOP_DIR/claude_desktop_config.json"
+desktop_3p_files() { local f IFS='|'; for f in $DESKTOP_MODE_FILES; do [ -f "$f" ] && grep -Eq '"deploymentMode"[[:space:]]*:[[:space:]]*"3p"' "$f" && printf '%s\n' "$f"; done; return 0; }
 # Claude Code 本地的设备/实验/统计标识（删除后自动重新生成，不会退出登录）
 CC_ID_KEYS="userID anonymousId machineID remoteControlMachineId cachedStatsigGates cachedGrowthBookFeatures cachedGrowthBookFeaturesAt cachedDynamicConfigs cachedExperimentData cachedExperimentFeatures metricsStatusCache metricsStatusCacheByPrincipal clientDataCache groveConfigCache passesEligibilityCache modelAccessCache firstStartTime numStartups"
 SHELL_FILES="$HOME/.zshrc $HOME/.zprofile $HOME/.zshenv $HOME/.zlogin $HOME/.bash_profile $HOME/.bashrc $HOME/.profile"
@@ -904,6 +907,18 @@ if [ -z "$DRY" ]; then
     for p in ant-did ant-device-registry.json sentry Crashpad; do [ -e "$CLAUDE_DESKTOP_DIR/$p" ] && mv "$CLAUDE_DESKTOP_DIR/$p" "$BK/desktop/"; done
     c_ok "Claude 桌面版：设备标识和本机配置快照已清理（登录状态保留）"
   fi
+  M3=$(desktop_3p_files)
+  if [ -n "$M3" ]; then
+    sysrun osascript -e 'quit app "Claude"' 2>/dev/null; sleep 2
+    mkdir -p "$BK/desktop-mode"; i=0
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue; i=$((i+1)); cp "$f" "$BK/desktop-mode/$i-claude_desktop_config.json"
+      jedit "$f" 'if(o.deploymentMode==="3p")o.deploymentMode="1p"'
+    done <<EOF
+${M3}
+EOF
+    c_ok "Claude 桌面版：已从「第三方 API 模式」改回官方登录，打开后用你自己的 Claude 账号登录（原设置已备份）"
+  fi
   c_ok "以上都已备份到 ~/.claude-env-backup/$TS"
 
   step 6 "重启 Clash Verge 使配置生效（断网几秒）"
@@ -989,6 +1004,7 @@ if [ -z "$DRY" ]; then
   RES=""; for p in "$HOME"/.claude.json.backup* "$HOME/.claude/backups" "$HOME/.claude/statsig" "$HOME/.claude/telemetry"; do [ -e "$p" ] && RES="$RES ${p/#$HOME/~}"; done
   [ -z "$RES" ] && chk "旧配置备份和遥测缓存已清除" ok || chk "旧配置备份和遥测缓存已清除" "还在：$RES"
   [ -e "$CLAUDE_DESKTOP_DIR/ant-did" ] || [ -e "$CLAUDE_DESKTOP_DIR/sentry" ] && chk "Claude 桌面版设备标识已清除" "还在" || chk "Claude 桌面版设备标识已清除" ok
+  [ -z "$(desktop_3p_files)" ] && chk "Claude 桌面版用官方账号登录（没接第三方 API）" ok || chk "Claude 桌面版用官方账号登录（没接第三方 API）" "还在第三方 API 模式，请把本窗口截图发客服"
 fi
 STILL=$(running_others | cut -d'|' -f1 | paste -sd '、' -)
 [ -z "$STILL" ] && chk "没有其他代理软件同时运行" ok || chk "没有其他代理软件同时运行" "还在运行：${STILL}，请退出"
