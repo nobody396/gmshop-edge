@@ -21,9 +21,59 @@ export const renewalRedeemWaitMs = 60 * dayMs;
 /** Direct orders delivered since 2026-08-25 00:00 Asia/Shanghai are backfilled. */
 export const renewalBackfillSince = Date.UTC(2026, 7, 24, 16);
 
-// Warehouse code formats (the redeem lookup contract).
-const warehouseCodePattern =
-	/\b(?:gpt-(?:go|plus|5x|20x)-ios|gpt-(?:plus|5x|20x)-ph|gpt-20x-renew-ph|gpt-500-cl|claude-(?:pro|max-(?:5x|20x))-ios)-[A-Z2-9]{4}(?:-[A-Z2-9]{4}){3}\b/gi;
+/**
+ * Every codePrefix of the redeem catalog (laoshirenvip-redeem
+ * worker/catalog.ts). Keep it in sync when a product is added there: a missing
+ * prefix leaves that product's codes unrecognized, so its reminder falls back
+ * to the whole delivery text and never sees the redemption.
+ */
+export const redeemCodePrefixes = [
+	"gpt-go-ios",
+	"gpt-plus-ios",
+	"gpt-100-ios",
+	"gpt-200-ios",
+	"gpt-plus-ph",
+	"gpt-5x-ph",
+	"gpt-20x-ph",
+	"gpt-20x-renew-ph",
+	"gpt-100-cl",
+	"gpt-500-cl",
+	"gpt-500-ph",
+	"gpt-500-chile",
+	"gpt-team-std",
+	"gpt-team-5x-plus",
+	"codex-250",
+	"codex-500",
+	"codex-1000",
+	"codex-2500",
+	"claude-pro-ios",
+	"claude-max-5x-ios",
+	"claude-max-20x-ios",
+	"claude-max-20x-web",
+	"x-plus",
+	"x-premium",
+	"x-super",
+	"x-ultra",
+	"x-premium-h50",
+	"x-super-h50",
+	"x-ultra-h50",
+	"x-plus-1y",
+	"x-premium-1y",
+	"grok-credits-5",
+	"grok-credits-20",
+	"grok-credits-50",
+	"grok-credits-100",
+] as const;
+
+// Warehouse code formats (the redeem lookup contract). Longer prefixes go
+// first so one that extends another (x-plus-1y vs x-plus) is kept whole.
+const warehouseCodePattern = new RegExp(
+	`\\b(?:${[...redeemCodePrefixes]
+		.sort((a, b) => b.length - a.length)
+		.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+		.join("|")})-[A-Z2-9]{4}(?:-[A-Z2-9]{4}){3}\\b`,
+	"gi",
+);
 
 /** Embedded warehouse codes, lowercased and de-duplicated, in text order. */
 export function extractWarehouseCodes(content: string) {
