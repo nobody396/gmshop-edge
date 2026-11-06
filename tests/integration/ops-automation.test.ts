@@ -1073,6 +1073,27 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		).resolves.toBe(1);
 	});
 
+	it("a cost drop too small to move prices still enforces the agent floor", async () => {
+		await seedPricing(db);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		// aisou-cheap real cost is ¥10.04; a baseline ¥0.10 higher makes today a tiny drop.
+		await setSetting(db, "pricing.cost_baselines", { "aisou-cheap": 1014 });
+		await runPricingGuard({
+			db,
+			now: monday,
+			readStats: async () => stats,
+			readPrices: async () => prices,
+			deliver: async () => {},
+		});
+		await expect(
+			db
+				.prepare(
+					"SELECT price_minor FROM supplier_export_listings WHERE id = 'listing'",
+				)
+				.first("price_minor"),
+		).resolves.toBe("1400");
+	});
+
 	it("pricing guard run_now runs once outside 09:00 and clears itself", async () => {
 		await seedPricing(db);
 		await setSetting(db, "ops.pricing_guard.enabled", true);
