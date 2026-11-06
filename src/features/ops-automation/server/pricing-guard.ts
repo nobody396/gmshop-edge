@@ -550,30 +550,30 @@ export async function runPricingGuard(input: {
 				needMinor,
 				agentFloorMinor: agentFloor,
 			});
-			// Too small to move any price: keep the old baseline so drops add up.
-			if (!plan) {
-				baselines[row.id] = baseline;
+			// Too small to move any price: keep the old baseline so drops add up,
+			// and still check the floors below (2026-11-06: a tiny cost drop used
+			// to skip them, leaving agent prices under the new floor).
+			if (plan) {
+				const applied = plan.auto
+					? await applyPlan(input.db, row, plan, {
+							costMinor: cost,
+							floorMinor,
+							supplierMinor: supplier.supplierMinor,
+							now,
+							action: "pricing_guard.auto_follow",
+						})
+					: false;
+				outcomes.push({
+					label,
+					costMinor: cost,
+					baselineMinor: baseline,
+					plan,
+					applied,
+					itemId: row.id,
+					supplierMinor: supplier.supplierMinor,
+				});
 				continue;
 			}
-			const applied = plan.auto
-				? await applyPlan(input.db, row, plan, {
-						costMinor: cost,
-						floorMinor,
-						supplierMinor: supplier.supplierMinor,
-						now,
-						action: "pricing_guard.auto_follow",
-					})
-				: false;
-			outcomes.push({
-				label,
-				costMinor: cost,
-				baselineMinor: baseline,
-				plan,
-				applied,
-				itemId: row.id,
-				supplierMinor: supplier.supplierMinor,
-			});
-			continue;
 		}
 		// Small moves keep the old baseline so they can add up.
 		if (baseline !== undefined) baselines[row.id] = baseline;
