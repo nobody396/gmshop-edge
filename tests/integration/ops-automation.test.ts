@@ -9,6 +9,7 @@ import {
 	approvePricingRaise,
 	ceilNiceMinor,
 	ceilYuanMinor,
+	equalizeGroup,
 	followPlan,
 	parseCostFactors,
 	parseFloorRules,
@@ -852,7 +853,8 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 		const rules = parseFloorRules(new Map());
 		// Pro 100 iOS: real cost ¥595.70, agent ¥600 / USDT ¥620 / 支付宝 ¥640.
 		expect(agentFloorMinor(59_570, rules)).toBe(61_358);
-		expect(retailNeedMinor(59_570, 300, rules)).toBe(63_145);
+		// No extra retail markup by default: only C + ¥3.
+		expect(retailNeedMinor(59_570, 300, rules)).toBe(59_870);
 		expect(
 			planPrice({
 				usdtMinor: 62_000,
@@ -865,13 +867,25 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			}),
 		).toEqual({
 			usdtOld: 62_000,
-			usdtNew: 64_000,
+			usdtNew: 63_000,
 			alipayOld: 64_000,
-			alipayNew: 66_000,
+			alipayNew: 65_000,
 			agentOld: 60_000,
 			agentNew: 62_000,
 			auto: true,
 		});
+		// 菲区 Plus: agent ¥113→¥115 lifts USDT a ¥5 step above it; 支付宝 follows.
+		expect(
+			planPrice({
+				usdtMinor: 11_500,
+				alipayMinor: 12_000,
+				costMinor: 11_130,
+				floorMinor: 300,
+				needMinor: retailNeedMinor(11_130, 300, rules),
+				agentMinor: 11_300,
+				agentFloorMinor: agentFloorMinor(11_130, rules),
+			}),
+		).toMatchObject({ usdtNew: 12_000, alipayNew: 12_500, agentNew: 11_500 });
 		// Small items: agent ≥ C + ¥3, USDT a grid step above the agent price.
 		expect(agentFloorMinor(3_590, rules)).toBe(3_890);
 		expect(retailNeedMinor(3_590, 300, rules)).toBe(3_890);
@@ -923,7 +937,7 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			]),
 		);
 		expect(custom.agentMarginBps).toBe(500);
-		expect(custom.retailMarginBps).toBe(600);
+		expect(custom.retailMarginBps).toBe(0);
 		expect(custom.exempt.has("plus-ph")).toBe(true);
 	});
 
@@ -955,6 +969,132 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				)
 				.first("price_minor"),
 		).resolves.toBe("10400");
+	});
+
+	it("same-price groups take the higher USDT, 支付宝 and agent price", async () => {
+		expect(
+			equalizeGroup([
+				{
+					id: "new",
+					usdtMinor: 107_000,
+					alipayMinor: 111_000,
+					agentMinor: 104_000,
+				},
+				{
+					id: "renew",
+					usdtMinor: 105_000,
+					alipayMinor: 109_000,
+					agentMinor: 102_000,
+				},
+			]),
+		).toEqual(
+			new Map([
+				[
+					"renew",
+					{
+						usdtOld: 105_000,
+						usdtNew: 107_000,
+						alipayOld: 109_000,
+						alipayNew: 111_000,
+						agentOld: 102_000,
+						agentNew: 104_000,
+						auto: true,
+					},
+				],
+			]),
+		);
+		// Mixed: each price takes its own maximum.
+		expect(
+			equalizeGroup([
+				{
+					id: "a",
+					usdtMinor: 110_000,
+					alipayMinor: 112_000,
+					agentMinor: 106_000,
+				},
+				{
+					id: "b",
+					usdtMinor: 108_000,
+					alipayMinor: 113_000,
+					agentMinor: 107_000,
+				},
+			]).get("a"),
+		).toMatchObject({
+			usdtNew: 110_000,
+			alipayNew: 113_000,
+			agentNew: 107_000,
+		});
+		expect(
+			equalizeGroup([
+				{ id: "a", usdtMinor: 100, alipayMinor: null, agentMinor: null },
+				{ id: "b", usdtMinor: 100, alipayMinor: null, agentMinor: null },
+			]).size,
+		).toBe(0);
+
+		await seedPricing(db);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		await setSetting(db, "pricing.floor_exempt_items", [
+			"gpt-plus",
+			"gpt-pro",
+			"claude",
+			"aisou-plus",
+			"aisou-cheap",
+		]);
+		await setSetting(db, "pricing.equal_price_groups", [
+			["claude", "gpt-plus"],
+		]);
+		await runPricingGuard({
+			db,
+			now: monday,
+			readStats: async () => stats,
+			readPrices: async () => prices,
+			deliver: async () => {},
+		});
+		const price = (id: string) =>
+			db
+				.prepare(
+					`SELECT item.price_minor AS usdt,
+					  (SELECT price_minor FROM sellable_item_channel_prices WHERE sellable_item_id = item.id AND channel_id = 'alipay') AS alipay
+					 FROM product_sellable_items item WHERE item.id = ?`,
+				)
+				.bind(id)
+				.first();
+		const [claude, plus] = await Promise.all([
+			price("claude"),
+			price("gpt-plus"),
+		]);
+		expect(plus).toEqual(claude);
+		await expect(
+			db
+				.prepare(
+					"SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'pricing_guard.equal_group' AND target_id = 'gpt-plus'",
+				)
+				.first("n"),
+		).resolves.toBe(1);
+	});
+
+	it("pricing guard run_now runs once outside 09:00 and clears itself", async () => {
+		await seedPricing(db);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		const run = () =>
+			runPricingGuard({
+				db,
+				now: monday - 2 * hour,
+				readStats: async () => stats,
+				readPrices: async () => prices,
+				deliver: async () => {},
+			});
+		await expect(run()).resolves.toMatchObject({ status: "waiting" });
+		await setSetting(db, "ops.pricing_guard.run_now", true);
+		await expect(run()).resolves.toMatchObject({ status: "ran" });
+		await expect(
+			db
+				.prepare(
+					"SELECT value FROM system_settings WHERE key = 'ops.pricing_guard.run_now'",
+				)
+				.first("value"),
+		).resolves.toBe("false");
+		await expect(run()).resolves.toMatchObject({ status: "waiting" });
 	});
 
 	it("pricing guard applies a proposed raise only while the price is unchanged", async () => {

@@ -20,6 +20,8 @@ import {
 
 export const pricingGuardSettingKeys = {
 	enabled: "ops.pricing_guard.enabled",
+	/** One-shot: run on the next tick regardless of hour or day, then clear. */
+	runNow: "ops.pricing_guard.run_now",
 	lastRunDay: "ops.pricing_guard.last_run_day",
 	unsent: "ops.pricing_guard.unsent_message",
 	costFactors: "pricing.cost_factors",
@@ -30,6 +32,7 @@ export const pricingGuardSettingKeys = {
 	retailMarginBps: "pricing.retail_margin_bps",
 	retailMarginFromMinor: "pricing.retail_margin_from_minor",
 	floorExemptItems: "pricing.floor_exempt_items",
+	equalPriceGroups: "pricing.equal_price_groups",
 } as const;
 
 export const defaultCostFactors = {
@@ -44,14 +47,15 @@ export const agentMinNetMinor = 100;
 
 /**
  * Owner 2026-11-06 floors on the real cost C (supplier price × measured factor × buffer):
- * agent ≥ max(C × 1.03, C + ¥3); USDT ≥ C × 1.06 once C ≥ ¥300 (and always ≥ C + min net);
+ * agent ≥ max(C × 1.03, C + ¥3); USDT ≥ C + min net and one grid step above the agent
+ * price (pricing.retail_margin_bps can add a C × (1 + bps) retail floor; off by default);
  * 支付宝 ≥ USDT × 1.02. Items listed in pricing.floor_exempt_items keep the old
  * C + ¥1 agent floor and C + min net retail floor.
  */
 export const defaultFloorRules = {
 	agentMarginBps: 300,
 	agentMinNetMinor: 300,
-	retailMarginBps: 600,
+	retailMarginBps: 0,
 	retailMarginFromMinor: 30_000,
 } as const;
 export type FloorRules = {
@@ -345,6 +349,53 @@ export function followPlan(input: {
 	};
 }
 
+type GroupMember = {
+	id: string;
+	usdtMinor: number;
+	alipayMinor: number | null;
+	agentMinor: number | null;
+};
+
+/**
+ * Owner 2026-11-06: items in one group (Pro 200 菲区新开/续费) always sell at
+ * the same USDT, 支付宝 and agent price; when they differ the higher one wins.
+ * Returns a raise plan for every member below the group's highest prices.
+ */
+export function equalizeGroup(members: GroupMember[]) {
+	const max = (values: (number | null)[]) => {
+		const present = values.filter((value): value is number => value !== null);
+		return present.length ? Math.max(...present) : null;
+	};
+	const usdt = Math.max(...members.map((member) => member.usdtMinor));
+	const alipay = max(members.map((member) => member.alipayMinor));
+	const agent = max(members.map((member) => member.agentMinor));
+	const plans = new Map<string, PricePlan>();
+	for (const member of members) {
+		const alipayNew =
+			member.alipayMinor === null ? null : (alipay ?? member.alipayMinor);
+		const agentNew =
+			member.agentMinor === null ? null : (agent ?? member.agentMinor);
+		if (
+			member.usdtMinor === usdt &&
+			alipayNew === member.alipayMinor &&
+			agentNew === member.agentMinor
+		)
+			continue;
+		plans.set(member.id, {
+			usdtOld: member.usdtMinor,
+			usdtNew: usdt,
+			alipayOld: member.alipayMinor,
+			alipayNew,
+			agentOld: member.agentMinor,
+			agentNew,
+			auto: true,
+		});
+	}
+	return plans;
+}
+
+const groupsSchema = z.array(z.array(z.string()).min(2));
+
 type ItemRow = {
 	id: string;
 	product_id: string;
@@ -411,7 +462,19 @@ export async function runPricingGuard(input: {
 		settings.get(pricingGuardSettingKeys.unsent),
 	);
 	const clock = beijingClock(now);
-	if (!input.force && clock.hour < pricingGuardHour)
+	const runNow = settings.get(pricingGuardSettingKeys.runNow) === true;
+	if (runNow) {
+		const cleared = await input.db
+			.prepare(
+				"UPDATE system_settings SET value = 'false', updated_at = ? WHERE key = ? AND value = 'true'",
+			)
+			.bind(now, pricingGuardSettingKeys.runNow)
+			.run();
+		// Another tick already claimed the one-shot run.
+		if (Number(cleared.meta.changes ?? 0) !== 1 && !input.force)
+			return { status: "done" as const, retried };
+	}
+	if (!input.force && !runNow && clock.hour < pricingGuardHour)
 		return { status: "waiting" as const, retried };
 	if (
 		!(await claimPeriod(
@@ -420,7 +483,8 @@ export async function runPricingGuard(input: {
 			clock.day,
 			now,
 		)) &&
-		!input.force
+		!input.force &&
+		!runNow
 	)
 		return { status: "done" as const, retried };
 
@@ -548,6 +612,44 @@ export async function runPricingGuard(input: {
 				})
 			: false;
 		outcomes.push({ label, costMinor: cost, plan, applied, itemId: row.id });
+	}
+	// Same-price groups last, on the prices as they stand after today's moves.
+	const groups = groupsSchema.safeParse(
+		settings.get(pricingGuardSettingKeys.equalPriceGroups),
+	);
+	for (const group of groups.success ? groups.data : []) {
+		const members = (
+			await Promise.all(group.map((id) => loadItems(input.db, id)))
+		).flatMap((found) => found);
+		if (members.length < 2) continue;
+		const plans = equalizeGroup(
+			members.map((row) => ({
+				id: row.id,
+				usdtMinor: Number(row.price_minor),
+				alipayMinor:
+					row.alipay_minor === null ? null : Number(row.alipay_minor),
+				agentMinor:
+					row.agent_price_minor === null ? null : Number(row.agent_price_minor),
+			})),
+		);
+		for (const row of members) {
+			const plan = plans.get(row.id);
+			if (!plan) continue;
+			const cost = baselines[row.id] ?? 0;
+			const applied = await applyPlan(input.db, row, plan, {
+				costMinor: cost,
+				floorMinor,
+				now,
+				action: "pricing_guard.equal_group",
+			});
+			outcomes.push({
+				label: `${row.product_name} · ${row.item_name}（同组同价）`,
+				costMinor: cost,
+				plan,
+				applied,
+				itemId: row.id,
+			});
+		}
 	}
 	// Proposals also move the baseline, so an ignored button is not re-sent daily.
 	await settingStatement(
