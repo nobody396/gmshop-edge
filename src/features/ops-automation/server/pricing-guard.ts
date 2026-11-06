@@ -25,6 +25,11 @@ export const pricingGuardSettingKeys = {
 	costFactors: "pricing.cost_factors",
 	minNetMinor: "pricing.min_net_minor",
 	costBaselines: "pricing.cost_baselines",
+	agentMarginBps: "pricing.agent_margin_bps",
+	agentMinNetMinor: "pricing.agent_min_net_minor",
+	retailMarginBps: "pricing.retail_margin_bps",
+	retailMarginFromMinor: "pricing.retail_margin_from_minor",
+	floorExemptItems: "pricing.floor_exempt_items",
 } as const;
 
 export const defaultCostFactors = {
@@ -34,8 +39,85 @@ export const defaultCostFactors = {
 	buffer: 1.01,
 } as const;
 export const defaultMinNetMinor = 300;
-/** Agent supply prices below this net are flagged for review. */
+/** Agent supply prices below this net are flagged for review (floor-exempt items). */
 export const agentMinNetMinor = 100;
+
+/**
+ * Owner 2026-11-06 floors on the real cost C (supplier price × measured factor × buffer):
+ * agent ≥ max(C × 1.03, C + ¥3); USDT ≥ C × 1.06 once C ≥ ¥300 (and always ≥ C + min net);
+ * 支付宝 ≥ USDT × 1.02. Items listed in pricing.floor_exempt_items keep the old
+ * C + ¥1 agent floor and C + min net retail floor.
+ */
+export const defaultFloorRules = {
+	agentMarginBps: 300,
+	agentMinNetMinor: 300,
+	retailMarginBps: 600,
+	retailMarginFromMinor: 30_000,
+} as const;
+export type FloorRules = {
+	agentMarginBps: number;
+	agentMinNetMinor: number;
+	retailMarginBps: number;
+	retailMarginFromMinor: number;
+	exempt: ReadonlySet<string>;
+};
+
+export function parseFloorRules(settings: Map<string, unknown>): FloorRules {
+	const int = (key: keyof typeof defaultFloorRules, settingKey: string) => {
+		const parsed = z
+			.number()
+			.int()
+			.min(0)
+			.max(100_000_000)
+			.safeParse(settings.get(settingKey));
+		return parsed.success ? parsed.data : defaultFloorRules[key];
+	};
+	const exempt = z
+		.array(z.string())
+		.safeParse(settings.get(pricingGuardSettingKeys.floorExemptItems));
+	return {
+		agentMarginBps: int(
+			"agentMarginBps",
+			pricingGuardSettingKeys.agentMarginBps,
+		),
+		agentMinNetMinor: int(
+			"agentMinNetMinor",
+			pricingGuardSettingKeys.agentMinNetMinor,
+		),
+		retailMarginBps: int(
+			"retailMarginBps",
+			pricingGuardSettingKeys.retailMarginBps,
+		),
+		retailMarginFromMinor: int(
+			"retailMarginFromMinor",
+			pricingGuardSettingKeys.retailMarginFromMinor,
+		),
+		exempt: new Set(exempt.success ? exempt.data : []),
+	};
+}
+
+const withBps = (minor: number, bps: number) =>
+	Math.ceil((minor * (10_000 + bps)) / 10_000);
+
+/** Lowest USDT net-of-cost price allowed, before snapping to the grid. */
+export function retailNeedMinor(
+	costMinor: number,
+	floorMinor: number,
+	rules: FloorRules,
+) {
+	const flat = costMinor + floorMinor;
+	return costMinor >= rules.retailMarginFromMinor
+		? Math.max(flat, withBps(costMinor, rules.retailMarginBps))
+		: flat;
+}
+
+/** Lowest agent supply price allowed, before snapping to the grid. */
+export function agentFloorMinor(costMinor: number, rules: FloorRules) {
+	return Math.max(
+		costMinor + rules.agentMinNetMinor,
+		withBps(costMinor, rules.agentMarginBps),
+	);
+}
 export const pricingGuardHour = 9;
 /** Cost rises at or above this are followed; smaller ones add up first. */
 const followMinRiseMinor = 100;
@@ -127,19 +209,41 @@ export type PricePlan = {
 	auto: boolean;
 };
 
-/** Minimal raise satisfying both nets ≥ floor and 支付宝 ≥ USDT × 1.02. Never lowers. */
+/**
+ * Minimal raise satisfying the floors: USDT ≥ need, 支付宝 nets ≥ need and
+ * ≥ USDT × 1.02, and — when an agent floor is given — agent ≥ that floor and
+ * one grid step under USDT. Never lowers.
+ */
 export function planPrice(input: {
 	usdtMinor: number;
 	alipayMinor: number | null;
 	costMinor: number;
 	floorMinor: number;
+	/** Overrides cost + floor (e.g. the C × 1.06 retail floor). */
+	needMinor?: number;
+	agentMinor?: number | null;
+	agentFloorMinor?: number;
 }): PricePlan | null {
-	const need = input.costMinor + input.floorMinor;
+	const agentTracked =
+		input.agentMinor != null && input.agentFloorMinor !== undefined;
+	const agentNew = agentTracked
+		? Math.max(
+				input.agentMinor as number,
+				(input.agentMinor as number) >= (input.agentFloorMinor as number)
+					? (input.agentMinor as number)
+					: ceilNiceMinor(input.agentFloorMinor as number),
+			)
+		: null;
+	let need = input.needMinor ?? input.costMinor + input.floorMinor;
+	// Agents must undercut our own USDT price by at least one grid step.
+	if (agentNew !== null)
+		need = Math.max(need, agentNew + niceStepMinor(agentNew));
 	const usdtLow = input.usdtMinor < need;
 	const alipayLow =
 		input.alipayMinor !== null &&
 		input.alipayMinor * alipayKeepPercent < need * 100;
-	if (!usdtLow && !alipayLow) return null;
+	const agentLow = agentNew !== null && agentNew !== input.agentMinor;
+	if (!usdtLow && !alipayLow && !agentLow) return null;
 	const usdtNew = usdtLow
 		? Math.max(input.usdtMinor, ceilNiceMinor(need))
 		: input.usdtMinor;
@@ -160,6 +264,7 @@ export function planPrice(input: {
 		usdtNew,
 		alipayOld: input.alipayMinor,
 		alipayNew,
+		...(agentTracked ? { agentOld: input.agentMinor, agentNew } : {}),
 		auto: true,
 	};
 }
@@ -179,9 +284,18 @@ export function followPlan(input: {
 	costMinor: number;
 	baselineMinor: number;
 	floorMinor: number;
+	/** Overrides cost + floor (e.g. the C × 1.06 retail floor). */
+	needMinor?: number;
+	/** Overrides the C + ¥1 agent floor. */
+	agentFloorMinor?: number;
 }): PricePlan | null {
 	const delta = input.costMinor - input.baselineMinor;
-	const need = input.costMinor + input.floorMinor;
+	let need = input.needMinor ?? input.costMinor + input.floorMinor;
+	// With the 2026-11-06 floors, USDT also stays a grid step above the agent floor.
+	if (input.agentMinor !== null && input.agentFloorMinor !== undefined) {
+		const agentFloor = ceilNiceMinor(input.agentFloorMinor);
+		need = Math.max(need, agentFloor + niceStepMinor(agentFloor));
+	}
 	const settle = (oldMinor: number, targetMinor: number, required: number) => {
 		const moved = roundNiceMinor(targetMinor);
 		const next =
@@ -205,7 +319,10 @@ export function followPlan(input: {
 				);
 	let agentNew: number | null = null;
 	if (input.agentMinor !== null) {
-		const minimum = ceilYuanMinor(input.costMinor + agentMinNetMinor);
+		const minimum =
+			input.agentFloorMinor === undefined
+				? ceilYuanMinor(input.costMinor + agentMinNetMinor)
+				: input.agentFloorMinor;
 		agentNew = settle(input.agentMinor, input.agentMinor + delta, minimum);
 		// Agents must still undercut our own USDT price.
 		if (agentNew >= usdtNew)
@@ -321,6 +438,7 @@ export async function runPricingGuard(input: {
 	const floorMinor = floorSetting.success
 		? floorSetting.data
 		: defaultMinNetMinor;
+	const rules = parseFloorRules(settings);
 	const [map, rows] = await Promise.all([
 		saleComponents(input.db).catch(() => ({}) as Record<string, string>),
 		loadItems(input.db),
@@ -348,6 +466,11 @@ export async function runPricingGuard(input: {
 		}
 		const cost = supplier.costMinor;
 		const label = `${row.product_name} · ${row.item_name}`;
+		const exempt = rules.exempt.has(row.id);
+		const needMinor = exempt
+			? undefined
+			: retailNeedMinor(cost, floorMinor, rules);
+		const agentFloor = exempt ? undefined : agentFloorMinor(cost, rules);
 		const baseline = baselines[row.id];
 		baselines[row.id] = cost;
 		if (baseline !== undefined && shouldFollow(cost - baseline)) {
@@ -360,6 +483,8 @@ export async function runPricingGuard(input: {
 				costMinor: cost,
 				baselineMinor: baseline,
 				floorMinor,
+				needMinor,
+				agentFloorMinor: agentFloor,
 			});
 			// Too small to move any price: keep the old baseline so drops add up.
 			if (!plan) {
@@ -388,7 +513,7 @@ export async function runPricingGuard(input: {
 		}
 		// Small moves keep the old baseline so they can add up.
 		if (baseline !== undefined) baselines[row.id] = baseline;
-		if (row.agent_price_minor !== null) {
+		if (exempt && row.agent_price_minor !== null) {
 			const agentMinor = Number(row.agent_price_minor);
 			if (agentMinor - cost < agentMinNetMinor)
 				agentWarnings.push({
@@ -403,6 +528,16 @@ export async function runPricingGuard(input: {
 			alipayMinor: row.alipay_minor === null ? null : Number(row.alipay_minor),
 			costMinor: cost,
 			floorMinor,
+			needMinor,
+			...(agentFloor === undefined
+				? {}
+				: {
+						agentMinor:
+							row.agent_price_minor === null
+								? null
+								: Number(row.agent_price_minor),
+						agentFloorMinor: agentFloor,
+					}),
 		});
 		if (!plan) continue;
 		const applied = plan.auto
