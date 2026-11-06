@@ -5,13 +5,16 @@ import {
 	runBalanceGuard,
 } from "#/features/ops-automation/server/balance-guard";
 import {
+	agentFloorMinor,
 	approvePricingRaise,
 	ceilNiceMinor,
 	ceilYuanMinor,
 	followPlan,
 	parseCostFactors,
+	parseFloorRules,
 	planPrice,
 	realCostMinor,
+	retailNeedMinor,
 	roundNiceMinor,
 	runPricingGuard,
 	shouldFollow,
@@ -422,6 +425,14 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 
 	it("pricing guard raises to the floor automatically however large, never lowers baseline-less prices and flags agent prices", async () => {
 		await seedPricing(db);
+		// Pre-2026-11-06 floors (C + min net, agent C + ¥1) for every item here.
+		await setSetting(db, "pricing.floor_exempt_items", [
+			"gpt-plus",
+			"gpt-pro",
+			"claude",
+			"aisou-plus",
+			"aisou-cheap",
+		]);
 		const messages: string[] = [];
 		const run = (now: number) =>
 			runPricingGuard({
@@ -602,6 +613,14 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				),
 		]);
 		await setSetting(db, "ops.pricing_guard.enabled", true);
+		await setSetting(db, "pricing.floor_exempt_items", [
+			"pro100",
+			"plus",
+			"pro200",
+			"go",
+			"max",
+			"new",
+		]);
 		await setSetting(db, "pricing.cost_baselines", {
 			pro100: cost(600),
 			plus: cost(110),
@@ -827,6 +846,115 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 				floorMinor: 300,
 			}),
 		).toBeNull();
+	});
+
+	it("2026-11-06 floors lift agent, USDT and 支付宝 together and stay off exempt items", () => {
+		const rules = parseFloorRules(new Map());
+		// Pro 100 iOS: real cost ¥595.70, agent ¥600 / USDT ¥620 / 支付宝 ¥640.
+		expect(agentFloorMinor(59_570, rules)).toBe(61_358);
+		expect(retailNeedMinor(59_570, 300, rules)).toBe(63_145);
+		expect(
+			planPrice({
+				usdtMinor: 62_000,
+				alipayMinor: 64_000,
+				costMinor: 59_570,
+				floorMinor: 300,
+				needMinor: retailNeedMinor(59_570, 300, rules),
+				agentMinor: 60_000,
+				agentFloorMinor: agentFloorMinor(59_570, rules),
+			}),
+		).toEqual({
+			usdtOld: 62_000,
+			usdtNew: 64_000,
+			alipayOld: 64_000,
+			alipayNew: 66_000,
+			agentOld: 60_000,
+			agentNew: 62_000,
+			auto: true,
+		});
+		// Small items: agent ≥ C + ¥3, USDT a grid step above the agent price.
+		expect(agentFloorMinor(3_590, rules)).toBe(3_890);
+		expect(retailNeedMinor(3_590, 300, rules)).toBe(3_890);
+		expect(
+			planPrice({
+				usdtMinor: 4_000,
+				alipayMinor: 4_500,
+				costMinor: 3_590,
+				floorMinor: 300,
+				needMinor: retailNeedMinor(3_590, 300, rules),
+				agentMinor: 3_800,
+				agentFloorMinor: agentFloorMinor(3_590, rules),
+			}),
+		).toMatchObject({ usdtNew: 4_000, alipayNew: 4_500, agentNew: 3_900 });
+		// Already above every floor: nothing to do.
+		expect(
+			planPrice({
+				usdtMinor: 13_500,
+				alipayMinor: 14_000,
+				costMinor: 12_320,
+				floorMinor: 300,
+				needMinor: retailNeedMinor(12_320, 300, rules),
+				agentMinor: 13_000,
+				agentFloorMinor: agentFloorMinor(12_320, rules),
+			}),
+		).toBeNull();
+		// A ¥10 cost drop is followed, but only down to the new floors.
+		expect(
+			followPlan({
+				usdtMinor: 111_000,
+				alipayMinor: 114_000,
+				agentMinor: 108_000,
+				costMinor: 103_510,
+				baselineMinor: 104_510,
+				floorMinor: 300,
+				needMinor: retailNeedMinor(103_510, 300, rules),
+				agentFloorMinor: agentFloorMinor(103_510, rules),
+			}),
+		).toMatchObject({
+			usdtNew: 110_000,
+			alipayNew: 113_000,
+			agentNew: 107_000,
+		});
+		const custom = parseFloorRules(
+			new Map<string, unknown>([
+				["pricing.agent_margin_bps", 500],
+				["pricing.floor_exempt_items", ["plus-ph"]],
+				["pricing.retail_margin_bps", "bad"],
+			]),
+		);
+		expect(custom.agentMarginBps).toBe(500);
+		expect(custom.retailMarginBps).toBe(600);
+		expect(custom.exempt.has("plus-ph")).toBe(true);
+	});
+
+	it("pricing guard applies the 2026-11-06 floors to non-exempt items", async () => {
+		await seedPricing(db);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		await setSetting(db, "pricing.floor_exempt_items", ["aisou-plus"]);
+		const result = await runPricingGuard({
+			db,
+			now: monday,
+			readStats: async () => stats,
+			readPrices: async () => prices,
+			deliver: async () => {},
+		});
+		expect(result).toMatchObject({ status: "ran", agentWarnings: 0 });
+		// aisou-cheap: cost ¥10.04, agent ¥10.50 → floor max(¥13.04, ¥10.35) → ¥14.
+		await expect(
+			db
+				.prepare(
+					"SELECT price_minor FROM supplier_export_listings WHERE id = 'listing'",
+				)
+				.first("price_minor"),
+		).resolves.toBe("1400");
+		// Exempt aisou-plus keeps the old floor: USDT ¥104 stays.
+		await expect(
+			db
+				.prepare(
+					"SELECT price_minor FROM product_sellable_items WHERE id = 'aisou-plus'",
+				)
+				.first("price_minor"),
+		).resolves.toBe("10400");
 	});
 
 	it("pricing guard applies a proposed raise only while the price is unchanged", async () => {
