@@ -6,7 +6,11 @@ import { decryptNotificationMessage } from "#/features/notifications/secrets";
 import { sendProviderEmail } from "#/features/notifications/server/email-provider";
 import { recipientHash } from "#/features/notifications/server/recipient-policy";
 import type { requestWarehouse } from "#/features/redeem-warehouse/server/warehouse-client";
-import { redeemCodeHash, renderRenewalEmail } from "#/features/renewals/domain";
+import {
+	redeemCodeHash,
+	redeemCodePrefixes,
+	renderRenewalEmail,
+} from "#/features/renewals/domain";
 import {
 	resolveRenewalClick,
 	signRenewalUnsubscribe,
@@ -17,7 +21,7 @@ import {
 	meteredD1,
 	type RedeemLookup,
 	renewalD1Budget,
-	runRenewalReminders,
+	runRenewalReminders as runScheduler,
 	warehouseRedeemLookup,
 } from "#/features/renewals/server/scheduler";
 import {
@@ -26,6 +30,13 @@ import {
 } from "#/features/renewals/server/stats";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import { applyMigrations } from "./migrations";
+
+// The live catalog is never fetched in tests: the built-in list is the default.
+const runRenewalReminders: typeof runScheduler = (database, options = {}) =>
+	runScheduler(database, {
+		codePrefixes: async () => redeemCodePrefixes,
+		...options,
+	});
 
 const secret = "data-test-secret";
 const code = "gpt-plus-ph-ABCD-EFGH-JK23-MNPQ";
@@ -169,6 +180,34 @@ describe("renewal reminders", { timeout: 120_000 }, () => {
 				})),
 			),
 		]);
+	});
+
+	it("recognizes a card type only the live catalog lists", async () => {
+		const fresh = "gpt-999-zz-ABCD-EFGH-JK23-MNPQ";
+		await seedOrder(db, {
+			id: "o1",
+			email: "buyer@customer.com",
+			content: `CDK：${fresh}\n充值地址：https://redeem.laoshirenvip.com`,
+		});
+		const lookup = vi.fn<RedeemLookup>(async () => []);
+		const codePrefixes = vi.fn(async () => [
+			...redeemCodePrefixes,
+			"gpt-999-zz",
+		]);
+		await runRenewalReminders(db, {
+			now: deliveredAt + 60_000,
+			force: true,
+			lookup,
+			codePrefixes,
+		});
+		expect(codePrefixes).toHaveBeenCalledTimes(1);
+		const reminder = await db
+			.prepare("SELECT code_hash, status FROM renewal_reminders")
+			.first();
+		expect(reminder).toEqual({
+			code_hash: await sha256(fresh.toLowerCase()),
+			status: "awaiting_redeem",
+		});
 	});
 
 	it("dedupes the account email when it equals the order email", async () => {

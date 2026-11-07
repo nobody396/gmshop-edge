@@ -22,10 +22,12 @@ export const renewalRedeemWaitMs = 60 * dayMs;
 export const renewalBackfillSince = Date.UTC(2026, 7, 24, 16);
 
 /**
- * Every codePrefix of the redeem catalog (laoshirenvip-redeem
- * worker/catalog.ts). Keep it in sync when a product is added there: a missing
- * prefix leaves that product's codes unrecognized, so its reminder falls back
- * to the whole delivery text and never sees the redemption.
+ * Built-in copy of the redeem catalog's code prefixes (laoshirenvip-redeem
+ * worker/catalog.ts). It is only the floor: each renewal run also reads the
+ * live list from the redeem site (GET /api/catalog/code-prefixes, see
+ * server/code-prefixes.ts) and matches the union of both, so a new card type
+ * is recognized without editing this file. Refreshing it is still worthwhile
+ * so recognition survives a redeem outage.
  */
 export const redeemCodePrefixes = [
 	"gpt-go-ios",
@@ -65,21 +67,42 @@ export const redeemCodePrefixes = [
 	"grok-credits-100",
 ] as const;
 
+/** Shape of one catalog prefix (lower-case words joined by single hyphens). */
+export const codePrefixPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const patternCache = new Map<string, RegExp>();
+
 // Warehouse code formats (the redeem lookup contract). Longer prefixes go
 // first so one that extends another (x-plus-1y vs x-plus) is kept whole.
-const warehouseCodePattern = new RegExp(
-	`\\b(?:${[...redeemCodePrefixes]
-		.sort((a, b) => b.length - a.length)
-		.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-		.join("|")})-[A-Z2-9]{4}(?:-[A-Z2-9]{4}){3}\\b`,
-	"gi",
-);
+function warehouseCodePattern(prefixes: readonly string[]) {
+	const sorted = [...new Set(prefixes.map((prefix) => prefix.toLowerCase()))]
+		.filter((prefix) => codePrefixPattern.test(prefix))
+		.sort((a, b) => b.length - a.length || a.localeCompare(b));
+	const key = sorted.join(",");
+	let pattern = patternCache.get(key);
+	if (!pattern) {
+		pattern = new RegExp(
+			`\\b(?:${sorted.join("|")})-[A-Z2-9]{4}(?:-[A-Z2-9]{4}){3}\\b`,
+			"gi",
+		);
+		if (patternCache.size > 16) patternCache.clear();
+		patternCache.set(key, pattern);
+	}
+	return pattern;
+}
 
-/** Embedded warehouse codes, lowercased and de-duplicated, in text order. */
-export function extractWarehouseCodes(content: string) {
+/**
+ * Embedded warehouse codes, lowercased and de-duplicated, in text order.
+ * `prefixes` defaults to the built-in list; callers holding the live catalog
+ * pass the union of both.
+ */
+export function extractWarehouseCodes(
+	content: string,
+	prefixes: readonly string[] = redeemCodePrefixes,
+) {
 	return [
 		...new Set(
-			(content.match(warehouseCodePattern) ?? []).map((code) =>
+			(content.match(warehouseCodePattern(prefixes)) ?? []).map((code) =>
 				code.toLowerCase(),
 			),
 		),
