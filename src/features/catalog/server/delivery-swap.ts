@@ -22,10 +22,11 @@ const swapSchema = z.object({
 		.string()
 		.trim()
 		.regex(/^[A-Za-z0-9_-]{16,100}$/),
+	// Storefront orders are GM…; partner-API (lsrai.shop agent) orders are API….
 	orderNumber: z
 		.string()
 		.trim()
-		.regex(/^GM[A-F0-9]{32}$/),
+		.regex(/^(?:GM|API)[A-F0-9]{32}$/),
 	fromComponentId: z.uuid(),
 	toComponentId: z.uuid(),
 	oldSecret: z.string().trim().min(1).max(100),

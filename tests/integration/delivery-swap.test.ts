@@ -155,6 +155,19 @@ describe("delivery swap API", () => {
 		});
 	});
 
+	it("accepts a partner-API order number", async () => {
+		const partnerOrder = "API4FD857452F5A4A7CA691E35CA7637E14";
+		await db
+			.prepare(`UPDATE shop_orders SET order_number=? WHERE id='order'`)
+			.bind(partnerOrder)
+			.run();
+		const response = await swap({ ...payload(), orderNumber: partnerOrder });
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { ok: boolean; newCode: string };
+		expect(body.ok).toBe(true);
+		expect(body.newCode).toBe(newCode);
+	});
+
 	it("rejects missing credentials", async () => {
 		const response = await handleDeliverySwapRequest(
 			new Request("https://shop.example/api/ops/restock/swap", {
