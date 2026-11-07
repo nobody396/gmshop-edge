@@ -116,20 +116,21 @@ export async function createShopPayment(
 			 o.contact_email, o.pricing_channel_id,
 			 pc.id AS channel_id, pc.provider, pc.credential_encrypted,
 			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor,
-			 NOT EXISTS (
+			 (EXISTS (SELECT 1 FROM shop_order_items oi JOIN gpt_upgrade_orders u ON u.order_item_id=oi.id WHERE oi.order_id=o.id) OR NOT EXISTS (
 			  SELECT 1 FROM shop_order_items order_item
 			  WHERE order_item.order_id = o.id AND NOT EXISTS (
 			   SELECT 1 FROM sellable_item_channel_prices channel_price
 			   WHERE channel_price.sellable_item_id = order_item.sellable_item_id
 			    AND channel_price.channel_id = pc.id AND channel_price.enabled = 1
 			  )
-			 ) AS fixed_channel_pricing,
+			 )) AS fixed_channel_pricing,
 			 EXISTS (
 			  SELECT 1 FROM shop_order_items order_item
 			  JOIN sellable_item_channel_prices channel_price
 			   ON channel_price.sellable_item_id = order_item.sellable_item_id
 			  WHERE order_item.order_id = o.id AND channel_price.channel_id = pc.id
 			   AND channel_price.enabled = 1
+			   AND NOT EXISTS (SELECT 1 FROM gpt_upgrade_orders u WHERE u.order_item_id=order_item.id)
 			 ) AS has_channel_pricing
 			 FROM shop_orders o JOIN payment_channels pc ON pc.id = ?
 			 WHERE o.id = ? AND pc.enabled = 1 LIMIT 1`,

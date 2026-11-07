@@ -50,6 +50,13 @@ export function formatProcurementAlert(alert: Alert, data: ProcurementAlerts) {
 		lines.push(`给${supplier}充值后，系统每分钟自动补货，不用手动买。`);
 		return lines.join("\n");
 	}
+	if (alert.source === "upgrade")
+		return [
+			"⚠️ ChatGPT 升级需要人工处理",
+			`单号 …${alert.code_suffix ?? "未知"}，客户实付 ${alert.price_minor === null ? "未知" : formatYuan(alert.price_minor)}${alert.balance_minor === null ? "" : `（上游实扣 ${formatYuan(alert.balance_minor)}）`}`,
+			`原因：${alert.reason ?? "未知"}`,
+			"先核对是否已扣上游钱包，再决定在卡网后台退款；不要让客户重复下单。",
+		].join("\n");
 	if (alert.kind === "needs_review")
 		return [
 			`⚠️ 进货结果不明，需要人工核对：${supplier}`,

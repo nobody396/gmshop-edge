@@ -6,6 +6,7 @@ import { reconcileIproyalOrders } from "#/features/claude-env/server/reconcile";
 import { runClaudeEnv } from "#/features/claude-env/server/scheduler";
 import { runCustomerPriceGuard } from "#/features/customer-pricing/server/telegram";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
+import { reconcileUpgradeDeliveries } from "#/features/gpt-upgrade/server/fulfillment";
 import { publishPendingNotifications } from "#/features/notifications/server/delivery";
 import { fanOutPendingCommerceNotifications } from "#/features/notifications/server/fanout";
 import { publishPendingOwnerSaleAlerts } from "#/features/notifications/server/owner-sale-alerts";
@@ -47,6 +48,7 @@ export async function runScheduledCommerceWork(
 	cron: string,
 	scheduledAt: number,
 ) {
+	await reconcileUpgradeDeliveries(env.DB);
 	const agentAccess = await reconcileAgentAccess(env.DB);
 	const publishBatchSize = await loadPublishBatchSize(env.DB);
 	const payments = await reconcilePendingShopPayments(

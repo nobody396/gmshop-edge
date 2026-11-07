@@ -22,7 +22,6 @@ import {
 	CheckboxControl,
 	Checkbox as ProCheckbox,
 } from "#/components/pro/base/fields/checkbox";
-import { PaymentProviderLogo } from "#/components/provider-logo";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -63,8 +62,8 @@ import {
 	ClaudePurchaseGuide,
 	claudeRechargeProductId,
 } from "#/features/storefront/components/claude-purchase-guide";
+import { PaymentChannelOption } from "#/features/storefront/components/payment-channel-option";
 import { writeGuestOrderEmail } from "#/features/storefront/order-access-storage";
-import { paymentChannelLabel } from "#/features/storefront/payment-channel-label";
 import { safeStorePaymentUrl } from "#/features/storefront/payment-url";
 import {
 	getStoreCartFn,
@@ -947,27 +946,12 @@ export function StorefrontCheckoutPage() {
 										</label>
 									) : null}
 									{channels.data?.map((channel) => (
-										<label
-											className="grid min-h-16 cursor-pointer place-items-center content-center gap-1.5 rounded-lg bg-background/70 px-3 py-2.5 text-center text-sm ring-offset-background transition hover:bg-background has-checked:bg-primary/10 has-checked:ring-2 has-checked:ring-primary has-checked:ring-offset-2 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+										<PaymentChannelOption
+											channel={channel}
 											key={channel.id}
+											selected={paymentChannelId}
+											onSelect={setPaymentChannelId}
 										>
-											<input
-												checked={paymentChannelId === channel.id}
-												className="sr-only"
-												name="payment-channel"
-												onChange={() => setPaymentChannelId(channel.id)}
-												required
-												type="radio"
-												value={channel.id}
-											/>
-											<PaymentProviderLogo
-												className="size-6 rounded-md"
-												logoUrl={channel.logoUrl}
-												providerId={channel.provider}
-											/>
-											<span className="font-medium leading-snug">
-												{paymentChannelLabel(channel.name)}
-											</span>
 											{currencyItem && "currency" in currencyItem ? (
 												<span className="font-medium text-primary text-xs">
 													<StoreMoney
@@ -987,7 +971,7 @@ export function StorefrontCheckoutPage() {
 													})}
 												</span>
 											) : null}
-										</label>
+										</PaymentChannelOption>
 									))}
 								</div>
 								{paymentUnavailable ? (

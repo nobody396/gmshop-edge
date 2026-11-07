@@ -59,6 +59,24 @@ GMShop Edge 是可部署到 Cloudflare Workers 或 Bun/Nitro Docker 容器的自
 
 GMShop Edge 全部功能均开源，不设置闭源 Pro 或 Enterprise 功能层。
 
+## ChatGPT 会员升级（按报价补差价）
+
+迁移 `0050_gpt_upgrade.sql` 新增固定升级商品和私有订单表，不重排现有商品。
+CNY 规格价 `0` 仅为占位：先访问 `https://redeem.laoshirenvip.com/upgrade`
+查价，再打开 `/upgrade/checkout?quote=TOKEN` 付款。仅支持 Plus / Pro 网页订阅
+升级到 Pro 100 / Pro 200 / Pro 500；苹果 / 谷歌商店订阅不能升级。
+
+复用现有兑换站集成凭据，服务端在建单时重新查价；必须单独购买、数量为 1、不能用
+优惠券，渠道定价和渠道附加费不覆盖报价。报价令牌加密保存，事务内唯一预留防止重复
+有效订单。付款后幂等通知兑换站，并通过订单页和原有交付邮件发出固定进度链接。
+商城“已发货”仅代表进度链接已交付，不代表兑换站已完成升级。
+
+Queue/Cron 使用持久化租约和指数退避，最多调用 8 次；金额不符 / 报价已被其他单支付
+立即转 `needs_review` 并发运营提醒，退款会阻止后续调用。运营只查 `state`、
+`error_code`、`attempt_count`，不要导出报价令牌；先核对钱包实扣，再决定是否通过
+原有后台退款，不要让客户重复下单。真实支付、升级、邮件、Telegram 验收仍须手动进行，
+模拟测试不代表已在线交付。
+
 ## 系统架构
 
 ```mermaid

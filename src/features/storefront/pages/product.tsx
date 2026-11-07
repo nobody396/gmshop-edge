@@ -43,6 +43,7 @@ import {
 	StoreMoney,
 	useCurrency,
 } from "#/features/exchange-rates/currency-context";
+import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
 import { appleIdLoginGuidePath } from "#/features/guides/apple-id-login";
 import { addLocalCartItem } from "#/features/storefront/cart-storage";
 import { trackCommerceEvent } from "#/features/storefront/commerce-events";
@@ -222,7 +223,8 @@ export function StorefrontProductPage({
 			: data.sellableItems[0]);
 	const requiresSignIn =
 		((selectedItem?.deliveryType === "automation" &&
-			!agentAccessKind(selectedItem.id)) ||
+			!agentAccessKind(selectedItem.id) &&
+			selectedItem.id !== gptUpgradeProduct.itemId) ||
 			Boolean(selectedItem && claudeEnvTrafficSkus[selectedItem.id])) &&
 		!session.isPending &&
 		!session.data?.user;
@@ -460,11 +462,15 @@ export function StorefrontProductPage({
 															</span>
 															<span className="flex flex-wrap items-baseline justify-between gap-x-2">
 																<span className="whitespace-nowrap font-semibold text-primary text-sm">
-																	<StoreMoney
-																		amountMinor={item.priceMinor}
-																		currency={item.currency}
-																		decimals={item.currencyDecimals}
-																	/>
+																	{item.id === gptUpgradeProduct.itemId ? (
+																		m.upgrade_price_by_quote()
+																	) : (
+																		<StoreMoney
+																			amountMinor={item.priceMinor}
+																			currency={item.currency}
+																			decimals={item.currencyDecimals}
+																		/>
+																	)}
 																</span>
 																<span className="shrink-0 text-muted-foreground text-[11px] tabular-nums">
 																	{item.saleDisabled
@@ -522,11 +528,15 @@ export function StorefrontProductPage({
 													) : null}
 												</span>
 												<span className="font-semibold text-base text-primary">
-													<StoreMoney
-														amountMinor={item.priceMinor}
-														currency={item.currency}
-														decimals={item.currencyDecimals}
-													/>
+													{item.id === gptUpgradeProduct.itemId ? (
+														m.upgrade_price_by_quote()
+													) : (
+														<StoreMoney
+															amountMinor={item.priceMinor}
+															currency={item.currency}
+															decimals={item.currencyDecimals}
+														/>
+													)}
 												</span>
 												<span
 													aria-hidden="true"
@@ -676,41 +686,49 @@ export function StorefrontProductPage({
 									disabled={!canPurchase}
 									onClick={() => {
 										if (!selectedItem) return;
-										window.location.assign(checkoutPath);
+										window.location.assign(
+											selectedItem.id === gptUpgradeProduct.itemId
+												? gptUpgradeProduct.quoteUrl
+												: checkoutPath,
+										);
 									}}
 								>
 									<Zap />
 									{data.saleDisabled || selectedItem?.saleDisabled
 										? m.store_sale_disabled()
-										: m.store_buy_now()}
+										: selectedItem?.id === gptUpgradeProduct.itemId
+											? m.upgrade_get_quote()
+											: m.store_buy_now()}
 								</Button>
 							)}
-							<Button
-								className="h-12 rounded-xl"
-								disabled={!canPurchase}
-								onClick={() => {
-									if (!selectedItem || maximumQuantity == null) return;
-									const added = addLocalCartItem(
-										selectedItem.id,
-										quantity,
-										maximumQuantity,
-									);
-									if (!added) {
-										toast.error(m.store_cart_limit_reached());
-										return;
-									}
-									trackCommerceEvent({
-										eventType: "cart_item_added",
-										productId: data.id,
-										sellableItemId: selectedItem.id,
-									});
-									toast.success(m.store_cart_added());
-								}}
-								variant="outline"
-							>
-								<ShoppingCart />
-								{m.store_add_to_cart()}
-							</Button>
+							{selectedItem?.id !== gptUpgradeProduct.itemId ? (
+								<Button
+									className="h-12 rounded-xl"
+									disabled={!canPurchase}
+									onClick={() => {
+										if (!selectedItem || maximumQuantity == null) return;
+										const added = addLocalCartItem(
+											selectedItem.id,
+											quantity,
+											maximumQuantity,
+										);
+										if (!added) {
+											toast.error(m.store_cart_limit_reached());
+											return;
+										}
+										trackCommerceEvent({
+											eventType: "cart_item_added",
+											productId: data.id,
+											sellableItemId: selectedItem.id,
+										});
+										toast.success(m.store_cart_added());
+									}}
+									variant="outline"
+								>
+									<ShoppingCart />
+									{m.store_add_to_cart()}
+								</Button>
+							) : null}
 						</div>
 					</div>
 					{selectedItem ? <SkuPolicyPanel sellableItem={selectedItem} /> : null}
@@ -1097,6 +1115,12 @@ function SellableItemSummary({
 	pricing: ItemPricing | undefined;
 	quantity: number;
 }) {
+	if (sellableItem.id === gptUpgradeProduct.itemId)
+		return (
+			<p className="font-semibold text-2xl text-primary">
+				{m.upgrade_price_by_quote()}
+			</p>
+		);
 	const isFree = BigInt(sellableItem.priceMinor) === 0n;
 	const hasDiscount =
 		sellableItem.listPriceMinor != null &&
@@ -1219,6 +1243,7 @@ function QuantityTotal({
 	pricing: ItemPricing | undefined;
 	quantity: number;
 }) {
+	if (sellableItem.id === gptUpgradeProduct.itemId) return null;
 	if (!Number.isInteger(quantity) || quantity < 1) return null;
 	const channels =
 		sellableItem.channelPrices.length > 0 ? sellableItem.channelPrices : [null];

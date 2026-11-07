@@ -51,6 +51,9 @@ export async function requestWarehouse(
 		typeof body.code === "string" &&
 		[
 			"activation.cooldown",
+			"upgrade.quote_not_found",
+			"upgrade.quote_already_paid",
+			"upgrade.amount_mismatch",
 			"provider.temporary_error",
 			"provider.needs_review",
 			"conversion.conflict",

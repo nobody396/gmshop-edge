@@ -73,6 +73,30 @@ fulfillment, and a permission-driven administration console.
 Every GMShop Edge capability listed above is part of the open-source project;
 there is no closed Pro or Enterprise tier.
 
+## Quoted ChatGPT upgrades
+
+Migration `0050_gpt_upgrade.sql` adds the fixed upgrade product and its private
+order ledger without renumbering existing products. The zero CNY list price is
+only a placeholder: start at `https://redeem.laoshirenvip.com/upgrade`, then open
+`/upgrade/checkout?quote=TOKEN`. Only web Plus / Pro subscriptions are eligible
+for Pro 100 / Pro 200 / Pro 500; Apple / Google store subscriptions are excluded.
+
+The existing warehouse integration credential is reused. Checkout revalidates
+the quote server-side, permits one item/quantity one/no coupon, and charges the
+quoted amount without channel price overrides or surcharges. Quote tokens are
+encrypted; a transactional unique reservation prevents duplicate active orders.
+Paid delivery calls the redemption site idempotently and issues its fixed status
+link through the order page and normal delivery email. “Delivered” means the
+progress link was issued, not that the remote upgrade has already completed.
+
+Queue/Cron uses a durable lease and exponential backoff (at most eight calls).
+Amount/ownership conflicts stop immediately with `needs_review` and an operations
+alert; refunds block further calls. Operators should inspect `state`,
+`error_code`, and `attempt_count` (never export quote tokens), verify any wallet
+debit before refunding through the existing admin flow, and never ask the buyer
+to place a duplicate order. Real payment/upgrade/email/Telegram acceptance remains
+manual; fixture tests do not prove live delivery.
+
 ## Architecture
 
 ```mermaid

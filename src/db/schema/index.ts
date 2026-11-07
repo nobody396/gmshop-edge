@@ -4,6 +4,7 @@ export * from "./auth";
 export * from "./claude-env";
 export * from "./commerce";
 export * from "./content";
+export * from "./gpt-upgrade";
 export * from "./pricing";
 export * from "./promotions";
 export * from "./settings";

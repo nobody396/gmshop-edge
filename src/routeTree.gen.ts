@@ -96,6 +96,7 @@ import { Route as AdminAccessUsersRouteImport } from './routes/admin/access/user
 import { Route as AdminAccessRolesRouteImport } from './routes/admin/access/roles'
 import { Route as AdminAccessPermissionBitsRouteImport } from './routes/admin/access/permission-bits'
 import { Route as AdminAccessModulesRouteImport } from './routes/admin/access/modules'
+import { Route as publicUpgradeCheckoutRouteImport } from './routes/(public)/upgrade/checkout'
 import { Route as publicUnsubscribeRenewalRouteImport } from './routes/(public)/unsubscribe/renewal'
 import { Route as publicProductsProductIdRouteImport } from './routes/(public)/products/$productId'
 import { Route as publicOrdersOrderNumberRouteImport } from './routes/(public)/orders/$orderNumber'
@@ -595,6 +596,11 @@ const AdminAccessModulesRoute = AdminAccessModulesRouteImport.update({
   path: '/modules',
   getParentRoute: () => AdminAccessRouteRoute,
 } as any)
+const publicUpgradeCheckoutRoute = publicUpgradeCheckoutRouteImport.update({
+  id: '/upgrade/checkout',
+  path: '/upgrade/checkout',
+  getParentRoute: () => publicRouteRoute,
+} as any)
 const publicUnsubscribeRenewalRoute =
   publicUnsubscribeRenewalRouteImport.update({
     id: '/unsubscribe/renewal',
@@ -986,6 +992,7 @@ export interface FileRoutesByFullPath {
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
   '/unsubscribe/renewal': typeof publicUnsubscribeRenewalRoute
+  '/upgrade/checkout': typeof publicUpgradeCheckoutRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
   '/admin/access/permission-bits': typeof AdminAccessPermissionBitsRoute
   '/admin/access/roles': typeof AdminAccessRolesRoute
@@ -1123,6 +1130,7 @@ export interface FileRoutesByTo {
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
   '/unsubscribe/renewal': typeof publicUnsubscribeRenewalRoute
+  '/upgrade/checkout': typeof publicUpgradeCheckoutRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
   '/admin/access/permission-bits': typeof AdminAccessPermissionBitsRoute
   '/admin/access/roles': typeof AdminAccessRolesRoute
@@ -1272,6 +1280,7 @@ export interface FileRoutesById {
   '/(public)/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/(public)/products/$productId': typeof publicProductsProductIdRoute
   '/(public)/unsubscribe/renewal': typeof publicUnsubscribeRenewalRoute
+  '/(public)/upgrade/checkout': typeof publicUpgradeCheckoutRoute
   '/admin/access/modules': typeof AdminAccessModulesRoute
   '/admin/access/permission-bits': typeof AdminAccessPermissionBitsRoute
   '/admin/access/roles': typeof AdminAccessRolesRoute
@@ -1420,6 +1429,7 @@ export interface FileRouteTypes {
     | '/orders/$orderNumber'
     | '/products/$productId'
     | '/unsubscribe/renewal'
+    | '/upgrade/checkout'
     | '/admin/access/modules'
     | '/admin/access/permission-bits'
     | '/admin/access/roles'
@@ -1557,6 +1567,7 @@ export interface FileRouteTypes {
     | '/orders/$orderNumber'
     | '/products/$productId'
     | '/unsubscribe/renewal'
+    | '/upgrade/checkout'
     | '/admin/access/modules'
     | '/admin/access/permission-bits'
     | '/admin/access/roles'
@@ -1705,6 +1716,7 @@ export interface FileRouteTypes {
     | '/(public)/orders/$orderNumber'
     | '/(public)/products/$productId'
     | '/(public)/unsubscribe/renewal'
+    | '/(public)/upgrade/checkout'
     | '/admin/access/modules'
     | '/admin/access/permission-bits'
     | '/admin/access/roles'
@@ -2467,6 +2479,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAccessModulesRouteImport
       parentRoute: typeof AdminAccessRouteRoute
     }
+    '/(public)/upgrade/checkout': {
+      id: '/(public)/upgrade/checkout'
+      path: '/upgrade/checkout'
+      fullPath: '/upgrade/checkout'
+      preLoaderRoute: typeof publicUpgradeCheckoutRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
     '/(public)/unsubscribe/renewal': {
       id: '/(public)/unsubscribe/renewal'
       path: '/unsubscribe/renewal'
@@ -2950,6 +2969,7 @@ interface publicRouteRouteChildren {
   publicOrdersOrderNumberRoute: typeof publicOrdersOrderNumberRoute
   publicProductsProductIdRoute: typeof publicProductsProductIdRoute
   publicUnsubscribeRenewalRoute: typeof publicUnsubscribeRenewalRoute
+  publicUpgradeCheckoutRoute: typeof publicUpgradeCheckoutRoute
   publicCheckoutIndexRoute: typeof publicCheckoutIndexRoute
   publicGuidesIndexRoute: typeof publicGuidesIndexRoute
   publicOrdersIndexRoute: typeof publicOrdersIndexRoute
@@ -2969,6 +2989,7 @@ const publicRouteRouteChildren: publicRouteRouteChildren = {
   publicOrdersOrderNumberRoute: publicOrdersOrderNumberRoute,
   publicProductsProductIdRoute: publicProductsProductIdRoute,
   publicUnsubscribeRenewalRoute: publicUnsubscribeRenewalRoute,
+  publicUpgradeCheckoutRoute: publicUpgradeCheckoutRoute,
   publicCheckoutIndexRoute: publicCheckoutIndexRoute,
   publicGuidesIndexRoute: publicGuidesIndexRoute,
   publicOrdersIndexRoute: publicOrdersIndexRoute,

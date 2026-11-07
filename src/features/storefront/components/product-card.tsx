@@ -5,6 +5,7 @@ import { Ban, Zap } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Skeleton } from "#/components/ui/skeleton";
 import { useCurrency } from "#/features/exchange-rates/currency-context";
+import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
 import type { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { m } from "#/paraglide/messages";
@@ -41,7 +42,11 @@ export function StorefrontProductCard({
 			);
 	// Multi-option products show their lowest price as "from".
 	const priceLabel =
-		singlePrice || isFree ? price : m.store_card_from({ price });
+		product.id === gptUpgradeProduct.productId
+			? m.upgrade_price_by_quote()
+			: singlePrice || isFree
+				? price
+				: m.store_card_from({ price });
 	const variants =
 		product.variantCount > 1
 			? m.store_card_variants_other({ count: product.variantCount })

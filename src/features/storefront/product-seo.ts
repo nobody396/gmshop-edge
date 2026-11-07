@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
 import { getStorefrontProductFn } from "#/features/storefront/server/catalog";
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import type { SupportedLocale } from "#/lib/locales";
@@ -38,6 +39,8 @@ type PriceSummary = {
 export function productPriceSummary(
 	product: StorefrontProduct,
 ): PriceSummary | null {
+	// The upgrade's zero list price is a placeholder: never show or publish it as a price.
+	if (product.id === gptUpgradeProduct.productId) return null;
 	const plans = product.sellableItems.filter((item) => !item.saleDisabled);
 	const priced = plans.length > 0 ? plans : product.sellableItems;
 	const first = priced[0];

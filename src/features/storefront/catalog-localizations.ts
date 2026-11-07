@@ -2,6 +2,7 @@ import {
 	agentAccessProducts,
 	agentAccessRefundPolicy,
 } from "#/features/agent-access/products";
+import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
 import type { SupportedLocale } from "#/lib/locales";
 
 type Policy = {
@@ -31,6 +32,11 @@ const manualDeliveryTime =
 	"Usually completed within 1–30 minutes. During peak periods, delivery may take longer but will not exceed 3 hours. Track delivery status and contents on the order page.";
 
 const productEnglish: Record<string, ProductLocalization> = {
+	[gptUpgradeProduct.productId]: {
+		name: "ChatGPT membership upgrade (price difference)",
+		description:
+			"Get a quote at the redemption site → pay → automatic upgrade. Upgrade a web Plus / Pro subscription to Pro 100 / Pro 200 / Pro 500. Apple / Google store subscriptions cannot be upgraded. The zero list price is only a placeholder; pay the quoted amount.",
+	},
 	[agentAccessProducts.subsite.productId]: {
 		name: "One-time hosted storefront access",
 		description:
@@ -460,6 +466,16 @@ const smsDelivery =
 	"A CDK and redemption link are issued automatically after payment; take your number on the number page.";
 
 const sellableItemEnglish: Record<string, SellableItemLocalization> = {
+	[gptUpgradeProduct.itemId]: {
+		name: "Quoted price difference",
+		policy: policy(
+			"Automatic upgrade after payment",
+			"Usually 1–10 minutes; track progress from your order",
+			"Upgrade your existing web subscription",
+			"Contact the shop for upgrade issues",
+			"Get a quote first. Apple / Google store subscriptions are not supported.",
+		),
+	},
 	[agentAccessProducts.subsite.itemId]: {
 		name: "One-time activation",
 		policy: policy(

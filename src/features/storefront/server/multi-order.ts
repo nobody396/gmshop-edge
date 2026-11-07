@@ -15,6 +15,12 @@ import {
 import { claudeEnvTrafficSkus } from "#/features/claude-env/domain";
 import { activeClaudeEnvSubscription } from "#/features/claude-env/server/eligibility";
 import { couponScopeSchema } from "#/features/coupons/schema";
+import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
+import {
+	prepareUpgradeCheckout,
+	upgradeCheckoutStatements,
+} from "#/features/gpt-upgrade/server/checkout";
+import { assertOpenUpgradeQuote } from "#/features/gpt-upgrade/server/client";
 import { pricePromotion } from "#/features/promotions/pricing";
 import {
 	assertPromotionOwner,
@@ -197,6 +203,11 @@ export async function createMultiStoreOrder(
 			);
 	}
 
+	const upgradeCheckout = await prepareUpgradeCheckout(
+		db,
+		input,
+		runtime.commerceSecret,
+	);
 	const agentCheckout = await prepareAgentCheckout(db, input, access.userId);
 	const pricing = await loadItemPricing(
 		db,
@@ -211,7 +222,11 @@ export async function createMultiStoreOrder(
 			item.sellableItemId,
 			access.pricingChannelId,
 		);
-		if (!access.userId && sellableItem.delivery_component_type === "automation")
+		if (
+			!access.userId &&
+			sellableItem.delivery_component_type === "automation" &&
+			item.sellableItemId !== gptUpgradeProduct.itemId
+		)
 			throw new DomainError(
 				"account_required_for_delivery",
 				403,
@@ -232,6 +247,15 @@ export async function createMultiStoreOrder(
 					"An active Claude environment is required",
 				);
 		}
+		if (
+			upgradeCheckout &&
+			(sellableItem.currency !== "CNY" || sellableItem.currency_decimals !== 2)
+		)
+			throw new DomainError(
+				"upgrade_currency_invalid",
+				409,
+				"Upgrade requires CNY",
+			);
 		validateQuantity(sellableItem, item.quantity, policy.maxQuantity);
 		await assertPurchaseLimit(
 			db,
@@ -260,12 +284,17 @@ export async function createMultiStoreOrder(
 				? await loadDefinitions(db, sellableItem.definition_version_id)
 				: [];
 		assertKnownInputKeys(item.inputValues, definitions, "order", "order");
-		const price = linePrice(
-			sellableItem,
-			item.quantity,
-			access.pricingChannelId,
-			pricing.get(item.sellableItemId),
-		);
+		const price = upgradeCheckout
+			? {
+					unitPriceMinor: upgradeCheckout.quote.price_minor,
+					source: "list" as const,
+				}
+			: linePrice(
+					sellableItem,
+					item.quantity,
+					access.pricingChannelId,
+					pricing.get(item.sellableItemId),
+				);
 		lines.push({
 			input: item,
 			sellableItem,
@@ -324,7 +353,10 @@ export async function createMultiStoreOrder(
 
 	const orderId = crypto.randomUUID();
 	const now = Date.now();
-	const expiresAt = now + policy.expiryMs;
+	if (upgradeCheckout) assertOpenUpgradeQuote(upgradeCheckout.quote, now);
+	const expiresAt = upgradeCheckout
+		? Math.min(now + policy.expiryMs, upgradeCheckout.quote.expires_at)
+		: now + policy.expiryMs;
 	const orderNumber = createOrderNumber();
 	const firstItem = lines[0]?.sellableItem;
 	if (!firstItem) throw new DomainError("order_empty", 400, "Order is empty");
@@ -474,6 +506,15 @@ export async function createMultiStoreOrder(
 					now,
 				),
 		);
+		if (upgradeCheckout)
+			statements.push(
+				...upgradeCheckoutStatements(
+					db,
+					upgradeCheckout,
+					line.orderItemId,
+					now,
+				),
+			);
 		if (agentCheckout)
 			statements.push(
 				agentCheckoutStatement(db, agentCheckout, line.orderItemId, now),
@@ -594,6 +635,16 @@ export async function createMultiStoreOrder(
 				409,
 				"Insufficient owned codes",
 			);
+		if (
+			upgradeCheckout &&
+			error instanceof Error &&
+			/gpt_upgrade_orders.active_key/.test(error.message)
+		)
+			throw new DomainError(
+				"upgrade_existing_order",
+				409,
+				"Continue your existing upgrade order instead of paying again",
+			);
 		if (coupon)
 			throw new DomainError("coupon_unavailable", 409, "Coupon is unavailable");
 		throw error;
@@ -675,7 +726,8 @@ async function loadSellableItem(
 	if (
 		sellableItem.delivery_component_type === "automation" &&
 		!sellableItem.definition_version_id &&
-		!agentAccessKind(sellableItemId)
+		!agentAccessKind(sellableItemId) &&
+		sellableItemId !== gptUpgradeProduct.itemId
 	)
 		throw new DomainError(
 			"automation_configuration_unavailable",
