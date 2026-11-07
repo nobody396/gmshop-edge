@@ -39,6 +39,9 @@ it("includes all three blockers, both checks, all three source images, all three
 		"这种情况属于隐性封禁，充值无法到账，并且无法退款",
 		"方法一",
 		"方法二",
+		"方法三",
+		"注册时间早于 2026-09-15",
+		"先完成身份认证（KYC）",
 		"未检测项不代表安全",
 		"本站检查页面",
 		"避免频繁切换节点",
@@ -56,7 +59,7 @@ it("includes all three blockers, both checks, all three source images, all three
 		"Cannot start subscription for a banned organization",
 	);
 	const images = [...container.querySelectorAll("img")];
-	expect(images).toHaveLength(6);
+	expect(images).toHaveLength(8);
 	for (const image of images) {
 		expect(image.alt.length).toBeGreaterThan(0);
 		const src = image.getAttribute("src");
@@ -70,6 +73,7 @@ it("includes all three blockers, both checks, all three source images, all three
 	for (const href of [
 		"https://claude.ai/",
 		"https://claude.ai/upgrade?from=menu",
+		"https://redeem.laoshirenvip.com/#kyc",
 	]) {
 		const anchor = container.querySelector(`a[href="${href}"]`);
 		expect(anchor?.getAttribute("target")).toBe("_blank");
@@ -85,6 +89,7 @@ it("includes all three blockers, both checks, all three source images, all three
 		"http://localhost:3000/ip-check",
 		"https://claude.ai/",
 		"https://claude.ai/upgrade?from=menu",
+		"https://redeem.laoshirenvip.com/#kyc",
 	]);
 	expect(container.textContent).toContain(
 		"请先完成 IP 质检，再点击下方官网链接",
@@ -139,7 +144,7 @@ it("provides English copy while retaining the exact error examples and truthful 
 	expect(container.textContent).not.toContain("at least 90/100");
 	expect(container.textContent).toContain("unchecked signals");
 	expect(container.textContent).toContain("not an official Claude standard");
-	expect(container.querySelectorAll("img")).toHaveLength(6);
+	expect(container.querySelectorAll("img")).toHaveLength(8);
 });
 
 it("covers the shared Claude product across all SKUs and direct/mixed checkout", () => {
@@ -177,5 +182,5 @@ it("separates IP quality from purchase guidance and puts the IP section first", 
 	expect(ip?.contains(purchase)).toBe(false);
 	expect(purchase?.querySelector("[data-claude-ip-check]")).toBeNull();
 	expect(purchase?.textContent).not.toContain("IP 纯净度评分");
-	expect(purchase?.querySelectorAll("img")).toHaveLength(6);
+	expect(purchase?.querySelectorAll("img")).toHaveLength(8);
 });

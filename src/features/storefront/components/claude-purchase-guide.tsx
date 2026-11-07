@@ -212,6 +212,52 @@ export function ClaudePurchaseGuide() {
 						/>
 					</div>
 				</article>
+				<article className="space-y-3 rounded-xl border bg-background p-4 sm:p-5">
+					<h4 className="font-semibold">
+						{m.store_claude_preflight_selfcheck_title()}
+					</h4>
+					<p className="text-sm leading-6">
+						{m.store_claude_preflight_selfcheck_prefix()}
+						<a
+							href="https://redeem.laoshirenvip.com/#kyc"
+							target="_blank"
+							rel="noopener noreferrer"
+							referrerPolicy="no-referrer"
+							className="font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+						>
+							{m.store_claude_preflight_selfcheck_link()}
+						</a>
+						{m.store_claude_preflight_selfcheck_body()}
+					</p>
+					<div className="space-y-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 sm:p-4">
+						<h5 className="font-semibold">
+							{m.store_claude_preflight_normal_title()}
+						</h5>
+						<p className="text-sm leading-6">
+							{m.store_claude_preflight_selfcheck_normal_body()}
+						</p>
+						<GuideImage
+							src="/guides/claude/self-check-normal.png"
+							width={1568}
+							height={660}
+							alt={m.store_claude_preflight_selfcheck_normal_image()}
+						/>
+					</div>
+					<div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 sm:p-4">
+						<h5 className="font-semibold">
+							{m.store_claude_preflight_selfcheck_kyc_title()}
+						</h5>
+						<p className="text-sm leading-6">
+							{m.store_claude_preflight_selfcheck_kyc_body()}
+						</p>
+						<GuideImage
+							src="/guides/claude/self-check-kyc-flagged.png"
+							width={1568}
+							height={695}
+							alt={m.store_claude_preflight_selfcheck_kyc_image()}
+						/>
+					</div>
+				</article>
 				<div className="space-y-2 rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm leading-6">
 					<p className="font-semibold">{m.store_claude_preflight_stop()}</p>
 				</div>
