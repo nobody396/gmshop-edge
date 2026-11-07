@@ -55,6 +55,7 @@ type SellableItemContext = {
 	base_price_minor: string;
 	cost_minor: string | null;
 	promotion_budget_minor: string;
+	referral_budget_minor: string;
 	currency: string;
 	currency_decimals: number;
 	delivery_component_id: string;
@@ -679,7 +680,8 @@ async function loadSellableItem(
 			   AND channel.enabled = 1 LIMIT 1
 			 ), s.price_minor) AS price_minor, s.price_minor AS base_price_minor,
 			 s.cost_minor, CASE WHEN s.promotion_budget_minor='800' AND CAST(s.price_minor AS INTEGER)<100000
-    THEN '0' ELSE s.promotion_budget_minor END AS promotion_budget_minor, s.currency, s.currency_decimals,
+    THEN '0' ELSE s.promotion_budget_minor END AS promotion_budget_minor,
+			 CASE WHEN s.promotion_budget_minor='0' THEN '0' ELSE s.referral_budget_minor END AS referral_budget_minor, s.currency, s.currency_decimals,
 			 s.fulfillment_source, s.supplier_status,
  ${supplierFallbackEnabledExpression("s")} AS supplier_fallback_enabled,
 			 s.id AS delivery_component_id, p.product_type AS delivery_component_type,
@@ -1074,7 +1076,10 @@ async function priceStoreCoupon(
 		coupon.purpose,
 		eligible.map((line) => ({
 			id: line.orderItemId,
-			budgetMinor: line.sellableItem.promotion_budget_minor,
+			budgetMinor:
+				coupon.purpose === "referral"
+					? line.sellableItem.referral_budget_minor
+					: line.sellableItem.promotion_budget_minor,
 			subtotalMinor: line.subtotal.toString(),
 			quantity: line.input.quantity,
 		})),
@@ -1392,7 +1397,13 @@ async function claimNewOrderBudget(
 // A referrer earns at most this much per calendar month (Beijing time); anything beyond is withheld.
 const referralRewardMonthlyCapMinor = 100_000n;
 
-/** Same person behind the order (email up to a +tag, or an IP the referrer signed in from), or the monthly cap is reached. */
+/**
+ * Same person behind the order (email up to a +tag, an email the referrer has
+ * ordered with, or an IP the referrer signed in from), or the monthly cap is
+ * reached. Guests and unverified accounts earn the referrer a reward too
+ * (owner 2026-11-07): the budget never exceeds 35% of margin, so a disguised
+ * self-purchase still leaves the sale profitable.
+ */
 async function referralRewardWithheld(
 	db: D1Database,
 	referrerUserId: string,
@@ -1403,23 +1414,21 @@ async function referralRewardWithheld(
 		rewardMinor: bigint;
 	},
 ) {
-	// Rewards are paid only for a verified-email account other than the
-	// referrer; guests and unverified accounts keep the discount only.
-	if (!buyer.userId || buyer.userId === referrerUserId) return true;
-	const account = await db
-		.prepare("SELECT email_verified FROM users WHERE id = ? AND enabled = 1")
-		.bind(buyer.userId)
-		.first<{ email_verified: number }>();
-	if (!account || Number(account.email_verified) !== 1) return true;
+	if (buyer.userId === referrerUserId || !buyer.email?.trim()) return true;
+	const buyerEmail = canonicalEmail(buyer.email);
 	const owner = await db
 		.prepare("SELECT email FROM users WHERE id = ?")
 		.bind(referrerUserId)
 		.first<{ email: string }>();
-	if (
-		owner &&
-		buyer.email &&
-		canonicalEmail(owner.email) === canonicalEmail(buyer.email)
-	)
+	if (owner && canonicalEmail(owner.email) === buyerEmail) return true;
+	const ownEmails = await db
+		.prepare(
+			`SELECT DISTINCT normalized_contact_email AS email FROM shop_orders
+			 WHERE user_id = ? AND normalized_contact_email IS NOT NULL LIMIT 200`,
+		)
+		.bind(referrerUserId)
+		.all<{ email: string }>();
+	if (ownEmails.results.some((row) => canonicalEmail(row.email) === buyerEmail))
 		return true;
 	const ip = buyer.ip?.trim();
 	if (

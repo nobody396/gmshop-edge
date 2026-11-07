@@ -39,6 +39,29 @@ export function PromotionAccount() {
 						{m.promotion_balance()}: <strong>{money(data.balanceMinor)}</strong>
 					</p>
 					<ReferralInvite />
+					{data.examples?.length ? (
+						<div className="grid gap-2" data-testid="referral-examples">
+							<p className="font-medium text-sm">
+								{m.promotion_examples_title()}
+							</p>
+							<ul className="grid gap-1 text-sm">
+								{data.examples.map((example) => (
+									<li
+										className="flex flex-wrap justify-between gap-x-3"
+										key={example.name}
+									>
+										<span className="min-w-0">{example.name}</span>
+										<span className="text-muted-foreground">
+											{m.promotion_example_amount({
+												discount: money(example.discountMinor),
+												reward: money(example.rewardMinor),
+											})}
+										</span>
+									</li>
+								))}
+							</ul>
+						</div>
+					) : null}
 					{consent.isError ? <p role="alert">{m.promotion_error()}</p> : null}
 					<label className="flex items-start gap-2 text-sm">
 						<input

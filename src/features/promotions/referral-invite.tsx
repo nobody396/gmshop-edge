@@ -19,9 +19,12 @@ export function referralInviteUrl(code: string, origin: string) {
 
 /** Invitation pitch plus the customer's invite link (opened on demand). Requires a signed-in customer. */
 export function ReferralInvite({
+	discountMinor = "0",
 	rewardMinor = "0",
 }: {
-	/** Friend discount (= referrer reward) for one unit of a relevant item, CNY cents. */
+	/** Friend discount for one unit of a relevant item, CNY cents. */
+	discountMinor?: string;
+	/** Referrer reward for the same unit, CNY cents. */
 	rewardMinor?: string;
 }) {
 	const client = useQueryClient();
@@ -39,16 +42,20 @@ export function ReferralInvite({
 	const referral = query.data?.referral ?? open.data ?? null;
 	const link =
 		referral && origin ? referralInviteUrl(referral.code, origin) : "";
+	const positive = (value: string) => /^\d+$/.test(value) && BigInt(value) > 0n;
 	const amount =
-		/^\d+$/.test(rewardMinor) && BigInt(rewardMinor) > 0n
-			? formatMinorAmountWithSymbol(rewardMinor, "CNY", 2)
+		positive(rewardMinor) && positive(discountMinor)
+			? {
+					discount: formatMinorAmountWithSymbol(discountMinor, "CNY", 2),
+					reward: formatMinorAmountWithSymbol(rewardMinor, "CNY", 2),
+				}
 			: null;
 	return (
 		<div className="grid gap-3" data-testid="referral-invite">
 			<p className="font-medium text-sm">{m.promotion_invite_pitch()}</p>
 			{amount ? (
 				<p className="text-primary text-sm">
-					{m.promotion_invite_amount({ amount })}
+					{m.promotion_invite_amount(amount)}
 				</p>
 			) : null}
 			{query.isPending ? (

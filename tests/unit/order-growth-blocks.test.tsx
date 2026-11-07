@@ -26,8 +26,10 @@ vi.mock("#/paraglide/messages", () => ({
 	m: new Proxy(
 		{},
 		{
-			get: (_, key) => (input?: { amount?: string }) =>
-				input?.amount ? `${String(key)}:${input.amount}` : String(key),
+			get: (_, key) => (input?: { discount?: string; reward?: string }) =>
+				input?.reward
+					? `${String(key)}:${input.discount}/${input.reward}`
+					: String(key),
 		},
 	),
 }));
@@ -41,7 +43,8 @@ import type { OrderGrowth } from "#/features/storefront/server/order-growth";
 const code = "INV-ABCDEFGHIJKLMNOPQRST";
 const growth = (patch: Partial<OrderGrowth> = {}): OrderGrowth => ({
 	signedIn: true,
-	referralRewardMinor: "100",
+	referralDiscountMinor: "30",
+	referralRewardMinor: "70",
 	crossSell: [],
 	...patch,
 });
@@ -128,7 +131,9 @@ describe("order growth blocks", () => {
 			"#referral-invite-link",
 		);
 		expect(input?.value).toBe(`${window.location.origin}/?ref=${code}`);
-		expect(container.textContent).toContain("promotion_invite_amount:¥1.00");
+		expect(container.textContent).toContain(
+			"promotion_invite_amount:¥0.30/¥0.70",
+		);
 		expect(container.textContent).not.toContain("promotion_open");
 	});
 

@@ -165,19 +165,16 @@ describe("order growth blocks", { timeout: 60_000 }, () => {
 		expect(await loadOrderGrowth(db, order("o1"), { signedIn: false })).toEqual(
 			{
 				signedIn: false,
-				referralRewardMinor: "100",
+				referralDiscountMinor: "60",
+				referralRewardMinor: "140",
 				crossSell: [],
 			},
 		);
-		// ¥8 budgets only apply from ¥1000; below that the SKU does not take part.
-		await seedOrder(db, "o2", ["item-b"]);
-		expect(
-			(await loadOrderGrowth(db, order("o2"), signedIn))?.referralRewardMinor,
-		).toBe("0");
+		// Invitations use the margin-derived budget with no ¥8 cap: friend 30%, referrer 70%.
 		await seedOrder(db, "o3", ["item-expensive"]);
-		expect(
-			(await loadOrderGrowth(db, order("o3"), signedIn))?.referralRewardMinor,
-		).toBe("400");
+		const expensive = await loadOrderGrowth(db, order("o3"), signedIn);
+		expect(expensive?.referralDiscountMinor).toBe("240");
+		expect(expensive?.referralRewardMinor).toBe("560");
 	});
 
 	it("resolves /go/item deep links and keeps a safe src", async () => {
@@ -255,10 +252,11 @@ async function seedCatalog(db: D1Database) {
 				.prepare(
 					`INSERT INTO product_sellable_items
 					 (id, product_id, name, price_minor, currency, currency_decimals, enabled,
-					  sale_disabled, promotion_budget_minor, sort_order, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, 'CNY', 2, ?, ?, ?, 0, 1, 1)`,
+					  sale_disabled, promotion_budget_minor, referral_budget_minor, sort_order, created_at, updated_at)
+					 VALUES (?, ?, ?, ?, 'CNY', 2, ?, ?, ?, ?, 0, 1, 1)`,
 				)
-				.bind(id, product, name, price, enabled, saleDisabled, budget),
+				// The seeded tier doubles as the margin-derived invitation budget.
+				.bind(id, product, name, price, enabled, saleDisabled, budget, budget),
 		),
 	]);
 }

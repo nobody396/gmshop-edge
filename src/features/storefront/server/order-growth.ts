@@ -46,6 +46,8 @@ export function crossSellProductPath(
 export type OrderGrowth = {
 	signedIn: boolean;
 	/** Friend discount (= referrer reward) for one unit of the purchased item, CNY cents. */
+	/** Best single-unit invitation among this order's items: friend discount and referrer reward, CNY cents. */
+	referralDiscountMinor: string;
 	referralRewardMinor: string;
 	crossSell: Array<{
 		sellableItemId: string;
@@ -75,8 +77,8 @@ export async function loadOrderGrowth(
 		db
 			.prepare(
 				`SELECT oi.product_id, oi.sellable_item_id,
-				 CASE WHEN s.promotion_budget_minor='800' AND CAST(s.price_minor AS INTEGER)<100000
-				  THEN '0' ELSE COALESCE(s.promotion_budget_minor,'0') END AS promotion_budget_minor,
+				 CASE WHEN COALESCE(s.promotion_budget_minor,'0')='0' THEN '0'
+				  ELSE COALESCE(s.referral_budget_minor,'0') END AS promotion_budget_minor,
 				 s.price_minor, s.currency
 				 FROM shop_order_items oi
 				 LEFT JOIN product_sellable_items s ON s.id = oi.sellable_item_id
@@ -116,14 +118,16 @@ export async function loadOrderGrowth(
 	const candidates = [
 		...new Set([...purchased].flatMap((itemId) => mapping.get(itemId) ?? [])),
 	].filter((id) => !purchased.has(id));
+	const referral = referralQuoteFor(items);
 	return {
 		signedIn: access.signedIn,
-		referralRewardMinor: referralRewardFor(items),
+		referralDiscountMinor: referral.discountMinor,
+		referralRewardMinor: referral.rewardMinor,
 		crossSell: await loadRecommendations(db, candidates),
 	};
 }
 
-function referralRewardFor(
+function referralQuoteFor(
 	items: Array<{
 		sellable_item_id: string | null;
 		promotion_budget_minor: string;
@@ -131,7 +135,7 @@ function referralRewardFor(
 		currency: string | null;
 	}>,
 ) {
-	let best = 0n;
+	let best = { discount: 0n, reward: 0n };
 	for (const item of items) {
 		if (
 			!item.sellable_item_id ||
@@ -149,13 +153,17 @@ function referralRewardFor(
 					quantity: 1,
 				},
 			]);
-			const amount = BigInt(quote.discountMinor);
-			if (amount > best) best = amount;
+			const reward = BigInt(quote.rewardMinor);
+			if (reward > best.reward)
+				best = { discount: BigInt(quote.discountMinor), reward };
 		} catch {
 			/* An invalid SKU budget simply shows the generic invitation copy. */
 		}
 	}
-	return best.toString();
+	return {
+		discountMinor: best.discount.toString(),
+		rewardMinor: best.reward.toString(),
+	};
 }
 
 async function loadRecommendations(db: D1Database, ids: string[]) {

@@ -14,12 +14,13 @@ export const listPromotionSkusFn = createServerFn({ method: "GET" }).handler(
 		);
 		return (
 			await db.$client
-				.prepare(`SELECT i.id,i.name,i.promotion_budget_minor,i.currency,i.price_minor FROM product_sellable_items i
+				.prepare(`SELECT i.id,i.name,i.promotion_budget_minor,i.referral_budget_minor,i.currency,i.price_minor FROM product_sellable_items i
   JOIN products p ON p.id=i.product_id WHERE p.status='active' AND i.enabled=1 ORDER BY p.sort_order,p.name,i.sort_order,i.name`)
 				.all<{
 					id: string;
 					name: string;
 					promotion_budget_minor: string;
+					referral_budget_minor: string;
 					currency: string;
 					price_minor: string;
 				}>()
