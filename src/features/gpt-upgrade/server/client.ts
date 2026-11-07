@@ -43,6 +43,6 @@ export const upgradePaidResponseSchema = z.object({
 			.regex(
 				/^https:\/\/redeem\.laoshirenvip\.com\/upgrade\/status\/[A-Za-z0-9_-]+$/,
 			),
-		state: z.literal("queued"),
+		state: z.string().min(1).max(32),
 	}),
 });

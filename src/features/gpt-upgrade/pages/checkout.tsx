@@ -172,18 +172,20 @@ export function UpgradeCheckoutPage() {
 					<dl className="grid gap-4 text-sm">
 						<div className="flex flex-wrap justify-between gap-2">
 							<dt className="text-muted-foreground">{m.upgrade_account()}</dt>
-							<dd className="break-all">{data.account_hint}</dd>
+							<dd className="break-all">{data.account_hint ?? "—"}</dd>
 						</div>
 						<div className="flex flex-wrap justify-between gap-2">
 							<dt className="text-muted-foreground">{m.upgrade_source()}</dt>
-							<dd>{data.source_label}</dd>
+							<dd>{data.source_label ?? "—"}</dd>
 						</div>
 						<div className="flex flex-wrap justify-between gap-2">
 							<dt className="text-muted-foreground">
 								{m.upgrade_remaining_days()}
 							</dt>
 							<dd>
-								{new Intl.NumberFormat(locale).format(data.remaining_days)}
+								{data.remaining_days === null
+									? "—"
+									: new Intl.NumberFormat(locale).format(data.remaining_days)}
 							</dd>
 						</div>
 					</dl>
