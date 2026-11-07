@@ -60,7 +60,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	"ba540b83-388d-45d1-9dcb-25c3da3f9956": {
 		name: "Claude Membership Recharge",
 		description:
-			"Claude Pro and Claude Max membership recharge. Select a plan to review eligibility, warranty, and restrictions.",
+			"Claude Pro and Claude Max membership recharge. Before ordering, run the Claude account self-check on the redemption site (redeem.laoshirenvip.com/#kyc): finish KYC first if it is flagged, otherwise the account is usually KYC-exempt. Claude may still ask for KYC later; that is outside our control and the subscription may not arrive. Only accounts registered before 2026-09-15 are accepted. Select a plan to review eligibility, warranty, and restrictions.",
 	},
 	"3e60e88d-a0bd-4723-bc9e-ff45f6dafa16": {
 		name: "X Subscription｜4-in-1｜X Premium + Grok + Grok Bot + Cursor",
@@ -420,14 +420,14 @@ const codexPolicy = policy(
 	"Credits cannot be returned or exchanged after they arrive.",
 	"GPT Free accounts cannot buy; bans, regional issues, disclosure, or user error are not covered.",
 );
-const claudeRestrictions =
+const claudeBaseRestrictions =
 	"Bans are not covered; no refund when Billing arrears or refunds, a hidden organization ban, or an account that cannot send messages blocks delivery; do not buy unless you understand account risk controls.";
-const claudeMaxRestrictions = `New accounts cannot recharge 5X / 20X; the account must be registered for at least one month, or the subscription may not arrive. This cannot be checked in advance, so confirm before recharging.
+const claudeKycGuidance = `Before ordering, run the "Claude account self-check" on the redemption site (redeem.laoshirenvip.com/#kyc): if it shows that identity verification (KYC) is required, finish KYC first and recharge afterwards; accounts without that flag are usually KYC-exempt and can be recharged right away. Claude may still ask for verification after the recharge; that is outside our control, the subscription may then fail to arrive and no refund is given. We only recharge the subscription and do not complete or guarantee KYC.
+Only accounts registered before 2026-09-15 are accepted; later accounts are refused at submission and the code stays unused.`;
+const claudeRestrictions = `${claudeKycGuidance}
 
-Important｜Claude Max identity verification (KYC)
-For Claude Max 5X / 20X, use an account that has passed KYC or is KYC-exempt. KYC is Claude's official requirement and unrelated to our recharge; we only recharge the subscription and do not complete or guarantee KYC. Do not order if the account cannot pass verification.
-
-${claudeRestrictions}`;
+${claudeBaseRestrictions}`;
+const claudeMaxRestrictions = claudeRestrictions;
 const claudePolicy = (restrictions: string) =>
 	policy(
 		automatic,
