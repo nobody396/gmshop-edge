@@ -35,7 +35,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	[gptUpgradeProduct.productId]: {
 		name: "ChatGPT membership upgrade (price difference)",
 		description:
-			"Get a quote at the redemption site → pay → automatic upgrade. Upgrade a web Plus / Pro subscription to Pro 100 / Pro 200 / Pro 500. Apple / Google store subscriptions cannot be upgraded. The zero list price is only a placeholder; pay the quoted amount.",
+			"Already on a web ChatGPT Plus / Pro subscription? Upgrade the same account to Pro 100 / Pro 200 / Pro 500 and pay only the difference. Get a quote at the redemption site, pay, and the upgrade runs automatically, usually within 1–10 minutes. Apple / Google store subscriptions and Go plans are not supported. This covers only this upgrade's difference, not future renewals.",
 	},
 	[agentAccessProducts.subsite.productId]: {
 		name: "One-time hosted storefront access",
@@ -469,11 +469,11 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 	[gptUpgradeProduct.itemId]: {
 		name: "Quoted price difference",
 		policy: policy(
-			"Automatic upgrade after payment",
-			"Usually 1–10 minutes; track progress from your order",
-			"Upgrade your existing web subscription",
-			"Contact the shop for upgrade issues",
-			"Get a quote first. Apple / Google store subscriptions are not supported.",
+			"Automatic upgrade after payment, no recharge code needed",
+			"Usually 1–10 minutes; open the progress link on your order page",
+			"Upgrades the same account to Pro 100 / Pro 200 / Pro 500; account and chats stay as they are. Covers only this upgrade's difference, not future renewals",
+			"Upgrades that do not complete go to manual handling and are fully refunded if not applied. Whether the plan auto-renews afterwards is up to ChatGPT; check subscription management in ChatGPT settings",
+			"Get a quote first; it is valid for 30 minutes. Do not change your ChatGPT password or sign out before paying. Apple / Google store subscriptions, Go plans, and accounts already on the target plan or higher cannot be upgraded",
 		),
 	},
 	[agentAccessProducts.subsite.itemId]: {
