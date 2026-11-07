@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
-import { upgradePaidResponseSchema } from "#/features/gpt-upgrade/server/client";
 import { upgradeQuoteSchema } from "#/features/gpt-upgrade/schema";
+import { upgradePaidResponseSchema } from "#/features/gpt-upgrade/server/client";
+
 // Shapes exactly as laoshirenvip-redeem worker/upgrade.ts readQuote / markPaid emit them (incl. nulls).
 it("accepts the redeem worker's real responses", () => {
 	const quote = {

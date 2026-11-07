@@ -46,6 +46,8 @@ const reviewedPublicServerModules = [
 	// Buyer panel: same-origin check, signed-in session, order ownership checked in SQL.
 	"src/features/claude-env/server/functions.ts",
 	"src/features/exchange-rates/server/public.ts",
+	// Read-only upgrade quote by an unguessable token; validated, guest catalog.read.
+	"src/features/gpt-upgrade/server/functions.ts",
 	// Read-only published guides; drafts and reserved slugs resolve to null.
 	"src/features/guides/server/functions.ts",
 	"src/features/installation/server/functions.ts",
