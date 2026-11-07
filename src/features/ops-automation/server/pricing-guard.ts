@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
 import { saleComponents } from "#/features/redeem-warehouse/server/sale-capacity";
 import { proposeOwnerAction } from "#/features/telegram/server/owner-actions";
 import { DomainError } from "#/lib/domain-error";
@@ -858,6 +859,7 @@ async function loadItems(db: D1Database, onlyItemId?: string) {
 			 FROM product_sellable_items item
 			 JOIN products product ON product.id = item.product_id
 			 WHERE item.enabled = 1 AND item.sale_disabled = 0
+             AND item.id <> '${gptUpgradeProduct.itemId}'
 			  AND (? IS NULL OR item.id = ?)
 			  AND product.status = 'active' AND product.sale_disabled = 0
 			  AND item.currency = 'CNY' AND item.currency_decimals = 2

@@ -2603,5 +2603,13 @@
 	"seo_product_description_fallback": "{name}: {plans}. From {price}, delivered automatically 24/7 right after payment.",
 	"seo_product_stock_in": "In stock",
 	"seo_product_stock_out": "Temporarily out of stock",
-	"store_sms_usage_guide": "SMS setup guide: illustrated step by step"
+	"store_sms_usage_guide": "SMS setup guide: illustrated step by step",
+	"upgrade_checkout_title": "ChatGPT membership upgrade (price difference)",
+	"upgrade_quote_expired": "This quote has expired. Return to the redemption site for a new quote.",
+	"upgrade_get_quote": "Get a new quote",
+	"upgrade_account": "Upgrade account",
+	"upgrade_source": "Current subscription",
+	"upgrade_remaining_days": "Days remaining",
+	"upgrade_expires_in": "Quote expires in: {time}",
+	"upgrade_instructions": "Get a quote → pay → automatic upgrade. Web Plus / Pro subscriptions only, upgrading to Pro 100 / Pro 200 / Pro 500. Apple / Google store subscriptions cannot be upgraded. Buy once, without a coupon."
 }

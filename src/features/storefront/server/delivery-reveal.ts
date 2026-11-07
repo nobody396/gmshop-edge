@@ -49,7 +49,7 @@ export async function revealStoreDelivery(
 			  SELECT grants.entitlement_id FROM entitlement_grants grants
 			 WHERE grants.source_order_item_id = oi.id AND grants.status = 'active' LIMIT 1)
 			 WHERE dr.id = ? AND oi.order_id = ? AND dr.status = 'delivered'
-			 AND dr.delivery_type = 'stock'
+			 AND (dr.delivery_type = 'stock' OR EXISTS(SELECT 1 FROM gpt_upgrade_orders u WHERE u.order_item_id=oi.id AND u.state='delivered'))
 			 AND ce.status IN ('active', 'exhausted')
 			 AND (ce.expires_at IS NULL OR ce.expires_at > ?)
 			 AND dr.content_encrypted IS NOT NULL LIMIT 1`,
@@ -57,7 +57,7 @@ export async function revealStoreDelivery(
 		.bind(input.deliveryId, order.id, Date.now())
 		.first<{
 			content_encrypted: string;
-			delivery_type: "stock";
+			delivery_type: "stock" | "automation";
 			redeem_sku: string | null;
 			has_converted_stock: number;
 			entitlement_id: string;
@@ -66,6 +66,10 @@ export async function revealStoreDelivery(
 		}>();
 	if (!delivery)
 		throw new DomainError("delivery_not_found", 404, "Delivery not found");
+	const assetType =
+		delivery.delivery_type === "stock"
+			? ("stock_secret" as const)
+			: ("automation_artifact" as const);
 	if (action === "copied") {
 		await db
 			.prepare(
@@ -77,7 +81,7 @@ export async function revealStoreDelivery(
 			.bind(
 				crypto.randomUUID(),
 				delivery.entitlement_id,
-				"stock_secret",
+				assetType,
 				input.deliveryId,
 				input.request?.headers.get("x-request-id") ?? null,
 				input.request?.headers.get("cf-connecting-ip") ?? null,
@@ -94,13 +98,14 @@ export async function revealStoreDelivery(
 			"Delivery configuration unavailable",
 		);
 	const redeemUrl = await redeemUrlForOrder(db, order.id);
-	const content = withRedeemHost(
-		await decryptDeliveryContent(
-			delivery.content_encrypted,
-			runtime.commerceSecret,
-		),
-		redeemUrl,
+	const plaintext = await decryptDeliveryContent(
+		delivery.content_encrypted,
+		runtime.commerceSecret,
 	);
+	const content =
+		delivery.delivery_type === "automation"
+			? plaintext
+			: withRedeemHost(plaintext, redeemUrl);
 	const usageUrl = delivery.redeem_sku
 		? redeemUrl
 		: delivery.has_converted_stock
@@ -111,7 +116,7 @@ export async function revealStoreDelivery(
 				);
 	await consumeEntitlementAccess(db, {
 		entitlementId: delivery.entitlement_id,
-		assetType: "stock_secret",
+		assetType: assetType,
 		assetId: input.deliveryId,
 		eventType: "revealed",
 		actorType: "customer",

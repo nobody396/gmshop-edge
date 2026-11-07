@@ -2603,5 +2603,13 @@
 	"seo_product_description_fallback": "{name}：{plans}。{price} 起，24 小时自动发货，付款后自动交付卡密。",
 	"seo_product_stock_in": "有货",
 	"seo_product_stock_out": "暂时缺货",
-	"store_sms_usage_guide": "查看接码图文教程：每一步都有配图"
+	"store_sms_usage_guide": "查看接码图文教程：每一步都有配图",
+	"upgrade_checkout_title": "ChatGPT 会员升级（补差价）",
+	"upgrade_quote_expired": "报价已失效，请回兑换站重新查价",
+	"upgrade_get_quote": "去兑换站查价",
+	"upgrade_account": "升级账号",
+	"upgrade_source": "当前订阅",
+	"upgrade_remaining_days": "剩余天数",
+	"upgrade_expires_in": "报价倒计时：{time}",
+	"upgrade_instructions": "先查价 → 付款 → 自动升级。仅支持 Plus / Pro 网页订阅升级到 Pro 100 / Pro 200 / Pro 500；苹果 / 谷歌商店订阅不能升级。仅购买一次，不支持优惠券。"
 }

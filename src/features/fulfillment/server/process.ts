@@ -4,6 +4,7 @@ import {
 	decryptDeliveryContent,
 	encryptDeliveryContent,
 } from "#/features/fulfillment/secrets";
+import { processUpgradeDelivery } from "#/features/gpt-upgrade/server/fulfillment";
 import {
 	type ConvertibleStock,
 	convertReservedStock,
@@ -28,6 +29,8 @@ type DeliveryContext = {
 };
 
 export async function processDelivery(db: D1Database, deliveryId: string) {
+	const upgradeDelivery = await processUpgradeDelivery(db, deliveryId);
+	if (upgradeDelivery) return upgradeDelivery;
 	const agentDelivery = await processAgentDelivery(db, deliveryId);
 	if (agentDelivery) return agentDelivery;
 	const delivery = await db

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { upgradeQuoteTokenSchema } from "#/features/gpt-upgrade/schema";
 import { supportedLocales } from "#/lib/locales";
 
 export const storefrontListSchema = z.object({
@@ -64,6 +65,7 @@ const orderInputValuesSchema = z
 	.default({});
 
 const orderContactSchema = {
+	upgradeQuoteToken: upgradeQuoteTokenSchema.optional(),
 	agentAccessTermsAccepted: z.boolean().optional(),
 	// Optional lsrai.shop sub-site label; validated with lsrai.shop at checkout.
 	agentSubsitePrefix: z.string().trim().toLowerCase().max(32).nullish(),

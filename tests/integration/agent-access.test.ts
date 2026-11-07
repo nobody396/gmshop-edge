@@ -160,7 +160,13 @@ describe("paid agent access", { timeout: 30000 }, () => {
 				.first("price_minor"),
 		).toBe("1234");
 		expect(
-			await db.prepare("SELECT COUNT(*) AS n FROM products").first("n"),
+			await db
+				.prepare("SELECT COUNT(*) AS n FROM products WHERE id IN (?,?)")
+				.bind(
+					agentAccessProducts.api.productId,
+					agentAccessProducts.subsite.productId,
+				)
+				.first("n"),
 		).toBe(2);
 	});
 	it("rejects guests, unverified email, coupons, mixed carts, duplicates and disabled sales", async () => {

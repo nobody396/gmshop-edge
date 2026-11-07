@@ -150,14 +150,16 @@ export async function fanOutPendingCommerceNotifications(
 				deliveryPolicy?.emailMode === "content" &&
 				deliveryPolicy.contentEncrypted &&
 				runtime.commerceSecret
-			)
-				deliveryContent = withRedeemHost(
-					await decryptDeliveryContent(
-						deliveryPolicy.contentEncrypted,
-						runtime.commerceSecret,
-					),
-					await redeemUrlForOrder(db, order.id),
+			) {
+				const plaintext = await decryptDeliveryContent(
+					deliveryPolicy.contentEncrypted,
+					runtime.commerceSecret,
 				);
+				deliveryContent =
+					deliveryPolicy.assetType === "automation_artifact"
+						? plaintext
+						: withRedeemHost(plaintext, await redeemUrlForOrder(db, order.id));
+			}
 			const rendered = renderNotificationTemplate(template.body, values);
 			await enqueueConfiguredEmailNotification(db, {
 				event,
@@ -205,7 +207,8 @@ async function loadDeliveryPresentation(db: D1Database, deliveryId: string) {
 	const row = await db
 		.prepare(
 			`SELECT item.delivery_component_type, item.duration_ms, item.usage_limit, item.access_limit,
-			 item.email_mode, delivery.content_encrypted, grant_row.entitlement_id
+			 item.email_mode, delivery.content_encrypted, grant_row.entitlement_id,
+ EXISTS(SELECT 1 FROM gpt_upgrade_orders u WHERE u.order_item_id=item.id AND u.state='delivered') AS upgrade_delivery
 			 FROM delivery_records delivery
 			 JOIN shop_order_items item ON item.id = delivery.order_item_id
 			 JOIN entitlement_grants grant_row ON grant_row.source_order_item_id = item.id
@@ -214,6 +217,7 @@ async function loadDeliveryPresentation(db: D1Database, deliveryId: string) {
 		.bind(deliveryId)
 		.first<{
 			delivery_component_type: "stock" | "download" | "automation";
+			upgrade_delivery: number;
 			duration_ms: number | null;
 			usage_limit: number | null;
 			access_limit: number | null;
@@ -223,15 +227,19 @@ async function loadDeliveryPresentation(db: D1Database, deliveryId: string) {
 		}>();
 	if (!row) return null;
 	const contentAllowed =
-		row.delivery_component_type === "stock" &&
+		(row.delivery_component_type === "stock" ||
+			Boolean(row.upgrade_delivery)) &&
 		row.duration_ms === null &&
 		row.usage_limit === null &&
 		row.access_limit === null;
 	return {
 		entitlementId: row.entitlement_id,
 		assetType: deliveryAssetType(row.delivery_component_type),
-		emailMode:
-			row.email_mode === "content" && !contentAllowed ? "link" : row.email_mode,
+		emailMode: row.upgrade_delivery
+			? "content"
+			: row.email_mode === "content" && !contentAllowed
+				? "link"
+				: row.email_mode,
 		contentEncrypted: contentAllowed ? row.content_encrypted : null,
 	};
 }
