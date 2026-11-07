@@ -98,6 +98,14 @@ describe("product SEO", () => {
 		});
 	});
 
+	it("never prices the quote-based ChatGPT upgrade from its zero placeholder", () => {
+		expect(
+			productPriceSummary(
+				product({ id: "10000000-0000-4000-8000-000000000001" }),
+			),
+		).toBeNull();
+	});
+
 	it("builds a distinct title, canonical, Open Graph and Product JSON-LD", () => {
 		const head = createProductSeoHead(product(), "老实人AI", "zh-CN");
 		expect(head.meta).toContainEqual({

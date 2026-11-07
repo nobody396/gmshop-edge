@@ -2606,6 +2606,7 @@
 	"store_sms_usage_guide": "SMS setup guide: illustrated step by step",
 	"upgrade_checkout_title": "ChatGPT membership upgrade (price difference)",
 	"upgrade_quote_expired": "This quote has expired. Return to the redemption site for a new quote.",
+	"upgrade_price_by_quote": "Priced per account",
 	"upgrade_get_quote": "Get a new quote",
 	"upgrade_account": "Upgrade account",
 	"upgrade_source": "Current subscription",

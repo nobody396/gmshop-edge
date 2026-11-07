@@ -462,11 +462,15 @@ export function StorefrontProductPage({
 															</span>
 															<span className="flex flex-wrap items-baseline justify-between gap-x-2">
 																<span className="whitespace-nowrap font-semibold text-primary text-sm">
-																	<StoreMoney
-																		amountMinor={item.priceMinor}
-																		currency={item.currency}
-																		decimals={item.currencyDecimals}
-																	/>
+																	{item.id === gptUpgradeProduct.itemId ? (
+																		m.upgrade_price_by_quote()
+																	) : (
+																		<StoreMoney
+																			amountMinor={item.priceMinor}
+																			currency={item.currency}
+																			decimals={item.currencyDecimals}
+																		/>
+																	)}
 																</span>
 																<span className="shrink-0 text-muted-foreground text-[11px] tabular-nums">
 																	{item.saleDisabled
@@ -524,11 +528,15 @@ export function StorefrontProductPage({
 													) : null}
 												</span>
 												<span className="font-semibold text-base text-primary">
-													<StoreMoney
-														amountMinor={item.priceMinor}
-														currency={item.currency}
-														decimals={item.currencyDecimals}
-													/>
+													{item.id === gptUpgradeProduct.itemId ? (
+														m.upgrade_price_by_quote()
+													) : (
+														<StoreMoney
+															amountMinor={item.priceMinor}
+															currency={item.currency}
+															decimals={item.currencyDecimals}
+														/>
+													)}
 												</span>
 												<span
 													aria-hidden="true"
@@ -1107,6 +1115,12 @@ function SellableItemSummary({
 	pricing: ItemPricing | undefined;
 	quantity: number;
 }) {
+	if (sellableItem.id === gptUpgradeProduct.itemId)
+		return (
+			<p className="font-semibold text-2xl text-primary">
+				{m.upgrade_price_by_quote()}
+			</p>
+		);
 	const isFree = BigInt(sellableItem.priceMinor) === 0n;
 	const hasDiscount =
 		sellableItem.listPriceMinor != null &&
@@ -1229,6 +1243,7 @@ function QuantityTotal({
 	pricing: ItemPricing | undefined;
 	quantity: number;
 }) {
+	if (sellableItem.id === gptUpgradeProduct.itemId) return null;
 	if (!Number.isInteger(quantity) || quantity < 1) return null;
 	const channels =
 		sellableItem.channelPrices.length > 0 ? sellableItem.channelPrices : [null];
