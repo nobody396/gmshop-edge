@@ -407,10 +407,13 @@ export function StorefrontProductPage({
 							<p>{m.store_claude_channel_notice()}</p>
 						</div>
 					) : null}
-					<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 text-amber-700 text-sm leading-6 dark:text-amber-300">
-						<BadgePercent className="mt-0.5 size-4 shrink-0" />
-						<p>{m.store_alipay_fee_notice()}</p>
-					</div>
+					{/* Upgrades charge the exact quote on every channel, so the Alipay surcharge note would mislead. */}
+					{data.id === gptUpgradeProduct.productId ? null : (
+						<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 text-amber-700 text-sm leading-6 dark:text-amber-300">
+							<BadgePercent className="mt-0.5 size-4 shrink-0" />
+							<p>{m.store_alipay_fee_notice()}</p>
+						</div>
+					)}
 					{data.saleDisabled ? (
 						<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-destructive text-sm leading-6">
 							<Ban className="mt-0.5 size-4 shrink-0" />
