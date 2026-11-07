@@ -70,8 +70,13 @@ export const getPromotionAccountFn = createServerFn({ method: "GET" }).handler(
 		return {
 			examples: examples.results.map((row) => {
 				const split = splitReferralBudget(BigInt(row.referral_budget_minor));
+				// "Premium｜1年" alone is ambiguous; prefix the product unless the name already says it.
+				const brand = row.product_name.split(/[\s｜]/)[0] ?? "";
 				return {
-					name: row.item_name,
+					name:
+						brand && !row.item_name.includes(brand)
+							? `${row.product_name.split("｜")[0]} · ${row.item_name}`
+							: row.item_name,
 					discountMinor: split.discount.toString(),
 					rewardMinor: split.reward.toString(),
 				};
