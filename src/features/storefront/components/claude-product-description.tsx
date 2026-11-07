@@ -6,7 +6,7 @@ export function ClaudeProductDescription({
 }: {
 	description: string;
 }) {
-	const title = "重要提示｜Claude Max 身份验证（KYC）";
+	const title = "重要提示｜Claude 身份验证（KYC）";
 	const hasNotice = description.startsWith(`${title}\n`);
 	const separator = description.indexOf("\n\n");
 	if (!hasNotice || separator < 0) {
@@ -37,7 +37,7 @@ export function ClaudeProductDescription({
 				<p className="mt-4 whitespace-pre-wrap font-semibold text-base leading-8 sm:text-lg">
 					{notice
 						.split(
-							/(新账号禁止充值|已注册至少一个月|可能存在不到账|无法事先检测|已通过 KYC 或免 KYC 的账号|百分百需要 KYC 身份验证|KYC 需买家自行解决|请勿下单)/u,
+							/(下单前先到兑换站「Claude 账号自查」检查账号|先完成认证再充值|本店不负责|可能不到账且不退款|2026 年 9 月 15 日前注册|新账号禁止充值|已注册至少一个月|可能存在不到账|无法事先检测|已通过 KYC 或免 KYC 的账号|百分百需要 KYC 身份验证|KYC 需买家自行解决|请勿下单)/u,
 						)
 						.map((part, index) =>
 							index % 2 === 1 ? (
