@@ -72,6 +72,14 @@ describe("quoted ChatGPT upgrades", { timeout: 30_000 }, () => {
 		});
 		db = await mf.getD1Database("DB");
 		await applyMigrations(db);
+		// 0050 seeds the upgrade product only on the laoshirenvip catalog, anchored to this product.
+		await db
+			.prepare(
+				"INSERT INTO products(id,name,product_type,status,sort_order) VALUES (?,'ChatGPT 会员充值','stock','active',200)",
+			)
+			.bind(chatgptProductId)
+			.run();
+		await seedUpgradeProduct(db);
 		await db
 			.prepare(
 				"INSERT INTO system_settings(key,value) VALUES ('runtime.data_encryption_secret',?),('commerce.default_currency','\"CNY\"'),('integration.redeem_warehouse_token',?)",
@@ -594,26 +602,18 @@ describe("quoted ChatGPT upgrades", { timeout: 30_000 }, () => {
 			"gpt_upgrade_orders_retry_idx",
 		);
 	});
-	it("applies the new migration in a sorting gap without changing any existing product", async () => {
+	it("seeds right after the ChatGPT product in the first free gap without changing any existing product", async () => {
+		await removeUpgradeProduct(db);
 		await db
-			.prepare("DELETE FROM product_sellable_items WHERE id=?")
-			.bind(gptUpgradeProduct.itemId)
-			.run();
-		await db
-			.prepare("DELETE FROM products WHERE id=?")
-			.bind(gptUpgradeProduct.productId)
+			.prepare("UPDATE products SET sort_order=10 WHERE id=?")
+			.bind(chatgptProductId)
 			.run();
 		await db
 			.prepare(
-				"INSERT INTO products(id,name,product_type,status,sort_order) VALUES ('old-a','A','stock','active',10),('old-b','B','stock','active',20)",
+				"INSERT INTO products(id,name,product_type,status,sort_order) VALUES ('old-a','A','stock','active',5),('old-b','B','stock','active',11),('old-c','C','stock','active',20)",
 			)
 			.run();
-		const sql = await readFile(
-			new URL("../../drizzle/0050_gpt_upgrade.sql", import.meta.url),
-			"utf8",
-		);
-		for (const statement of sql.split("--> statement-breakpoint").slice(2))
-			await db.prepare(statement).run();
+		await seedUpgradeProduct(db);
 		expect(
 			(
 				await db
@@ -621,9 +621,55 @@ describe("quoted ChatGPT upgrades", { timeout: 30_000 }, () => {
 					.all()
 			).results,
 		).toEqual([
-			{ id: "old-a", sort_order: 10 },
-			{ id: gptUpgradeProduct.productId, sort_order: 11 },
-			{ id: "old-b", sort_order: 20 },
+			{ id: "old-a", sort_order: 5 },
+			{ id: chatgptProductId, sort_order: 10 },
+			{ id: "old-b", sort_order: 11 },
+			{ id: gptUpgradeProduct.productId, sort_order: 12 },
+			{ id: "old-c", sort_order: 20 },
 		]);
 	});
+	it("does not seed the upgrade product on a catalog without the ChatGPT product", async () => {
+		await removeUpgradeProduct(db);
+		await db
+			.prepare("DELETE FROM products WHERE id=?")
+			.bind(chatgptProductId)
+			.run();
+		await seedUpgradeProduct(db);
+		expect(
+			(
+				await db
+					.prepare("SELECT COUNT(*) AS n FROM products")
+					.first<{ n: number }>()
+			)?.n,
+		).toBe(0);
+		expect(
+			(
+				await db
+					.prepare("SELECT COUNT(*) AS n FROM product_sellable_items")
+					.first<{ n: number }>()
+			)?.n,
+		).toBe(0);
+	});
 });
+
+const chatgptProductId = "2a794b89-3bb9-49d4-8691-0d13a1606869";
+
+async function seedUpgradeProduct(db: D1Database) {
+	const sql = await readFile(
+		new URL("../../drizzle/0050_gpt_upgrade.sql", import.meta.url),
+		"utf8",
+	);
+	for (const statement of sql.split("--> statement-breakpoint").slice(2))
+		await db.prepare(statement).run();
+}
+
+async function removeUpgradeProduct(db: D1Database) {
+	await db
+		.prepare("DELETE FROM product_sellable_items WHERE id=?")
+		.bind(gptUpgradeProduct.itemId)
+		.run();
+	await db
+		.prepare("DELETE FROM products WHERE id=?")
+		.bind(gptUpgradeProduct.productId)
+		.run();
+}
