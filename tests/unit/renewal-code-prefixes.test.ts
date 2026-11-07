@@ -34,3 +34,26 @@ describe("renewal warehouse code extraction", () => {
 		expect(extractWarehouseCodes(text)).toEqual(extractWarehouseCodes(text));
 	});
 });
+
+describe("live catalog prefixes", () => {
+	const unknown = "gpt-999-zz-ABCD-EFGH-JKLM-NPQR";
+
+	it("recognizes a prefix only the live list knows", () => {
+		expect(extractWarehouseCodes(unknown)).toEqual([]);
+		expect(
+			extractWarehouseCodes(unknown, [...redeemCodePrefixes, "gpt-999-zz"]),
+		).toEqual([unknown.toLowerCase()]);
+	});
+
+	it("ignores malformed prefixes instead of building a broken pattern", () => {
+		expect(
+			extractWarehouseCodes(unknown, [...redeemCodePrefixes, "a|b", "(x"]),
+		).toEqual([]);
+		expect(
+			extractWarehouseCodes("gpt-plus-ph-ABCD-EFGH-JKLM-NPQR", [
+				...redeemCodePrefixes,
+				"a|b",
+			]),
+		).toEqual(["gpt-plus-ph-abcd-efgh-jklm-npqr"]);
+	});
+});

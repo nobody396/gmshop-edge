@@ -23,6 +23,7 @@ import {
 	isRenewalStageStale,
 	type RenewalStage,
 	redeemCodeHash,
+	redeemCodePrefixes,
 	renderRenewalEmail,
 	renewalBackfillSince,
 	renewalExpiresAt,
@@ -30,6 +31,10 @@ import {
 	renewalStageDueAt,
 	renewalStages,
 } from "../domain";
+import {
+	type CodePrefixSource,
+	loadRenewalCodePrefixes,
+} from "./code-prefixes";
 import {
 	renewalOrigin,
 	renewalSiteDomain,
@@ -122,6 +127,8 @@ export async function runRenewalReminders(
 		now?: number;
 		force?: boolean;
 		lookup?: RedeemLookup;
+		/** Card-code prefixes to recognize; defaults to live catalog ∪ built-in. */
+		codePrefixes?: CodePrefixSource;
 		discoverLimit?: number;
 		lookupLimit?: number;
 		sendLimit?: number;
@@ -143,6 +150,7 @@ export async function runRenewalReminders(
 		now,
 		options.discoverLimit ?? 50,
 		() => meter.remaining() > discoveryReserve,
+		options.codePrefixes ?? (() => loadRenewalCodePrefixes(metered, { now })),
 	);
 	const lookup =
 		options.lookup ?? warehouseRedeemLookup(metered, runtime.commerceSecret);
@@ -281,7 +289,14 @@ async function discoverReminders(
 	now: number,
 	limit: number,
 	canContinue: () => boolean = () => true,
+	codePrefixes: CodePrefixSource = async () => redeemCodePrefixes,
 ) {
+	// Read lazily, at most once per run, and only when a delivery needs it.
+	let prefixes: Promise<readonly string[]> | undefined;
+	const livePrefixes = () => {
+		prefixes ??= codePrefixes();
+		return prefixes;
+	};
 	const rows = await db
 		.prepare(
 			`SELECT d.id AS delivery_id, d.content_encrypted, d.delivered_at,
@@ -321,6 +336,7 @@ async function discoverReminders(
 						row.content_encrypted,
 						runtime.commerceSecret,
 					),
+					await livePrefixes(),
 				);
 			} catch {
 				codes = [];
