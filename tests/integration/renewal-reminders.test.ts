@@ -357,7 +357,7 @@ describe("renewal reminders", { timeout: 120_000 }, () => {
 		expect(message.text).toContain("/unsubscribe/renewal?e=");
 		expect(message.text).not.toMatch(/优惠|coupon|BACK-|回购码/i);
 		expect(message.text).toContain(
-			"邀请好友下单：好友首单立减，你得到同等返利，可抵下次消费。领取邀请链接：https://laoshirenvip.com/account",
+			"邀请好友下单：好友立减、不用注册，你拿更多返利，可抵下次消费。领取邀请链接：https://laoshirenvip.com/account",
 		);
 		expect(message.headers).toEqual({
 			"List-Unsubscribe": expect.stringMatching(

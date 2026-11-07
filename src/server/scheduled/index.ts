@@ -16,6 +16,7 @@ import { runPricingGuard } from "#/features/ops-automation/server/pricing-guard"
 import { runProcurementAlerts } from "#/features/ops-automation/server/procurement-alerts";
 import { runWeeklyReport } from "#/features/ops-automation/server/weekly-report";
 import { settlePromotionRewards } from "#/features/promotions/server/balance";
+import { refreshReferralBudgets } from "#/features/promotions/server/referral-budget";
 import {
 	runBulkProcurements,
 	topUpBulkCodeStock,
@@ -136,6 +137,10 @@ export async function runScheduledCommerceWork(
 		db: env.DB,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	// Invitation budgets follow price and cost changes within a minute.
+	const referralBudgets = await refreshReferralBudgets(env.DB).catch(() => ({
+		status: "failed" as const,
+	}));
 	const priceDropNotices = await runPriceDropNotices({
 		db: env.DB,
 		files: env.FILES,
@@ -186,6 +191,7 @@ export async function runScheduledCommerceWork(
 		balanceGuard,
 		procurementAlerts,
 		pricingGuard,
+		referralBudgets,
 		priceDropNotices,
 		customerPriceGuard,
 		weeklyReport,

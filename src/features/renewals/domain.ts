@@ -274,7 +274,7 @@ export function renderRenewalEmail(input: RenewalEmailInput) {
 			...(reminder && input.inviteUrl
 				? [
 						"",
-						`Invite friends: they save on their first order and you earn the same amount as credit for your next purchase. Get your invite link: ${input.inviteUrl}`,
+						`Invite friends: they save without signing up, and you earn a bigger reward as credit for your next purchase. Get your invite link: ${input.inviteUrl}`,
 					]
 				: []),
 			"",
@@ -321,7 +321,7 @@ export function renderRenewalEmail(input: RenewalEmailInput) {
 		...(reminder && input.inviteUrl
 			? [
 					"",
-					`邀请好友下单：好友首单立减，你得到同等返利，可抵下次消费。领取邀请链接：${input.inviteUrl}`,
+					`邀请好友下单：好友立减、不用注册，你拿更多返利，可抵下次消费。领取邀请链接：${input.inviteUrl}`,
 				]
 			: []),
 		"",

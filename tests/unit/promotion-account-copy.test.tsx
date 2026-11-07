@@ -21,6 +21,13 @@ vi.mock("@tanstack/react-query", () => ({
 	useQuery: () => ({
 		data: {
 			balanceMinor: "0",
+			examples: [
+				{
+					name: "ChatGPT Pro 200｜iOS｜1个月",
+					discountMinor: "1050",
+					rewardMinor: "2450",
+				},
+			],
 			referral: { code: "INV-ABCDEFGHIJKLMNOPQRST", enabled: true },
 			marketingConsent: false,
 			coupons: [],
@@ -85,4 +92,11 @@ it("reports an unavailable clipboard API", async () => {
 	await click();
 	expect(error).toHaveBeenCalledWith(m.common_copy_failed());
 	expect(success).not.toHaveBeenCalled();
+});
+it("lists current invitation amounts per item", () => {
+	const list = container.querySelector('[data-testid="referral-examples"]');
+	expect(list?.textContent).toContain("ChatGPT Pro 200｜iOS｜1个月");
+	expect(list?.textContent).toContain(
+		m.promotion_example_amount({ discount: "¥10.50", reward: "¥24.50" }),
+	);
 });

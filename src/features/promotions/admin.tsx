@@ -4,7 +4,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import { m } from "#/paraglide/messages";
-import { promotionBudgets } from "./pricing";
+import { promotionBudgets, splitReferralBudget } from "./pricing";
 import {
 	issueRecallCouponsFn,
 	listPromotionSkusFn,
@@ -54,7 +54,30 @@ export function PromotionAdmin({
 							key={sku.id}
 							className="flex flex-wrap items-center justify-between gap-2 text-sm"
 						>
-							<span>{sku.name}</span>
+							<span className="grid gap-0.5">
+								<span>{sku.name}</span>
+								{sku.promotion_budget_minor !== "0" ? (
+									<span className="text-muted-foreground text-xs">
+										{(() => {
+											const split = splitReferralBudget(
+												BigInt(sku.referral_budget_minor || "0"),
+											);
+											return m.promotion_admin_referral_auto({
+												discount: formatMinorAmountWithSymbol(
+													split.discount.toString(),
+													"CNY",
+													2,
+												),
+												reward: formatMinorAmountWithSymbol(
+													split.reward.toString(),
+													"CNY",
+													2,
+												),
+											});
+										})()}
+									</span>
+								) : null}
+							</span>
 							<select
 								aria-label={sku.name}
 								className="rounded-md border bg-background p-2"

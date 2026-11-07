@@ -5,6 +5,7 @@ import { requireStorefrontPermission } from "#/features/access/storefront-access
 import { resolveStoreAccount } from "#/features/storefront/server/account";
 import { quoteStoreCouponForVisitor } from "#/features/storefront/server/multi-order";
 import { getDb } from "#/server/db.server";
+import { splitReferralBudget } from "../pricing";
 import { openReferralCoupon } from "./coupons";
 
 export const getPromotionAccountFn = createServerFn({ method: "GET" }).handler(
@@ -54,7 +55,27 @@ export const getPromotionAccountFn = createServerFn({ method: "GET" }).handler(
 				source_type: string;
 				created_at: number;
 			}>();
+		// Biggest current invitation amounts, so customers see what a share is worth.
+		const examples = await db
+			.prepare(`SELECT p.name AS product_name, i.name AS item_name, i.referral_budget_minor
+  FROM product_sellable_items i JOIN products p ON p.id=i.product_id
+  WHERE p.status='active' AND p.sale_disabled=0 AND i.enabled=1 AND i.sale_disabled=0
+   AND i.currency='CNY' AND i.promotion_budget_minor<>'0' AND CAST(i.referral_budget_minor AS INTEGER)>0
+  ORDER BY CAST(i.referral_budget_minor AS INTEGER) DESC, p.sort_order, i.sort_order LIMIT 8`)
+			.all<{
+				product_name: string;
+				item_name: string;
+				referral_budget_minor: string;
+			}>();
 		return {
+			examples: examples.results.map((row) => {
+				const split = splitReferralBudget(BigInt(row.referral_budget_minor));
+				return {
+					name: row.item_name,
+					discountMinor: split.discount.toString(),
+					rewardMinor: split.reward.toString(),
+				};
+			}),
 			balanceMinor: user?.reward_balance_minor ?? "0",
 			marketingConsent: user?.marketing_consent === 1,
 			referral,

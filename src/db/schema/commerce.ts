@@ -191,6 +191,7 @@ export const productSellableItems = sqliteTable(
 		priceMinor: text("price_minor").notNull(),
 		costMinor: text("cost_minor"),
 		promotionBudgetMinor: text("promotion_budget_minor").notNull().default("0"),
+		referralBudgetMinor: text("referral_budget_minor").notNull().default("0"),
 		minimumQuantity: integer("minimum_quantity").notNull().default(1),
 		maximumQuantity: integer("maximum_quantity").notNull().default(1),
 		maximumPerCustomer: integer("maximum_per_customer"),

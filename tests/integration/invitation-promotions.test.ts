@@ -68,7 +68,7 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 				.bind(product),
 			db
 				.prepare(
-					`INSERT INTO product_sellable_items(id,product_id,name,price_minor,currency,currency_decimals,fulfillment_source,maximum_quantity,promotion_budget_minor,created_at,updated_at) VALUES (?,?,'Test','108000','CNY',2,'manual',10,'800',1,1)`,
+					`INSERT INTO product_sellable_items(id,product_id,name,price_minor,currency,currency_decimals,fulfillment_source,maximum_quantity,promotion_budget_minor,referral_budget_minor,created_at,updated_at) VALUES (?,?,'Test','108000','CNY',2,'manual',10,'800','800',1,1)`,
 				)
 				.bind(sku, product),
 			db
@@ -134,13 +134,19 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		const event = await prepareExternal(id, amount);
 		return { event, result: await processShopPaymentEvent(db, channel, event) };
 	}
-	it("reuses one persistent code and attributes a guest order without paying a reward", async () => {
+	const rewardOf = async (id: string) =>
+		(
+			await db
+				.prepare("SELECT referral_reward_minor FROM shop_orders WHERE id=?")
+				.bind(id)
+				.first<{ referral_reward_minor: string }>()
+		)?.referral_reward_minor;
+	it("reuses one persistent code and pays the referrer 70% for a guest friend's order", async () => {
 		const code = await openReferralCoupon(db, promoter);
 		expect(await openReferralCoupon(db, promoter)).toEqual(code);
 		const created = await order(code.code, null);
-		expect(created.totalMinor).toBe("107600");
-		// Guests keep the discount, but only a verified account distinct from
-		// the referrer earns the referrer a reward.
+		// Budget ¥8: the friend saves 30% (¥2.40), the referrer earns 70% (¥5.60).
+		expect(created.totalMinor).toBe("107760");
 		expect(
 			await db
 				.prepare(
@@ -150,28 +156,21 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 				.first(),
 		).toEqual({
 			referrer_user_id: promoter,
-			referral_reward_minor: "0",
+			referral_reward_minor: "560",
 			promotion_purpose: "referral",
 		});
 	});
-	it("pays a referral reward only for a verified account distinct from the referrer", async () => {
+	it("pays verified and unverified friend accounts alike", async () => {
 		const code = await openReferralCoupon(db, promoter);
-		const reward = async (id: string) =>
-			(
-				await db
-					.prepare("SELECT referral_reward_minor FROM shop_orders WHERE id=?")
-					.bind(id)
-					.first<{ referral_reward_minor: string }>()
-			)?.referral_reward_minor;
 		const verified = await order(code.code, buyer);
-		expect(verified.totalMinor).toBe("107600");
-		expect(await reward(verified.id)).toBe("400");
+		expect(verified.totalMinor).toBe("107760");
+		expect(await rewardOf(verified.id)).toBe("560");
 		await db
 			.prepare("UPDATE users SET email_verified = 0 WHERE id = ?")
 			.bind(buyer)
 			.run();
 		const unverified = await order(code.code, buyer).catch(() => null);
-		if (unverified) expect(await reward(unverified.id)).toBe("0");
+		if (unverified) expect(await rewardOf(unverified.id)).toBe("560");
 	});
 	it("keeps the discount but pays no reward when a guest order looks like the referrer's own", async () => {
 		const code = await openReferralCoupon(db, promoter);
@@ -181,13 +180,24 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 			idempotencyKey: crypto.randomUUID(),
 			items: [{ sellableItemId: sku, quantity: 1 }],
 		});
-		expect(created.totalMinor).toBe("107600");
-		expect(
-			await db
-				.prepare("SELECT referral_reward_minor FROM shop_orders WHERE id=?")
-				.bind(created.id)
-				.first(),
-		).toEqual({ referral_reward_minor: "0" });
+		expect(created.totalMinor).toBe("107760");
+		expect(await rewardOf(created.id)).toBe("0");
+	});
+	it("pays no reward to a guest using an email the referrer has ordered with", async () => {
+		const code = await openReferralCoupon(db, promoter);
+		await db
+			.prepare(`INSERT INTO shop_orders(id,order_number,user_id,contact_email,normalized_contact_email,status,currency,currency_decimals,subtotal_minor,discount_minor,total_minor,paid_minor,expires_at,created_at,updated_at)
+   VALUES ('own','OWN',?,'side@example.com','side@example.com','completed','CNY',2,'100','0','100','100',1,1,1)`)
+			.bind(promoter)
+			.run();
+		const created = await createMultiStoreOrder(db, {
+			email: "Side+x@example.com",
+			couponCode: code.code,
+			idempotencyKey: crypto.randomUUID(),
+			items: [{ sellableItemId: sku, quantity: 1 }],
+		});
+		expect(created.totalMinor).toBe("107760");
+		expect(await rewardOf(created.id)).toBe("0");
 	});
 	it("rejects identified self-referrals", async () => {
 		const code = await openReferralCoupon(db, promoter);
@@ -670,7 +680,7 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 					normalizedEmail: "buyer@example.com",
 				})
 			).discountMinor,
-		).toBe("400");
+		).toBe("240");
 	});
 	it("budgets public coupon quotes per IP and hides why a code was rejected", async () => {
 		const items = [{ id: sku, quantity: 1 }];

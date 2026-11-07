@@ -40,7 +40,10 @@ export function OrderReferralBlock({
 				{m.promotion_invite_title()}
 			</h2>
 			{growth.signedIn ? (
-				<ReferralInvite rewardMinor={growth.referralRewardMinor} />
+				<ReferralInvite
+					discountMinor={growth.referralDiscountMinor}
+					rewardMinor={growth.referralRewardMinor}
+				/>
 			) : (
 				<div className="grid gap-2 text-sm" data-testid="referral-guest">
 					<p className="font-medium">{m.promotion_invite_pitch()}</p>
