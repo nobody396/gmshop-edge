@@ -136,14 +136,14 @@ Notes
 		description: `US personal Gmail account. Brand new and unused, registered in the US, with 2-step verification (2FA) turned on and no original phone number attached. Delivered automatically after payment.
 
 What you receive
-One line of details: email----password----recovery email----2FA key.
-The recovery email is the address set at registration; only the address is given, not its password. Replace it with your own after signing in.
+One line of details: email----password----2FA key. No recovery email is included.
+Add your own recovery email after signing in.
 
 How to sign in
 1. Use a clean US network, ideally a US node and a private window, and open gmail.com.
 2. Enter the email and password.
 3. When asked for a 6-digit code, add the 2FA key to an authenticator app (such as Google Authenticator, "Enter a setup key") and enter the code it shows.
-4. After signing in, change the password and replace the recovery email with your own.
+4. After signing in, change the password and add your own recovery email.
 
 Before you buy
 - Switching IPs often, juggling several accounts in one browser, or signing in to many at once can trigger Google's risk checks and a phone verification request.
@@ -332,15 +332,21 @@ Delivery is complete once the account details are sent; no refunds. Sign-in prob
 		name: "Codex long-term SMS number｜US｜20–30 days",
 		description: `A long-term US phone number, valid for about 20–30 days after you take it (as shown on the number page). The warranty covers receiving the first verification code; later bindings are not covered.
 
-How to use
+Your order contains one of two formats; follow the one you received.
+
+A. US number + code link (the order shows "US number" and "Code link")
+1. Enter the +1 US number on the Codex / OpenAI phone verification page and send the SMS. Always choose +1 (United States).
+2. Open the code link in Safari, Chrome, or Edge (not WeChat's built-in browser) and wait about 1 minute for the code.
+3. The same number can receive a second verification within its validity. This format has no self-service number switch; if no code arrives, contact support with a screenshot.
+
+B. CDK + number page (the order shows "CDK" and a number page)
 1. Open the number page from your order in Safari, Chrome, or Edge (not WeChat's built-in browser).
 2. Enter the CDK you received, then copy the assigned +1 US number.
 3. Enter the number on the Codex / OpenAI phone verification page and send the SMS.
 4. Return to the number page and tap "Get code"; codes can be delayed, so wait about 1 minute.
-
 Number page: https://sms.kkdos.store/
 
-FAQ
+FAQ (number switching applies to format B only)
 - "Number recently used": a platform risk control; wait about 1 hour before binding again or switch to a stable network.
 - Cannot send SMS to the number: switch numbers yourself on the number page.
 - Too many verification requests: stop clicking, wait, or switch to a stable network before retrying.
