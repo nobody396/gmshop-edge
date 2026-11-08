@@ -788,7 +788,6 @@
 	"store_sort_price_asc": "Price: low to high",
 	"store_sort_price_desc": "Price: high to low",
 	"store_sort_popular": "Most popular",
-	"store_all_tags": "All categories",
 	"store_auto_delivery": "Automatic delivery",
 	"store_stock": "Stock {count}",
 	"store_manual_delivery": "Fast online delivery",

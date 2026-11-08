@@ -788,7 +788,6 @@
 	"store_sort_price_asc": "价格从低到高",
 	"store_sort_price_desc": "价格从高到低",
 	"store_sort_popular": "销量优先",
-	"store_all_tags": "全部分类",
 	"store_auto_delivery": "自动发货",
 	"store_stock": "库存 {count}",
 	"store_manual_delivery": "在线快速交付",
