@@ -97,7 +97,7 @@ export function HomePage({
 				{hasFilters ? null : <SelfServiceRecharge />}
 			</section>
 			<div
-				className="sticky z-30 mt-3 bg-background/95 backdrop-blur-xl"
+				className="sticky z-30 mt-3 bg-background/95 backdrop-blur-xl lg:static lg:bg-transparent lg:backdrop-blur-none"
 				data-home-category-bar
 				style={{ top: headerHeight }}
 			>
@@ -147,7 +147,7 @@ export function HomePage({
 					active={searchParams.tag}
 					onSelect={selectTag}
 					tags={catalog.data?.tags ?? []}
-					top={headerHeight + 56}
+					top={headerHeight}
 				/>
 				<section className="min-w-0">
 					{hasFilters ? (
