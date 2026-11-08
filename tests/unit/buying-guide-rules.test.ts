@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	guideProducts,
@@ -361,4 +362,82 @@ it("sends Free accounts to India card-paid Go and covers the newer catalog", () 
 	expect(guideStep([])).toMatchObject({
 		options: expect.not.arrayContaining(["muse"]),
 	});
+});
+
+const smsSpecs = [
+	[
+		"smsone",
+		"cdccd3bc-4504-5521-8761-332c99910c9f",
+		"25a7ae5b-f437-5461-bfca-669870e3b887",
+	],
+	[
+		"smslong",
+		"a9f6b8c4-e302-5c1a-8947-780785672b32",
+		"a39b3590-0952-5886-9076-a9cd879c1975",
+	],
+	[
+		"smsclaude",
+		"ff4ff1f6-cad4-4821-a195-39befdcc32d6",
+		"e23b7fb9-1e1c-4b47-a110-d9f84a02a52c",
+	],
+	[
+		"smsgoogle",
+		"8f78192a-3097-4ec2-a771-5aa76d1bccab",
+		"d353aa0e-fd21-4ecc-9a0b-9ad9a5e64da4",
+	],
+	[
+		"smstiktok",
+		"0375b7ba-9b49-4ff4-9652-40fedf7fbf0d",
+		"174e12ab-0383-4f84-a14b-c88151a0be3c",
+	],
+	[
+		"smstelegram",
+		"4d5aba11-5102-4d06-a11d-7d33279c8fa8",
+		"88aff5d3-a5ca-4ce3-9839-4149fe1d37ef",
+	],
+] as const;
+
+it("offers six SMS choices with the on-sale one-time card first", () => {
+	expect(guideStep(["sms"])).toEqual({
+		kind: "question",
+		id: "sms_target",
+		options: smsSpecs.map(([key]) => key),
+		help: undefined,
+	});
+	expect(guideStep(["sms", "unknown"])).toEqual({
+		kind: "stop",
+		reason: "rule_pending",
+	});
+	expect(smsSpecs).toHaveLength(6);
+	expect(smsSpecs[0][0]).toBe("smsone");
+});
+it.each(
+	smsSpecs,
+)("maps %s to its explicit product and item", (key, productId, itemId) => {
+	expect(guideStep(["sms", key])).toEqual({ kind: "result", product: key });
+	expect(guideProducts[key]).toEqual({ productId, itemId });
+	expect(guideProductUrl(key)).toBe(
+		`/products/${productId}?item=${itemId}#purchase-options`,
+	);
+});
+it.each(["zh-CN", "en-US"])("localizes all SMS choices in %s", (locale) => {
+	const copy = JSON.parse(
+		readFileSync(
+			new URL(`../../messages/${locale}.json`, import.meta.url),
+			"utf8",
+		),
+	);
+	for (const [key] of smsSpecs) expect(copy[`guide_${key}`]).toBeTruthy();
+	expect(copy.guide_smslong).toContain("ChatGPT / Codex");
+	expect(copy.guide_smsgoogle).toContain("23–30");
+	expect(copy.guide_smstiktok).toContain("16–30");
+	expect(copy.guide_smstelegram).toContain("61–92");
+	for (const platform of [
+		"ChatGPT / Codex",
+		"Claude",
+		"Google / Gmail",
+		"TikTok",
+		"Telegram",
+	])
+		expect(copy.guide_sms_hint).toContain(platform);
 });

@@ -134,6 +134,14 @@ export const guideProducts = {
 		productId: "8f78192a-3097-4ec2-a771-5aa76d1bccab",
 		itemId: "d353aa0e-fd21-4ecc-9a0b-9ad9a5e64da4",
 	},
+	smstiktok: {
+		productId: "0375b7ba-9b49-4ff4-9652-40fedf7fbf0d",
+		itemId: "174e12ab-0383-4f84-a14b-c88151a0be3c",
+	},
+	smstelegram: {
+		productId: "4d5aba11-5102-4d06-a11d-7d33279c8fa8",
+		itemId: "88aff5d3-a5ca-4ce3-9839-4149fe1d37ef",
+	},
 	fivecl: {
 		productId: "2a794b89-3bb9-49d4-8691-0d13a1606869",
 		itemId: "21859feb-e4d5-469f-9ca8-11fa4b9e5d18",
@@ -435,12 +443,16 @@ export function guideStep(a: readonly string[]): GuideStep {
 				"smslong",
 				"smsclaude",
 				"smsgoogle",
+				"smstiktok",
+				"smstelegram",
 			]);
 		if (
 			current === "smsone" ||
 			current === "smslong" ||
 			current === "smsclaude" ||
-			current === "smsgoogle"
+			current === "smsgoogle" ||
+			current === "smstiktok" ||
+			current === "smstelegram"
 		)
 			return result(current);
 	}

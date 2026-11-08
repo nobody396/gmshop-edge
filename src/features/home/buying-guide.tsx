@@ -481,6 +481,8 @@ function guideCopy(): Record<string, string> {
 		smslong: m.guide_smslong(),
 		smsclaude: m.guide_smsclaude(),
 		smsgoogle: m.guide_smsgoogle(),
+		smstiktok: m.guide_smstiktok(),
+		smstelegram: m.guide_smstelegram(),
 		x_target: m.guide_x_target(),
 		xpremium: m.guide_xpremium(),
 		xplusmonth: m.guide_xplusmonth(),
