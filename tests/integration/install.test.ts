@@ -84,6 +84,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0049_claude_env_traffic.sql",
 			"0050_gpt_upgrade.sql",
 			"0051_referral_margin_budget.sql",
+			"0052_agent_access_term.sql",
 		]);
 		const legacyTables = await database
 			.prepare(
