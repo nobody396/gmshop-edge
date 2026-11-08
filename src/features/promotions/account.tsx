@@ -173,7 +173,9 @@ export function PromotionAccount() {
 											aria-hidden="true"
 											className="size-4 text-primary"
 										/>
-										<code className="whitespace-nowrap font-mono">{coupon.code}</code>
+										<code className="whitespace-nowrap font-mono">
+											{coupon.code}
+										</code>
 										<span className="text-muted-foreground text-xs">
 											{m.promotion_coupon_until({
 												date: formatDateTime(coupon.ends_at),
