@@ -24,6 +24,8 @@ export const agentAccessOrders = sqliteTable(
 		domain: text("domain"),
 		requestedSubdomain: text("requested_subdomain"),
 		subdomainFallback: text("subdomain_fallback"),
+		renewal: integer("renewal").notNull().default(0),
+		termExpiresAt: integer("term_expires_at"),
 		attemptCount: integer("attempt_count").notNull().default(0),
 		nextAttemptAt: integer("next_attempt_at").notNull().default(0),
 		errorCode: text("error_code"),

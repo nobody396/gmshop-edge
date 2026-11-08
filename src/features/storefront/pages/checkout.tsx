@@ -194,7 +194,10 @@ export function StorefrontCheckoutPage() {
 			accessItem?.quantity !== 1 ||
 			eligibility.status !== "success" ||
 			eligibility.isFetching ||
-			eligibility.data?.state !== "eligible");
+			!(
+				eligibility.data?.state === "eligible" ||
+				(subsiteAccess && eligibility.data?.state === "renewable")
+			));
 	const couponCode = hasAgentAccess ? "" : enteredCouponCode;
 	const agentTermsScope = `${session.data?.user.id ?? "guest"}:${items.map((item) => `${item.sellableItemId}:${item.quantity}`).join("|")}`;
 	const agentAccessTermsAccepted = acceptedAgentTermsScope === agentTermsScope;

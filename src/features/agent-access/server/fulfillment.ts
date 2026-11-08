@@ -136,12 +136,17 @@ export async function processAgentDelivery(
 				.run();
 		}
 		const complete = Date.now();
+		const termExpiresAt = result.expiresAt
+			? Date.parse(result.expiresAt)
+			: null;
 		await db.batch([
 			db
 				.prepare(
-					`UPDATE agent_access_orders SET state='active',remote_user_id=?,domain=?,error_code=NULL,updated_at=? WHERE order_item_id=? AND state='pending' AND EXISTS(SELECT 1 FROM shop_orders o WHERE o.id=? AND o.status IN ('paid','fulfilling')) AND NOT EXISTS(SELECT 1 FROM refunds r WHERE r.order_id=? AND r.status IN ('pending','processing','succeeded'))`,
+					`UPDATE agent_access_orders SET state='active',active_key=NULL,renewal=?,term_expires_at=?,remote_user_id=?,domain=?,error_code=NULL,updated_at=? WHERE order_item_id=? AND state='pending' AND EXISTS(SELECT 1 FROM shop_orders o WHERE o.id=? AND o.status IN ('paid','fulfilling')) AND NOT EXISTS(SELECT 1 FROM refunds r WHERE r.order_id=? AND r.status IN ('pending','processing','succeeded'))`,
 				)
 				.bind(
+					result.renewal ? 1 : 0,
+					termExpiresAt,
 					result.userId,
 					result.domain ?? null,
 					complete,
@@ -224,7 +229,7 @@ async function revoke(
 	if (result.state !== "revoked") throw new Error("revocation_pending");
 	await db
 		.prepare(
-			`UPDATE agent_access_orders SET state='revoked',initial_password_encrypted=NULL,error_code=NULL,updated_at=? WHERE order_item_id=?`,
+			`UPDATE agent_access_orders SET state='revoked',active_key=NULL,initial_password_encrypted=NULL,error_code=NULL,updated_at=? WHERE order_item_id=?`,
 		)
 		.bind(Date.now(), row.order_item_id)
 		.run();

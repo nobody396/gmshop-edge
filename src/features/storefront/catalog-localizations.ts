@@ -38,9 +38,9 @@ const productEnglish: Record<string, ProductLocalization> = {
 			"Already on a web ChatGPT Plus / Pro subscription? Upgrade the same account to Pro 100 / Pro 200 / Pro 500 and pay only the difference. Get a quote at the redemption site, pay, and the upgrade runs automatically, usually within 1–10 minutes. Apple / Google store subscriptions and Go plans are not supported. This covers only this upgrade's difference, not future renewals.",
 	},
 	[agentAccessProducts.subsite.productId]: {
-		name: "One-time hosted storefront access",
+		name: "Subsite Setup (3 months)",
 		description:
-			"A hosted storefront with a system subdomain and console. No purchasing credit. For your own verified account only; existing access must not be purchased again.",
+			"Your own ready-to-sell online store with payments, hosting and a domain all handled, plus API integration. ¥299 per 3 months; we email you 15, 7 and 1 day before it expires. Buying again with the same account renews it for 3 more months; if not renewed, the store pauses new orders and reopens as soon as you renew. No purchasing credit needed.",
 	},
 	[agentAccessProducts.api.productId]: {
 		name: "One-time API access",
@@ -522,13 +522,13 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		),
 	},
 	[agentAccessProducts.subsite.itemId]: {
-		name: "One-time activation",
+		name: "3 months",
 		policy: policy(
 			"Automatic activation after payment",
 			"Track progress on the order page; failures are retried or referred to support",
-			"Access has no scheduled expiry. Purchasing credit is not included.",
+			"3-month term with email reminders before expiry; buying again renews it for 3 months; an expired store pauses new orders. Purchasing credit is not included.",
 			agentAccessRefundPolicy["en-US"],
-			"For your own verified account only. Do not repurchase existing access.",
+			"For your own verified account only. Renew with the same account you opened the store with.",
 		),
 	},
 	[agentAccessProducts.api.itemId]: {

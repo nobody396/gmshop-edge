@@ -7,6 +7,7 @@ export const agentOrigin = "https://lsrai.shop";
 const responseSchema = z.object({
 	state: z.enum([
 		"eligible",
+		"renewable",
 		"binding_required",
 		"already_active",
 		"active",
@@ -32,6 +33,9 @@ const responseSchema = z.object({
 	subdomainFallback: z
 		.enum(["taken", "reserved", "invalid", "existing"])
 		.optional(),
+	/** Sub-site term end (RFC 3339); absent means permanent (legacy agent). */
+	expiresAt: z.iso.datetime({ offset: true }).optional(),
+	renewal: z.boolean().optional(),
 });
 export type AgentResult = z.infer<typeof responseSchema>;
 export type AgentRequest =

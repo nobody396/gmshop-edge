@@ -655,7 +655,7 @@ describe("owner sale alerts for agent access", { timeout: 30_000 }, () => {
 			sent: 1,
 		});
 		const text = messages[0] ?? "";
-		expect(text).toContain("货源：自动开通（子站代理）");
+		expect(text).toContain("货源：自动开通（分站搭建）");
 		expect(text).toContain("成本：¥0.00");
 		expect(text).toContain("利润：¥199.00");
 		expect(text).toContain("开通：✅ mystore.lsrai.shop");

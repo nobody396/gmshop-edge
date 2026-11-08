@@ -24,6 +24,21 @@ import {
 } from "../server/functions";
 import { AgentEmailVerification } from "./email-verification";
 
+/** Term end in Beijing time, the owner's and customers' reference clock. */
+export function formatTermDate(value: string | number | null | undefined) {
+	if (value == null) return "—";
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return "—";
+	return new Intl.DateTimeFormat("zh-CN", {
+		timeZone: "Asia/Shanghai",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+	}).format(date);
+}
 export function agentEligibilityOptions(
 	itemId: string,
 	user?: { id: string; emailVerified: boolean },
@@ -100,6 +115,15 @@ export function AgentAccessCheckout({
 					) : null}
 					{!check.isError && check.data?.state === "already_active" ? (
 						<output className="text-sm">{m.agent_access_existing()}</output>
+					) : null}
+					{!check.isFetching &&
+					!check.isError &&
+					check.data?.state === "renewable" ? (
+						<output className="text-sm text-primary">
+							{m.agent_access_renewable({
+								date: formatTermDate(check.data.expiresAt),
+							})}
+						</output>
 					) : null}
 					{check.isError || check.data?.state === "binding_required" ? (
 						<Button
@@ -217,6 +241,17 @@ function OwnedAgentAccessDelivery({
 									{m.agent_subsite_prefix_fallback({ domain: data.domain })}
 								</p>
 							) : null}
+							{data.kind === "subsite" && data.termExpiresAt ? (
+								<p className="text-sm font-medium">
+									{data.renewal
+										? m.agent_access_renewed({
+												date: formatTermDate(data.termExpiresAt),
+											})
+										: m.agent_access_term({
+												date: formatTermDate(data.termExpiresAt),
+											})}
+								</p>
+							) : null}
 							{data.domain ? (
 								<a
 									className="break-all underline"
@@ -303,7 +338,7 @@ export function AgentAccessDrafts() {
 				>
 					{p.priceMinor === agentAccessProducts.api.priceMinor
 						? "API · ¥20.00"
-						: "Subsite · ¥199"}
+						: "Subsite · ¥299 / 3 months"}
 				</a>
 			))}
 		</section>

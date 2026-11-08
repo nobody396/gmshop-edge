@@ -83,6 +83,7 @@ type AgentAccessAlert = {
 	attempts: number;
 	requested: string | null;
 	fallback: string | null;
+	renewal?: number;
 };
 
 function agentAccessOf(row: { agent_access_json?: string | null }) {
@@ -274,7 +275,8 @@ export async function publishPendingOwnerSaleAlerts(input: {
 			          'domain', agent.domain, 'error', agent.error_code,
 			          'attempts', agent.attempt_count,
 			          'requested', agent.requested_subdomain,
-			          'fallback', agent.subdomain_fallback)
+			          'fallback', agent.subdomain_fallback,
+			          'renewal', agent.renewal)
 			         FROM agent_access_orders agent
 			         JOIN shop_order_items agent_item ON agent_item.id = agent.order_item_id
 			         WHERE agent_item.order_id = orders.id LIMIT 1) AS agent_access_json
@@ -458,7 +460,9 @@ export function formatFeishuOwnerSaleAlert(
 		.filter((note) => note.startsWith("86订单"))
 		.join("；");
 	const source = agent
-		? `自动开通（${agent.kind === "subsite" ? "子站代理" : "API 对接"}）`
+		? agent.kind === "subsite" && agent.renewal === 1
+			? "自动续费（分站搭建 +3 个月）"
+			: `自动开通（${agent.kind === "subsite" ? "分站搭建" : "API 对接"}）`
 		: sources.includes("warehouse_unavailable")
 			? `⚠️ 86 补货失败，请手动补卡（${failedSupply || "原因未知"}）`
 			: sources.includes("warehouse_unreachable") ||
@@ -561,7 +565,7 @@ export function agentAccessLine(agent: AgentAccessAlert) {
 			? `；指定的 ${agent.requested} ${fallbackReason[agent.fallback] ?? agent.fallback}，已自动分配`
 			: "";
 	if (agent.state === "active")
-		return `✅ ${agent.kind === "subsite" ? (agent.domain ?? "子站已开通") : "API 已开通"}${fallback}`;
+		return `✅ ${agent.kind === "subsite" ? (agent.domain ?? "分站已开通") : "API 已开通"}${agent.kind === "subsite" && agent.renewal === 1 ? "（已续费 3 个月）" : fallback}`;
 	if (agent.state === "revoked" || agent.state === "cancelled")
 		return `↩️ 已撤销（${agent.state}）`;
 	if (agent.attempts >= 8)

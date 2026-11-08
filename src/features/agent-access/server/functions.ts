@@ -53,6 +53,7 @@ export const checkAgentAccessFn = createServerFn({ method: "POST" })
 		});
 		return {
 			state: result.state,
+			expiresAt: result.expiresAt ?? null,
 			url:
 				result.state === "binding_required"
 					? accessURL(result)
@@ -83,6 +84,8 @@ async function owned(db: D1Database, userId: string, orderNumber: string) {
 			domain: string | null;
 			requested_subdomain: string | null;
 			subdomain_fallback: string | null;
+			renewal: number;
+			term_expires_at: number | null;
 			attempt_count: number;
 			error_code: string | null;
 			order_status: string;
@@ -105,6 +108,8 @@ export const getAgentDeliveryFn = createServerFn({ method: "POST" })
 				row.subdomain_fallback === "taken" && row.requested_subdomain
 					? row.requested_subdomain
 					: null,
+			renewal: row.renewal === 1,
+			termExpiresAt: row.term_expires_at,
 			needsSupport: row.attempt_count >= 8,
 			errorCode: row.error_code,
 			orderStatus: row.order_status,

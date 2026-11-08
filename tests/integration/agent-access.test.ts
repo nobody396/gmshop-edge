@@ -312,6 +312,109 @@ describe("paid agent access", { timeout: 30000 }, () => {
 			}),
 		);
 	});
+	it("renews a term sub-site: second purchase allowed, no prefix, term and renewal recorded", async () => {
+		await db
+			.prepare("UPDATE users SET balance_minor='100000' WHERE id=?")
+			.bind(userId)
+			.run();
+		const buy = async () => {
+			const order = await createMultiStoreOrder(
+				db,
+				{
+					items: [
+						{ sellableItemId: agentAccessProducts.subsite.itemId, quantity: 1 },
+					],
+					email: "buyer@example.test",
+					idempotencyKey: crypto.randomUUID(),
+					agentAccessTermsAccepted: true,
+					agentSubsitePrefix: "ignoredname",
+				},
+				{ userId },
+			);
+			await completeWalletStoreOrder(db, { orderId: order.id, userId });
+			const delivery = await db
+				.prepare(
+					"SELECT d.id,d.order_item_id FROM delivery_records d JOIN shop_order_items oi ON oi.id=d.order_item_id WHERE oi.order_id=?",
+				)
+				.bind(order.id)
+				.first<{ id: string; order_item_id: string }>();
+			if (!delivery) throw new Error("delivery missing");
+			await processAgentDelivery(db, delivery.id);
+			return delivery.order_item_id;
+		};
+		remote.mockImplementation(async (input: { operation: string }) =>
+			input.operation === "check_subdomain"
+				? { state: "available" }
+				: input.operation === "check"
+					? { state: "eligible" }
+					: {
+							state: "active",
+							userId: 71,
+							domain: "apple.lsrai.shop",
+							expiresAt: "2027-02-08T13:30:00Z",
+						},
+		);
+		const first = await buy();
+		remote.mockImplementation(async (input: { operation: string }) =>
+			input.operation === "check"
+				? { state: "renewable", expiresAt: "2027-02-08T13:30:00Z" }
+				: {
+						state: "active",
+						userId: 71,
+						domain: "apple.lsrai.shop",
+						expiresAt: "2027-05-08T13:30:00Z",
+						renewal: true,
+					},
+		);
+		const second = await buy();
+		expect(second).not.toBe(first);
+		const rows = await db
+			.prepare(
+				"SELECT order_item_id,state,renewal,term_expires_at,active_key,requested_subdomain FROM agent_access_orders ORDER BY created_at",
+			)
+			.all<{
+				order_item_id: string;
+				state: string;
+				renewal: number;
+				term_expires_at: number;
+				active_key: string | null;
+				requested_subdomain: string | null;
+			}>();
+		expect(rows.results).toEqual([
+			expect.objectContaining({
+				order_item_id: first,
+				state: "active",
+				renewal: 0,
+				term_expires_at: Date.parse("2027-02-08T13:30:00Z"),
+				active_key: null,
+			}),
+			expect.objectContaining({
+				order_item_id: second,
+				state: "active",
+				renewal: 1,
+				term_expires_at: Date.parse("2027-05-08T13:30:00Z"),
+				active_key: null,
+				requested_subdomain: null,
+			}),
+		]);
+	});
+	it("still refuses a permanent (legacy) agent", async () => {
+		remote.mockImplementation(async () => ({ state: "already_active" }));
+		await expect(
+			createMultiStoreOrder(
+				db,
+				{
+					items: [
+						{ sellableItemId: agentAccessProducts.subsite.itemId, quantity: 1 },
+					],
+					email: "buyer@example.test",
+					idempotencyKey: crypto.randomUUID(),
+					agentAccessTermsAccepted: true,
+				},
+				{ userId },
+			),
+		).rejects.toMatchObject({ code: "agent_access_already_active" });
+	});
 	it("unpaid order never triggers a remote grant", async () => {
 		const order = await make(db);
 		await db

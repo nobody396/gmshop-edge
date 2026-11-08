@@ -3,8 +3,8 @@ export const agentAccessProducts = {
 	subsite: {
 		productId: "19900000-0000-4000-8000-000000000001",
 		itemId: "19900000-0000-4000-8000-000000000002",
-		priceMinor: "19900",
-		name: "子站代理一次性开通",
+		priceMinor: "29900",
+		name: "分站搭建（3个月）",
 	},
 	api: {
 		productId: "09900000-0000-4000-8000-000000000001",
