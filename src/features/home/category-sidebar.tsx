@@ -16,6 +16,7 @@ import {
 import type { ComponentType, SVGProps } from "react";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
+import { type CatalogTag, orderedCategories } from "./category-order";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement> & { size?: number | string }>;
 
@@ -56,20 +57,12 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
 	},
 	其他服务: { label: () => m.store_category_other(), icon: Ellipsis },
 };
-const ORDER = Object.keys(CATEGORY_META);
 
-export type CatalogTag = { name: string; productCount: number };
-
-export function orderedCategories(tags: readonly CatalogTag[]) {
-	return [...tags].sort((a, b) => {
-		const ai = ORDER.indexOf(a.name),
-			bi = ORDER.indexOf(b.name);
-		return (
-			(ai < 0 ? ORDER.length : ai) - (bi < 0 ? ORDER.length : bi) ||
-			a.name.localeCompare(b.name)
-		);
-	});
-}
+export {
+	type CatalogTag,
+	orderedCategories,
+	primaryCategory,
+} from "./category-order";
 
 function meta(name: string): CategoryMeta {
 	return CATEGORY_META[name] ?? { label: () => name, icon: Tag };
@@ -197,11 +190,22 @@ function CategoryRow({
 }
 
 /** Phones and tablets: the same categories as a horizontal row of chips with icons. */
-export function CategoryChips({ tags, active, onSelect }: Props) {
+export function CategoryChips({
+	tags,
+	active,
+	onSelect,
+	wrap = false,
+}: Props & {
+	/** Wrap onto several lines at every width, instead of one scrolling row hidden on desktop. */
+	wrap?: boolean;
+}) {
 	const categories = orderedCategories(tags);
 	return (
 		<div
-			className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto lg:hidden"
+			className={cn(
+				"flex min-w-0 flex-1 gap-1.5",
+				wrap ? "flex-wrap" : "overflow-x-auto lg:hidden",
+			)}
 			data-home-category-chips
 		>
 			<Chip
@@ -246,7 +250,10 @@ function Chip({
 			onClick={onClick}
 			type="button"
 		>
-			<CategoryIcon className="size-6 rounded-full border-0" name={name} />
+			<CategoryIcon
+				className="size-6 rounded-full border-0 text-foreground"
+				name={name}
+			/>
 			{label}
 		</button>
 	);

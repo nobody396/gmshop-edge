@@ -10,7 +10,8 @@ import {
 	Users,
 	Wallet,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
+import { CategoryChips } from "#/features/home/category-sidebar";
 import { formatDateTime, formatMinorAmountWithSymbol } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
@@ -122,42 +123,12 @@ export function PromotionAccount() {
 
 					{data.examples?.length ? (
 						<Panel
-							description={m.promotion_examples_note()}
+							description={m.promotion_examples_note({
+								count: data.examples.length,
+							})}
 							title={m.promotion_examples_heading()}
 						>
-							<div
-								className="overflow-hidden rounded-xl border"
-								data-testid="referral-examples"
-							>
-								<table className="w-full text-sm">
-									<thead className="bg-muted/50 text-muted-foreground text-xs">
-										<tr>
-											<th className="px-3 py-2 text-start font-medium">
-												{m.promotion_table_product()}
-											</th>
-											<th className="whitespace-nowrap px-3 py-2 text-end font-medium">
-												{m.promotion_table_discount()}
-											</th>
-											<th className="whitespace-nowrap px-3 py-2 text-end font-medium">
-												{m.promotion_table_reward()}
-											</th>
-										</tr>
-									</thead>
-									<tbody>
-										{data.examples.map((example) => (
-											<tr className="border-t" key={example.name}>
-												<td className="px-3 py-2.5">{example.name}</td>
-												<td className="whitespace-nowrap px-3 py-2.5 text-end text-muted-foreground tabular-nums">
-													{money(example.discountMinor)}
-												</td>
-												<td className="whitespace-nowrap px-3 py-2.5 text-end font-semibold text-primary tabular-nums">
-													{money(example.rewardMinor)}
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
+							<RewardTable examples={data.examples} />
 						</Panel>
 					) : null}
 
@@ -407,5 +378,76 @@ function RewardState({ state }: { state: string }) {
 		>
 			{label}
 		</span>
+	);
+}
+
+type RewardExample = {
+	category?: string;
+	name: string;
+	discountMinor: string;
+	rewardMinor: string;
+};
+
+/** Every item that pays a reward, filterable by the storefront's categories, biggest reward first. */
+function RewardTable({ examples }: { examples: RewardExample[] }) {
+	const [active, setActive] = useState("");
+	const counts = new Map<string, number>();
+	for (const example of examples) {
+		const category = example.category ?? "";
+		if (category) counts.set(category, (counts.get(category) ?? 0) + 1);
+	}
+	const shown = examples
+		.filter((example) => !active || example.category === active)
+		.sort((a, b) => {
+			const diff = minor(b.rewardMinor) - minor(a.rewardMinor);
+			return diff > 0n ? 1 : diff < 0n ? -1 : 0;
+		});
+	return (
+		<div className="grid gap-3">
+			{counts.size > 1 ? (
+				<CategoryChips
+					active={active}
+					onSelect={setActive}
+					tags={[...counts].map(([name, productCount]) => ({
+						name,
+						productCount,
+					}))}
+					wrap
+				/>
+			) : null}
+			<div
+				className="max-h-[28rem] overflow-y-auto overscroll-contain rounded-xl border"
+				data-testid="referral-examples"
+			>
+				<table className="w-full text-sm">
+					<thead className="sticky top-0 bg-muted text-muted-foreground text-xs">
+						<tr>
+							<th className="px-3 py-2 text-start font-medium">
+								{m.promotion_table_product()}
+							</th>
+							<th className="whitespace-nowrap px-3 py-2 text-end font-medium">
+								{m.promotion_table_discount()}
+							</th>
+							<th className="whitespace-nowrap px-3 py-2 text-end font-medium">
+								{m.promotion_table_reward()}
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{shown.map((example) => (
+							<tr className="border-t" key={example.name}>
+								<td className="px-3 py-2.5">{example.name}</td>
+								<td className="whitespace-nowrap px-3 py-2.5 text-end text-muted-foreground tabular-nums">
+									{money(example.discountMinor)}
+								</td>
+								<td className="whitespace-nowrap px-3 py-2.5 text-end font-semibold text-primary tabular-nums">
+									{money(example.rewardMinor)}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		</div>
 	);
 }
