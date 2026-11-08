@@ -104,7 +104,11 @@ export function BuyingGuide() {
 						</div>
 					</>
 				) : step.kind === "result" ? (
-					<GuideResult key={path} step={step} copy={copy} />
+					step.product === "gptupgrade" ? (
+						<GuideUpgrade copy={copy} />
+					) : (
+						<GuideResult key={path} step={step} copy={copy} />
+					)
 				) : null}
 				{answers.length ? (
 					<div className="flex items-center justify-between border-t pt-3">
@@ -250,6 +254,26 @@ function GuideImage({
 				</section>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+// The upgrade has no fixed price: it is quoted per account on the redeem site.
+function GuideUpgrade({ copy }: { copy: Record<string, string> }) {
+	return (
+		<div className="space-y-4">
+			<div className="rounded-xl border border-primary/30 bg-primary/5 p-5">
+				<h3 className="font-semibold text-lg">{copy.gptupgrade}</h3>
+				<p className="mt-2 text-muted-foreground text-sm leading-6">
+					{copy.gptupgrade_body}
+				</p>
+			</div>
+			<Button asChild className="w-full">
+				<a href={guideProductUrl("gptupgrade")}>
+					{copy.gptupgrade_quote}
+					<ArrowRight className="size-4" />
+				</a>
+			</Button>
+		</div>
 	);
 }
 
@@ -447,7 +471,6 @@ function guideCopy(): Record<string, string> {
 		claude_target: m.guide_claude_target(),
 		claudepro: m.guide_claudepro(),
 		claudefive: m.guide_claudefive(),
-		claudetwenty: m.guide_claudetwenty(),
 		points_target: m.guide_points_target(),
 		points250: m.guide_points250(),
 		points500: m.guide_points500(),
@@ -456,6 +479,8 @@ function guideCopy(): Record<string, string> {
 		sms_target: m.guide_sms_target(),
 		smsone: m.guide_smsone(),
 		smslong: m.guide_smslong(),
+		smsclaude: m.guide_smsclaude(),
+		smsgoogle: m.guide_smsgoogle(),
 		x_target: m.guide_x_target(),
 		xpremium: m.guide_xpremium(),
 		xplusmonth: m.guide_xplusmonth(),
@@ -466,10 +491,29 @@ function guideCopy(): Record<string, string> {
 		compute_hint: m.guide_compute_hint(),
 		gemini: m.guide_gemini(),
 		gemini_hint: m.guide_gemini_hint(),
+		telegram: m.guide_telegram(),
+		telegram_hint: m.guide_telegram_hint(),
+		tg_target: m.guide_tg_target(),
+		tg3: m.guide_tg3(),
+		tg6: m.guide_tg6(),
+		tg12: m.guide_tg12(),
+		gmail: m.guide_gmail(),
+		gmail_hint: m.guide_gmail_hint(),
+		gmail_target: m.guide_gmail_target(),
+		gmailus: m.guide_gmailus(),
+		gmailus_hint: m.guide_gmailus_hint(),
+		gmailrandom: m.guide_gmailrandom(),
+		gmailrandom_hint: m.guide_gmailrandom_hint(),
+		claudeenv: m.guide_claudeenv(),
+		claudeenv_hint: m.guide_claudeenv_hint(),
+		env_target: m.guide_env_target(),
+		envmonth: m.guide_envmonth(),
+		envquarter: m.guide_envquarter(),
+		gptupgrade: m.guide_gptupgrade(),
+		gptupgrade_body: m.guide_gptupgrade_body(),
+		gptupgrade_quote: m.guide_gptupgrade_quote(),
 		apple: m.guide_apple(),
 		apple_hint: m.guide_apple_hint(),
-		muse: m.guide_muse(),
-		muse_hint: m.guide_muse_hint(),
 		reseller: m.guide_reseller(),
 		reseller_hint: m.guide_reseller_hint(),
 		cl: m.guide_cl(),
@@ -499,8 +543,6 @@ function guideCopy(): Record<string, string> {
 		offer_no: m.guide_offer_no(),
 		x_active: m.guide_x_active(),
 		x_active_body: m.guide_x_active_body(),
-		x_no_offer: m.guide_x_no_offer(),
-		x_no_offer_body: m.guide_x_no_offer_body(),
 		apple_target: m.guide_apple_target(),
 		appleus: m.guide_appleus(),
 		applejp: m.guide_applejp(),
@@ -530,8 +572,6 @@ function guideCopy(): Record<string, string> {
 		overwrite_accept: m.guide_overwrite_accept(),
 		kyc: m.guide_kyc(),
 		kyc_accept: m.guide_kyc_accept(),
-		upgrade_pending: m.guide_upgrade_pending(),
-		upgrade_pending_body: m.guide_upgrade_pending_body(),
 		free_points: m.guide_free_points(),
 		free_points_body: m.guide_free_points_body(),
 		claude_active: m.guide_claude_active(),

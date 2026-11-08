@@ -18,11 +18,18 @@ describe("VIP fixed buying guide", () => {
 			} else if (step.kind === "result") {
 				expect(guideProducts[step.product]).toBeDefined();
 				if (
-					["plusph", "fiveph", "twentynew", "fivecl", "gpt500cl"].includes(
-						step.product,
-					)
+					[
+						"plusph",
+						"fiveph",
+						"twentynew",
+						"fivecl",
+						"gpt500cl",
+						"goin",
+					].includes(step.product)
 				)
 					expect(path[1]).toBe("free");
+				// Only a PH web subscription may pay the difference to upgrade.
+				if (step.product === "gptupgrade") expect(path[2]).toBe("current_ph");
 				expect(path).not.toContain("after_expiry");
 				if (step.product === "twentyrenew") {
 					expect(path.slice(0, 3)).toEqual(["gpt", "pro200", "current_ph"]);
@@ -35,12 +42,14 @@ describe("VIP fixed buying guide", () => {
 					path[3] === "twenty"
 				)
 					expect(step.product).toBe("gpt20ios");
-				if (path[0] === "gpt")
+				if (path[0] === "gpt" && step.product !== "gptupgrade")
 					expect(guideProducts[step.product].productId).toBe(
 						"2a794b89-3bb9-49d4-8691-0d13a1606869",
 					);
 				expect(guideProductUrl(step.product)).toBe(
-					`/products/${guideProducts[step.product].productId}?item=${guideProducts[step.product].itemId}#purchase-options`,
+					step.product === "gptupgrade"
+						? "https://redeem.laoshirenvip.com/upgrade"
+						: `/products/${guideProducts[step.product].productId}?item=${guideProducts[step.product].itemId}#purchase-options`,
 				);
 			} else expect(step.reason).toBeTruthy();
 		};
@@ -96,16 +105,34 @@ describe("VIP fixed buying guide", () => {
 			reason: "wait_for_expiry",
 		});
 	});
-	it("never substitutes ordinary recharge for the pending PH difference upgrade", () => {
+	it("offers the paid-difference upgrade to PH web subscriptions moving up a tier", () => {
 		const path = ["gpt", "plus", "current_ph", "five", "recharge_now"];
 		expect(guideStep(path)).toMatchObject({
 			id: "upgrade_channel",
 			options: ["ph_upgrade", "ios"],
 		});
 		expect(guideStep([...path, "ph_upgrade"])).toEqual({
-			kind: "stop",
-			reason: "upgrade_pending",
+			kind: "result",
+			product: "gptupgrade",
 		});
+		expect(
+			guideStep(["gpt", "pro100", "current_ph", "twenty", "recharge_now"]),
+		).toMatchObject({ id: "upgrade_channel" });
+		// Pro 500 has no iOS channel: the upgrade is the only way up.
+		for (const current of ["plus", "pro100", "pro200"])
+			expect(
+				guideStep([
+					"gpt",
+					current,
+					"current_ph",
+					"fivehundred",
+					"recharge_now",
+				]),
+			).toEqual({ kind: "result", product: "gptupgrade" });
+		// App Store subscriptions cannot be upgraded on the web.
+		expect(
+			guideStep(["gpt", "plus", "current_ios", "fivehundred", "recharge_now"]),
+		).toEqual({ kind: "stop", reason: "fivehundred_active" });
 		expect(guideStep([...path, "ios"])).toMatchObject({
 			kind: "result",
 			product: "fiveios",
@@ -225,13 +252,14 @@ describe("VIP fixed buying guide", () => {
 			kind: "result",
 			product: "xplus",
 		});
+		// The standard card is for accounts without the first-month offer.
 		expect(guideStep(["x", "x_none", "xpremium", "offer_no"])).toEqual({
-			kind: "stop",
-			reason: "x_no_offer",
+			kind: "result",
+			product: "xpremium",
 		});
 		expect(guideStep(["x", "x_none", "xultra", "offer_yes"])).toEqual({
 			kind: "result",
-			product: "xultra",
+			product: "xultrah50",
 		});
 		expect(guideStep(["x", "x_none", "xpremium1y"])).toEqual({
 			kind: "result",
@@ -303,5 +331,34 @@ it("does not apply the ChatGPT 30-day reset copy to other products", () => {
 		kind: "result",
 		product: "xplus",
 		warning: undefined,
+	});
+});
+it("sends Free accounts to India card-paid Go and covers the newer catalog", () => {
+	expect(guideStep(["gpt", "free", "go"])).toEqual({
+		kind: "result",
+		product: "goin",
+	});
+	expect(guideStep(["gpt", "go", "go", "recharge_now"])).toMatchObject({
+		product: "go",
+		warning: "overwrite30",
+	});
+	expect(guideStep(["telegram", "tg12"])).toEqual({
+		kind: "result",
+		product: "tg12",
+	});
+	expect(guideStep(["gmail", "gmailus"])).toEqual({
+		kind: "result",
+		product: "gmailus",
+	});
+	expect(guideStep(["claudeenv", "envquarter"])).toEqual({
+		kind: "result",
+		product: "envquarter",
+	});
+	expect(guideStep(["sms", "smsgoogle"])).toEqual({
+		kind: "result",
+		product: "smsgoogle",
+	});
+	expect(guideStep([])).toMatchObject({
+		options: expect.not.arrayContaining(["muse"]),
 	});
 });
