@@ -151,7 +151,8 @@ Before you buy
 
 Warranty
 - First sign-in is covered: if an account cannot sign in within 24 hours of delivery (wrong password or disabled), contact Support and we will replace it after checking.
-- Bans, risk checks, or phone verification after a successful sign-in are not covered.`,
+- Bans, risk checks, or phone verification after a successful sign-in are not covered.
+- Delivery is complete once the account details are sent; no refunds. Sign-in problems are handled by the replacement warranty above.`,
 	},
 	"c70d10e8-b781-4782-bc98-1f034bcd069a": {
 		name: "Apple ID｜US / Japan / Turkey｜Aged account",
@@ -324,7 +325,8 @@ Notes
 - Tokens are usage credit, not a fixed number of images or minutes of video; actual usage and limits follow Muse's rules.
 
 After-sales
-24-hour warranty. Sign in and check soon after delivery; if anything is wrong, contact support from the order page within 24 hours with the order number and a screenshot.`,
+24-hour warranty. Sign in and check soon after delivery; if anything is wrong, contact support from the order page within 24 hours with the order number and a screenshot.
+Delivery is complete once the account details are sent; no refunds. Sign-in problems are handled by the warranty above.`,
 	},
 	"a9f6b8c4-e302-5c1a-8947-780785672b32": {
 		name: "Codex long-term SMS number｜US｜20–30 days",
