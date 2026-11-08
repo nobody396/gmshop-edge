@@ -126,20 +126,24 @@ it("preserves the user's two annotated images and safe external checking links",
 		document.querySelector('a[href="https://chatgpt.com/#settings/Billing"]'),
 	).not.toBeNull();
 });
-it("never exposes a purchase link for the unlisted upgrade and clears it on back", async () => {
+it("sends the paid-difference upgrade to the quote page, never a priced product link", async () => {
 	await click("guide_gpt");
 	await click("guide_plus");
 	await click("guide_current_ph");
 	await click("guide_five");
 	await click("guide_recharge_now");
 	await click("guide_ph_upgrade");
-	expect(document.body.textContent).toContain("guide_upgrade_pending");
+	expect(document.body.textContent).toContain("guide_gptupgrade_body");
+	expect(
+		document.querySelector('a[href^="https://redeem.laoshirenvip.com/upgrade"]')
+			?.textContent,
+	).toContain("guide_gptupgrade_quote");
 	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
 	expect(mock.calls).not.toHaveBeenCalled();
 	await click("guide_back");
 	await click("guide_ios");
 	await settle();
-	expect(document.body.textContent).not.toContain("guide_upgrade_pending");
+	expect(document.body.textContent).not.toContain("guide_gptupgrade_body");
 	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
 	await act(async () => {
 		(
@@ -218,7 +222,7 @@ it("enlarges both examples in a nested dialog and preserves the guide step", asy
 	await click("guide_five");
 	await click("guide_recharge_now");
 	await click("guide_ph_upgrade");
-	expect(document.body.textContent).toContain("guide_upgrade_pending");
+	expect(document.body.textContent).toContain("guide_gptupgrade_body");
 });
 
 it("opens $200 without qualification and uses the exact free-account SKU", async () => {
@@ -247,10 +251,10 @@ it("offers the opened $500 tier with delivery timing and an exact SKU link", asy
 		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
 	).toContain(`item=${guideProducts.gpt500.itemId}`);
 });
-it("does not recommend $500 to an active subscriber", async () => {
+it("does not recommend $500 to an active App Store subscriber", async () => {
 	await click("guide_gpt");
 	await click("guide_plus");
-	await click("guide_current_ph");
+	await click("guide_current_ios");
 	await click("guide_fivehundred");
 	await click("guide_recharge_now");
 	expect(document.body.textContent).toContain("guide_fivehundred_active");
