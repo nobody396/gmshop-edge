@@ -521,3 +521,75 @@ export async function topUpBulkCodeStock(input: {
 	}
 	return { status: "ran" as const, generated };
 }
+
+const ownedTopUpKey = "ops.owned_code_topup.at";
+const ownedTopUpMapKey = "integration.owned_code_topup";
+const ownedTopUpFloor = 5;
+const ownedTopUpTarget = 20;
+
+/**
+ * Keeps items whose stock is our own redemption codes (such as SMS codes, which
+ * buy a number only when the customer starts one) from selling out: below 5
+ * unsold codes, issue enough to get back to 20. Issuing costs nothing. Items are
+ * listed explicitly in `integration.owned_code_topup` as {itemId: warehouseSku}.
+ */
+export async function topUpOwnedCodeStock(input: {
+	db: D1Database;
+	now: number;
+	generate?: typeof generateRedeemSellableInventory;
+}) {
+	const { db, now } = input;
+	const setting = await db
+		.prepare("SELECT value FROM system_settings WHERE key = ?")
+		.bind(ownedTopUpMapKey)
+		.first<{ value: string }>();
+	if (!setting) return { status: "off" as const };
+	let raw: unknown = JSON.parse(setting.value);
+	if (typeof raw === "string") raw = JSON.parse(raw);
+	const items = z
+		.record(z.string().min(1), z.string().regex(/^[A-Z0-9_]+$/))
+		.parse(raw);
+	const ids = Object.keys(items);
+	if (ids.length === 0) return { status: "off" as const };
+	if (!(await claimInterval(db, ownedTopUpKey, now, 10 * 60_000)))
+		return { status: "waiting" as const };
+	const rows = await db
+		.prepare(
+			`SELECT item.id, (SELECT COUNT(*) FROM stock_entries s WHERE s.sellable_item_id = item.id AND s.status = 'available') AS available
+			 FROM product_sellable_items item JOIN products product ON product.id = item.product_id
+			 WHERE item.enabled = 1 AND item.fulfillment_source = 'local' AND product.status = 'active'
+			  AND item.id IN (${ids.map(() => "?").join(",")})`,
+		)
+		.bind(...ids)
+		.all<{ id: string; available: number }>();
+	const short = rows.results.filter(
+		(row) => Number(row.available) < ownedTopUpFloor,
+	);
+	if (short.length === 0) return { status: "full" as const, generated: 0 };
+	const runtime = await loadRuntimeConfig(db);
+	if (!runtime.commerceSecret) return { status: "unavailable" as const };
+	const generate = input.generate ?? generateRedeemSellableInventory;
+	let generated = 0;
+	for (const row of short) {
+		const count = ownedTopUpTarget - Number(row.available);
+		await generate(
+			{
+				requestRef: `owned-topup-${row.id.slice(0, 8)}-${now}`,
+				sku: items[row.id] as string,
+				componentId: row.id,
+				count,
+			},
+			{
+				db,
+				currentUser: { id: null },
+				request: new Request("https://internal.invalid/owned-code-topup"),
+				runtime: { commerceSecret: runtime.commerceSecret },
+			},
+		)
+			.then(() => {
+				generated += count;
+			})
+			.catch(() => undefined);
+	}
+	return { status: "ran" as const, generated };
+}

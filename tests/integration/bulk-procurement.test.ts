@@ -4,6 +4,7 @@ import {
 	recordBulkSale,
 	runBulkProcurements,
 	topUpBulkCodeStock,
+	topUpOwnedCodeStock,
 } from "#/features/redeem-warehouse/server/bulk-procurement";
 import { upsertFeishuAlertSetting } from "#/features/telegram/server/feishu-alerts";
 import {
@@ -433,6 +434,55 @@ describe("bulk AISOU procurement after a bulk sale", {
 		await expect(
 			topUpBulkCodeStock({ db, now: 1_900_000_060_000, generate }),
 		).resolves.toEqual({ status: "waiting" });
+	});
+
+	it("tops listed owned-code items up to 20 once they fall below 5, at most every ten minutes", async () => {
+		const calls: Array<{ sku: string; componentId: string; count: number }> =
+			[];
+		const generate = (async (data: {
+			sku: string;
+			componentId: string;
+			count: number;
+		}) => {
+			calls.push({
+				sku: data.sku,
+				componentId: data.componentId,
+				count: data.count,
+			});
+			return { idempotent: false, imported: data.count, count: data.count };
+		}) as never;
+		await expect(
+			topUpOwnedCodeStock({ db, now: 1_900_000_000_000, generate }),
+		).resolves.toEqual({ status: "off" });
+		await db.batch([
+			db.prepare(
+				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+				 VALUES ('integration.owned_code_topup', '{"i":"SMS_CLAUDE_US"}', 0, 1, 1)`,
+			),
+			...Array.from({ length: 5 }, (_, index) =>
+				db.prepare(
+					`INSERT INTO stock_entries (id, sellable_item_id, content_encrypted, key_version, content_fingerprint, content_mask, status, created_at, updated_at)
+					 VALUES ('o${index}', 'i', 'c', 1, 'g${index}', 'm', 'available', 1, 1)`,
+				),
+			),
+		]);
+		await expect(
+			topUpOwnedCodeStock({ db, now: 1_900_000_000_000, generate }),
+		).resolves.toEqual({ status: "full", generated: 0 });
+		await db
+			.prepare(
+				"UPDATE stock_entries SET status = 'sold' WHERE id IN ('o0','o1')",
+			)
+			.run();
+		await expect(
+			topUpOwnedCodeStock({ db, now: 1_900_000_060_000, generate }),
+		).resolves.toEqual({ status: "waiting" });
+		await expect(
+			topUpOwnedCodeStock({ db, now: 1_900_000_600_000, generate }),
+		).resolves.toEqual({ status: "ran", generated: 17 });
+		expect(calls).toEqual([
+			{ sku: "SMS_CLAUDE_US", componentId: "i", count: 17 },
+		]);
 	});
 
 	it("keeps an unsent owner message pending and sends it once Telegram is back", async () => {

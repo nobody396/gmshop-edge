@@ -20,6 +20,7 @@ import { refreshReferralBudgets } from "#/features/promotions/server/referral-bu
 import {
 	runBulkProcurements,
 	topUpBulkCodeStock,
+	topUpOwnedCodeStock,
 } from "#/features/redeem-warehouse/server/bulk-procurement";
 import { runRedemptionExceptionTodos } from "#/features/redeem-warehouse/server/exception-todos";
 import { runRenewalReminders } from "#/features/renewals/server/scheduler";
@@ -115,6 +116,10 @@ export async function runScheduledCommerceWork(
 		db: env.DB,
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	const ownedCodeTopUp = await topUpOwnedCodeStock({
+		db: env.DB,
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	const redemptionExceptions = await runRedemptionExceptionTodos({
 		db: env.DB,
 	}).catch(() => ({ status: "failed", changed: 0, accepted: 0 }));
@@ -202,6 +207,7 @@ export async function runScheduledCommerceWork(
 		redemptionExceptions,
 		bulkProcurements,
 		bulkCodeTopUp,
+		ownedCodeTopUp,
 		expired,
 		deliveries,
 		suppliers,
