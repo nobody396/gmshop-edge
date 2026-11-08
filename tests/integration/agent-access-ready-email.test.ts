@@ -153,9 +153,7 @@ describe("agent access ready email", { timeout: 30000 }, () => {
 		const sent = await message(rows[0]?.id ?? "");
 		expect(sent.from).toBe("老实人AI VIP <no-reply@laoshirenvip.com>");
 		expect(sent.to).toBe(buyer);
-		expect(sent.subject).toBe(
-			"子站代理已开通｜你的店铺：https://apple.lsrai.shop",
-		);
+		expect(sent.subject).toBe("分站已开通｜你的店铺：https://apple.lsrai.shop");
 		expect(sent.text).toContain(
 			`初始密码：在订单页查看 → https://laoshirenvip.com/account/orders/${order.order_number}`,
 		);
@@ -228,7 +226,7 @@ describe("agent access ready email", { timeout: 30000 }, () => {
 			`agent-access-ready:${order.order_item_id}:orange.lsrai.shop`,
 		]);
 		expect((await message(rows[1]?.id ?? "")).subject).toBe(
-			"子站代理已开通｜你的店铺：https://orange.lsrai.shop",
+			"分站已开通｜你的店铺：https://orange.lsrai.shop",
 		);
 	});
 
@@ -452,6 +450,28 @@ describe("ready email content", () => {
 		expect(text).toContain("如有问题，请在订单页点「联系客服」");
 		expect(text).toContain("图文教程");
 		expect(text).toContain("https://lsrai.shop/guides/reseller");
+	});
+	it("states the term on opening and sends a short renewal email", () => {
+		const opening = renderAgentAccessReadyEmail({
+			...base,
+			kind: "subsite",
+			locale: "zh-CN",
+			domain: "apple.lsrai.shop",
+			termExpiresAt: Date.parse("2027-02-08T13:30:00Z"),
+		});
+		expect(opening.text).toContain("分站有效期至 2027/02/08 21:30（北京时间）");
+		expect(opening.text).toContain("再次购买「分站搭建」，每次延长 3 个月");
+		const renewal = renderAgentAccessReadyEmail({
+			...base,
+			kind: "subsite",
+			locale: "zh-CN",
+			domain: "apple.lsrai.shop",
+			termExpiresAt: Date.parse("2027-05-08T13:30:00Z"),
+			renewal: true,
+		});
+		expect(renewal.subject).toBe("分站已续费｜有效期至 2027/05/08 21:30");
+		expect(renewal.text).toContain("已经恢复");
+		expect(renewal.text).not.toContain("初始密码");
 	});
 	it("drops the fallback note once the host matches the requested name", () => {
 		const { text } = renderAgentAccessReadyEmail({

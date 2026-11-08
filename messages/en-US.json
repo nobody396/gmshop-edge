@@ -2184,12 +2184,12 @@
 	"supply_console_upstream_processing": "Upstream processing / reserved",
 	"supply_console_supplier_quantity": "Supplier catalogue quantity (not owned)",
 	"agent_access_title": "Agent access",
-	"agent_access_purchase_notice": "One-time access, no purchasing credit. Use your own verified email and bind any existing account first. No invitation code or second application.",
+	"agent_access_purchase_notice": "Subsite Setup runs in 3-month terms with email reminders before expiry; renewing extends it. API Integration is a one-time activation. No purchasing credit included. Use your own verified email and bind any existing account first.",
 	"agent_access_check": "Check account and eligibility",
 	"agent_access_check_error": "Verify your email on this page first. If this continues, contact support; do not pay again.",
 	"agent_access_eligible": "Account check passed. You can continue purchasing.",
 	"agent_access_bind": "Verify and bind your existing account, then return and recheck",
-	"agent_access_existing": "This account already has access. Do not purchase again.",
+	"agent_access_existing": "This account is already active (permanent); no need to buy again.",
 	"agent_access_sign_in": "Sign in with the purchasing account to view access.",
 	"agent_access_support": "Support review is needed. Provide the original order number; do not pay again.",
 	"agent_access_active": "Access activated",
@@ -2671,5 +2671,8 @@
 	"promotion_history_empty": "No rewards yet. Share your link — your friends' orders will show up here",
 	"promotion_history_rewards": "Referred orders",
 	"promotion_history_entries": "Balance history",
-	"promotion_after_balance": "Balance {amount}"
+	"promotion_after_balance": "Balance {amount}",
+	"agent_access_renewable": "You already have a store, active until {date} (Beijing time). Buying now renews it for 3 more months; your store address, products, orders and balance stay the same.",
+	"agent_access_renewed": "Store renewed, now active until {date} (Beijing time).",
+	"agent_access_term": "Store active until {date} (Beijing time). We will email you before it expires."
 }

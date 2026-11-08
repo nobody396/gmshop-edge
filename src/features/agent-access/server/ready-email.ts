@@ -27,10 +27,12 @@ type ReadyRow = {
 	domain: string | null;
 	requested_subdomain: string | null;
 	subdomain_fallback: string | null;
+	renewal: number;
+	term_expires_at: number | null;
 	order_number: string;
 	order_locale: string | null;
 };
-const readyQuery = `SELECT a.order_item_id,a.user_id,a.kind,a.email,a.state,a.domain,a.requested_subdomain,a.subdomain_fallback,
+const readyQuery = `SELECT a.order_item_id,a.user_id,a.kind,a.email,a.state,a.domain,a.requested_subdomain,a.subdomain_fallback,a.renewal,a.term_expires_at,
  o.order_number,o.locale AS order_locale
  FROM agent_access_orders a JOIN shop_order_items oi ON oi.id=a.order_item_id JOIN shop_orders o ON o.id=oi.order_id`;
 
@@ -42,7 +44,30 @@ export type ReadyEmailContent = {
 	orderUrl: string;
 	requestedSubdomain?: string | null;
 	subdomainFallback?: string | null;
+	/** Sub-site term end in ms; null means permanent. */
+	termExpiresAt?: number | null;
+	renewal?: boolean;
 };
+
+function beijingTime(ms: number) {
+	return new Intl.DateTimeFormat("zh-CN", {
+		timeZone: "Asia/Shanghai",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+	}).format(new Date(ms));
+}
+
+function termLine(input: ReadyEmailContent) {
+	if (!input.termExpiresAt) return null;
+	const date = beijingTime(input.termExpiresAt);
+	return input.locale === "zh-CN"
+		? `分站有效期至 ${date}（北京时间）。到期前 15 天、7 天、1 天会发邮件提醒；到期未续费店铺会自动暂停接单，续费后立即恢复。续费：用同一个邮箱在本站再次购买「分站搭建」，每次延长 3 个月。`
+		: `Your store is active until ${date} (Beijing time). We email you 15, 7 and 1 day before it expires; if not renewed, the store pauses new orders and reopens as soon as you renew. To renew, buy "Subsite Setup" again here with the same email; each purchase adds 3 months.`;
+}
 
 /** One address per (order item, domain): a changed sub-site host earns one new email. */
 export function agentAccessReadyKey(
@@ -102,11 +127,37 @@ function blocks(input: ReadyEmailContent): {
 	};
 	const signature: Block = { type: "p", lines: ["老实人AI VIP"] };
 	const greeting: Block = { type: "p", lines: [zh ? "你好，" : "Hello,"] };
-	if (input.kind === "subsite") {
-		const note = fallbackNote(input);
+	if (input.kind === "subsite" && input.renewal) {
+		const date = input.termExpiresAt ? beijingTime(input.termExpiresAt) : "";
 		return {
 			subject: zh
-				? `子站代理已开通｜你的店铺：${store}`
+				? `分站已续费｜有效期至 ${date}`
+				: `Store renewed | Active until ${date}`,
+			body: [
+				greeting,
+				{
+					type: "p",
+					lines: [
+						zh
+							? `你的分站已续费 3 个月，有效期延长至 ${date}（北京时间）。`
+							: `Your store has been renewed for 3 months and is now active until ${date} (Beijing time).`,
+						zh ? `店铺地址：${store}` : `Store address: ${store}`,
+						zh
+							? "店铺地址、商品、订单、收益和余额都不变；如果之前已暂停接单，现在已经恢复。"
+							: "Your address, products, orders, earnings and balance are unchanged; if the store was paused, it is open again now.",
+					],
+				},
+				contact,
+				signature,
+			],
+		};
+	}
+	if (input.kind === "subsite") {
+		const note = fallbackNote(input);
+		const term = termLine(input);
+		return {
+			subject: zh
+				? `分站已开通｜你的店铺：${store}`
 				: `Your sub-site is ready | Your store: ${store}`,
 			body: [
 				greeting,
@@ -114,8 +165,8 @@ function blocks(input: ReadyEmailContent): {
 					type: "p",
 					lines: [
 						zh
-							? "你购买的「子站代理」已开通成功 🎉"
-							: "Your Sub-site Partner access is now active 🎉",
+							? "你购买的「分站搭建」已开通成功 🎉"
+							: "Your Subsite Setup is now active 🎉",
 					],
 				},
 				{
@@ -129,6 +180,7 @@ function blocks(input: ReadyEmailContent): {
 					],
 				},
 				{ type: "p", lines: login },
+				...(term ? [{ type: "p" as const, lines: [term] }] : []),
 				{
 					type: "ol",
 					title: zh ? "接下来三步：" : "Next three steps:",
@@ -156,7 +208,7 @@ function blocks(input: ReadyEmailContent): {
 					type: "p",
 					lines: [
 						zh
-							? "子站已赠送 API 对接：在「个人中心 → API 对接」领取 Key，对接文档也在这一页。"
+							? "分站已赠送 API 对接：在「个人中心 → API 对接」领取 Key，对接文档也在这一页。"
 							: 'API integration is included with your sub-site: get your Key under "Personal Center → API Integration"; the documentation is on the same page.',
 					],
 				},
@@ -302,6 +354,8 @@ export async function enqueueAgentAccessReadyEmail(
 		).toString(),
 		requestedSubdomain: row.requested_subdomain,
 		subdomainFallback: row.subdomain_fallback,
+		termExpiresAt: row.term_expires_at,
+		renewal: row.renewal === 1,
 	});
 	const idempotencyKey = agentAccessReadyKey(row.order_item_id, domain);
 	try {

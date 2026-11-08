@@ -134,6 +134,13 @@ export async function prepareAgentCheckout(
 		.bind(Date.now())
 		.run();
 	const activeKey = `${userId}:${kind}`;
+	// Finished orders never block the next purchase (a sub-site renewal).
+	await db
+		.prepare(
+			"UPDATE agent_access_orders SET active_key=NULL WHERE active_key=? AND state IN ('active','revoked','cancelled')",
+		)
+		.bind(activeKey)
+		.run();
 	const old = await db
 		.prepare("SELECT order_item_id FROM agent_access_orders WHERE active_key=?")
 		.bind(activeKey)
@@ -151,7 +158,9 @@ export async function prepareAgentCheckout(
 		email,
 		kind,
 	});
-	if (result.state !== "eligible")
+	// A sub-site with a term is bought again to renew it (+3 months).
+	const renewal = kind === "subsite" && result.state === "renewable";
+	if (result.state !== "eligible" && !renewal)
 		throw new DomainError(
 			result.state === "already_active"
 				? "agent_access_already_active"
@@ -160,7 +169,10 @@ export async function prepareAgentCheckout(
 			"Confirm the linked account on the product page before paying",
 		);
 	// Optional; empty means lsrai.shop assigns a pooled name at provision time.
-	const prefix = normalizeSubsitePrefix(input.agentSubsitePrefix ?? "");
+	// A renewal keeps the existing store address; a typed prefix is ignored.
+	const prefix = renewal
+		? ""
+		: normalizeSubsitePrefix(input.agentSubsitePrefix ?? "");
 	if (prefix && kind !== "subsite")
 		throw new DomainError(
 			"agent_subsite_prefix_invalid",
@@ -183,6 +195,7 @@ export async function prepareAgentCheckout(
 		activeKey,
 		itemId: item.sellableItemId,
 		subdomain: prefix || null,
+		renewal,
 	};
 }
 export function agentCheckoutStatement(
@@ -193,7 +206,7 @@ export function agentCheckoutStatement(
 ) {
 	return db
 		.prepare(
-			`INSERT INTO agent_access_orders (order_item_id,user_id,kind,email,active_key,policy_snapshot,requested_subdomain,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+			`INSERT INTO agent_access_orders (order_item_id,user_id,kind,email,active_key,policy_snapshot,requested_subdomain,renewal,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		)
 		.bind(
 			orderItemId,
@@ -203,6 +216,7 @@ export function agentCheckoutStatement(
 			prepared.activeKey,
 			JSON.stringify({ ...agentAccessRefundPolicy, acceptedAt: now }),
 			prepared.subdomain,
+			prepared.renewal ? 1 : 0,
 			now,
 			now,
 		);
