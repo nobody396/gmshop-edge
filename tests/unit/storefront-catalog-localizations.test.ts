@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { localizeSellableItem } from "#/features/storefront/catalog-localizations";
+import {
+	localizeProduct,
+	localizeSellableItem,
+} from "#/features/storefront/catalog-localizations";
 
 const fallback = {
 	name: "测试规格",
@@ -65,4 +68,66 @@ it("names every ChatGPT plan in English, grouped as plan｜channel｜term", () =
 	);
 	expect(chile.policy.delivery).toBe("24/7 automatic delivery");
 	expect(chile.policy.coverage).toContain("must currently be on Free");
+});
+
+it.each([
+	[
+		"a9f6b8c4-e302-5c1a-8947-780785672b32",
+		"a39b3590-0952-5886-9076-a9cd879c1975",
+		"Codex long-term SMS number｜US｜20–30 days",
+		"20–30",
+	],
+	[
+		"ff4ff1f6-cad4-4821-a195-39befdcc32d6",
+		"e23b7fb9-1e1c-4b47-a110-d9f84a02a52c",
+		"Claude long-term SMS number｜US｜21–30 days",
+		"21–30",
+	],
+	[
+		"8f78192a-3097-4ec2-a771-5aa76d1bccab",
+		"d353aa0e-fd21-4ecc-9a0b-9ad9a5e64da4",
+		"Google / Gmail long-term SMS number｜US real SIM｜23–30 days",
+		"23–30",
+	],
+	[
+		"0375b7ba-9b49-4ff4-9652-40fedf7fbf0d",
+		"174e12ab-0383-4f84-a14b-c88151a0be3c",
+		"TikTok SMS number｜US real SIM｜16–30 days",
+		"16–30",
+	],
+	[
+		"4d5aba11-5102-4d06-a11d-7d33279c8fa8",
+		"88aff5d3-a5ca-4ce3-9839-4149fe1d37ef",
+		"Telegram SMS number｜UK real SIM｜61–92 days",
+		"61–92",
+	],
+])("localizes current SMS product %s and its item", (productId, itemId, name, days) => {
+	const productFallback = { name: "原始名称", description: "原始说明" };
+	const product = localizeProduct(productId, "en-US", productFallback);
+	expect(product.name).toBe(name);
+	for (const text of [
+		days,
+		"real-SIM",
+		"https://redeem.laoshirenvip.com",
+		"Get number",
+		"2 minutes",
+		"once for free",
+		"30 minutes",
+		"not the redemption API",
+	])
+		expect(product.description).toContain(text);
+	expect(product.description).not.toMatch(/https:\/\/sms\./);
+	const item = localizeSellableItem(itemId, "en-US", fallback);
+	expect(item.name).toBe(name);
+	expect(item.policy.coverage).toContain("real-SIM");
+	expect(item.policy.deliveryTime).toContain(days);
+	expect(item.policy.warranty).toContain("One free number swap");
+	expect(item.policy.restrictions).toContain("not through the redemption API");
+	expect(
+		`${product.name}${product.description}${Object.values(item.policy).join("")}`,
+	).not.toMatch(/[\u4e00-\u9fff]/);
+	expect(localizeProduct(productId, "zh-CN", productFallback)).toBe(
+		productFallback,
+	);
+	expect(localizeSellableItem(itemId, "zh-CN", fallback)).toBe(fallback);
 });

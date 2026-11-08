@@ -330,31 +330,68 @@ Delivery is complete once the account details are sent; no refunds. Sign-in prob
 	},
 	"a9f6b8c4-e302-5c1a-8947-780785672b32": {
 		name: "Codex long-term SMS number｜US｜20–30 days",
-		description: `A long-term US phone number, valid for about 20–30 days after you take it (as shown on the number page). The warranty covers receiving the first verification code; later bindings are not covered.
+		description: `A US real-SIM number for ChatGPT / Codex SMS verification, valid for 20–30 days as shown on the redemption page.
 
-Your order contains one of two formats; follow the one you received.
+How to use
+1. Open https://redeem.laoshirenvip.com and enter your card code.
+2. Select "Get number" to see your real-SIM number.
+3. Enter that number on ChatGPT / Codex and request a verification SMS.
+4. Return to the redemption page; received SMS codes appear there.
 
-A. US number + code link (the order shows "US number" and "Code link")
-1. Enter the +1 US number on the Codex / OpenAI phone verification page and send the SMS. Always choose +1 (United States).
-2. Open the code link in Safari, Chrome, or Edge (not WeChat's built-in browser) and wait about 1 minute for the code.
-3. The same number can receive a second verification within its validity. This format has no self-service number switch; if no code arrives, contact support with a screenshot.
+Number swap
+If no SMS arrives after 2 minutes, you can swap the number once for free within 30 minutes. Use the redemption page, not the redemption API.`,
+	},
+	"ff4ff1f6-cad4-4821-a195-39befdcc32d6": {
+		name: "Claude long-term SMS number｜US｜21–30 days",
+		description: `A US real-SIM number for Claude SMS verification, valid for 21–30 days as shown on the redemption page.
 
-B. CDK + number page (the order shows "CDK" and a number page)
-1. Open the number page from your order in Safari, Chrome, or Edge (not WeChat's built-in browser).
-2. Enter the CDK you received, then copy the assigned +1 US number.
-3. Enter the number on the Codex / OpenAI phone verification page and send the SMS.
-4. Return to the number page and tap "Get code"; codes can be delayed, so wait about 1 minute.
-Number page: https://sms.kkdos.store/
+How to use
+1. Open https://redeem.laoshirenvip.com and enter your card code.
+2. Select "Get number" to see your real-SIM number.
+3. Enter that number on Claude and request a verification SMS.
+4. Return to the redemption page; received SMS codes appear there.
 
-FAQ (number switching applies to format B only)
-- "Number recently used": a platform risk control; wait about 1 hour before binding again or switch to a stable network.
-- Cannot send SMS to the number: switch numbers yourself on the number page.
-- Too many verification requests: stop clicking, wait, or switch to a stable network before retrying.
-- "Linked to the maximum number of accounts": this number cannot be used further; switch numbers.
-- No code after checking: wait about 1 minute first, then switch numbers. Numbers cannot be switched after a code is received.
-- Out of switches or under maintenance: contact support.
+Number swap
+If no SMS arrives after 2 minutes, you can swap the number once for free within 30 minutes. Use the redemption page, not the redemption API.`,
+	},
+	"8f78192a-3097-4ec2-a771-5aa76d1bccab": {
+		name: "Google / Gmail long-term SMS number｜US real SIM｜23–30 days",
+		description: `A US real-SIM number for Google / Gmail SMS verification, valid for 23–30 days as shown on the redemption page.
 
-Restrictions: no Google mailbox verification, no sign-ups on other platforms, and the number cannot be used as a phone-number login. No no-reason refunds after redemption or after a code is received.`,
+How to use
+1. Open https://redeem.laoshirenvip.com and enter your card code.
+2. Select "Get number" to see your real-SIM number.
+3. Enter that number on Google / Gmail and request a verification SMS.
+4. Return to the redemption page; received SMS codes appear there.
+
+Number swap
+If no SMS arrives after 2 minutes, you can swap the number once for free within 30 minutes. Use the redemption page, not the redemption API.`,
+	},
+	"0375b7ba-9b49-4ff4-9652-40fedf7fbf0d": {
+		name: "TikTok SMS number｜US real SIM｜16–30 days",
+		description: `A US real-SIM number for TikTok SMS verification, valid for 16–30 days as shown on the redemption page.
+
+How to use
+1. Open https://redeem.laoshirenvip.com and enter your card code.
+2. Select "Get number" to see your real-SIM number.
+3. Enter that number on TikTok and request a verification SMS.
+4. Return to the redemption page; received SMS codes appear there.
+
+Number swap
+If no SMS arrives after 2 minutes, you can swap the number once for free within 30 minutes. Use the redemption page, not the redemption API.`,
+	},
+	"4d5aba11-5102-4d06-a11d-7d33279c8fa8": {
+		name: "Telegram SMS number｜UK real SIM｜61–92 days",
+		description: `A UK real-SIM number for Telegram SMS verification, valid for 61–92 days as shown on the redemption page.
+
+How to use
+1. Open https://redeem.laoshirenvip.com and enter your card code.
+2. Select "Get number" to see your real-SIM number.
+3. Enter that number on Telegram and request a verification SMS.
+4. Return to the redemption page; received SMS codes appear there.
+
+Number swap
+If no SMS arrives after 2 minutes, you can swap the number once for free within 30 minutes. Use the redemption page, not the redemption API.`,
 	},
 	"cdccd3bc-4504-5521-8761-332c99910c9f": {
 		name: "Codex one-time SMS number｜US｜1 use",
@@ -827,11 +864,51 @@ ${claudeRestrictions}`,
 	"a39b3590-0952-5886-9076-a9cd879c1975": {
 		name: "Codex long-term SMS number｜US｜20–30 days",
 		policy: policy(
-			smsDelivery,
-			"Automatic; the number stays valid for about 20–30 days after you take it, as shown on the number page.",
-			"A long-term US number; the warranty covers receiving the first code. You can usually try binding a 2nd and 3rd account after that, but later bindings are not covered.",
-			"Covers receiving the first code; switch numbers yourself on the number page if one is blocked.",
-			"Wait at least 5 minutes between two code requests; risk controls or bans from rapid repeated requests are not covered.",
+			"A card code and redemption link are issued automatically after payment; enter the code at https://redeem.laoshirenvip.com and select Get number.",
+			"The number is valid for 20–30 days, as shown on the redemption page; received SMS codes appear on that page.",
+			"A US real-SIM number for ChatGPT / Codex SMS verification.",
+			"One free number swap if no SMS arrives after 2 minutes, within 30 minutes.",
+			"Redeem only on the redemption page, not through the redemption API.",
+		),
+	},
+	"e23b7fb9-1e1c-4b47-a110-d9f84a02a52c": {
+		name: "Claude long-term SMS number｜US｜21–30 days",
+		policy: policy(
+			"A card code and redemption link are issued automatically after payment; enter the code at https://redeem.laoshirenvip.com and select Get number.",
+			"The number is valid for 21–30 days, as shown on the redemption page; received SMS codes appear on that page.",
+			"A US real-SIM number for Claude SMS verification.",
+			"One free number swap if no SMS arrives after 2 minutes, within 30 minutes.",
+			"Redeem only on the redemption page, not through the redemption API.",
+		),
+	},
+	"d353aa0e-fd21-4ecc-9a0b-9ad9a5e64da4": {
+		name: "Google / Gmail long-term SMS number｜US real SIM｜23–30 days",
+		policy: policy(
+			"A card code and redemption link are issued automatically after payment; enter the code at https://redeem.laoshirenvip.com and select Get number.",
+			"The number is valid for 23–30 days, as shown on the redemption page; received SMS codes appear on that page.",
+			"A US real-SIM number for Google / Gmail SMS verification.",
+			"One free number swap if no SMS arrives after 2 minutes, within 30 minutes.",
+			"Redeem only on the redemption page, not through the redemption API.",
+		),
+	},
+	"174e12ab-0383-4f84-a14b-c88151a0be3c": {
+		name: "TikTok SMS number｜US real SIM｜16–30 days",
+		policy: policy(
+			"A card code and redemption link are issued automatically after payment; enter the code at https://redeem.laoshirenvip.com and select Get number.",
+			"The number is valid for 16–30 days, as shown on the redemption page; received SMS codes appear on that page.",
+			"A US real-SIM number for TikTok SMS verification.",
+			"One free number swap if no SMS arrives after 2 minutes, within 30 minutes.",
+			"Redeem only on the redemption page, not through the redemption API.",
+		),
+	},
+	"88aff5d3-a5ca-4ce3-9839-4149fe1d37ef": {
+		name: "Telegram SMS number｜UK real SIM｜61–92 days",
+		policy: policy(
+			"A card code and redemption link are issued automatically after payment; enter the code at https://redeem.laoshirenvip.com and select Get number.",
+			"The number is valid for 61–92 days, as shown on the redemption page; received SMS codes appear on that page.",
+			"A UK real-SIM number for Telegram SMS verification.",
+			"One free number swap if no SMS arrives after 2 minutes, within 30 minutes.",
+			"Redeem only on the redemption page, not through the redemption API.",
 		),
 	},
 	"25a7ae5b-f437-5461-bfca-669870e3b887": {

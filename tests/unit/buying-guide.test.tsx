@@ -165,19 +165,26 @@ it.each([
 ])("blocks buying when $label", async (state) => {
 	Object.assign(mock, state);
 	await click("guide_sms");
-	await click("guide_smsone");
+	await click("guide_smslong");
 	await settle();
 	expect(document.body.textContent).toContain(state.label);
 	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
 });
-it("does not auto-select a different in-stock product and targets the exact requested SKU", async () => {
+it.each([
+	"smslong",
+	"smsclaude",
+	"smsgoogle",
+	"smstiktok",
+	"smstelegram",
+] as const)("targets the exact requested SMS SKU: %s", async (product) => {
 	await click("guide_sms");
-	await click("guide_smslong");
+	await click(`guide_${product}`);
 	await settle();
+	expect(document.body.textContent).not.toContain("guide_smsone");
 	expect(
 		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
 	).toBe(
-		`/products/${guideProducts.smslong.productId}?item=${guideProducts.smslong.itemId}#purchase-options`,
+		`/products/${guideProducts[product].productId}?item=${guideProducts[product].itemId}#purchase-options`,
 	);
 });
 it("blocks Free points and closes/reopens at the start", async () => {
