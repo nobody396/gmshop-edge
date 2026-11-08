@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireStorefrontPermission } from "#/features/access/storefront-access";
+import { primaryCategory } from "#/features/home/category-order";
 import { resolveStoreAccount } from "#/features/storefront/server/account";
 import { quoteStoreCouponForVisitor } from "#/features/storefront/server/multi-order";
 import { getDb } from "#/server/db.server";
@@ -55,15 +56,16 @@ export const getPromotionAccountFn = createServerFn({ method: "GET" }).handler(
 				source_type: string;
 				created_at: number;
 			}>();
-		// Biggest current invitation amounts, so customers see what a share is worth.
+		// Every item that pays an invitation reward, biggest first, so customers see what a share is worth.
 		const examples = await db
-			.prepare(`SELECT p.name AS product_name, i.name AS item_name, i.referral_budget_minor
+			.prepare(`SELECT p.name AS product_name, p.tag_names, i.name AS item_name, i.referral_budget_minor
   FROM product_sellable_items i JOIN products p ON p.id=i.product_id
   WHERE p.status='active' AND p.sale_disabled=0 AND i.enabled=1 AND i.sale_disabled=0
    AND i.currency='CNY' AND i.promotion_budget_minor<>'0' AND CAST(i.referral_budget_minor AS INTEGER)>0
-  ORDER BY CAST(i.referral_budget_minor AS INTEGER) DESC, p.sort_order, i.sort_order LIMIT 8`)
+  ORDER BY CAST(i.referral_budget_minor AS INTEGER) DESC, p.sort_order, i.sort_order LIMIT 200`)
 			.all<{
 				product_name: string;
+				tag_names: string | null;
 				item_name: string;
 				referral_budget_minor: string;
 			}>();
@@ -72,7 +74,18 @@ export const getPromotionAccountFn = createServerFn({ method: "GET" }).handler(
 				const split = splitReferralBudget(BigInt(row.referral_budget_minor));
 				// "Premium｜1年" alone is ambiguous; prefix the product unless the name already says it.
 				const brand = row.product_name.split(/[\s｜]/)[0] ?? "";
+				let tags: string[] = [];
+				try {
+					const parsed: unknown = JSON.parse(row.tag_names ?? "[]");
+					if (Array.isArray(parsed))
+						tags = parsed.filter(
+							(tag): tag is string => typeof tag === "string",
+						);
+				} catch {
+					// Untagged: listed under "other".
+				}
 				return {
+					category: primaryCategory(tags) ?? "其他服务",
 					name:
 						brand && !row.item_name.includes(brand)
 							? `${row.product_name.split("｜")[0]} · ${row.item_name}`

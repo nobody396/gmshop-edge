@@ -23,6 +23,13 @@ vi.mock("@tanstack/react-query", () => ({
 			balanceMinor: "0",
 			examples: [
 				{
+					category: "Anthropic",
+					name: "Claude Pro｜iOS｜1个月",
+					discountMinor: "300",
+					rewardMinor: "700",
+				},
+				{
+					category: "OpenAI",
 					name: "ChatGPT Pro 200｜iOS｜1个月",
 					discountMinor: "1050",
 					rewardMinor: "2450",
@@ -99,4 +106,25 @@ it("lists current invitation amounts per item", () => {
 	expect(list?.textContent).toContain("¥10.50");
 	expect(list?.textContent).toContain("¥24.50");
 	expect(list?.textContent).toContain(m.promotion_table_reward());
+});
+
+it("lists every rewarded item biggest first and filters by category", async () => {
+	const list = () =>
+		[
+			...container.querySelectorAll(
+				'[data-testid="referral-examples"] tbody tr',
+			),
+		].map((row) => row.querySelector("td")?.textContent);
+	expect(list()).toEqual([
+		"ChatGPT Pro 200｜iOS｜1个月",
+		"Claude Pro｜iOS｜1个月",
+	]);
+	const claude = [...container.querySelectorAll("button")].find(
+		(button) =>
+			button.getAttribute("aria-pressed") !== null &&
+			button.textContent?.includes("Claude"),
+	);
+	if (!claude) throw Error("Claude chip missing");
+	await act(async () => claude.click());
+	expect(list()).toEqual(["Claude Pro｜iOS｜1个月"]);
 });
