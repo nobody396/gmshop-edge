@@ -24,6 +24,7 @@ import { usePublicHeaderHeight } from "#/features/storefront/sticky-top";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 import { storefrontCatalogQueryOptions } from "./catalog-query";
+import { CategoryChips, CategorySidebar } from "./category-sidebar";
 import { SelfServiceRecharge } from "./self-service-recharge";
 
 export function HomePage({
@@ -57,6 +58,9 @@ export function HomePage({
 		});
 	}
 	const hasFilters = Boolean(searchParams.search || searchParams.tag);
+	function selectTag(tag: string) {
+		void navigate({ search: { ...searchParams, tag } });
+	}
 	const headerHeight = usePublicHeaderHeight();
 	return (
 		<div className="min-h-[70vh]">
@@ -98,33 +102,12 @@ export function HomePage({
 				style={{ top: headerHeight }}
 			>
 				<div className="container flex items-center gap-3 px-4 py-2">
-					<div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible">
-						<Button
-							className="shrink-0 rounded-full"
-							size="sm"
-							variant={searchParams.tag ? "outline" : "default"}
-							onClick={() =>
-								void navigate({ search: { ...searchParams, tag: "" } })
-							}
-						>
-							{m.store_all_tags()}
-						</Button>
-						{catalog.data?.tags.map((item) => (
-							<Button
-								className="shrink-0 rounded-full"
-								key={item.name}
-								size="sm"
-								variant={searchParams.tag === item.name ? "default" : "outline"}
-								onClick={() =>
-									void navigate({
-										search: { ...searchParams, tag: item.name },
-									})
-								}
-							>
-								{item.name}
-							</Button>
-						))}
-					</div>
+					<CategoryChips
+						active={searchParams.tag}
+						onSelect={selectTag}
+						tags={catalog.data?.tags ?? []}
+					/>
+					<div className="hidden flex-1 lg:block" />
 					<Select
 						onValueChange={(sort) =>
 							void navigate({
@@ -159,73 +142,81 @@ export function HomePage({
 					</Select>
 				</div>
 			</div>
-			<section className="container px-4 pt-3 pb-12">
-				{hasFilters ? (
-					<div className="mb-4 flex items-center justify-between gap-4">
-						<div>
-							<h2 className="font-semibold text-lg">
-								{m.store_catalog_results()}
-							</h2>
-							{catalog.data ? (
-								<p className="text-muted-foreground text-sm">
-									{m.store_catalog_count({
-										count: catalog.data.products.length,
-									})}
+			<div className="container grid gap-6 px-4 pt-3 pb-12 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+				<CategorySidebar
+					active={searchParams.tag}
+					onSelect={selectTag}
+					tags={catalog.data?.tags ?? []}
+					top={headerHeight + 56}
+				/>
+				<section className="min-w-0">
+					{hasFilters ? (
+						<div className="mb-4 flex items-center justify-between gap-4">
+							<div>
+								<h2 className="font-semibold text-lg">
+									{m.store_catalog_results()}
+								</h2>
+								{catalog.data ? (
+									<p className="text-muted-foreground text-sm">
+										{m.store_catalog_count({
+											count: catalog.data.products.length,
+										})}
+									</p>
+								) : null}
+							</div>
+							<Button
+								className="rounded-full"
+								onClick={clearFilters}
+								size="sm"
+								variant="ghost"
+							>
+								{m.store_clear_filters()}
+							</Button>
+						</div>
+					) : (
+						<h2 className="sr-only">{m.store_catalog_featured()}</h2>
+					)}
+					{catalog.isLoading ? (
+						<ProductGridSkeleton />
+					) : catalog.data?.products.length ? (
+						<div className={productGridClassName}>
+							{catalog.data.products.map((product) => (
+								<StorefrontProductCard key={product.id} product={product} />
+							))}
+						</div>
+					) : (
+						<div className="grid min-h-72 place-items-center rounded-3xl bg-muted/30 text-center">
+							<div>
+								<Boxes className="mx-auto size-10 text-muted-foreground" />
+								<h2 className="mt-4 font-semibold text-xl">
+									{hasFilters
+										? m.store_empty_title()
+										: m.store_no_products_title()}
+								</h2>
+								<p className="mt-2 text-muted-foreground text-sm">
+									{hasFilters
+										? m.store_empty_description()
+										: m.store_no_products_description()}
 								</p>
-							) : null}
+								{hasFilters ? (
+									<Button
+										className="mt-5 rounded-full"
+										onClick={clearFilters}
+										size="sm"
+									>
+										{m.store_clear_filters()}
+									</Button>
+								) : null}
+							</div>
 						</div>
-						<Button
-							className="rounded-full"
-							onClick={clearFilters}
-							size="sm"
-							variant="ghost"
-						>
-							{m.store_clear_filters()}
-						</Button>
-					</div>
-				) : (
-					<h2 className="sr-only">{m.store_catalog_featured()}</h2>
-				)}
-				{catalog.isLoading ? (
-					<ProductGridSkeleton />
-				) : catalog.data?.products.length ? (
-					<div className={productGridClassName}>
-						{catalog.data.products.map((product) => (
-							<StorefrontProductCard key={product.id} product={product} />
-						))}
-					</div>
-				) : (
-					<div className="grid min-h-72 place-items-center rounded-3xl bg-muted/30 text-center">
-						<div>
-							<Boxes className="mx-auto size-10 text-muted-foreground" />
-							<h2 className="mt-4 font-semibold text-xl">
-								{hasFilters
-									? m.store_empty_title()
-									: m.store_no_products_title()}
-							</h2>
-							<p className="mt-2 text-muted-foreground text-sm">
-								{hasFilters
-									? m.store_empty_description()
-									: m.store_no_products_description()}
-							</p>
-							{hasFilters ? (
-								<Button
-									className="mt-5 rounded-full"
-									onClick={clearFilters}
-									size="sm"
-								>
-									{m.store_clear_filters()}
-								</Button>
-							) : null}
-						</div>
-					</div>
-				)}
-				<p className="mt-8 flex flex-wrap gap-x-2 gap-y-1 border-border/60 border-t pt-4 text-muted-foreground text-xs sm:text-sm">
-					<span>{m.store_home_footer_warranty()}</span>
-					<span aria-hidden="true">·</span>
-					<span>{m.store_home_footer_support()}</span>
-				</p>
-			</section>
+					)}
+					<p className="mt-8 flex flex-wrap gap-x-2 gap-y-1 border-border/60 border-t pt-4 text-muted-foreground text-xs sm:text-sm">
+						<span>{m.store_home_footer_warranty()}</span>
+						<span aria-hidden="true">·</span>
+						<span>{m.store_home_footer_support()}</span>
+					</p>
+				</section>
+			</div>
 		</div>
 	);
 }

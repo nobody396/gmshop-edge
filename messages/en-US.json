@@ -2642,5 +2642,11 @@
 	"guide_gptupgrade_body": "On the upgrade page, paste your account Session and pick the target plan to see the price before paying. The upgrade runs automatically after payment and keeps your account.",
 	"guide_gptupgrade_quote": "Get a price on the upgrade page",
 	"guide_smstiktok": "TikTok number｜US real SIM｜16–30 days",
-	"guide_smstelegram": "Telegram number｜UK real SIM｜61–92 days"
+	"guide_smstelegram": "Telegram number｜UK real SIM｜61–92 days",
+	"store_categories_title": "Categories",
+	"store_category_all": "All products",
+	"store_category_email": "Email",
+	"store_category_sms": "SMS verification",
+	"store_category_reseller": "Reseller & API",
+	"store_category_other": "Other services"
 }

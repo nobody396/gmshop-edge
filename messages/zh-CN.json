@@ -2642,5 +2642,11 @@
 	"guide_gptupgrade_body": "在升级页粘贴账号的 Session，选要升的档位，先看报价再付款。付款后自动升级，原账号和数据不变。",
 	"guide_gptupgrade_quote": "去升级页查价",
 	"guide_smstiktok": "TikTok 接码｜美国实卡｜16–30 天",
-	"guide_smstelegram": "Telegram 接码｜英国实卡｜61–92 天"
+	"guide_smstelegram": "Telegram 接码｜英国实卡｜61–92 天",
+	"store_categories_title": "商品分类",
+	"store_category_all": "全部商品",
+	"store_category_email": "邮箱",
+	"store_category_sms": "手机接码",
+	"store_category_reseller": "开店与对接",
+	"store_category_other": "其他服务"
 }
