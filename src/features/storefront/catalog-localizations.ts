@@ -497,13 +497,23 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		),
 	},
 	"983f6e73-061e-419d-a7d5-8ac5ec5648ab": {
-		name: "ChatGPT Go｜1 month",
+		name: "ChatGPT Go｜iOS｜1 month",
 		policy: policy(
 			automatic,
 			immediate,
 			iosCoverage,
 			subscriptionWarranty,
 			"Account bans, sharing, frequent IP changes, and account-level risk controls are not covered.",
+		),
+	},
+	"29ebf990-efd6-4a1e-a71b-22f1920239a7": {
+		name: "ChatGPT Go｜India card payment｜1 month",
+		policy: policy(
+			automatic,
+			immediate,
+			`${free}; confirm the current subscription has expired before purchase.`,
+			subscriptionWarranty,
+			"Bans, incorrect information, and region or account issues are not covered.",
 		),
 	},
 	"362d3add-4901-4b4c-b6a9-27aea63473e4": {

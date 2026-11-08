@@ -4,6 +4,11 @@ import { saleComponents } from "#/features/redeem-warehouse/server/sale-capacity
 import { proposeOwnerAction } from "#/features/telegram/server/owner-actions";
 import { DomainError } from "#/lib/domain-error";
 import {
+	formatRestockResumeLines,
+	restockResumeSettingKey,
+	resumeRestockedItems,
+} from "./restock-resume";
+import {
 	beijingClock,
 	claimPeriod,
 	type Deliver,
@@ -34,6 +39,7 @@ export const pricingGuardSettingKeys = {
 	retailMarginFromMinor: "pricing.retail_margin_from_minor",
 	floorExemptItems: "pricing.floor_exempt_items",
 	equalPriceGroups: "pricing.equal_price_groups",
+	restockResumeItems: restockResumeSettingKey,
 } as const;
 
 export const defaultCostFactors = {
@@ -508,7 +514,13 @@ export async function runPricingGuard(input: {
 		saleComponents(input.db).catch(() => ({}) as Record<string, string>),
 		loadItems(input.db),
 	]);
-	const needsRedeem = rows.some((row) => map[row.id]);
+	const resumeListed = Array.isArray(
+		settings.get(pricingGuardSettingKeys.restockResumeItems),
+	)
+		? (settings.get(pricingGuardSettingKeys.restockResumeItems) as unknown[])
+				.length > 0
+		: false;
+	const needsRedeem = resumeListed || rows.some((row) => map[row.id]);
 	const [stats, prices] = needsRedeem
 		? await Promise.all([
 				(
@@ -519,6 +531,14 @@ export async function runPricingGuard(input: {
 				)().catch(() => null),
 			])
 		: [null, null];
+
+	// Specs paused for a sold-out supplier come back once it lists stock again.
+	const resumed = await resumeRestockedItems(input.db, {
+		value: settings.get(pricingGuardSettingKeys.restockResumeItems),
+		map,
+		prices,
+		now,
+	}).catch(() => []);
 
 	const outcomes: PricingOutcome[] = [];
 	const agentWarnings: AgentWarning[] = [];
@@ -662,7 +682,7 @@ export async function runPricingGuard(input: {
 
 	// Applied drops go straight to the channel notice; the owner hears only of
 	// rises, proposals and agent warnings.
-	const text = formatPricingReport(
+	const report = formatPricingReport(
 		clock.day,
 		outcomes.filter(
 			(outcome) =>
@@ -675,6 +695,11 @@ export async function runPricingGuard(input: {
 		agentWarnings,
 		floorMinor,
 	);
+	const resumeLines = formatRestockResumeLines(resumed);
+	const text =
+		resumeLines.length > 0
+			? [report || `📦 定价守护｜${clock.day}`, ...resumeLines].join("\n")
+			: report;
 	const delivery = text
 		? await sendOrPark(
 				input.db,
@@ -721,6 +746,7 @@ export async function runPricingGuard(input: {
 		proposed: outcomes.filter((outcome) => !outcome.applied).length,
 		agentWarnings: agentWarnings.length,
 		skipped,
+		resumed: resumed.filter((outcome) => outcome.resumed).length,
 	};
 }
 

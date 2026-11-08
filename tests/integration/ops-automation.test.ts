@@ -91,7 +91,14 @@ describe("ops automation pure helpers", () => {
 					{ sku: "NEW", source: "future", price: "1.00" },
 				],
 			}),
-		).toEqual([{ sku: "GPT_500_CHILE", source: "aisou", priceMinor: 308000 }]);
+		).toEqual([
+			{
+				sku: "GPT_500_CHILE",
+				source: "aisou",
+				priceMinor: 308000,
+				stock: null,
+			},
+		]);
 	});
 
 	it("parses money exactly and rounds prices up to whole yuan", () => {
@@ -257,6 +264,94 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 	});
 
 	afterEach(async () => miniflare.dispose());
+
+	it("resumes a spec paused for a sold-out supplier only once it lists stock", async () => {
+		await db.batch([
+			product(db, "gpt", "ChatGPT"),
+			...sellable(db, "go", "gpt", "Go｜iOS", "4500", "4600"),
+			...sellable(db, "manual", "gpt", "Manual", "4500", "4600"),
+			db.prepare(
+				`INSERT INTO supplier_export_listings (id, sellable_item_id, price_minor, currency, currency_decimals, enabled, created_at, updated_at)
+					 VALUES ('l-go', 'go', '4300', 'CNY', 2, 1, 1, 1)`,
+			),
+			db.prepare(
+				"UPDATE product_sellable_items SET sale_disabled = 1 WHERE id IN ('go', 'manual')",
+			),
+			db
+				.prepare(
+					"INSERT INTO system_settings (key, value, created_at, updated_at) VALUES ('integration.supply_console_map', ?, 1, 1)",
+				)
+				.bind(JSON.stringify({ go: "GPT_GO_IOS", manual: "MANUAL" })),
+		]);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		await setSetting(db, "pricing.restock_resume_items", ["go"]);
+		const messages: string[] = [];
+		const run = (now: number, stock: number | null) =>
+			runPricingGuard({
+				db,
+				now,
+				force: true,
+				readStats: async () => null,
+				readPrices: async () => [
+					{ sku: "GPT_GO_IOS", source: "86", priceMinor: 3500, stock },
+					{ sku: "MANUAL", source: "86", priceMinor: 3500, stock: 99 },
+				],
+				deliver: async (text) => {
+					messages.push(text);
+				},
+			});
+		const state = async () =>
+			db
+				.prepare(
+					`SELECT id, sale_disabled, version FROM product_sellable_items WHERE id IN ('go', 'manual') ORDER BY id`,
+				)
+				.all()
+				.then((result) => result.results);
+		const listed = async () =>
+			JSON.parse(
+				(await db
+					.prepare(
+						"SELECT value FROM system_settings WHERE key = 'pricing.restock_resume_items'",
+					)
+					.first<string>("value")) ?? "null",
+			);
+
+		// Still sold out (or unknown): stays paused and stays on the list.
+		await expect(run(monday, 0)).resolves.toMatchObject({ resumed: 0 });
+		await expect(run(monday, null)).resolves.toMatchObject({ resumed: 0 });
+		await expect(state()).resolves.toEqual([
+			{ id: "go", sale_disabled: 1, version: 1 },
+			{ id: "manual", sale_disabled: 1, version: 1 },
+		]);
+		await expect(listed()).resolves.toEqual(["go"]);
+		expect(messages).toEqual([]);
+
+		// Back in stock: only the listed spec resumes, once, and leaves the list.
+		await expect(run(monday + 1, 12)).resolves.toMatchObject({ resumed: 1 });
+		await expect(state()).resolves.toEqual([
+			{ id: "go", sale_disabled: 0, version: 2 },
+			{ id: "manual", sale_disabled: 1, version: 1 },
+		]);
+		await expect(listed()).resolves.toEqual([]);
+		expect(messages.join("\n")).toContain(
+			"上游已补货（库存 12），已自动恢复售卖：ChatGPT · Go｜iOS",
+		);
+		await expect(
+			db
+				.prepare(
+					"SELECT updated_at FROM supplier_export_listings WHERE id = 'l-go'",
+				)
+				.first<number>("updated_at"),
+		).resolves.toBe(monday + 1);
+		await expect(
+			db
+				.prepare(
+					"SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'pricing_guard.restock_resumed' AND target_id = 'go'",
+				)
+				.first<number>("n"),
+		).resolves.toBe(1);
+		await expect(run(monday + 2, 12)).resolves.toMatchObject({ resumed: 0 });
+	});
 
 	it("balance guard is off by default, alerts once per supplier per Beijing day", async () => {
 		await seedAisou(db);
