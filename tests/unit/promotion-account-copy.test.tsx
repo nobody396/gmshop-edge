@@ -96,7 +96,7 @@ it("reports an unavailable clipboard API", async () => {
 it("lists current invitation amounts per item", () => {
 	const list = container.querySelector('[data-testid="referral-examples"]');
 	expect(list?.textContent).toContain("ChatGPT Pro 200｜iOS｜1个月");
-	expect(list?.textContent).toContain(
-		m.promotion_example_amount({ discount: "¥10.50", reward: "¥24.50" }),
-	);
+	expect(list?.textContent).toContain("¥10.50");
+	expect(list?.textContent).toContain("¥24.50");
+	expect(list?.textContent).toContain(m.promotion_table_reward());
 });

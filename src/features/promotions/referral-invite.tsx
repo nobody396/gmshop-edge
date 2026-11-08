@@ -21,7 +21,10 @@ export function referralInviteUrl(code: string, origin: string) {
 export function ReferralInvite({
 	discountMinor = "0",
 	rewardMinor = "0",
+	hidePitch = false,
 }: {
+	/** The account page shows its own heading; skip the one-line pitch there. */
+	hidePitch?: boolean;
 	/** Friend discount for one unit of a relevant item, CNY cents. */
 	discountMinor?: string;
 	/** Referrer reward for the same unit, CNY cents. */
@@ -52,7 +55,9 @@ export function ReferralInvite({
 			: null;
 	return (
 		<div className="grid gap-3" data-testid="referral-invite">
-			<p className="font-medium text-sm">{m.promotion_invite_pitch()}</p>
+			{hidePitch ? null : (
+				<p className="font-medium text-sm">{m.promotion_invite_pitch()}</p>
+			)}
 			{amount ? (
 				<p className="text-primary text-sm">
 					{m.promotion_invite_amount(amount)}
@@ -68,7 +73,7 @@ export function ReferralInvite({
 				<>
 					<label className="grid gap-2 text-sm" htmlFor="referral-invite-link">
 						{m.promotion_invite_link()}
-						<div className="flex gap-2">
+						<div className="flex flex-col gap-2 sm:flex-row">
 							<Input
 								className="font-mono text-xs"
 								id="referral-invite-link"
