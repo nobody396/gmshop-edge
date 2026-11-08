@@ -250,6 +250,8 @@ const pricesSchema = z.object({
 			sku: z.string(),
 			source: restockSourceSchema,
 			price: amountSchema,
+			// Listed supplier stock (redeem 2026-11-08); older warehouses omit it.
+			stock: z.number().int().nonnegative().nullable().optional(),
 		}),
 	),
 });
@@ -267,6 +269,8 @@ export type ProcurementPrices = {
 	sku: string;
 	source: RestockSource;
 	priceMinor: number | null;
+	/** Listed supplier stock, or null when unknown. */
+	stock: number | null;
 }[];
 
 async function warehouseGet(
@@ -311,6 +315,7 @@ export function parseProcurementPrices(body: unknown): ProcurementPrices {
 						sku: row.sku,
 						source: row.source,
 						priceMinor: yuanToMinor(row.price),
+						stock: row.stock ?? null,
 					},
 				]
 			: [],
