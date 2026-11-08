@@ -477,6 +477,7 @@ function guideCopy(): Record<string, string> {
 		points1000: m.guide_points1000(),
 		points2500: m.guide_points2500(),
 		sms_target: m.guide_sms_target(),
+		smsone: m.guide_smsone(),
 		smslong: m.guide_smslong(),
 		smsclaude: m.guide_smsclaude(),
 		smsgoogle: m.guide_smsgoogle(),

@@ -2054,6 +2054,7 @@
 	"guide_kyc": "Max requires identity verification (KYC). You must complete it yourself. We only top up subscriptions and do not perform or guarantee verification.",
 	"guide_claude_help": "Sign in to the Claude account you want to top up and check its subscription in Settings. Its paid subscription must end before using these products.",
 	"guide_after_expiry_hint": "Keep the remaining subscription time",
+	"guide_smsone": "Codex one-time code",
 	"guide_claude_active_body": "These Claude top-ups cannot replace an active subscription.",
 	"guide_free_points_body": "Go back and select ChatGPT membership. Buy extra credits after you have a paid subscription.",
 	"guide_current_channel_help": "Identify your existing subscription, not the channel you want to buy next. Check its current bill or original recharge source. A USD amount alone does not prove an iOS channel.",

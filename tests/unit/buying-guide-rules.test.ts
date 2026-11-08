@@ -366,6 +366,11 @@ it("sends Free accounts to India card-paid Go and covers the newer catalog", () 
 
 const smsSpecs = [
 	[
+		"smsone",
+		"cdccd3bc-4504-5521-8761-332c99910c9f",
+		"25a7ae5b-f437-5461-bfca-669870e3b887",
+	],
+	[
 		"smslong",
 		"a9f6b8c4-e302-5c1a-8947-780785672b32",
 		"a39b3590-0952-5886-9076-a9cd879c1975",
@@ -392,22 +397,19 @@ const smsSpecs = [
 	],
 ] as const;
 
-it("offers exactly the five current SMS specs, never the retired one-time card", () => {
+it("offers six SMS choices with the on-sale one-time card first", () => {
 	expect(guideStep(["sms"])).toEqual({
 		kind: "question",
 		id: "sms_target",
 		options: smsSpecs.map(([key]) => key),
 		help: undefined,
 	});
-	expect(guideStep(["sms", "smsone"])).toEqual({
-		kind: "stop",
-		reason: "rule_pending",
-	});
 	expect(guideStep(["sms", "unknown"])).toEqual({
 		kind: "stop",
 		reason: "rule_pending",
 	});
-	expect(guideProducts).not.toHaveProperty("smsone");
+	expect(smsSpecs).toHaveLength(6);
+	expect(smsSpecs[0][0]).toBe("smsone");
 });
 it.each(
 	smsSpecs,

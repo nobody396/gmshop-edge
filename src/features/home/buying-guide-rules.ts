@@ -118,6 +118,10 @@ export const guideProducts = {
 		productId: "3e60e88d-a0bd-4723-bc9e-ff45f6dafa16",
 		itemId: "7a1c2f30-6b1e-4d4a-9e51-0c3a1f2b1002",
 	},
+	smsone: {
+		productId: "cdccd3bc-4504-5521-8761-332c99910c9f",
+		itemId: "25a7ae5b-f437-5461-bfca-669870e3b887",
+	},
 	smslong: {
 		productId: "a9f6b8c4-e302-5c1a-8947-780785672b32",
 		itemId: "a39b3590-0952-5886-9076-a9cd879c1975",
@@ -435,6 +439,7 @@ export function guideStep(a: readonly string[]): GuideStep {
 	if (family === "sms") {
 		if (!current)
 			return question("sms_target", [
+				"smsone",
 				"smslong",
 				"smsclaude",
 				"smsgoogle",
@@ -442,6 +447,7 @@ export function guideStep(a: readonly string[]): GuideStep {
 				"smstelegram",
 			]);
 		if (
+			current === "smsone" ||
 			current === "smslong" ||
 			current === "smsclaude" ||
 			current === "smsgoogle" ||

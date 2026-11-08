@@ -2054,6 +2054,7 @@
 	"guide_kyc": "开通 Max 需要自行完成身份验证（KYC）。本店只负责充值，不代办或保证验证通过。",
 	"guide_claude_help": "登录要充值的 Claude 账号，在设置中查看订阅。当前订阅必须结束后才能使用本店充值商品。",
 	"guide_after_expiry_hint": "不想提前覆盖剩余订阅",
+	"guide_smsone": "Codex 一次性接码",
 	"guide_claude_active_body": "本店 Claude 充值不支持覆盖现有订阅。",
 	"guide_free_points_body": "请返回选择 ChatGPT 会员。已有付费订阅后，再购买额外点数。",
 	"guide_current_channel_help": "这是核对现有订阅，不是选择接下来想买的渠道。查看当前订阅账单或当时的充值来源；仅显示美元并不能证明是 iOS。",

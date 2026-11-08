@@ -165,12 +165,13 @@ it.each([
 ])("blocks buying when $label", async (state) => {
 	Object.assign(mock, state);
 	await click("guide_sms");
-	await click("guide_smslong");
+	await click("guide_smsone");
 	await settle();
 	expect(document.body.textContent).toContain(state.label);
 	expect(document.querySelector('a[href^="/products/"]')).toBeNull();
 });
 it.each([
+	"smsone",
 	"smslong",
 	"smsclaude",
 	"smsgoogle",
@@ -180,7 +181,6 @@ it.each([
 	await click("guide_sms");
 	await click(`guide_${product}`);
 	await settle();
-	expect(document.body.textContent).not.toContain("guide_smsone");
 	expect(
 		document.querySelector('a[href^="/products/"]')?.getAttribute("href"),
 	).toBe(
