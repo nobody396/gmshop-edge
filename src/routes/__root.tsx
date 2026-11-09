@@ -11,7 +11,7 @@ import { Toaster } from "#/components/ui/sonner";
 import { TooltipProvider } from "#/components/ui/tooltip";
 import { DirectionProvider } from "#/context/direction-provider";
 import { SiteBrandProvider } from "#/context/site-brand-provider";
-import { ThemeProvider } from "#/context/theme-provider";
+import { THEME_COLORS, ThemeProvider } from "#/context/theme-provider";
 import { useFirstTouchAttribution } from "#/features/attribution/first-touch";
 import { TelegramMiniAppAutoSignIn } from "#/features/auth/components/telegram-mini-app-auto-sign-in";
 import { TelegramMiniAppBackButton } from "#/features/auth/components/telegram-mini-app-back-button";
@@ -94,9 +94,13 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 					name: "keywords",
 					content: m.common_seo_keywords(),
 				},
+				// The router keeps one meta per name. Before hydration it only tints dark
+				// systems (light ones keep the browser's white bar); ThemeProvider then
+				// drops the media query and follows the resolved theme.
 				{
 					name: "theme-color",
-					content: "#FFFFFF",
+					media: "(prefers-color-scheme: dark)",
+					content: THEME_COLORS.dark,
 				},
 			],
 			links: [

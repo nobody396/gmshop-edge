@@ -31,6 +31,12 @@ type ThemeProviderState = {
 	resetFont: () => void;
 };
 
+/** Matches --background in global.css for each resolved theme. */
+export const THEME_COLORS: Record<ResolvedTheme, string> = {
+	light: "#ffffff",
+	dark: "#09090b",
+};
+
 const ThemeContext = createContext<ThemeProviderState | null>(null);
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
@@ -93,6 +99,12 @@ function applyTheme(theme: Theme, resolvedTheme: ResolvedTheme) {
 	}
 
 	root.style.colorScheme = resolvedTheme;
+
+	// Mobile browser chrome follows the page background, not a fixed white bar.
+	for (const meta of root.querySelectorAll("meta[name='theme-color']")) {
+		meta.removeAttribute("media");
+		meta.setAttribute("content", THEME_COLORS[resolvedTheme]);
+	}
 }
 
 function applyFont(font: Font) {
