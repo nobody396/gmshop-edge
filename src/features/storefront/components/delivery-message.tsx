@@ -142,22 +142,25 @@ function CodeRow({
 	onCopy?: () => void;
 }) {
 	return (
-		<li className="grid gap-3 rounded-lg border bg-background p-3 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-4 dark:bg-background/60">
-			<div className="min-w-0">
-				<p className="text-muted-foreground text-xs">{code.label}</p>
-				<p
-					data-delivery-code
-					className="mt-1 font-mono font-semibold text-foreground text-[14.5px] leading-7 [overflow-wrap:anywhere] select-all sm:text-xl sm:tracking-wide"
-				>
-					<HyphenBreaks value={code.value} />
-				</p>
+		// Sized by the card's own width, not the viewport: the order page puts it in a narrow side column.
+		<li className="@container rounded-lg border bg-background p-3 dark:bg-background/60">
+			<div className="grid gap-3 @lg:flex @lg:items-center @lg:justify-between @lg:gap-4">
+				<div className="min-w-0">
+					<p className="text-muted-foreground text-xs">{code.label}</p>
+					<p
+						data-delivery-code
+						className="mt-1 font-mono font-semibold text-[13.5px] text-foreground leading-7 [overflow-wrap:anywhere] select-all @xs:text-[15px] @lg:text-lg @2xl:text-xl @2xl:tracking-wide"
+					>
+						<HyphenBreaks value={code.value} />
+					</p>
+				</div>
+				<LabelledCopyButton
+					className="w-full @lg:w-auto"
+					copy={code.value}
+					label={m.store_delivery_copy_code()}
+					onCopy={onCopy}
+				/>
 			</div>
-			<LabelledCopyButton
-				className="w-full sm:w-auto"
-				copy={code.value}
-				label={m.store_delivery_copy_code()}
-				onCopy={onCopy}
-			/>
 		</li>
 	);
 }
