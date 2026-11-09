@@ -32,15 +32,20 @@ export function PublicFooter() {
 					<Link className={linkClassName} to="/">
 						{m.public_footer_all_products()}
 					</Link>
-					<a className={linkClassName} href={redeemSiteUrl}>
-						{m.store_nav_redeem()}
-					</a>
 					<Link className={linkClassName} to="/cart">
 						{m.store_cart_title()}
 					</Link>
 					<Link className={linkClassName} to="/orders">
 						{m.store_nav_orders()}
 					</Link>
+					<a
+						className={linkClassName}
+						href={redeemSiteUrl}
+						rel="noopener"
+						target="_blank"
+					>
+						{m.store_nav_redeem()} ↗
+					</a>
 				</FooterColumn>
 				<FooterColumn title={m.public_footer_help()}>
 					<Link className={linkClassName} to="/guides">

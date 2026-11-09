@@ -927,7 +927,7 @@
 	"store_nav_redeem": "兑换充值",
 	"store_nav_invoice": "开发票",
 	"store_nav_rewards": "邀请返利",
-	"store_nav_orders": "订单查询",
+	"store_nav_orders": "我的订单",
 	"store_lookup_title": "游客订单查询",
 	"store_lookup_description": "输入订单号和下单时填写的邮箱，即可查看付款和交付进度",
 	"store_lookup_security_notice": "只有订单号与下单邮箱同时匹配时，才会显示订单详情",
