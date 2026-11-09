@@ -55,7 +55,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	"afb8af99-86af-463e-a76f-fcea2edd22dd": {
 		name: "ChatGPT Credits",
 		description:
-			"Official OpenAI ChatGPT credits CDK. After your plan's included usage runs out, credits keep Codex and other supported features going. Plus or Pro account required; Free accounts cannot use them. Not API relay balance, phone verification, or a pre-made account.",
+			"Official OpenAI ChatGPT credits CDK. After your plan's included usage runs out, credits keep Codex and other supported features going. Plus or Pro account required; Free accounts cannot use them. Not API relay balance, phone verification, or a pre-made account.\n\nWhere to find credits: ChatGPT Settings → Usage & billing → Credits (see the second product image).",
 	},
 	"ba540b83-388d-45d1-9dcb-25c3da3f9956": {
 		name: "Claude Membership Recharge",
