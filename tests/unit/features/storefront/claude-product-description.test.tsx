@@ -44,6 +44,13 @@ describe("Claude KYC description", () => {
 		expect(html.match(/<mark /g)).toHaveLength(5);
 		expect(html.replace(/<[^>]+>/g, "")).toBe(`${title}${guidance}介绍`);
 	});
+	it("highlights the recommendation to finish KYC before recharging", () => {
+		const live =
+			"下单前请先完成下方「Claude 下单必看」里的账号自查（方法三，含图）：有 KYC 标记的先认证再充值，没有标记的账号大多免 KYC。充值后 Claude 仍可能临时要求认证，这种情况本店不负责，可能不到账且不退款。所以建议都先通过 KYC 认证后再充值。账号须 2026 年 9 月 15 日前注册。";
+		const html = render(`${title}\n${live}\n\n介绍`);
+		expect(html).toContain(">建议都先通过 KYC 认证后再充值</mark>");
+		expect(html.replace(/<[^>]+>/g, "")).toBe(`${title}${live}介绍`);
+	});
 	it("preserves descriptions without the exact notice header, including English", () => {
 		for (const description of [
 			"Claude membership recharge",

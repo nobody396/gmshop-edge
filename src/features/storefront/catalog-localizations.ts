@@ -60,7 +60,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	"ba540b83-388d-45d1-9dcb-25c3da3f9956": {
 		name: "Claude Membership Recharge",
 		description:
-			"Claude Pro and Claude Max membership recharge. Before ordering, run the Claude account self-check on the redemption site (redeem.laoshirenvip.com/#kyc): finish KYC first if it is flagged, otherwise the account is usually KYC-exempt. Claude may still ask for KYC later; that is outside our control and the subscription may not arrive. Only accounts registered before 2026-09-15 are accepted. Select a plan to review eligibility, warranty, and restrictions.",
+			"Claude Pro and Claude Max membership recharge. Before ordering, run the Claude account self-check on the redemption site (redeem.laoshirenvip.com/#kyc): finish KYC first if it is flagged, otherwise the account is usually KYC-exempt. Claude may still ask for KYC later; that is outside our control and the subscription may not arrive. So we recommend finishing KYC before every recharge. Only accounts registered before 2026-09-15 are accepted. Select a plan to review eligibility, warranty, and restrictions.",
 	},
 	"3e60e88d-a0bd-4723-bc9e-ff45f6dafa16": {
 		name: "X Subscription｜4-in-1｜X Premium + Grok + Grok Bot + Cursor",
