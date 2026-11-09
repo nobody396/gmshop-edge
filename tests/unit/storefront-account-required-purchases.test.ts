@@ -10,6 +10,8 @@ describe("storefront account-required purchase guidance", () => {
 		const catalog = source("src/features/storefront/server/catalog.ts");
 
 		expect(product).toContain("m.store_alipay_fee_notice()");
+		// Shown only when the product has no payment price cards repeating it.
+		expect(product).toContain("item.channelPrices.length > 0");
 		expect(product).toContain("BadgePercent");
 		expect(product).toContain("sellableItem.channelPrices.length > 0");
 		expect(product).toContain("m.store_payment_prices_title()");
@@ -38,7 +40,8 @@ describe("storefront account-required purchase guidance", () => {
 		const card = source("src/features/storefront/components/product-card.tsx");
 		const catalog = source("src/features/storefront/server/catalog.ts");
 
-		expect(product).toContain("m.store_stock({ count: item.availableStock })");
+		expect(product).toContain("count: stockCount(item.availableStock)");
+		expect(product).toContain('count > 99 ? "99+" : count');
 		expect(card).toContain("product.displayStockQuantity");
 		expect(card).not.toContain("store_low_stock");
 		expect(catalog).toContain("AS display_stock_quantity");

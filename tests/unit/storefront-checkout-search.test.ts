@@ -1,9 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { checkoutSearchSchema } from "#/features/storefront/schema";
+import {
+	checkoutSearchSchema,
+	initialPaymentChannelId,
+} from "#/features/storefront/schema";
 
 const checkoutPageSource = readFileSync(
 	new URL("../../src/features/storefront/pages/checkout.tsx", import.meta.url),
+	"utf8",
+);
+
+const productPageSource = readFileSync(
+	new URL("../../src/features/storefront/pages/product.tsx", import.meta.url),
 	"utf8",
 );
 
@@ -49,6 +57,52 @@ describe("checkout search parameters", () => {
 	});
 });
 
+describe("checkout payment preselection", () => {
+	const itemId = "260f86cb-d2d2-4c3d-9bb9-4a5dc2b5086e";
+	const channels = [{ id: "usdt" }, { id: "alipay-main" }];
+
+	it("keeps the payment method picked on the product page", () => {
+		const search = checkoutSearchSchema.parse({
+			mode: "buy-now",
+			sellableItemId: itemId,
+			payment: "alipay-main",
+		});
+		expect(search.payment).toBe("alipay-main");
+		expect(initialPaymentChannelId(channels, search.payment)).toBe(
+			"alipay-main",
+		);
+	});
+
+	it("drops malformed values instead of breaking old or tampered links", () => {
+		for (const payment of ["", "<script>", "a".repeat(65), 42, ["x"]])
+			expect(
+				checkoutSearchSchema.parse({
+					mode: "buy-now",
+					sellableItemId: itemId,
+					payment,
+				}).payment,
+			).toBeUndefined();
+		expect(
+			checkoutSearchSchema.parse({ mode: "buy-now", sellableItemId: itemId }),
+		).toEqual({ mode: "buy-now", sellableItemId: itemId, quantity: 1 });
+	});
+
+	it("falls back to the first offered method for unknown or missing ids", () => {
+		expect(initialPaymentChannelId(channels, "retired-channel")).toBe("usdt");
+		expect(initialPaymentChannelId(channels, undefined)).toBe("usdt");
+		expect(initialPaymentChannelId([], "usdt")).toBeUndefined();
+	});
+
+	it("is wired into checkout and the product page buy link", () => {
+		expect(checkoutPageSource).toContain(
+			"initialPaymentChannelId(channels.data ?? [], search.payment)",
+		);
+		expect(productPageSource).toContain("&payment=${encodeURIComponent(");
+		expect(productPageSource).toContain("aria-pressed={selected}");
+		expect(productPageSource).toContain("navigate({ href: checkoutPath })");
+	});
+});
+
 describe("checkout presentation", () => {
 	it("keeps checkout in one responsive two-column surface", () => {
 		expect(checkoutPageSource).toContain(
@@ -57,17 +111,25 @@ describe("checkout presentation", () => {
 		expect(checkoutPageSource).toContain("lg:border-t-0 lg:border-l lg:p-10");
 	});
 
-	it("presents payment methods like selectable plans without a visible radio", () => {
+	it("presents each payment method as a full-width card with its own price", () => {
 		expect(checkoutPageSource).toContain(
-			"grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3",
+			"group flex min-h-16 cursor-pointer items-center gap-3 rounded-xl border",
 		);
 		expect(checkoutPageSource).toContain('className="sr-only"');
-		expect(checkoutPageSource).toContain("has-checked:bg-primary/10");
-		expect(checkoutPageSource).toContain(
-			"grid min-h-16 cursor-pointer place-items-center content-center gap-1.5 rounded-lg",
-		);
+		expect(checkoutPageSource).toContain("has-checked:bg-primary/5");
+		expect(checkoutPageSource).toContain("m.store_checkout_amount_due()");
 		expect(checkoutPageSource).not.toContain(
-			'name="payment-channel"\n\t\t\t\t\t\t\t\t\t\tclassName="size-4',
+			"grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))]",
+		);
+	});
+
+	it("says what happens after submitting and keeps submit reachable on phones", () => {
+		expect(checkoutPageSource).toContain("m.store_checkout_next_step()");
+		expect(checkoutPageSource).toContain("useSubmitBelowFold(submitButton)");
+		expect(checkoutPageSource).toContain("fixed inset-x-0 bottom-0 z-40");
+		// The purchase terms stay pre-checked.
+		expect(checkoutPageSource).toContain(
+			"const [termsAccepted, setTermsAccepted] = useState(true);",
 		);
 	});
 

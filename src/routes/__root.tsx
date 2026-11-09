@@ -6,7 +6,7 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { StartupSplash } from "#/components/startup-splash";
+import { SPLASH_BOOT_SCRIPT, StartupSplash } from "#/components/startup-splash";
 import { Toaster } from "#/components/ui/sonner";
 import { TooltipProvider } from "#/components/ui/tooltip";
 import { DirectionProvider } from "#/context/direction-provider";
@@ -140,6 +140,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<head>
 				<script suppressHydrationWarning>{LOCALE_BOOT_SCRIPT}</script>
 				<script suppressHydrationWarning>{THEME_INIT_SCRIPT}</script>
+				<script suppressHydrationWarning>{SPLASH_BOOT_SCRIPT}</script>
 				<HeadContent />
 			</head>
 			<body className="antialiased wrap-anywhere">

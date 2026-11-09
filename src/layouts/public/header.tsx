@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+	ArrowUpRight,
 	ChevronRight,
 	ExternalLink,
 	Headphones,
@@ -97,8 +98,15 @@ export function PublicHeader() {
 								)}
 								href={href}
 								key={href}
+								{...externalLinkProps(href)}
 							>
 								{label}
+								{isExternal(href) ? (
+									<ArrowUpRight
+										aria-hidden="true"
+										className="ms-0.5 inline size-3.5"
+									/>
+								) : null}
 							</a>
 						))}
 					</nav>
@@ -169,9 +177,14 @@ function MobileMenu({
 								)}
 								href={href}
 								key={href}
+								{...externalLinkProps(href)}
 							>
 								{label}
-								<ChevronRight className="size-4 text-muted-foreground" />
+								{isExternal(href) ? (
+									<ArrowUpRight className="size-4 text-muted-foreground" />
+								) : (
+									<ChevronRight className="size-4 text-muted-foreground" />
+								)}
 							</a>
 						))}
 				</nav>
@@ -226,6 +239,10 @@ function MobileMenu({
 		</Popover>
 	);
 }
+
+const isExternal = (href: string) => /^https?:/.test(href);
+const externalLinkProps = (href: string) =>
+	isExternal(href) ? { target: "_blank", rel: "noopener" } : {};
 
 export const redeemSiteUrl = "https://redeem.laoshirenvip.com";
 const telegramSupportUrl = "https://t.me/laoshirenai_support_bot";
@@ -417,8 +434,9 @@ function SettingsTrigger({
 }
 
 function SignInAction() {
+	// Outline so it does not compete with the green 邀请返利 pill beside it.
 	return (
-		<Button asChild>
+		<Button asChild variant="outline">
 			<Link search={{ redirect: undefined }} to="/sign-in">
 				{m.public_sign_in()}
 			</Link>
@@ -454,16 +472,15 @@ function CartAction() {
 }
 
 function publicNavigation({ signedIn }: { signedIn: boolean }) {
+	// In the order a buyer moves: shop → find the order and its code → redeem it.
 	const navigation: Array<readonly [string, string]> = [
 		[m.store_nav_shop(), "/"],
+		signedIn
+			? [m.store_account_orders(), "/account/orders"]
+			: [m.store_nav_orders(), "/orders"],
 		[m.store_nav_redeem(), redeemSiteUrl],
 		[m.store_nav_invoice(), "/invoice"],
 		[m.store_nav_rewards(), "/account"],
 	];
-	navigation.push(
-		signedIn
-			? [m.store_account_orders(), "/account/orders"]
-			: [m.store_nav_orders(), "/orders"],
-	);
 	return navigation;
 }

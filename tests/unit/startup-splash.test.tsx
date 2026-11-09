@@ -4,7 +4,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StartupSplash } from "#/components/startup-splash";
+import {
+	SPLASH_BOOT_SCRIPT,
+	SPLASH_SEEN_KEY,
+	StartupSplash,
+} from "#/components/startup-splash";
 import { SiteBrandProvider } from "#/context/site-brand-provider";
 import type { SiteBrand } from "#/features/settings/site-brand";
 
@@ -35,7 +39,7 @@ describe("startup splash", () => {
 			globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 		).IS_REACT_ACT_ENVIRONMENT = true;
 		vi.useFakeTimers();
-		vi.spyOn(Math, "random").mockReturnValue(0);
+		sessionStorage.clear();
 		container = document.createElement("div");
 		document.body.appendChild(container);
 		Object.defineProperty(window, "matchMedia", {
@@ -79,11 +83,27 @@ describe("startup splash", () => {
 
 		expect(container.querySelector("[data-phase='visible']")).not.toBeNull();
 
-		act(() => vi.advanceTimersByTime(1_000));
+		act(() => vi.advanceTimersByTime(600));
 		expect(container.querySelector("[data-phase='fading']")).not.toBeNull();
 
 		act(() => vi.advanceTimersByTime(350));
 		expect(container.querySelector(".startup-splash")).toBeNull();
+	});
+
+	it("skips the splash on later page loads in the same tab", () => {
+		sessionStorage.setItem(SPLASH_SEEN_KEY, "1");
+		root = createRoot(container);
+		act(() => root?.render(<SplashFixture />));
+
+		expect(container.querySelector(".startup-splash")).toBeNull();
+		expect(SPLASH_BOOT_SCRIPT).toContain(SPLASH_SEEN_KEY);
+	});
+
+	it("remembers that this tab has seen the splash", () => {
+		root = createRoot(container);
+		act(() => root?.render(<SplashFixture />));
+
+		expect(sessionStorage.getItem(SPLASH_SEEN_KEY)).toBe("1");
 	});
 
 	it("immediately removes itself when reduced motion is preferred", () => {
@@ -92,6 +112,8 @@ describe("startup splash", () => {
 		act(() => root?.render(<SplashFixture />));
 
 		expect(container.querySelector(".startup-splash")).toBeNull();
-		expect(vi.getTimerCount()).toBe(0);
+		// jsdom queues a storage event timer; the splash itself must not wait.
+		act(() => vi.runAllTimers());
+		expect(container.querySelector(".startup-splash")).toBeNull();
 	});
 });
