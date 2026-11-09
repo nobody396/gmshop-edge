@@ -6,11 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeliveryMessage } from "#/features/storefront/components/delivery-message";
 import { DeliveryRevealContent } from "#/features/storefront/components/delivery-reveal-content";
 import { OrderDeliveryNotice } from "#/features/storefront/components/order-delivery-notice";
-import { splitDeliveryMessage } from "#/features/storefront/delivery-message";
+import {
+	parseStructuredDelivery,
+	splitDeliveryMessage,
+} from "#/features/storefront/delivery-message";
 
 vi.mock("#/paraglide/messages", () => ({
 	m: {
-		store_copy_delivery: () => "复制",
+		store_delivery_your_code: () => "你的卡密",
+		store_delivery_copy_code: () => "复制卡密",
+		store_delivery_copy_all: () => "复制全部",
+		store_delivery_open_redeem: () => "去兑换页开通",
+		store_delivery_redeem_hint: () => "粘贴上方卡密即可开通",
 		store_delivery_usage_entry: () => "充值 / 使用入口",
 		store_delivery_usage_entry_hint: () => "使用上方卡密按提示操作",
 		common_copy_success: () => "已复制",
@@ -131,9 +138,20 @@ describe("order delivery presentation", () => {
 		]);
 		const container = document.createElement("div");
 		container.innerHTML = renderToString(<DeliveryMessage content={content} />);
-		expect(container.querySelectorAll("a")).toHaveLength(2);
-		expect(container.querySelector("a")?.rel).toBe("noopener noreferrer");
-		expect(container.textContent).toContain(content);
+		const links = [...container.querySelectorAll("a")];
+		// Primary redeem button, the verbatim redeem line, and the tutorial link.
+		expect(links.map((link) => link.getAttribute("href"))).toEqual([
+			"https://redeem.example/claude",
+			"https://redeem.example/claude",
+			"https://guide.example/claude",
+		]);
+		for (const link of links) {
+			expect(link.rel).toBe("noopener noreferrer");
+			expect(link.target).toBe("_blank");
+			expect(link.getAttribute("referrerpolicy")).toBe("no-referrer");
+		}
+		for (const line of content.split("\n").filter(Boolean))
+			expect(container.textContent).toContain(line);
 	});
 	it("shows an identity-verified entry beside a card-only payload without changing the payload", () => {
 		const container = document.createElement("div");
@@ -222,7 +240,7 @@ describe("automatic display and copying", () => {
 		expect(container.textContent).not.toContain(orderNumber);
 		await act(async () =>
 			container
-				.querySelector<HTMLButtonElement>('button[aria-label="复制"]')
+				.querySelector<HTMLButtonElement>('button[aria-label="复制全部"]')
 				?.click(),
 		);
 		expect(clipboard).toHaveBeenCalledWith(content);
@@ -230,5 +248,140 @@ describe("automatic display and copying", () => {
 			container.querySelector('a[href="https://verified.example/redeem"]'),
 		).not.toBeNull();
 		expect(fetcher).toHaveBeenCalledTimes(2);
+	});
+
+	it("copies only the card code, confirms in the label and still tracks the copy", async () => {
+		const content =
+			"CDK：gpt-5x-ios-8VAP-6XS7-MXR8-673X\n充值地址：https://redeem.lsrai.shop";
+		const onCopy = vi.fn();
+		await act(async () =>
+			root.render(<DeliveryMessage content={content} onCopy={onCopy} />),
+		);
+		const button = container.querySelector<HTMLButtonElement>(
+			'button[aria-label="复制卡密"]',
+		);
+		expect(button?.textContent).toContain("复制卡密");
+		await act(async () => button?.click());
+		expect(clipboard).toHaveBeenCalledWith("gpt-5x-ios-8VAP-6XS7-MXR8-673X");
+		expect(onCopy).toHaveBeenCalledTimes(1);
+		expect(button?.textContent).toContain("已复制");
+		const redeem = [...container.querySelectorAll("a")].find((link) =>
+			link.textContent?.includes("去兑换页开通"),
+		);
+		expect(redeem?.getAttribute("href")).toBe("https://redeem.lsrai.shop/");
+		expect(redeem?.target).toBe("_blank");
+		expect(container.querySelector("[data-delivery-code]")?.innerHTML).toBe(
+			"gpt-<wbr>5x-<wbr>ios-<wbr>8VAP-<wbr>6XS7-<wbr>MXR8-<wbr>673X",
+		);
+	});
+
+	it("lists several codes with their own copy buttons plus copy all", async () => {
+		const content =
+			"CDK：AAAA-1111\nCDK：BBBB-2222\n充值地址：https://redeem.example";
+		await act(async () => root.render(<DeliveryMessage content={content} />));
+		const codeButtons = container.querySelectorAll<HTMLButtonElement>(
+			'button[aria-label="复制卡密"]',
+		);
+		expect(codeButtons).toHaveLength(2);
+		await act(async () => codeButtons[1]?.click());
+		expect(clipboard).toHaveBeenLastCalledWith("BBBB-2222");
+		await act(async () =>
+			container
+				.querySelector<HTMLButtonElement>('button[aria-label="复制全部"]')
+				?.click(),
+		);
+		expect(clipboard).toHaveBeenLastCalledWith("AAAA-1111\nBBBB-2222");
+	});
+});
+
+describe("structured delivery parsing", () => {
+	it.each([
+		[
+			"CDK：gpt-5x-ios-8VAP-6XS7-MXR8-673X",
+			"CDK：",
+			"gpt-5x-ios-8VAP-6XS7-MXR8-673X",
+		],
+		["CDK: ABCD-EFGH", "CDK:", "ABCD-EFGH"],
+		["cdk : ABCD-EFGH ", "cdk :", "ABCD-EFGH"],
+		["卡密：XYZ123456", "卡密：", "XYZ123456"],
+		["兑换码:XYZ123456", "兑换码:", "XYZ123456"],
+		["  卡密2：XYZ123456", "卡密2：", "XYZ123456"],
+	])("recognises %j as a card code", (line, label, value) => {
+		expect(parseStructuredDelivery(line)?.codes).toEqual([{ label, value }]);
+	});
+
+	it("separates the code, the labelled redeem URL and the remaining lines", () => {
+		const parsed = parseStructuredDelivery(
+			"CDK：AAAA-1111\r\n充值地址：https://redeem.example/x。\r\n\r\n教程：https://guide.example\r\n",
+		);
+		expect(parsed?.codes).toEqual([{ label: "CDK：", value: "AAAA-1111" }]);
+		expect(parsed?.redeem).toEqual({
+			href: "https://redeem.example/x",
+			line: "充值地址：https://redeem.example/x。",
+		});
+		expect(parsed?.rest).toBe("教程：https://guide.example");
+	});
+
+	it("recognises 兑换地址 and 兑换页 lines and falls back to a verified usageUrl", () => {
+		expect(
+			parseStructuredDelivery("卡密：AAAA1111\n兑换地址：https://a.example")
+				?.redeem?.href,
+		).toBe("https://a.example/");
+		expect(
+			parseStructuredDelivery("卡密：AAAA1111\n兑换页：https://b.example")
+				?.redeem?.href,
+		).toBe("https://b.example/");
+		expect(
+			parseStructuredDelivery("卡密：AAAA1111", "https://c.example/redeem")
+				?.redeem,
+		).toEqual({ href: "https://c.example/redeem", line: null });
+		expect(
+			parseStructuredDelivery("卡密：AAAA1111", "javascript:alert(1)")?.redeem,
+		).toBeNull();
+	});
+
+	it("keeps several codes in order", () => {
+		expect(
+			parseStructuredDelivery(
+				"CDK：A-1111\nCDK：B-2222\nCDK：C-3333",
+			)?.codes.map((code) => code.value),
+		).toEqual(["A-1111", "B-2222", "C-3333"]);
+	});
+
+	it.each([
+		"user@example.com----password123",
+		"https://gift.example/claim/abc",
+		"TEST-CARD",
+		"卡密：two words here",
+		"CDK：https://not-a-code.example",
+		"请联系客服领取",
+	])("does not recognise %j", (content) => {
+		expect(parseStructuredDelivery(content)).toBeNull();
+	});
+
+	it("renders unrecognised content raw with a labelled copy-all button and every character", () => {
+		const content =
+			"账号：user@example.com----password123\n备注：首次登录请改密";
+		const container = document.createElement("div");
+		container.innerHTML = renderToString(<DeliveryMessage content={content} />);
+		expect(
+			container
+				.querySelector("[data-delivery-content]")
+				?.getAttribute("data-delivery-layout"),
+		).toBe("raw");
+		expect(container.textContent).toContain(content);
+		expect(
+			container.querySelector('button[aria-label="复制全部"]')?.textContent,
+		).toContain("复制全部");
+	});
+
+	it("never drops a visible character from structured content", () => {
+		const content =
+			"CDK：AAAA-1111\nCDK：BBBB-2222\n充值地址：https://redeem.example/a?b=1\n说明：24 小时内有效\n教程 https://guide.example";
+		const container = document.createElement("div");
+		container.innerHTML = renderToString(<DeliveryMessage content={content} />);
+		const shown = (container.textContent ?? "").replace(/\s/g, "");
+		for (const line of content.split("\n"))
+			expect(shown).toContain(line.replace(/\s/g, ""));
 	});
 });
