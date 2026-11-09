@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useSiteBrand } from "#/context/site-brand-provider";
 import { webSupportOpenEvent } from "#/features/telegram/web-support-contract";
 import { AppTitle } from "#/layouts/components/app-title";
+import { redeemSiteUrl } from "#/layouts/public/header";
 import { m } from "#/paraglide/messages";
 
 const telegramGroupUrl = "https://t.me/laoshirengroup";
@@ -31,6 +32,9 @@ export function PublicFooter() {
 					<Link className={linkClassName} to="/">
 						{m.public_footer_all_products()}
 					</Link>
+					<a className={linkClassName} href={redeemSiteUrl}>
+						{m.store_nav_redeem()}
+					</a>
 					<Link className={linkClassName} to="/cart">
 						{m.store_cart_title()}
 					</Link>
@@ -75,7 +79,7 @@ export function PublicFooter() {
 					</a>
 				</FooterColumn>
 			</div>
-			<div className="container flex flex-col gap-3 px-4 text-muted-foreground text-xs sm:flex-row sm:items-center sm:justify-between">
+			<div className="container flex flex-wrap items-center gap-3 px-4 text-muted-foreground text-xs">
 				<p>
 					{m.public_footer_copyright({
 						year: new Date().getFullYear(),
