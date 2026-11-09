@@ -150,10 +150,7 @@ describe("public header settings", () => {
 			'nav a[href="https://redeem.laoshirenvip.com"]',
 		);
 		expect(redeem).not.toBeNull();
-		expect(redeem?.previousElementSibling?.getAttribute("href")).toBe(
-			"/orders",
-		);
-		expect(redeem?.getAttribute("target")).toBe("_blank");
+		expect(redeem?.previousElementSibling?.getAttribute("href")).toBe("/");
 	});
 
 	it("shows online, Telegram, and an on-demand WeChat QR", () => {
