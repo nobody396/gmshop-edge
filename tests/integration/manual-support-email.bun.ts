@@ -291,7 +291,7 @@ test("only explicit Telegram callback wires sending; mobile copy and header cont
 	// Phones get support from the menu (web chat, group, bot); desktops keep the header button.
 	const mobileMenu = header.slice(
 		header.indexOf("function MobileMenu("),
-		header.indexOf("export function DeliveryTicker("),
+		header.indexOf("const telegramSupportUrl ="),
 	);
 	expect(mobileMenu).toContain(
 		"window.dispatchEvent(new Event(webSupportOpenEvent))",

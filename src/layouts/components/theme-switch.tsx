@@ -1,5 +1,5 @@
 import { Check, Monitor, Moon, Sun } from "lucide-react";
-import { type MouseEvent, useCallback, useEffect } from "react";
+import { type MouseEvent, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { Button } from "#/components/ui/button";
 import {
@@ -56,14 +56,7 @@ export function ThemeSwitch() {
 }
 
 export function useThemeSelection() {
-	const { resolvedTheme, theme, setTheme } = useTheme();
-
-	useEffect(() => {
-		const themeColor = resolvedTheme === "dark" ? "#020817" : "#fff";
-		document
-			.querySelector("meta[name='theme-color']")
-			?.setAttribute("content", themeColor);
-	}, [resolvedTheme]);
+	const { theme, setTheme } = useTheme();
 
 	const selectTheme = useCallback(
 		(nextTheme: Theme, origin?: Pick<MouseEvent, "clientX" | "clientY">) => {

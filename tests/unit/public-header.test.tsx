@@ -84,7 +84,7 @@ vi.mock("#/paraglide/messages", () => ({
 	),
 }));
 
-import { DeliveryTicker, PublicHeader } from "#/layouts/public/header";
+import { PublicHeader } from "#/layouts/public/header";
 
 describe("public header settings", () => {
 	let container: HTMLDivElement;
@@ -180,15 +180,6 @@ describe("public header settings", () => {
 			(button) => button.textContent?.includes("store_support_wechat"),
 		);
 		expect(wechat).toBeUndefined();
-	});
-
-	it("shows the delivery notice as an accessible ticker", () => {
-		act(() => root.render(<DeliveryTicker />));
-
-		expect(container.textContent).toContain("store_delivery_ticker");
-		expect(
-			container.querySelector(".store-delivery-ticker-track"),
-		).not.toBeNull();
 	});
 
 	it("opens the embedded web support conversation from the support menu", () => {

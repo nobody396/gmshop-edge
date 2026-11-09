@@ -13,7 +13,6 @@ import {
 	Settings,
 	ShoppingCart,
 	Users,
-	Zap,
 } from "lucide-react";
 import { type ComponentProps, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
@@ -225,27 +224,6 @@ function MobileMenu({
 				</div>
 			</PopoverContent>
 		</Popover>
-	);
-}
-
-export function DeliveryTicker() {
-	const message = m.store_delivery_ticker();
-	return (
-		<div className="group overflow-hidden border-border/60 border-y bg-primary/[0.07] text-primary">
-			<p className="sr-only">{message}</p>
-			<div
-				aria-hidden="true"
-				className="store-delivery-ticker-track flex w-max min-w-full items-center whitespace-nowrap py-1.5 font-medium text-[11px] tracking-[0.04em] group-hover:[animation-play-state:paused] sm:text-xs"
-			>
-				{[0, 1].map((copy) => (
-					<span className="flex min-w-max items-center gap-3 px-7" key={copy}>
-						<Zap className="size-3 fill-current" />
-						{message}
-						<span className="text-primary/45">●</span>
-					</span>
-				))}
-			</div>
-		</div>
 	);
 }
 
