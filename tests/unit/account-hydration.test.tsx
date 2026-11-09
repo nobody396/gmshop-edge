@@ -58,6 +58,8 @@ const account = {
 			currencyDecimals: 2,
 			totalMinor: "100",
 			productName: "Fixture",
+			sellableItemName: "Fixture plan",
+			coverUrl: null,
 			itemCount: 1,
 			createdAt: instant,
 			updatedAt: instant,

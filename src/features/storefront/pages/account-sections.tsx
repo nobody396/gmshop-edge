@@ -60,6 +60,7 @@ import {
 	updateStoreProfileFn,
 } from "#/features/storefront/server/account-functions";
 import { listCheckoutPaymentChannelsFn } from "#/features/storefront/server/functions";
+import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import {
 	createSupplierApiKeyFn,
 	listSupplierApiKeysFn,
@@ -1275,6 +1276,17 @@ function Empty({
 
 function OrderLink({ order }: { order: Account["orders"][number] }) {
 	const hydrated = useHydrated();
+	// 「规格名 等 N 件」; the spec is dropped when it just repeats the product name.
+	const summary = [
+		order.sellableItemName !== order.productName
+			? order.sellableItemName
+			: null,
+		order.itemCount > 1
+			? m.store_account_order_more_items({ count: order.itemCount })
+			: null,
+	]
+		.filter(Boolean)
+		.join(" ");
 	return (
 		<Link
 			className="group flex min-h-40 flex-col rounded-3xl border bg-card p-5 transition-colors hover:border-primary/35 sm:p-6"
@@ -1284,16 +1296,28 @@ function OrderLink({ order }: { order: Account["orders"][number] }) {
 		>
 			<div className="flex items-start justify-between gap-4">
 				<div className="flex min-w-0 items-start gap-3">
-					<span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-						<ReceiptText className="size-5" />
-					</span>
+					{order.coverUrl ? (
+						<img
+							alt=""
+							className="size-12 shrink-0 rounded-xl bg-muted object-cover"
+							decoding="async"
+							loading="lazy"
+							src={productThumbnailUrl(order.coverUrl)}
+						/>
+					) : (
+						<span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+							<ReceiptText className="size-5" />
+						</span>
+					)}
 					<div className="min-w-0">
 						<strong className="block truncate font-medium">
 							{order.productName ?? m.store_account_order()}
 						</strong>
-						<p className="mt-1 text-muted-foreground text-xs">
-							{m.shop_orders_items()} {order.itemCount}
-						</p>
+						{summary ? (
+							<p className="mt-1 truncate text-muted-foreground text-sm">
+								{summary}
+							</p>
+						) : null}
 					</div>
 				</div>
 				<Badge

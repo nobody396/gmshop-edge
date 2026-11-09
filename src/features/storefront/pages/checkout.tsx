@@ -6,8 +6,10 @@ import {
 	AlertTriangle,
 	ArrowLeft,
 	Boxes,
+	Info,
 	LogIn,
 	ShoppingCart,
+	Wallet,
 } from "lucide-react";
 import {
 	type ReactNode,
@@ -22,6 +24,7 @@ import {
 	CheckboxControl,
 	Checkbox as ProCheckbox,
 } from "#/components/pro/base/fields/checkbox";
+import { PaymentProviderLogo } from "#/components/provider-logo";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -62,9 +65,10 @@ import {
 	ClaudePurchaseGuide,
 	claudeRechargeProductId,
 } from "#/features/storefront/components/claude-purchase-guide";
-import { PaymentChannelOption } from "#/features/storefront/components/payment-channel-option";
 import { writeGuestOrderEmail } from "#/features/storefront/order-access-storage";
+import { paymentChannelLabel } from "#/features/storefront/payment-channel-label";
 import { safeStorePaymentUrl } from "#/features/storefront/payment-url";
+import { initialPaymentChannelId } from "#/features/storefront/schema";
 import {
 	getStoreCartFn,
 	previewStoreCartFn,
@@ -77,6 +81,7 @@ import {
 import { quoteCheckoutUnitPricesFn } from "#/features/storefront/server/price-functions";
 import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { getWalletFn } from "#/features/wallet/server/functions";
+import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 
@@ -216,7 +221,7 @@ export function StorefrontCheckoutPage() {
 				Boolean(claudeEnvTrafficSkus[item.sellableItemId]),
 		);
 	const checkoutPath = buyNow
-		? `/checkout?mode=buy-now&sellableItemId=${encodeURIComponent(buyNow.sellableItemId)}&quantity=${buyNow.quantity}`
+		? `/checkout?mode=buy-now&sellableItemId=${encodeURIComponent(buyNow.sellableItemId)}&quantity=${buyNow.quantity}${search.payment ? `&payment=${encodeURIComponent(search.payment)}` : ""}`
 		: "/checkout";
 	const products = useQueries({
 		queries: items.map((item) => ({
@@ -464,7 +469,7 @@ export function StorefrontCheckoutPage() {
 			setEmail(accountEmail);
 	}, [session.data?.user.email]);
 	useEffect(() => {
-		const first = channels.data?.[0];
+		const first = initialPaymentChannelId(channels.data ?? [], search.payment);
 		if (hasAgentAccess && !paymentChannelId) {
 			if (wallet.isPending) return;
 			if (walletAvailable) {
@@ -477,14 +482,20 @@ export function StorefrontCheckoutPage() {
 			paymentChannelId !== "wallet" &&
 			!channels.data?.some((channel) => channel.id === paymentChannelId)
 		)
-			setPaymentChannelId(first.id);
+			setPaymentChannelId(first);
 	}, [
 		channels.data,
+		search.payment,
 		paymentChannelId,
 		hasAgentAccess,
 		wallet.isPending,
 		walletAvailable,
 	]);
+
+	const [submitButton, setSubmitButton] = useState<HTMLButtonElement | null>(
+		null,
+	);
+	const showSubmitBar = useSubmitBelowFold(submitButton);
 
 	const checkout = useMutation({
 		mutationFn: checkoutStoreOrderFn,
@@ -580,6 +591,31 @@ export function StorefrontCheckoutPage() {
 			},
 		});
 	}
+
+	const submitDisabled =
+		blocked ||
+		agentBlocked ||
+		accessWalletPending ||
+		couponBlocked ||
+		checkout.isPending ||
+		(!hasAgentAccess && !termsAccepted) ||
+		(hasAgentAccess && !agentAccessTermsAccepted) ||
+		paymentUnavailable ||
+		(total > 0n &&
+			(paymentChannelId === "wallet"
+				? !walletAvailable
+				: channels.isPending || !paymentChannelId));
+	const submitLabel = checkout.isPending
+		? m.store_checkout_submitting()
+		: total > 0n
+			? m.store_checkout_submit_paid()
+			: m.store_checkout_submit_free();
+	// Only an external payment ends on a payment code after submitting.
+	const showsPaymentCode =
+		!hasAgentAccess &&
+		payableTotal > 0n &&
+		paymentChannelId !== "" &&
+		paymentChannelId !== "wallet";
 
 	if (cartPending)
 		return (
@@ -789,7 +825,7 @@ export function StorefrontCheckoutPage() {
 					) : null}
 				</div>
 				<aside className="min-w-0 border-t bg-muted/35 p-5 sm:p-8 lg:border-t-0 lg:border-l lg:p-10">
-					<div className="flex h-full flex-col gap-7 lg:sticky lg:top-26">
+					<div className="flex flex-col gap-6 lg:sticky lg:top-26">
 						<div>
 							<p className="font-medium text-muted-foreground text-sm">
 								{m.store_order_total()}
@@ -892,89 +928,98 @@ export function StorefrontCheckoutPage() {
 									<section
 										aria-busy="true"
 										aria-label={m.common_loading()}
-										className={
-											hasAgentAccess
-												? "grid grid-cols-2 gap-3"
-												: "grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3"
-										}
+										className="grid gap-3"
 									>
-										<Skeleton className="h-16 w-full rounded-lg" />
-										<Skeleton className="h-16 w-full rounded-lg" />
+										<Skeleton className="h-16 w-full rounded-xl" />
+										<Skeleton className="h-16 w-full rounded-xl" />
 									</section>
 								) : null}
-								<div
-									className={
-										hasAgentAccess
-											? "grid grid-cols-2 gap-3"
-											: "grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3"
-									}
-								>
+								<div className="grid gap-3">
 									{hasAgentAccess || (wallet.data && balanceAvailable > 0n) ? (
-										<label className="grid min-h-16 cursor-pointer place-items-center content-center gap-1.5 rounded-lg bg-background/70 px-3 py-2.5 text-center text-sm ring-offset-background transition hover:bg-background has-checked:bg-primary/10 has-checked:ring-2 has-checked:ring-primary has-checked:ring-offset-2 has-focus-visible:ring-2 has-focus-visible:ring-ring">
-											<input
-												checked={paymentChannelId === "wallet"}
-												className="sr-only"
-												disabled={
-													!walletAvailable ||
-													(hasAgentAccess &&
-														(wallet.isFetching || wallet.isError))
-												}
-												name="payment-channel"
-												onChange={() => setPaymentChannelId("wallet")}
-												type="radio"
-												value="wallet"
-											/>
-											<span className="font-medium">{m.wallet_payment()}</span>
-											{hasAgentAccess && !walletAvailable ? (
-												<span className="text-muted-foreground text-xs">
-													{wallet.isPending
-														? m.common_loading()
-														: wallet.isError
-															? m.common_operation_failed()
-															: m.wallet_payment_insufficient()}
-												</span>
-											) : null}
-											<span className="text-muted-foreground text-xs">
-												{m.wallet_balance()}:{" "}
-												{wallet.data ? (
+										<CheckoutPaymentOption
+											amount={
+												currencyItem && "currency" in currencyItem ? (
 													<StoreMoney
-														amountMinor={balanceAvailable.toString()}
-														currency={wallet.data.currency}
-														decimals={wallet.data.currencyDecimals}
+														amountMinor={orderDue.toString()}
+														currency={currencyItem.currency ?? "USD"}
+														decimals={currencyItem.currencyDecimals ?? 2}
 													/>
-												) : (
-													"—"
-												)}
-											</span>
-										</label>
+												) : null
+											}
+											checked={paymentChannelId === "wallet"}
+											detail={
+												<>
+													{hasAgentAccess && !walletAvailable ? (
+														<span className="block">
+															{wallet.isPending
+																? m.common_loading()
+																: wallet.isError
+																	? m.common_operation_failed()
+																	: m.wallet_payment_insufficient()}
+														</span>
+													) : null}
+													{m.wallet_balance()}:{" "}
+													{wallet.data ? (
+														<StoreMoney
+															amountMinor={balanceAvailable.toString()}
+															currency={wallet.data.currency}
+															decimals={wallet.data.currencyDecimals}
+														/>
+													) : (
+														"—"
+													)}
+												</>
+											}
+											disabled={
+												!walletAvailable ||
+												(hasAgentAccess &&
+													(wallet.isFetching || wallet.isError))
+											}
+											icon={
+												<span className="grid size-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+													<Wallet className="size-4" />
+												</span>
+											}
+											onSelect={() => setPaymentChannelId("wallet")}
+											title={m.wallet_payment()}
+											value="wallet"
+										/>
 									) : null}
 									{channels.data?.map((channel) => (
-										<PaymentChannelOption
-											channel={channel}
-											key={channel.id}
-											selected={paymentChannelId}
-											onSelect={setPaymentChannelId}
-										>
-											{currencyItem && "currency" in currencyItem ? (
-												<span className="font-medium text-primary text-xs">
+										<CheckoutPaymentOption
+											amount={
+												currencyItem && "currency" in currencyItem ? (
 													<StoreMoney
 														amountMinor={channelAmountDue(channel).toString()}
 														currency={currencyItem.currency ?? "USD"}
 														decimals={currencyItem.currencyDecimals ?? 2}
 													/>
-												</span>
-											) : null}
-											{channel.feeBps > 0 &&
-											!items.every(
-												(item) => channel.itemPrices[item.sellableItemId],
-											) ? (
-												<span className="text-muted-foreground text-xs">
-													{m.store_payment_fee_rate({
-														rate: (channel.feeBps / 100).toFixed(2),
-													})}
-												</span>
-											) : null}
-										</PaymentChannelOption>
+												) : null
+											}
+											checked={paymentChannelId === channel.id}
+											detail={
+												channel.feeBps > 0 &&
+												!items.every(
+													(item) => channel.itemPrices[item.sellableItemId],
+												)
+													? m.store_payment_fee_rate({
+															rate: (channel.feeBps / 100).toFixed(2),
+														})
+													: null
+											}
+											icon={
+												<PaymentProviderLogo
+													className="size-8 shrink-0 rounded-md"
+													logoUrl={channel.logoUrl}
+													providerId={channel.provider}
+												/>
+											}
+											key={channel.id}
+											onSelect={() => setPaymentChannelId(channel.id)}
+											required
+											title={paymentChannelLabel(channel.name)}
+											value={channel.id}
+										/>
 									))}
 								</div>
 								{paymentUnavailable ? (
@@ -1017,7 +1062,7 @@ export function StorefrontCheckoutPage() {
 								compact
 							/>
 						) : signInRequired ? (
-							<div className="mt-auto grid gap-4">
+							<div className="grid gap-4">
 								<div>
 									<p className="font-medium">
 										{m.store_account_required_title()}
@@ -1034,7 +1079,7 @@ export function StorefrontCheckoutPage() {
 								</Button>
 							</div>
 						) : (
-							<div className="mt-auto grid gap-4">
+							<div className="grid gap-4">
 								{hasAgentAccess ? (
 									<AgentAccessCheckout
 										compact
@@ -1090,34 +1135,142 @@ export function StorefrontCheckoutPage() {
 
 								<Button
 									className="h-12"
-									disabled={
-										blocked ||
-										agentBlocked ||
-										accessWalletPending ||
-										couponBlocked ||
-										checkout.isPending ||
-										(!hasAgentAccess && !termsAccepted) ||
-										(hasAgentAccess && !agentAccessTermsAccepted) ||
-										paymentUnavailable ||
-										(total > 0n &&
-											(paymentChannelId === "wallet"
-												? !walletAvailable
-												: channels.isPending || !paymentChannelId))
-									}
+									disabled={submitDisabled}
+									ref={setSubmitButton}
 									type="submit"
 								>
-									{checkout.isPending
-										? m.store_checkout_submitting()
-										: total > 0n
-											? m.store_checkout_submit_paid()
-											: m.store_checkout_submit_free()}
+									{submitLabel}
 								</Button>
+								{showsPaymentCode ? (
+									<p className="flex items-start gap-2 text-muted-foreground text-xs leading-5">
+										<Info className="mt-0.5 size-3.5 shrink-0" />
+										<span>{m.store_checkout_next_step()}</span>
+									</p>
+								) : null}
+								{/* Phones: the real button sits below the items and contact
+								    fields, so a bar keeps total + submit one tap away. */}
+								<section
+									aria-label={m.store_order_total()}
+									className={cn(
+										"fixed inset-x-0 bottom-0 z-40 border-border/70 border-t bg-background/95 pb-[var(--safe-bottom)] shadow-[0_-12px_32px_-20px_rgb(0_0_0/0.45)] backdrop-blur-xl transition-transform duration-300 lg:hidden",
+										showSubmitBar ? "translate-y-0" : "translate-y-full",
+									)}
+									inert={!showSubmitBar}
+								>
+									<div className="container flex items-center gap-3 px-4 py-3">
+										<div className="min-w-0 flex-1">
+											<p className="truncate text-muted-foreground text-xs">
+												{m.store_checkout_payable()}
+												{selectedChannel
+													? ` · ${paymentChannelLabel(selectedChannel.name)}`
+													: paymentChannelId === "wallet"
+														? ` · ${m.wallet_payment()}`
+														: null}
+											</p>
+											{currencyItem && "currency" in currencyItem ? (
+												<p className="truncate font-semibold text-primary text-xl tabular-nums">
+													<StoreMoney
+														amountMinor={payableTotal.toString()}
+														currency={currencyItem.currency ?? "USD"}
+														decimals={currencyItem.currencyDecimals ?? 2}
+													/>
+												</p>
+											) : null}
+										</div>
+										<Button
+											className="h-11 shrink-0 rounded-xl px-6"
+											disabled={submitDisabled}
+											type="submit"
+										>
+											{submitLabel}
+										</Button>
+									</div>
+								</section>
 							</div>
 						)}
 					</div>
 				</aside>
 			</form>
 		</div>
+	);
+}
+
+/**
+ * True while the checkout's own submit button is still below the screen, so
+ * the phone submit bar only appears when it saves scrolling.
+ */
+function useSubmitBelowFold(button: HTMLElement | null) {
+	const [below, setBelow] = useState(false);
+	useEffect(() => {
+		if (!button || typeof IntersectionObserver === "undefined") return;
+		const observer = new IntersectionObserver(([entry]) =>
+			setBelow(
+				!entry?.isIntersecting && (entry?.boundingClientRect.top ?? 0) > 0,
+			),
+		);
+		observer.observe(button);
+		return () => observer.disconnect();
+	}, [button]);
+	return below;
+}
+
+function CheckoutPaymentOption({
+	amount,
+	checked,
+	detail,
+	disabled,
+	icon,
+	onSelect,
+	required,
+	title,
+	value,
+}: {
+	amount: ReactNode;
+	checked: boolean;
+	detail?: ReactNode;
+	disabled?: boolean;
+	icon: ReactNode;
+	onSelect: () => void;
+	required?: boolean;
+	title: string;
+	value: string;
+}) {
+	return (
+		<label className="group flex min-h-16 cursor-pointer items-center gap-3 rounded-xl border bg-background px-4 py-3 text-sm transition-colors hover:border-primary/40 has-checked:border-primary has-checked:bg-primary/5 has-checked:ring-1 has-checked:ring-primary has-disabled:cursor-not-allowed has-disabled:opacity-60 has-focus-visible:ring-2 has-focus-visible:ring-ring">
+			<input
+				checked={checked}
+				className="sr-only"
+				disabled={disabled}
+				name="payment-channel"
+				onChange={onSelect}
+				required={required}
+				type="radio"
+				value={value}
+			/>
+			<span
+				aria-hidden="true"
+				className="grid size-4 shrink-0 place-items-center rounded-full border-2 border-muted-foreground/40 group-has-checked:border-primary"
+			>
+				<span className="size-1.5 rounded-full bg-primary opacity-0 group-has-checked:opacity-100" />
+			</span>
+			{icon}
+			<span className="grid min-w-0 flex-1 gap-0.5">
+				<span className="font-medium leading-snug">{title}</span>
+				{detail ? (
+					<span className="text-muted-foreground text-xs">{detail}</span>
+				) : null}
+			</span>
+			{amount ? (
+				<span className="grid shrink-0 justify-items-end gap-0.5 text-right">
+					<span className="text-muted-foreground text-xs">
+						{m.store_checkout_amount_due()}
+					</span>
+					<span className="font-semibold text-base text-primary tabular-nums">
+						{amount}
+					</span>
+				</span>
+			) : null}
+		</label>
 	);
 }
 
@@ -1194,19 +1347,19 @@ export function CheckoutLoadingSkeleton({
 					className="min-w-0 border-t bg-muted/35 p-5 sm:p-8 lg:border-t-0 lg:border-l lg:p-10"
 					data-skeleton-region="checkout-summary"
 				>
-					<div className="flex h-full flex-col gap-7 lg:sticky lg:top-26">
+					<div className="flex flex-col gap-6 lg:sticky lg:top-26">
 						<div className="grid gap-2">
 							<Skeleton className="h-5 w-24" />
 							<Skeleton className="h-10 w-36" />
 						</div>
 						<div>
 							<Skeleton className="mb-4 h-5 w-28" />
-							<div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,10rem))] gap-3">
-								<Skeleton className="h-16 rounded-lg" />
-								<Skeleton className="h-16 rounded-lg" />
+							<div className="grid gap-3">
+								<Skeleton className="h-16 rounded-xl" />
+								<Skeleton className="h-16 rounded-xl" />
 							</div>
 						</div>
-						<div className="mt-auto grid gap-4">
+						<div className="grid gap-4">
 							<div className="flex items-start gap-3">
 								<Skeleton className="size-4 shrink-0 rounded-sm" />
 								<Skeleton className="h-5 w-4/5" />

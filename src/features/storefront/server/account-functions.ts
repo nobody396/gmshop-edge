@@ -14,6 +14,7 @@ import { supportedLocales } from "#/lib/locales";
 import { getDb } from "#/server/db.server";
 import { getStoreSession, resolveStoreAccount } from "./account";
 import { listVisibleStoreEntitlements } from "./account-entitlements";
+import { accountOrderSummary, listStoreAccountOrders } from "./account-orders";
 import {
 	listStoreNotificationPreferences,
 	listStoreSessions,
@@ -67,18 +68,7 @@ export const getStoreAccountFn = createServerFn({ method: "GET" }).handler(
 		const userId = account.user.id;
 		const [orders, credential, notificationPreferences, coupons, entitlements] =
 			await Promise.all([
-				db
-					.prepare(
-						`SELECT o.order_number, o.status, o.currency, o.currency_decimals,
-						 o.total_minor, o.created_at, o.updated_at,
-						 (SELECT product_name FROM shop_order_items WHERE order_id = o.id
-						  ORDER BY created_at, id LIMIT 1) AS product_name,
-						 (SELECT COUNT(*) FROM shop_order_items WHERE order_id = o.id) AS item_count
-						 FROM shop_orders o WHERE o.user_id = ?
-						 ORDER BY o.created_at DESC, o.id DESC LIMIT 100`,
-					)
-					.bind(userId)
-					.all<AccountOrderRow>(),
+				listStoreAccountOrders(db, userId),
 				db
 					.prepare(
 						`SELECT id FROM accounts WHERE user_id = ? AND provider_id = 'credential'
@@ -151,17 +141,7 @@ export const getStoreAccountFn = createServerFn({ method: "GET" }).handler(
 				buildJobCount: entitlement.automation_job_count,
 				buildArtifactCount: entitlement.automation_artifact_count,
 			})),
-			orders: orders.results.map((order) => ({
-				orderNumber: order.order_number,
-				status: order.status,
-				currency: order.currency,
-				currencyDecimals: order.currency_decimals,
-				totalMinor: order.total_minor,
-				productName: order.product_name,
-				itemCount: order.item_count,
-				createdAt: order.created_at,
-				updatedAt: order.updated_at,
-			})),
+			orders: orders.results.map(accountOrderSummary),
 		};
 	},
 );
@@ -363,15 +343,3 @@ export const openAccountAfterSaleCaseFn = createServerFn({ method: "POST" })
 			},
 		);
 	});
-
-type AccountOrderRow = {
-	order_number: string;
-	status: string;
-	currency: string;
-	currency_decimals: number;
-	total_minor: string;
-	product_name: string | null;
-	item_count: number;
-	created_at: number;
-	updated_at: number;
-};

@@ -32,7 +32,24 @@ export const checkoutSearchSchema = z.object({
 	mode: z.enum(["buy-now"]).optional(),
 	sellableItemId: z.uuid().optional(),
 	quantity: z.coerce.number().int().min(1).max(1_000).default(1),
+	// Payment method picked on the product page; checkout only honours it when
+	// that method is actually offered, and malformed values are dropped.
+	payment: z
+		.string()
+		.regex(/^[\w-]{1,64}$/)
+		.optional()
+		.catch(undefined),
 });
+
+/** The method checkout opens on: the requested one when offered, else the first. */
+export function initialPaymentChannelId(
+	channels: ReadonlyArray<{ id: string }>,
+	requested: string | undefined,
+) {
+	return (
+		channels.find((channel) => channel.id === requested)?.id ?? channels[0]?.id
+	);
+}
 
 export const cartSyncSchema = z.object({
 	items: z.array(cartItemSchema).max(50),
