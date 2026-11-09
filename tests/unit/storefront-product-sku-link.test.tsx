@@ -113,6 +113,22 @@ describe("product SKU deep links", () => {
 			),
 		);
 	}
+	function checkedPlan() {
+		return container
+			.querySelector('input[name="sellable-item"]:checked')
+			?.closest("label");
+	}
+	function plan(text: string) {
+		const result = [
+			...container.querySelectorAll<HTMLInputElement>(
+				'input[name="sellable-item"]',
+			),
+		]
+			.map((input) => input.closest("label"))
+			.find((label) => label?.textContent?.includes(text));
+		if (!result) throw new Error(`Missing plan: ${text}`);
+		return result;
+	}
 	function button(text: string) {
 		const result = [...container.querySelectorAll("button")].find((b) =>
 			b.textContent?.includes(text),
@@ -125,32 +141,26 @@ describe("product SKU deep links", () => {
 		"500",
 	])("opens the exact %s SKU, including minimum quantity", (id) => {
 		open(id);
-		expect(
-			container.querySelector('[aria-pressed="true"]')?.textContent,
-		).toContain(id === "ios" ? "iOS 20X" : "Pro 500");
+		expect(checkedPlan()?.textContent).toContain(
+			id === "ios" ? "iOS 20X" : "Pro 500",
+		);
 		act(() => button("store_add_to_cart").click());
 		expect(mocks.addToCart).toHaveBeenCalledWith(id, id === "500" ? 2 : 1, 10);
 	});
 	it("keeps ordinary product links and manual switching working", () => {
 		open();
-		expect(
-			container.querySelector('[aria-pressed="true"]')?.textContent,
-		).toContain("Go");
-		act(() => button("Pro 500").click());
-		expect(
-			container.querySelector('[aria-pressed="true"]')?.textContent,
-		).toContain("Pro 500");
+		expect(checkedPlan()?.textContent).toContain("Go");
+		act(() => plan("Pro 500").click());
+		expect(checkedPlan()?.textContent).toContain("Pro 500");
 	});
 	it("does not silently select another SKU for an unknown valid link", () => {
 		open("missing");
-		expect(container.querySelector('[aria-pressed="true"]')).toBeNull();
+		expect(checkedPlan()).toBeFalsy();
 		expect(button("store_buy_now").disabled).toBe(true);
 	});
 	it("resets selection when navigating between SKU links on the same product", () => {
 		open("ios");
 		open("500");
-		expect(
-			container.querySelector('[aria-pressed="true"]')?.textContent,
-		).toContain("Pro 500");
+		expect(checkedPlan()?.textContent).toContain("Pro 500");
 	});
 });

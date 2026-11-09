@@ -11,7 +11,8 @@ describe("storefront account-required purchase guidance", () => {
 
 		expect(product).toContain("m.store_alipay_fee_notice()");
 		expect(product).toContain("BadgePercent");
-		expect(product).toContain("sellableItem.channelPrices.length > 0");
+		expect(product).toContain("<PaymentPricePicker");
+		expect(product).toContain("selectedItem.channelPrices.length > 1");
 		expect(product).toContain("m.store_payment_prices_title()");
 		expect(catalog).toContain("channelPrices.length === 1");
 		expect(catalog).toContain("channelPrices[0]?.price_minor");
@@ -45,10 +46,10 @@ describe("storefront account-required purchase guidance", () => {
 		expect(card).not.toContain("m.store_sales(");
 	});
 
-	it("marks every SKU with a slim automatic or manual ribbon", () => {
+	it("marks every SKU with a quiet automatic or manual delivery label", () => {
 		const product = source("src/features/storefront/pages/product.tsx");
 
-		expect(product).toContain("-rotate-[32deg]");
+		expect(product).toContain('item.fulfillmentSource === "manual"');
 		expect(product).toContain("m.store_manual_procurement()");
 		expect(product).toContain("m.store_local_delivery()");
 	});
