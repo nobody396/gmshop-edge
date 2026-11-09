@@ -13,6 +13,17 @@ import {
 
 export const exceptionTodoSettingKey = "commerce.redemption.exception_todos";
 const pollStateKey = "commerce.redemption.exception_poll_state";
+const sessionSentKeyPrefix = "commerce.redemption.exception_session_sent:";
+
+async function sha256Hex(text: string) {
+	const bytes = await crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(text),
+	);
+	return [...new Uint8Array(bytes)]
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+}
 const eventType = "redeem.exception_todo";
 const configSchema = z
 	.object({ enabled: z.literal(true), since: z.number().int().nonnegative() })
@@ -396,15 +407,29 @@ export async function withRecoverySecrets(
 	if (!secrets.session)
 		lines.push("客户 Session：没有保存（超过 24 小时或更早的单）");
 	else {
-		try {
-			await sendPrivateFile(input, {
-				name: `session-${reference.slice(0, 8)}.txt`,
-				content: secrets.session,
-				caption: `核查编号 ${reference}｜${secrets.sku}｜客户最后一次提交的登录内容（${secrets.session_kind || "session"}），24 小时内有效`,
-			});
-			lines.push("客户 Session：已私发给你（.txt 文件）");
-		} catch {
-			lines.push("客户 Session：私发失败，请先私聊 Bot 点“开始”，或找我取");
+		// Owner 2026-11-09: the 1-hour escalation re-sent the same Session file. Send each
+		// distinct Session once per case; only its SHA-256 is kept, never the Session itself.
+		const sentKey = `${sessionSentKeyPrefix}${codeId}`;
+		const digest = await sha256Hex(secrets.session);
+		if ((await setting(input.db, sentKey)) === digest)
+			lines.push("客户 Session：之前已私发给你（内容没变，不再重发）");
+		else {
+			try {
+				await sendPrivateFile(input, {
+					name: `session-${reference.slice(0, 8)}.txt`,
+					content: secrets.session,
+					caption: `核查编号 ${reference}｜${secrets.sku}｜客户最后一次提交的登录内容（${secrets.session_kind || "session"}），24 小时内有效`,
+				});
+				const now = input.now ?? Date.now();
+				await input.db
+					.prepare(`INSERT INTO system_settings (key,value,is_secret,created_at,updated_at) VALUES (?,?,0,?,?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`)
+					.bind(sentKey, JSON.stringify(digest), now, now)
+					.run();
+				lines.push("客户 Session：已私发给你（.txt 文件）");
+			} catch {
+				lines.push("客户 Session：私发失败，请先私聊 Bot 点“开始”，或找我取");
+			}
 		}
 	}
 	return `${text}\n${lines.join("\n")}`;

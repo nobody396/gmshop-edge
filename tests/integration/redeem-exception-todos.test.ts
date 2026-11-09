@@ -492,6 +492,46 @@ describe("proactive redemption exception todos", { timeout: 30_000 }, () => {
 			);
 		expect(stored).not.toMatch(/GPROX20|SESSION-TEXT/);
 	});
+	it("sends the same Session only once when the todo escalates", async () => {
+		await enable();
+		const files: string[] = [];
+		const secrets = async () => ({
+			open: true,
+			sku: "GPT_20X_RENEW_PH",
+			upstream: "aiee（兑换站 aiee.fun）",
+			upstream_key: "K",
+			session: '{"accessToken":"SAME"}',
+			session_kind: "gpt_session",
+		});
+		const first = deliver();
+		await runRedemptionExceptionTodos({
+			db,
+			now: clock,
+			readFeed: async () => feed([snapshot], clock),
+			deliver: first,
+			readSecrets: secrets,
+			sendPrivateFile: async (file) => {
+				files.push(file.content);
+			},
+		});
+		const again = deliver();
+		await runRedemptionExceptionTodos({
+			db,
+			now: clock + 1,
+			readFeed: async () => feed([{ ...snapshot, severity: 2 }], clock + 1),
+			deliver: again,
+			readSecrets: secrets,
+			sendPrivateFile: async (file) => {
+				files.push(file.content);
+			},
+		});
+		expect(files).toEqual(['{"accessToken":"SAME"}']);
+		expect(String(again.mock.calls[0]?.[0])).toContain("之前已私发给你");
+		const stored = JSON.stringify(
+			(await db.prepare("SELECT value FROM system_settings").all()).results,
+		);
+		expect(stored).not.toContain("SAME");
+	});
 	it("still sends the todo when the secrets or private file fail", async () => {
 		await enable();
 		const send = deliver();
