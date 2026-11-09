@@ -315,6 +315,13 @@
 	transition: opacity 350ms ease;
 }
 
+/* Phones: keep the footer's last links clear of the product page buy bar. */
+@media (width < 64rem) {
+	body:has(.mobile-buy-bar) footer {
+		padding-bottom: calc(5rem + var(--safe-bottom));
+	}
+}
+
 :root[data-splash="seen"] .startup-splash {
 	display: none;
 }

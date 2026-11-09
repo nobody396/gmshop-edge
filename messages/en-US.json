@@ -1063,7 +1063,7 @@
 	"store_account_start_shopping": "Browse the store",
 	"store_account_action_needed": "Awaiting payment",
 	"store_account_active_entitlements": "Available purchases",
-	"store_accept_terms": "I confirm the order information and accept the purchase terms.",
+	"store_accept_terms": "I confirm the order and accept the warranty and limitation terms in the product page specification notes.",
 	"store_purchase_exact_quantity": "Purchase {quantity} at a time",
 	"store_purchase_maximum_quantity": "Choose up to {maximum}",
 	"store_purchase_quantity_range": "Choose {minimum}–{maximum}",

@@ -1063,7 +1063,7 @@
 	"store_account_start_shopping": "去商城逛逛",
 	"store_account_action_needed": "待付款",
 	"store_account_active_entitlements": "可用权益",
-	"store_accept_terms": "我已确认订单信息并同意购买条款",
+	"store_accept_terms": "我已确认订单信息，并同意商品页「规格说明」里的质保与免责条款",
 	"store_purchase_exact_quantity": "每次需购买 {quantity} 件",
 	"store_purchase_maximum_quantity": "一次最多可选 {maximum} 件",
 	"store_purchase_quantity_range": "一次可选 {minimum}–{maximum} 件",

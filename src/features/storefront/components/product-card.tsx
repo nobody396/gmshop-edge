@@ -6,6 +6,11 @@ import { Badge } from "#/components/ui/badge";
 import { Skeleton } from "#/components/ui/skeleton";
 import { useCurrency } from "#/features/exchange-rates/currency-context";
 import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
+import {
+	CategoryIcon,
+	hasCategoryIcon,
+	primaryCategory,
+} from "#/features/home/category-sidebar";
 import type { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { m } from "#/paraglide/messages";
@@ -63,9 +68,18 @@ export function StorefrontProductCard({
 			: null;
 	const stock =
 		displayStockQuantity != null && displayStockQuantity > 0
-			? m.store_stock({ count: displayStockQuantity })
+			? m.store_stock({
+					count: displayStockQuantity > 99 ? "99+" : displayStockQuantity,
+				})
 			: null;
-	const cover = (
+	// A shrunken cover turns into unreadable text; the brand mark reads at any size.
+	const category = primaryCategory(product.tags);
+	const cover = hasCategoryIcon(category) ? (
+		<CategoryIcon
+			className="size-11 rounded-xl sm:size-10 [&>svg]:size-5"
+			name={category ?? null}
+		/>
+	) : (
 		<div className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-primary/10 sm:size-10">
 			{product.coverUrl ? (
 				<img
@@ -151,7 +165,10 @@ export function StorefrontProductCard({
 							{product.tags[0]}
 						</span>
 					) : null}
-					<div className="truncate font-semibold text-sm leading-snug transition-colors group-hover:text-primary">
+					<div
+						className="line-clamp-2 min-h-[2lh] font-semibold text-sm leading-snug transition-colors group-hover:text-primary"
+						title={product.name}
+					>
 						{product.name}
 					</div>
 				</div>

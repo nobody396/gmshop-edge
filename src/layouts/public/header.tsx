@@ -434,8 +434,9 @@ function SettingsTrigger({
 }
 
 function SignInAction() {
+	// Outline so it does not compete with the green 邀请返利 pill beside it.
 	return (
-		<Button asChild>
+		<Button asChild variant="outline">
 			<Link search={{ redirect: undefined }} to="/sign-in">
 				{m.public_sign_in()}
 			</Link>

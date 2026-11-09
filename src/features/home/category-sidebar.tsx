@@ -68,7 +68,12 @@ function meta(name: string): CategoryMeta {
 	return CATEGORY_META[name] ?? { label: () => name, icon: Tag };
 }
 
-function CategoryIcon({
+/** Whether a tag has its own brand icon (unknown tags fall back to a generic one). */
+export function hasCategoryIcon(name: string | undefined) {
+	return name != null && name in CATEGORY_META;
+}
+
+export function CategoryIcon({
 	name,
 	className,
 }: {

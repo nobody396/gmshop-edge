@@ -25,7 +25,13 @@ import {
 	TriangleAlert,
 	Zap,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+	type ReactNode,
+	type RefObject,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -145,6 +151,7 @@ export function StorefrontProductPage({
 	// The buyer can tap a payment price card; checkout opens on that method.
 	const [paymentChannelId, setPaymentChannelId] = useState<string>();
 	const navigate = useNavigate();
+	const purchaseActions = useRef<HTMLDivElement>(null);
 	// Volume steps are public; customer prices need the session, so they are
 	// fetched apart from the cached product.
 	const pricing = useQuery({
@@ -251,6 +258,15 @@ export function StorefrontProductPage({
 		maximumQuantity != null &&
 		quantity <= maximumQuantity;
 	const entitlement = selectedItem ? entitlementSummary(selectedItem) : null;
+	const buyNow = () => {
+		if (!selectedItem) return;
+		if (selectedItem.id === gptUpgradeProduct.itemId) {
+			window.location.assign(gptUpgradeProduct.quoteUrl);
+			return;
+		}
+		// Stay in the app: a full reload repaints the whole shop.
+		void navigate({ href: checkoutPath });
+	};
 	const delivery = selectedItem
 		? agentAccessKind(selectedItem.id)
 			? m.agent_access_automatic_delivery()
@@ -282,10 +298,28 @@ export function StorefrontProductPage({
 				<ArrowLeft className="size-4" />
 				{m.store_continue_shopping()}
 			</Link>
+			{selectedItem &&
+			!requiresSignIn &&
+			!agentAccessKind(selectedItem.id) &&
+			selectedItem.id !== gptUpgradeProduct.itemId ? (
+				<MobileBuyBar
+					canPurchase={canPurchase}
+					channel={
+						selectedItem.channelPrices.find(
+							(channel) => channel.id === checkoutChannelId,
+						) ?? null
+					}
+					onBuy={buyNow}
+					pricing={pricing.data?.[selectedItem.id]}
+					quantity={quantity}
+					sellableItem={selectedItem}
+					target={purchaseActions}
+				/>
+			) : null}
 			{/* Mobile reads gallery → purchase → details; desktop keeps purchase in the right column beside both. */}
 			<div className="grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(420px,7fr)] lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-3">
 				<div className="grid content-start gap-3 lg:col-start-1 lg:row-start-1">
-					<div className="relative aspect-video overflow-hidden rounded-2xl bg-muted">
+					<div className="relative aspect-[2/1] overflow-hidden rounded-2xl bg-muted sm:aspect-video">
 						{selectedMedia ? (
 							<img
 								alt={selectedMedia.altText ?? data.name}
@@ -415,7 +449,11 @@ export function StorefrontProductPage({
 						</div>
 					) : null}
 					{/* Upgrades charge the exact quote on every channel, so the Alipay surcharge note would mislead. */}
-					{data.id === gptUpgradeProduct.productId ? null : (
+					{/* The payment price cards already show the Alipay price, so the note only repeats it there. */}
+					{data.id === gptUpgradeProduct.productId ||
+					data.sellableItems.some(
+						(item) => item.channelPrices.length > 0,
+					) ? null : (
 						<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 text-amber-700 text-sm leading-6 dark:text-amber-300">
 							<BadgePercent className="mt-0.5 size-4 shrink-0" />
 							<p>{m.store_alipay_fee_notice()}</p>
@@ -489,7 +527,9 @@ export function StorefrontProductPage({
 																			? m.store_sold_out()
 																			: item.availableStock >= 0
 																				? m.store_stock({
-																						count: item.availableStock,
+																						count: stockCount(
+																							item.availableStock,
+																						),
 																					})
 																				: null}
 																</span>
@@ -524,7 +564,9 @@ export function StorefrontProductPage({
 													</span>
 													{item.availableStock >= 0 ? (
 														<span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-															{m.store_stock({ count: item.availableStock })}
+															{m.store_stock({
+																count: stockCount(item.availableStock),
+															})}
 														</span>
 													) : !isAvailable(item) ? (
 														<span className="shrink-0 text-muted-foreground text-xs">
@@ -678,7 +720,7 @@ export function StorefrontProductPage({
 							<p className="text-muted-foreground">{m.store_select_plan()}</p>
 						)}
 					</div>
-					<div className="mt-5">
+					<div className="mt-5" ref={purchaseActions}>
 						<div className="grid gap-2 sm:grid-cols-2">
 							{requiresSignIn && canPurchase ? (
 								<Button asChild className="h-12 rounded-xl">
@@ -696,15 +738,7 @@ export function StorefrontProductPage({
 								<Button
 									className="h-12 rounded-xl"
 									disabled={!canPurchase}
-									onClick={() => {
-										if (!selectedItem) return;
-										if (selectedItem.id === gptUpgradeProduct.itemId) {
-											window.location.assign(gptUpgradeProduct.quoteUrl);
-											return;
-										}
-										// Stay in the app: a full reload repaints the whole shop.
-										void navigate({ href: checkoutPath });
-									}}
+									onClick={buyNow}
 								>
 									<Zap />
 									{data.saleDisabled || selectedItem?.saleDisabled
@@ -1148,11 +1182,7 @@ function SellableItemSummary({
 				<p className="font-medium text-muted-foreground text-sm">
 					{m.store_payment_prices_title()}
 				</p>
-				<div
-					aria-label={m.store_payment_prices_title()}
-					className="mt-2 grid gap-2 sm:grid-cols-2"
-					role="group"
-				>
+				<div className="mt-2 grid gap-2 sm:grid-cols-2">
 					{sellableItem.channelPrices.map((channel) => {
 						const alipay =
 							channel.provider === "epay" || channel.name.includes("支付宝");
@@ -1380,6 +1410,86 @@ function ProductPriceLine({ product }: { product: Product }) {
 				{summary.inStock ? m.seo_product_stock_in() : m.seo_product_stock_out()}
 			</span>
 		</p>
+	);
+}
+
+/** Big stock counts read as noise; past 99 the exact number no longer helps. */
+function stockCount(count: number) {
+	return count > 99 ? "99+" : count;
+}
+
+/**
+ * Phones: the buy buttons sit below the plan list, often screens away. Keep a
+ * slim price + buy bar on screen whenever those buttons are out of view.
+ */
+function MobileBuyBar({
+	sellableItem,
+	channel,
+	pricing,
+	quantity,
+	canPurchase,
+	onBuy,
+	target,
+}: {
+	sellableItem: SellableItem;
+	channel: SellableItem["channelPrices"][number] | null;
+	pricing: ItemPricing | undefined;
+	quantity: number;
+	canPurchase: boolean;
+	onBuy: () => void;
+	target: RefObject<HTMLDivElement | null>;
+}) {
+	const [actionsVisible, setActionsVisible] = useState(true);
+	useEffect(() => {
+		const element = target.current;
+		if (!element || typeof IntersectionObserver === "undefined") return;
+		const observer = new IntersectionObserver(([entry]) =>
+			setActionsVisible(entry?.isIntersecting ?? true),
+		);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, [target]);
+	const unit = unitPriceAt(sellableItem, pricing, quantity, channel);
+	return (
+		<div
+			aria-hidden={actionsVisible}
+			className={cn(
+				"mobile-buy-bar fixed inset-x-0 bottom-0 z-40 border-border/70 border-t bg-background/90 px-4 pt-3 pb-[calc(0.75rem+var(--safe-bottom))] backdrop-blur-xl transition-transform duration-300 lg:hidden",
+				actionsVisible && "pointer-events-none translate-y-full",
+			)}
+			data-testid="mobile-buy-bar"
+		>
+			<div className="mx-auto flex max-w-xl items-center gap-3">
+				<div className="min-w-0 flex-1">
+					<p className="truncate text-muted-foreground text-xs">
+						{[
+							sellableItem.name,
+							channel ? paymentChannelLabel(channel.name) : null,
+						]
+							.filter(Boolean)
+							.join(" · ")}
+					</p>
+					<strong className="block text-primary text-xl tabular-nums leading-tight">
+						<StoreMoney
+							amountMinor={unit.unitPriceMinor}
+							currency={sellableItem.currency}
+							decimals={sellableItem.currencyDecimals}
+						/>
+					</strong>
+				</div>
+				<Button
+					className="h-11 shrink-0 rounded-xl px-6"
+					disabled={!canPurchase}
+					onClick={onBuy}
+					tabIndex={actionsVisible ? -1 : undefined}
+				>
+					<Zap />
+					{sellableItem.saleDisabled
+						? m.store_sale_disabled()
+						: m.store_buy_now()}
+				</Button>
+			</div>
+		</div>
 	);
 }
 
