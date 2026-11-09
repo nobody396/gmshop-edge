@@ -926,7 +926,7 @@
 	"store_nav_redeem": "Redeem",
 	"store_nav_invoice": "Invoice",
 	"store_nav_rewards": "Rewards",
-	"store_nav_orders": "Order lookup",
+	"store_nav_orders": "My orders",
 	"store_lookup_title": "Look up a guest order",
 	"store_lookup_description": "Enter the order number and email used at checkout to view payment and delivery progress.",
 	"store_lookup_security_notice": "Order details are shown only when the order number and checkout email match.",
