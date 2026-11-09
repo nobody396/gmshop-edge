@@ -144,6 +144,15 @@ describe("public header settings", () => {
 		expect(reward?.classList.contains("bg-primary")).toBe(true);
 	});
 
+	it("links straight to the redeem site from the main navigation", () => {
+		act(() => root.render(<PublicHeader />));
+		const redeem = container.querySelector(
+			'nav a[href="https://redeem.laoshirenvip.com"]',
+		);
+		expect(redeem).not.toBeNull();
+		expect(redeem?.previousElementSibling?.getAttribute("href")).toBe("/");
+	});
+
 	it("shows online, Telegram, and an on-demand WeChat QR", () => {
 		act(() => root.render(<PublicHeader />));
 		const support = Array.from(container.querySelectorAll("button")).find(

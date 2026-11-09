@@ -1,9 +1,6 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { AnimatedCharacters } from "#/features/auth/components/animated-characters";
-import {
-	AuthAnimationProvider,
-	useAuthAnimation,
-} from "#/features/auth/components/auth-animation-context";
+import { Search, ShieldCheck, Zap } from "lucide-react";
+import { AuthAnimationProvider } from "#/features/auth/components/auth-animation-context";
 import { AppTitle } from "#/layouts/components/app-title";
 import { QuickSettings } from "#/layouts/components/quick-settings";
 import { m } from "#/paraglide/messages";
@@ -17,7 +14,6 @@ export function AuthLayout() {
 }
 
 function AuthLayoutContent() {
-	const animation = useAuthAnimation();
 	return (
 		<div className="container relative grid h-svh flex-col items-center justify-center pt-[var(--safe-top)] pb-[var(--safe-bottom)] lg:max-w-none lg:grid-cols-2 lg:px-0">
 			<section className="relative hidden h-full overflow-hidden bg-muted text-foreground lg:block">
@@ -36,13 +32,25 @@ function AuthLayoutContent() {
 							{m.auth_brand_description()}
 						</p>
 					</div>
-					<div className="w-full rounded-[36px] border bg-background/50 px-6 py-8 shadow-2xl backdrop-blur-sm">
-						<AnimatedCharacters
-							isTyping={animation.isTyping}
-							passwordLength={animation.passwordLength}
-							showPassword={animation.showPassword}
-						/>
-					</div>
+					<ul className="grid w-full max-w-sm gap-3">
+						{(
+							[
+								[Zap, m.auth_brand_point_delivery()],
+								[ShieldCheck, m.auth_brand_point_warranty()],
+								[Search, m.auth_brand_point_guest()],
+							] as const
+						).map(([Icon, label]) => (
+							<li
+								className="flex items-center gap-3 rounded-2xl border bg-background/60 px-4 py-3 text-sm backdrop-blur-sm"
+								key={label}
+							>
+								<span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+									<Icon className="size-4" />
+								</span>
+								{label}
+							</li>
+						))}
+					</ul>
 				</div>
 			</section>
 			<section className="flex h-full min-w-xs flex-col lg:p-8">

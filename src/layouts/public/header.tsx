@@ -227,6 +227,7 @@ function MobileMenu({
 	);
 }
 
+export const redeemSiteUrl = "https://redeem.laoshirenvip.com";
 const telegramSupportUrl = "https://t.me/laoshirenai_support_bot";
 const telegramGroupUrl = "https://t.me/laoshirengroup";
 
@@ -455,6 +456,7 @@ function CartAction() {
 function publicNavigation({ signedIn }: { signedIn: boolean }) {
 	const navigation: Array<readonly [string, string]> = [
 		[m.store_nav_shop(), "/"],
+		[m.store_nav_redeem(), redeemSiteUrl],
 		[m.store_nav_invoice(), "/invoice"],
 		[m.store_nav_rewards(), "/account"],
 	];
