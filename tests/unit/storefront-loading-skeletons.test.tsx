@@ -82,7 +82,7 @@ describe("storefront loading skeletons", () => {
 		expect(grid?.querySelectorAll("article")).toHaveLength(8);
 	});
 
-	it("matches the detail header, plans and buy-box geometry", () => {
+	it("matches the detail gallery and purchase geometry", () => {
 		const document = new DOMParser().parseFromString(
 			renderToStaticMarkup(<ProductLoadingSkeleton />),
 			"text/html",
@@ -90,8 +90,11 @@ describe("storefront loading skeletons", () => {
 		const detail = document.querySelector(
 			'[data-skeleton-layout="product-detail"]',
 		);
-		const header = detail?.querySelector(
-			'[data-skeleton-region="product-header"]',
+		const gallery = detail?.querySelector(
+			'[data-skeleton-region="product-gallery"]',
+		);
+		const thumbnails = detail?.querySelector(
+			'[data-skeleton-region="product-thumbnails"]',
 		);
 		const purchase = detail?.querySelector(
 			'[data-skeleton-region="product-purchase"]',
@@ -100,16 +103,18 @@ describe("storefront loading skeletons", () => {
 			'[data-skeleton-region="product-plans"]',
 		);
 
-		expect(detail?.className).toContain("container px-4 py-6 sm:py-8");
-		expect(detail?.querySelector(".grid")?.className).toContain(
-			"lg:grid-cols-[minmax(0,1fr)_22rem]",
-		);
+		expect(detail?.className).toContain("container px-4 py-7 sm:py-10");
+		expect(gallery?.className).toContain("grid content-start gap-3");
 		expect(
-			header?.querySelector('[data-slot="skeleton"].rounded-2xl'),
+			gallery?.querySelector('[data-slot="skeleton"].aspect-video.rounded-2xl'),
 		).not.toBeNull();
-		expect(purchase?.className).toContain("lg:sticky");
+		expect(thumbnails?.className).toContain("grid-cols-5 gap-2");
+		expect(thumbnails?.children).toHaveLength(5);
+		expect(purchase?.className).toContain(
+			"min-w-0 lg:sticky lg:top-26 lg:h-fit",
+		);
 		expect(plans?.className).toContain(
-			"grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]",
+			"grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))]",
 		);
 		expect(plans?.children).toHaveLength(2);
 	});
