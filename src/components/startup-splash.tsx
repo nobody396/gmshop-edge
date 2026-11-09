@@ -2,9 +2,28 @@ import { useEffect, useState } from "react";
 import { useSiteBrand } from "#/context/site-brand-provider";
 import { m } from "#/paraglide/messages";
 
-const MINIMUM_VISIBLE_MS = 1_000;
-const RANDOM_VISIBLE_MS = 1_500;
+// The page is server-rendered, so the splash only adds wait time: show the
+// brand once per browser tab, briefly, and never on later page loads.
+const VISIBLE_MS = 600;
 const FADE_DURATION_MS = 350;
+export const SPLASH_SEEN_KEY = "startup-splash-seen";
+
+/** Runs before paint so a returning page load never flashes the splash. */
+export const SPLASH_BOOT_SCRIPT = `(() => {
+  try {
+    if (sessionStorage.getItem("${SPLASH_SEEN_KEY}")) document.documentElement.dataset.splash = "seen";
+  } catch {}
+})();`;
+
+function splashAlreadySeen() {
+	try {
+		if (sessionStorage.getItem(SPLASH_SEEN_KEY)) return true;
+		sessionStorage.setItem(SPLASH_SEEN_KEY, "1");
+	} catch {
+		// Storage blocked (private mode): fall back to showing it once per load.
+	}
+	return false;
+}
 
 type SplashPhase = "visible" | "fading" | "hidden";
 
@@ -27,14 +46,13 @@ export function StartupSplash() {
 			if (reducedMotion.matches) hideImmediately();
 		};
 
-		if (reducedMotion.matches) {
+		if (splashAlreadySeen() || reducedMotion.matches) {
 			hideImmediately();
 		} else {
-			const visibleFor = MINIMUM_VISIBLE_MS + Math.random() * RANDOM_VISIBLE_MS;
 			fadeTimer = setTimeout(() => {
 				setPhase("fading");
 				hideTimer = setTimeout(() => setPhase("hidden"), FADE_DURATION_MS);
-			}, visibleFor);
+			}, VISIBLE_MS);
 			reducedMotion.addEventListener("change", handleMotionPreference);
 		}
 

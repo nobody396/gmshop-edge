@@ -1011,7 +1011,13 @@ export function StorefrontCheckoutPage() {
 												<PaymentProviderLogo
 													className="size-8 shrink-0 rounded-md"
 													logoUrl={channel.logoUrl}
-													providerId={channel.provider}
+													// Our epay channel collects through Alipay; the generic coin read as unknown.
+													providerId={
+														channel.provider === "epay" &&
+														channel.name.includes("支付宝")
+															? "alipay_page"
+															: channel.provider
+													}
 												/>
 											}
 											key={channel.id}

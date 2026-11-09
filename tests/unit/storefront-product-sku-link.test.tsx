@@ -46,6 +46,7 @@ vi.mock("@tanstack/react-router", () => ({
 	Link: ({ children, to }: PropsWithChildren<{ to: string }>) => (
 		<a href={to}>{children}</a>
 	),
+	useNavigate: () => vi.fn(),
 }));
 vi.mock("#/features/auth/auth-client", () => ({
 	authClient: { useSession: () => ({ data: null, isPending: false }) },

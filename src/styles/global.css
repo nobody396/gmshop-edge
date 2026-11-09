@@ -315,6 +315,10 @@
 	transition: opacity 350ms ease;
 }
 
+:root[data-splash="seen"] .startup-splash {
+	display: none;
+}
+
 .startup-splash[data-phase="fading"] {
 	opacity: 0;
 }

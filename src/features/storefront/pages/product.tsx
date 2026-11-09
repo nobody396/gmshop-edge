@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowLeft,
 	BadgePercent,
@@ -73,6 +73,7 @@ import {
 	type StorefrontProduct,
 	storefrontProductQueryOptions,
 } from "#/features/storefront/product-seo";
+import { initialPaymentChannelId } from "#/features/storefront/schema";
 import { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { getProductPricingFn } from "#/features/storefront/server/price-functions";
 import { useFitStickyTop } from "#/features/storefront/sticky-top";
@@ -141,6 +142,9 @@ export function StorefrontProductPage({
 	const [purchaseColumnTop, purchaseColumn] = useFitStickyTop(104);
 	const [selectedMediaId, setSelectedMediaId] = useState<string>();
 	const [quantity, setQuantity] = useState(1);
+	// The buyer can tap a payment price card; checkout opens on that method.
+	const [paymentChannelId, setPaymentChannelId] = useState<string>();
+	const navigate = useNavigate();
 	// Volume steps are public; customer prices need the session, so they are
 	// fetched apart from the cached product.
 	const pricing = useQuery({
@@ -228,8 +232,11 @@ export function StorefrontProductPage({
 			Boolean(selectedItem && claudeEnvTrafficSkus[selectedItem.id])) &&
 		!session.isPending &&
 		!session.data?.user;
+	const checkoutChannelId = selectedItem
+		? initialPaymentChannelId(selectedItem.channelPrices, paymentChannelId)
+		: undefined;
 	const checkoutPath = selectedItem
-		? `/checkout?mode=buy-now&sellableItemId=${encodeURIComponent(selectedItem.id)}&quantity=${quantity}`
+		? `/checkout?mode=buy-now&sellableItemId=${encodeURIComponent(selectedItem.id)}&quantity=${quantity}${checkoutChannelId ? `&payment=${encodeURIComponent(checkoutChannelId)}` : ""}`
 		: "/checkout";
 	const maximumQuantity = selectedItem
 		? purchaseMaximum(selectedItem)
@@ -587,8 +594,10 @@ export function StorefrontProductPage({
 						{selectedItem ? (
 							<>
 								<SellableItemSummary
+									onSelectChannel={setPaymentChannelId}
 									pricing={pricing.data?.[selectedItem.id]}
 									quantity={quantity}
+									selectedChannelId={checkoutChannelId}
 									sellableItem={selectedItem}
 								/>
 								<VolumePriceTable
@@ -689,11 +698,12 @@ export function StorefrontProductPage({
 									disabled={!canPurchase}
 									onClick={() => {
 										if (!selectedItem) return;
-										window.location.assign(
-											selectedItem.id === gptUpgradeProduct.itemId
-												? gptUpgradeProduct.quoteUrl
-												: checkoutPath,
-										);
+										if (selectedItem.id === gptUpgradeProduct.itemId) {
+											window.location.assign(gptUpgradeProduct.quoteUrl);
+											return;
+										}
+										// Stay in the app: a full reload repaints the whole shop.
+										void navigate({ href: checkoutPath });
 									}}
 								>
 									<Zap />
@@ -1113,10 +1123,14 @@ function SellableItemSummary({
 	sellableItem,
 	pricing,
 	quantity,
+	selectedChannelId,
+	onSelectChannel,
 }: {
 	sellableItem: SellableItem;
 	pricing: ItemPricing | undefined;
 	quantity: number;
+	selectedChannelId?: string;
+	onSelectChannel?: (channelId: string) => void;
 }) {
 	if (sellableItem.id === gptUpgradeProduct.itemId)
 		return (
@@ -1134,18 +1148,31 @@ function SellableItemSummary({
 				<p className="font-medium text-muted-foreground text-sm">
 					{m.store_payment_prices_title()}
 				</p>
-				<div className="mt-2 grid gap-2 sm:grid-cols-2">
+				<div
+					aria-label={m.store_payment_prices_title()}
+					className="mt-2 grid gap-2 sm:grid-cols-2"
+					role="group"
+				>
 					{sellableItem.channelPrices.map((channel) => {
 						const alipay =
 							channel.provider === "epay" || channel.name.includes("支付宝");
 						const unit = unitPriceAt(sellableItem, pricing, quantity, channel);
+						const selected = channel.id === selectedChannelId;
 						return (
-							<div
+							<button
+								aria-pressed={selected}
 								className={cn(
-									"rounded-xl border border-primary/20 bg-primary/[0.07] px-4 py-3",
+									"rounded-xl border border-primary/20 bg-primary/[0.07] px-4 py-3 text-left outline-none transition-[border-color,box-shadow,opacity] focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]",
 									alipay && "border-amber-500/25 bg-amber-500/10",
+									selected
+										? alipay
+											? "border-amber-500/70 ring-1 ring-amber-500/50"
+											: "border-primary/70 ring-1 ring-primary/50"
+										: "opacity-70 hover:opacity-100",
 								)}
 								key={channel.id}
+								onClick={() => onSelectChannel?.(channel.id)}
+								type="button"
 							>
 								<div className="flex items-center justify-between gap-3">
 									<span
@@ -1187,7 +1214,7 @@ function SellableItemSummary({
 										</span>
 									) : null}
 								</div>
-							</div>
+							</button>
 						);
 					})}
 				</div>
@@ -1281,8 +1308,13 @@ function PlanPriceBadge({ pricing }: { pricing: ItemPricing | undefined }) {
 	if (!pricing) return null;
 	if (pricing.customerSteps.length > 0)
 		return <PriceSourceBadge source="customer" />;
+	// "Bulk price" read as "bulk only"; say what it means for a single buyer.
 	if (pricing.volumeSteps.length > 0)
-		return <PriceSourceBadge source="volume" />;
+		return (
+			<span className="rounded-full bg-emerald-500/12 px-2 py-0.5 font-medium text-[11px] text-emerald-700 dark:text-emerald-300">
+				{m.store_price_badge_buy_more()}
+			</span>
+		);
 	return null;
 }
 

@@ -10,6 +10,11 @@ const checkoutPageSource = readFileSync(
 	"utf8",
 );
 
+const productPageSource = readFileSync(
+	new URL("../../src/features/storefront/pages/product.tsx", import.meta.url),
+	"utf8",
+);
+
 describe("checkout search parameters", () => {
 	it("parses a buy-now deep link without relying on browser-only state", () => {
 		expect(
@@ -88,10 +93,13 @@ describe("checkout payment preselection", () => {
 		expect(initialPaymentChannelId([], "usdt")).toBeUndefined();
 	});
 
-	it("is wired into checkout", () => {
+	it("is wired into checkout and the product page buy link", () => {
 		expect(checkoutPageSource).toContain(
 			"initialPaymentChannelId(channels.data ?? [], search.payment)",
 		);
+		expect(productPageSource).toContain("&payment=${encodeURIComponent(");
+		expect(productPageSource).toContain("aria-pressed={selected}");
+		expect(productPageSource).toContain("navigate({ href: checkoutPath })");
 	});
 });
 
