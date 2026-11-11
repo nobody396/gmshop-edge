@@ -11,6 +11,7 @@ import {
 	ceilYuanMinor,
 	equalizeGroup,
 	followPlan,
+	linkedItemPlan,
 	parseCostFactors,
 	parseFloorRules,
 	planPrice,
@@ -1163,6 +1164,97 @@ describe("ops automation jobs", { timeout: 30_000 }, () => {
 			db
 				.prepare(
 					"SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'pricing_guard.equal_group' AND target_id = 'gpt-plus'",
+				)
+				.first("n"),
+		).resolves.toBe(1);
+	});
+
+	it("linked items follow their base item's prices plus a fixed amount", async () => {
+		expect(
+			linkedItemPlan(
+				{
+					usdtMinor: 71_000,
+					alipayMinor: 73_000,
+					agentMinor: 65_000,
+					costMinor: 57_500,
+				},
+				{
+					usdtMinor: 61_000,
+					alipayMinor: 63_000,
+					agentMinor: 55_000,
+					costMinor: 51_500,
+				},
+				{ priceOffsetMinor: 10_000, costOffsetMinor: 6_000 },
+			),
+		).toBeNull();
+		expect(
+			linkedItemPlan(
+				{
+					usdtMinor: 71_000,
+					alipayMinor: 73_000,
+					agentMinor: 65_000,
+					costMinor: 57_500,
+				},
+				{
+					usdtMinor: 58_000,
+					alipayMinor: 60_000,
+					agentMinor: 52_000,
+					costMinor: 49_000,
+				},
+				{ priceOffsetMinor: 10_000, costOffsetMinor: 6_000 },
+			),
+		).toMatchObject({
+			plan: { usdtNew: 68_000, alipayNew: 70_000, agentNew: 62_000 },
+			costNew: 55_000,
+		});
+
+		await seedPricing(db);
+		await db.batch([
+			...sellable(db, "aisou-own", "aisou-product", "Own", "100", "100"),
+			db.prepare(
+				`INSERT INTO supplier_export_listings (id, sellable_item_id, price_minor, currency, currency_decimals, enabled, created_at, updated_at)
+				 VALUES ('listing-own', 'aisou-own', '100', 'CNY', 2, 1, 1, 1)`,
+			),
+		]);
+		await setSetting(db, "ops.pricing_guard.enabled", true);
+		await setSetting(db, "pricing.linked_items", [
+			{
+				item: "aisou-own",
+				base: "aisou-cheap",
+				priceOffsetMinor: 10_000,
+				costOffsetMinor: 6_000,
+			},
+		]);
+		await runPricingGuard({
+			db,
+			now: monday,
+			readStats: async () => stats,
+			readPrices: async () => prices,
+			deliver: async () => {},
+		});
+		const read = (id: string) =>
+			db
+				.prepare(
+					`SELECT item.price_minor AS usdt, item.cost_minor AS cost,
+					  (SELECT price_minor FROM sellable_item_channel_prices WHERE sellable_item_id = item.id AND channel_id = 'alipay') AS alipay,
+					  (SELECT price_minor FROM supplier_export_listings WHERE sellable_item_id = item.id) AS agent
+					 FROM product_sellable_items item WHERE item.id = ?`,
+				)
+				.bind(id)
+				.first<{ usdt: string; cost: string; alipay: string; agent: string }>();
+		const [base, own] = await Promise.all([
+			read("aisou-cheap"),
+			read("aisou-own"),
+		]);
+		if (!base || !own) throw new Error("missing rows");
+		expect(Number(own.usdt)).toBe(Number(base.usdt) + 10_000);
+		expect(Number(own.alipay)).toBe(Number(base.alipay) + 10_000);
+		expect(Number(own.agent)).toBe(Number(base.agent) + 10_000);
+		expect(own.cost).toBe("7000");
+		await expect(
+			db
+				.prepare(
+					"SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'pricing_guard.linked_item' AND target_id = 'aisou-own'",
 				)
 				.first("n"),
 		).resolves.toBe(1);
