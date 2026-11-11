@@ -1227,8 +1227,8 @@ export const paymentAttempts = sqliteTable(
 		splitPartCount: integer("split_part_count"),
 		/** Split payments: sum of each part's processing fee. */
 		processingFeeMinor: text("processing_fee_minor"),
-		/** Next provider status check by the scheduled reconciliation. */
-		nextCheckAt: integer("next_check_at", { mode: "timestamp_ms" }),
+		/** Last provider status check by the scheduled reconciliation. */
+		lastCheckedAt: integer("last_checked_at", { mode: "timestamp_ms" }),
 		...timestamps,
 	},
 	(table) => [
@@ -1252,9 +1252,9 @@ export const paymentAttempts = sqliteTable(
 			table.createdAt,
 			table.id,
 		),
-		index("payment_attempts_status_check_idx").on(
+		index("payment_attempts_status_checked_idx").on(
 			table.status,
-			table.nextCheckAt,
+			table.lastCheckedAt,
 			table.createdAt,
 			table.id,
 		),

@@ -14,11 +14,11 @@ ALTER TABLE payment_attempts ADD COLUMN split_part_count INTEGER CHECK (split_pa
 --> statement-breakpoint
 ALTER TABLE payment_attempts ADD COLUMN processing_fee_minor TEXT CHECK (processing_fee_minor IS NULL OR (processing_fee_minor <> '' AND processing_fee_minor NOT GLOB '*[^0-9]*'));
 --> statement-breakpoint
--- 支付补查的下一次检查时间：每次查询（没付或查询出错）都往后推，定时任务按它轮转候选，
--- 旧的未付款记录不会一直占住每分钟的查询名额。
-ALTER TABLE payment_attempts ADD COLUMN next_check_at INTEGER;
+-- 支付补查最近一次被定时任务查询的时间。定时任务按它从旧到新轮转候选（不跳过任何候选），
+-- 每处理一条（无论结果）都写上，旧记录不会一直占住每分钟的查询名额。
+ALTER TABLE payment_attempts ADD COLUMN last_checked_at INTEGER;
 --> statement-breakpoint
-CREATE INDEX payment_attempts_status_check_idx ON payment_attempts(status, next_check_at, created_at, id);
+CREATE INDEX payment_attempts_status_checked_idx ON payment_attempts(status, last_checked_at, created_at, id);
 --> statement-breakpoint
 CREATE INDEX payment_attempts_channel_succeeded_idx ON payment_attempts(channel_id, succeeded_at);
 --> statement-breakpoint

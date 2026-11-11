@@ -1480,6 +1480,123 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 			),
 		).toBe(1);
 	});
+
+	// Review 4, #12: the last check before expiry is never skipped.
+	it("finds a payment made just before expiry on a balance-split order before the expiry job runs", async () => {
+		await db.batch([
+			db
+				.prepare(
+					"UPDATE payment_channels SET split_enabled=0, per_payment_max_minor='0' WHERE id=?",
+				)
+				.bind(channelId),
+			db.prepare(
+				"UPDATE users SET balance_minor='100000' WHERE id='customer-1'",
+			),
+			db.prepare(
+				`INSERT INTO order_balance_holds
+				 (order_id, user_id, cash_minor, reward_minor, external_minor, state, created_at, updated_at)
+				 VALUES ('${orderId}', 'customer-1', '100000', '0', '200000', 'held', ${Date.now()}, ${Date.now()})`,
+			),
+		]);
+		await startPayment("balance-qr");
+		const single = await parent();
+		expect(single?.amount_minor).toBe("200000");
+		const expiresAt = (await order())?.expires_at ?? 0;
+		const scheduled = async (now: number) => {
+			await reconcilePendingShopPayments(
+				db,
+				simulator.fetch as unknown as typeof fetch,
+				now,
+			);
+			await expireStoreOrders(db, now);
+		};
+		// Cron ticks every minute, half a minute off the order's deadline.
+		await scheduled(expiresAt - 30_000);
+		// Paid 20 seconds before the deadline; the callback is lost.
+		simulator.paid.set(single?.provider_payment_id as string, "2000.00");
+		await scheduled(expiresAt + 30_000);
+		await scheduled(expiresAt + 90_000);
+		expect((await order())?.status).toBe("paid");
+		expect(
+			await db
+				.prepare("SELECT state FROM order_balance_holds WHERE order_id=?")
+				.bind(orderId)
+				.first(),
+		).toEqual({ state: "consumed" });
+		expect(await count("SELECT COUNT(*) AS count FROM delivery_records")).toBe(
+			1,
+		);
+	});
+
+	// Review 4, #11: payments held for review never pin the scan.
+	it("rotates payments that need review instead of re-reading them first", async () => {
+		const now = Date.now();
+		await db.batch([
+			db
+				.prepare(
+					"UPDATE payment_channels SET split_enabled=0, per_payment_max_minor='0' WHERE id=?",
+				)
+				.bind(channelId),
+			db.prepare(
+				`INSERT INTO shop_orders
+				 (id, order_number, user_id, contact_email, normalized_contact_email,
+				  status, currency, currency_decimals, subtotal_minor, discount_minor,
+				  total_minor, paid_minor, version, expires_at, created_at, updated_at,
+				  pricing_channel_id)
+				 VALUES ('old-order', 'GM100000', 'customer-1', 'buyer@example.com',
+				  'buyer@example.com', 'pending_payment', 'CNY', 2, '300001', '0', '300001', '0', 2,
+				  ${now + 600_000}, ${now - 3_600_000}, ${now - 600_000}, '${channelId}')`,
+			),
+			db.prepare("UPDATE users SET balance_minor='1' WHERE id='customer-1'"),
+			db.prepare(
+				`INSERT INTO order_balance_holds
+				 (order_id, user_id, cash_minor, reward_minor, external_minor, state, created_at, updated_at)
+				 VALUES ('old-order', 'customer-1', '1', '0', '300000', 'held', ${now}, ${now})`,
+			),
+			...Array.from({ length: 20 }, (_, index) =>
+				db
+					.prepare(
+						`INSERT INTO payment_attempts
+						 (id, order_id, channel_id, provider_payment_id, idempotency_key, status,
+						  amount_minor, currency, created_at, updated_at, order_amount_minor)
+						 VALUES (?, 'old-order', ?, ?, ?, 'expired', '300000', 'CNY', ?, ?, '300000')`,
+					)
+					.bind(
+						`review-${index}`,
+						channelId,
+						`review-trade-${index}`,
+						`review-${index}`,
+						now - 3_600_000 + index,
+						now - 3_600_000 + index,
+					),
+			),
+			// Expired since: its balance reservation was released.
+			db.prepare(
+				`UPDATE shop_orders SET status='expired', expires_at=${now - 600_000} WHERE id='old-order'`,
+			),
+			db.prepare(
+				"UPDATE order_balance_holds SET state='released' WHERE order_id='old-order'",
+			),
+		]);
+		for (let index = 0; index < 20; index += 1)
+			simulator.paid.set(`review-trade-${index}`, "3000.00");
+		await startPayment("single-after-review");
+		const single = await parent();
+		simulator.paid.set(single?.provider_payment_id as string, "3000.00");
+		for (let run = 0; run < 3; run += 1)
+			await reconcilePendingShopPayments(
+				db,
+				simulator.fetch as unknown as typeof fetch,
+				now + run * 60_000,
+				20,
+			);
+		expect((await order())?.status).toBe("paid");
+		expect(
+			await db
+				.prepare("SELECT status FROM shop_orders WHERE id='old-order'")
+				.first(),
+		).toEqual({ status: "expired" });
+	});
 });
 
 async function configureTelegram(db: D1Database) {
