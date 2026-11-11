@@ -1058,6 +1058,15 @@ export const paymentChannels = sqliteTable(
 		fixedFeeMinor: text("fixed_fee_minor").notNull().default("0"),
 		sortOrder: integer("sort_order").notNull().default(100),
 		enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+		/** alipay_qr only: split a payment above per_payment_max_minor into parts. */
+		splitEnabled: integer("split_enabled", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		/** '0' = no single-payment limit. */
+		perPaymentMaxMinor: text("per_payment_max_minor").notNull().default("0"),
+		/** '0' = no daily (Beijing day) collection limit. */
+		dailyMaxMinor: text("daily_max_minor").notNull().default("0"),
+		splitMaxParts: integer("split_max_parts").notNull().default(10),
 		lastHealthStatus: text("last_health_status", {
 			enum: ["unknown", "healthy", "unhealthy"],
 		})
@@ -1212,6 +1221,10 @@ export const paymentAttempts = sqliteTable(
 		providerExpiresAt: integer("provider_expires_at", { mode: "timestamp_ms" }),
 		succeededAt: integer("succeeded_at", { mode: "timestamp_ms" }),
 		failureCode: text("failure_code"),
+		/** Split payments: number of provider trades in payment_split_parts. */
+		splitPartCount: integer("split_part_count"),
+		/** Split payments: sum of each part's processing fee. */
+		processingFeeMinor: text("processing_fee_minor"),
 		...timestamps,
 	},
 	(table) => [
@@ -1235,6 +1248,10 @@ export const paymentAttempts = sqliteTable(
 			table.createdAt,
 			table.id,
 		),
+		index("payment_attempts_channel_succeeded_idx").on(
+			table.channelId,
+			table.succeededAt,
+		),
 		check("payment_attempts_amount_check", moneyCheck(table.amountMinor)),
 		check(
 			"payment_attempts_subject_check",
@@ -1244,6 +1261,115 @@ export const paymentAttempts = sqliteTable(
 		check(
 			"payment_attempts_currency_decimals_check",
 			sql`${table.currencyDecimals} BETWEEN 0 AND 8`,
+		),
+	],
+);
+
+export const paymentSplitParts = sqliteTable(
+	"payment_split_parts",
+	{
+		id: text("id").primaryKey(),
+		paymentAttemptId: text("payment_attempt_id")
+			.notNull()
+			.references(() => paymentAttempts.id),
+		channelId: text("channel_id")
+			.notNull()
+			.references(() => paymentChannels.id),
+		partIndex: integer("part_index").notNull(),
+		partCount: integer("part_count").notNull(),
+		amountMinor: text("amount_minor").notNull(),
+		providerPaymentId: text("provider_payment_id"),
+		checkoutUrl: text("checkout_url"),
+		notifyUrl: text("notify_url").notNull(),
+		providerExpiresAt: integer("provider_expires_at", { mode: "timestamp_ms" }),
+		status: text("status", {
+			enum: ["created", "pending", "succeeded", "failed", "expired", "closed"],
+		})
+			.notNull()
+			.default("created"),
+		succeededAt: integer("succeeded_at", { mode: "timestamp_ms" }),
+		refundedMinor: text("refunded_minor").notNull().default("0"),
+		failureCode: text("failure_code"),
+		...timestamps,
+	},
+	(table) => [
+		uniqueIndex("payment_split_parts_attempt_index_uidx").on(
+			table.paymentAttemptId,
+			table.partIndex,
+		),
+		uniqueIndex("payment_split_parts_channel_provider_uidx").on(
+			table.channelId,
+			table.providerPaymentId,
+		),
+		index("payment_split_parts_channel_succeeded_idx").on(
+			table.channelId,
+			table.succeededAt,
+		),
+		index("payment_split_parts_status_updated_idx").on(
+			table.status,
+			table.updatedAt,
+			table.id,
+		),
+		check(
+			"payment_split_parts_index_check",
+			sql`${table.partIndex} BETWEEN 1 AND ${table.partCount} AND ${table.partCount} BETWEEN 2 AND 20`,
+		),
+		check(
+			"payment_split_parts_amount_check",
+			sql`${moneyCheck(table.amountMinor)} AND ${table.amountMinor} <> '0'`,
+		),
+		check(
+			"payment_split_parts_refunded_check",
+			moneyCheck(table.refundedMinor),
+		),
+		check(
+			"payment_split_parts_status_check",
+			sql`${table.status} IN ('created', 'pending', 'succeeded', 'failed', 'expired', 'closed')`,
+		),
+	],
+);
+
+export const paymentSplitRefunds = sqliteTable(
+	"payment_split_refunds",
+	{
+		id: text("id").primaryKey(),
+		partId: text("part_id")
+			.notNull()
+			.references(() => paymentSplitParts.id),
+		refundId: text("refund_id").references(() => refunds.id),
+		amountMinor: text("amount_minor").notNull(),
+		reason: text("reason").notNull(),
+		status: text("status", {
+			enum: ["pending", "succeeded", "failed", "manual"],
+		})
+			.notNull()
+			.default("pending"),
+		attemptCount: integer("attempt_count").notNull().default(0),
+		nextAttemptAt: integer("next_attempt_at", { mode: "timestamp_ms" }),
+		failureCode: text("failure_code"),
+		alertedAt: integer("alerted_at", { mode: "timestamp_ms" }),
+		completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+		...timestamps,
+	},
+	(table) => [
+		uniqueIndex("payment_split_refunds_part_refund_uidx")
+			.on(table.partId, table.refundId)
+			.where(sql`${table.refundId} IS NOT NULL`),
+		uniqueIndex("payment_split_refunds_part_automatic_uidx")
+			.on(table.partId)
+			.where(sql`${table.refundId} IS NULL`),
+		index("payment_split_refunds_status_next_idx").on(
+			table.status,
+			table.nextAttemptAt,
+			table.id,
+		),
+		check(
+			"payment_split_refunds_amount_check",
+			sql`${moneyCheck(table.amountMinor)} AND ${table.amountMinor} <> '0'`,
+		),
+		check(
+			"payment_split_refunds_status_check",
+			sql`${table.status} IN ('pending', 'succeeded', 'failed', 'manual')`,
 		),
 	],
 );

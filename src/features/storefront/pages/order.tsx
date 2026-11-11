@@ -171,6 +171,27 @@ export function StorefrontOrderPage({
 			!["failed", "cancelled", "expired"].includes(latestPayment.status),
 	);
 	const paymentUsesQr = latestPayment?.checkoutPresentation === "qr";
+	// Split payment (Alipay QR over the single-payment limit): one QR per part.
+	const splitParts = latestPayment?.splitParts ?? [];
+	const currentSplitPart = splitParts.find(
+		(part) => part.status !== "succeeded",
+	);
+	const splitPaidCount = splitParts.filter(
+		(part) => part.status === "succeeded",
+	).length;
+	const splitPaidMinor = splitParts
+		.filter((part) => part.status === "succeeded")
+		.reduce((sum, part) => sum + BigInt(part.amountMinor), 0n);
+	const splitRefundedMinor = splitParts.reduce(
+		(sum, part) => sum + BigInt(part.refundedMinor),
+		0n,
+	);
+	const splitPreparing = Boolean(
+		splitParts.length &&
+			latestPayment?.status === "pending" &&
+			!paymentUrl &&
+			!paymentExpired,
+	);
 	const claimableDeliveries = data.deliveries.filter(
 		(delivery) =>
 			delivery.status === "delivered" &&
@@ -446,6 +467,36 @@ export function StorefrontOrderPage({
 															})}
 												</p>
 											) : null}
+											{splitParts.length &&
+											currentSplitPart &&
+											latestPayment ? (
+												<div className="grid gap-1 text-center">
+													<strong className="text-lg">
+														{m.store_split_payment_part({
+															index: currentSplitPart.index,
+															count: currentSplitPart.count,
+															amount: formatMinorAmountWithSymbol(
+																currentSplitPart.amountMinor,
+																latestPayment.currency,
+																latestPayment.currencyDecimals,
+															),
+														})}
+													</strong>
+													<p className="max-w-sm text-muted-foreground text-sm">
+														{m.store_split_payment_hint({
+															count: currentSplitPart.count,
+														})}
+													</p>
+													{splitPaidCount ? (
+														<p className="text-muted-foreground text-sm">
+															{m.store_split_payment_progress({
+																paid: splitPaidCount,
+																count: currentSplitPart.count,
+															})}
+														</p>
+													) : null}
+												</div>
+											) : null}
 											{paymentUsesQr ? (
 												<div className="grid justify-items-center gap-4 text-center">
 													<div className="grid size-56 place-items-center rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
@@ -455,11 +506,33 @@ export function StorefrontOrderPage({
 																size={192}
 																value={paymentUrl}
 															/>
+														) : splitPreparing ? (
+															<LoaderCircle className="size-10 animate-spin text-black/30" />
 														) : (
 															<QrCode className="size-20 text-black/20" />
 														)}
 													</div>
 													<strong>{latestPayment?.channelName}</strong>
+													{splitPreparing ? (
+														<p className="text-muted-foreground text-sm">
+															{m.store_split_payment_preparing()}
+														</p>
+													) : null}
+													{latestPayment?.provider === "alipay_qr" &&
+													paymentCanResume &&
+													paymentUrl ? (
+														// On a phone the qr.alipay.com link opens the Alipay app.
+														<Button asChild className="h-11 w-full max-w-xs">
+															<a
+																href={paymentUrl}
+																rel="noopener noreferrer"
+																target="_blank"
+															>
+																<CreditCard />
+																{m.store_open_alipay()}
+															</a>
+														</Button>
+													) : null}
 												</div>
 											) : paymentCanResume && paymentUrl ? (
 												<div className="grid gap-2">
@@ -503,6 +576,22 @@ export function StorefrontOrderPage({
 											</Button>
 										) : null}
 									</div>
+								) : null}
+								{data.status !== "pending_payment" &&
+								latestPayment?.status !== "succeeded" &&
+								splitPaidMinor > 0n &&
+								latestPayment ? (
+									<p className="rounded-2xl border bg-background p-4 text-sm">
+										{(splitRefundedMinor >= splitPaidMinor
+											? m.store_split_payment_refunded
+											: m.store_split_payment_refunding)({
+											amount: formatMinorAmountWithSymbol(
+												splitPaidMinor.toString(),
+												latestPayment.currency,
+												latestPayment.currencyDecimals,
+											),
+										})}
+									</p>
 								) : null}
 								{data.status !== "pending_payment" ? (
 									<OrderDeliveryNotice

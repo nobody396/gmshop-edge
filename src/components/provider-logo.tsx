@@ -38,6 +38,7 @@ const authProviderIcons: Record<string, ProviderIconDefinition> = {
 const paymentProviderIcons: Record<string, ProviderIconDefinition> = {
 	alipay_page: { brandColor: true, icon: SiAlipay },
 	alipay_wap: { brandColor: true, icon: SiAlipay },
+	alipay_qr: { brandColor: true, icon: SiAlipay },
 	cryptomus: { icon: CryptomusLogo },
 	epay: { color: "#1677FF", icon: BadgeDollarSign },
 	gmpay: { brandColor: true, icon: SiTether },

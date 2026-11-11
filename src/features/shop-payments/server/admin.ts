@@ -48,6 +48,10 @@ type ChannelRow = {
 	fixed_fee_minor: string;
 	sort_order: number;
 	enabled: number;
+	split_enabled: number;
+	per_payment_max_minor: string;
+	daily_max_minor: string;
+	split_max_parts: number;
 	last_health_status: "unknown" | "healthy" | "unhealthy";
 	last_checked_at: number | null;
 	created_at: number;
@@ -132,15 +136,24 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 		);
 		const id = data.id ?? crypto.randomUUID();
 		const now = Date.now();
+		const limits = channelLimitValues(data);
+		// Alipay channels may switch between 网站支付 and 订单码支付; other
+		// providers keep their stored product.
+		const provider =
+			before && paymentProviderFamily(data.provider) !== "alipay"
+				? before.provider
+				: data.provider;
 		const mutation = data.id
 			? db.$client
 					.prepare(
-						`UPDATE payment_channels SET name = ?, currency = ?, default_token = ?,
+						`UPDATE payment_channels SET provider = ?, name = ?, currency = ?, default_token = ?,
 						 default_network = ?, credential_encrypted = ?,
 					 credential_key_version = 1, fee_bps = ?, fixed_fee_minor = ?, sort_order = ?,
-					 enabled = ?, last_health_status = 'unknown', last_checked_at = NULL, updated_at = ? WHERE id = ?`,
+					 enabled = ?, split_enabled = ?, per_payment_max_minor = ?, daily_max_minor = ?,
+					 split_max_parts = ?, last_health_status = 'unknown', last_checked_at = NULL, updated_at = ? WHERE id = ?`,
 					)
 					.bind(
+						provider,
 						data.name,
 						data.currency,
 						data.defaultToken,
@@ -150,6 +163,10 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						data.fixedFeeMinor,
 						data.sortOrder,
 						data.enabled,
+						limits.splitEnabled,
+						limits.perPaymentMaxMinor,
+						limits.dailyMaxMinor,
+						limits.splitMaxParts,
 						now,
 						id,
 					)
@@ -158,8 +175,10 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						`INSERT INTO payment_channels
 					 (id, provider, name, currency, default_token, default_network,
 					  credential_encrypted, credential_key_version,
-					  fee_bps, fixed_fee_minor, sort_order, enabled, last_health_status, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'unknown', ?, ?)`,
+					  fee_bps, fixed_fee_minor, sort_order, enabled, split_enabled,
+					  per_payment_max_minor, daily_max_minor, split_max_parts,
+					  last_health_status, created_at, updated_at)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?)`,
 					)
 					.bind(
 						id,
@@ -173,6 +192,10 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						data.fixedFeeMinor,
 						data.sortOrder,
 						data.enabled,
+						limits.splitEnabled,
+						limits.perPaymentMaxMinor,
+						limits.dailyMaxMinor,
+						limits.splitMaxParts,
 						now,
 						now,
 					);
@@ -184,12 +207,13 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 				targetId: id,
 				before: before ? presentChannel(before) : null,
 				after: {
-					provider: data.provider,
+					provider,
 					name: data.name,
 					currency: data.currency,
 					defaultToken: data.defaultToken,
 					defaultNetwork: data.defaultNetwork,
 					enabled: data.enabled,
+					...limits,
 					hasCredential: true,
 				},
 			}),
@@ -534,7 +558,7 @@ function credentialValue(data: z.output<typeof paymentChannelInputSchema>) {
 			webhookSecret: data.stripeWebhookSecret,
 		});
 	}
-	if (data.provider === "alipay_page" || data.provider === "alipay_wap") {
+	if (paymentProviderFamily(data.provider) === "alipay") {
 		if (
 			!data.alipayAppId &&
 			!data.alipaySellerId &&
@@ -584,6 +608,23 @@ function credentialValue(data: z.output<typeof paymentChannelInputSchema>) {
 	});
 }
 
+/** Limits apply to Alipay QR channels only; other providers keep the defaults. */
+function channelLimitValues(data: z.output<typeof paymentChannelInputSchema>) {
+	if (data.provider !== "alipay_qr")
+		return {
+			splitEnabled: false,
+			perPaymentMaxMinor: "0",
+			dailyMaxMinor: "0",
+			splitMaxParts: 10,
+		};
+	return {
+		splitEnabled: data.splitEnabled,
+		perPaymentMaxMinor: data.perPaymentMaxMinor,
+		dailyMaxMinor: data.dailyMaxMinor,
+		splitMaxParts: data.splitMaxParts,
+	};
+}
+
 async function channelPaymentMethod(
 	row: ChannelRow,
 	commerceSecret: string | null,
@@ -621,6 +662,10 @@ function presentChannel(row: ChannelRow) {
 		fixedFeeMinor: row.fixed_fee_minor,
 		sortOrder: row.sort_order,
 		enabled: Boolean(row.enabled),
+		splitEnabled: Boolean(row.split_enabled),
+		perPaymentMaxMinor: row.per_payment_max_minor ?? "0",
+		dailyMaxMinor: row.daily_max_minor ?? "0",
+		splitMaxParts: Number(row.split_max_parts ?? 10),
 		healthStatus: row.last_health_status,
 		lastCheckedAt: row.last_checked_at,
 		hasCredential: Boolean(row.credential_encrypted),

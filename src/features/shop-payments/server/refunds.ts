@@ -9,6 +9,7 @@ import {
 } from "#/features/promotions/server/refunds";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
+import { refundSplitPayment } from "#/features/shop-payments/server/split";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret } from "#/lib/secrets";
 import { createAuditStatement } from "#/server/audit";
@@ -582,22 +583,26 @@ export async function processShopRefund(
 		};
 	}
 	try {
-		const result = refund.provider_refund_id
-			? await adapter.queryRefund(
-					refund.provider_refund_id,
-					credential,
-					fetcher,
-				)
-			: await adapter.refundPayment(
-					{
-						refundId: refund.id,
-						providerPaymentId: refund.provider_payment_id,
-						amountMinor: refund.payment_amount_minor,
-						reason: refund.reason,
-					},
-					credential,
-					fetcher,
-				);
+		// Split payments refund part by part (never through the parent's `split:` id).
+		const splitResult = await refundSplitPayment(db, refund, fetcher);
+		const result = splitResult
+			? splitResult
+			: refund.provider_refund_id
+				? await adapter.queryRefund(
+						refund.provider_refund_id,
+						credential,
+						fetcher,
+					)
+				: await adapter.refundPayment(
+						{
+							refundId: refund.id,
+							providerPaymentId: refund.provider_payment_id,
+							amountMinor: refund.payment_amount_minor,
+							reason: refund.reason,
+						},
+						credential,
+						fetcher,
+					);
 		if (result.status === "pending")
 			return scheduleRefundCheck(
 				db,

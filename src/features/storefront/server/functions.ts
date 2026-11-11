@@ -16,6 +16,10 @@ import {
 	createShopPayment,
 	reconcileShopOrderPayment,
 } from "#/features/shop-payments/server/service";
+import {
+	checkoutChannelLimits,
+	resumeSplitPayment,
+} from "#/features/shop-payments/server/split";
 import { storePaymentReturnUrl } from "#/features/storefront/payment-url";
 import {
 	checkoutStoreOrderSchema,
@@ -96,6 +100,20 @@ export const trackCommerceEventFn = createServerFn({ method: "POST" })
 		return { accepted: true };
 	});
 
+type CheckoutChannelRow = {
+	id: string;
+	name: string;
+	provider: string;
+	fee_bps: number;
+	fixed_fee_minor: string;
+	logo_object_key: string | null;
+	logo_updated_at: number | null;
+	split_enabled: number;
+	per_payment_max_minor: string;
+	daily_max_minor: string;
+	split_max_parts: number;
+};
+
 const checkoutPaymentChannelsSchema = z.object({
 	sellableItemIds: z.array(z.uuid()).min(1).max(100),
 });
@@ -105,35 +123,32 @@ export const listCheckoutPaymentChannelsFn = createServerFn({
 }).handler(async () => {
 	const request = getRequest();
 	requireStorefrontPermission("guest", "catalog.read");
-	const rows = await getDb(request)
-		.$client.prepare(
+	const db = getDb(request).$client;
+	const rows = await db
+		.prepare(
 			`SELECT id, name, provider, fee_bps, fixed_fee_minor,
-			        logo_object_key, logo_updated_at
+			        logo_object_key, logo_updated_at, split_enabled,
+			        per_payment_max_minor, daily_max_minor, split_max_parts
 			 FROM payment_channels
 			 WHERE enabled = 1 ORDER BY sort_order, name, id`,
 		)
-		.all<{
-			id: string;
-			name: string;
-			provider: string;
-			fee_bps: number;
-			fixed_fee_minor: string;
-			logo_object_key: string | null;
-			logo_updated_at: number | null;
-		}>();
-	return rows.results
-		.filter((channel) => paymentChannelIsVisible(request, channel))
-		.map((channel) => ({
-			id: channel.id,
-			name: channel.name,
-			provider: channel.provider,
-			feeBps: channel.fee_bps,
-			fixedFeeMinor: channel.fixed_fee_minor,
-			logoUrl:
-				channel.logo_object_key && channel.logo_updated_at
-					? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
-					: null,
-		}));
+		.all<CheckoutChannelRow>();
+	const visible = rows.results.filter((channel) =>
+		paymentChannelIsVisible(request, channel),
+	);
+	const limits = await checkoutChannelLimits(db, visible);
+	return visible.map((channel) => ({
+		id: channel.id,
+		name: channel.name,
+		provider: channel.provider,
+		feeBps: channel.fee_bps,
+		fixedFeeMinor: channel.fixed_fee_minor,
+		limits: limits.get(channel.id) ?? null,
+		logoUrl:
+			channel.logo_object_key && channel.logo_updated_at
+				? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
+				: null,
+	}));
 });
 
 export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
@@ -147,7 +162,8 @@ export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
 		const [channelsResult, pricesResult] = await db.batch([
 			db.prepare(
 				`SELECT id, name, provider, fee_bps, fixed_fee_minor,
-			        logo_object_key, logo_updated_at
+			        logo_object_key, logo_updated_at, split_enabled,
+			        per_payment_max_minor, daily_max_minor, split_max_parts
 			 FROM payment_channels
 				 WHERE enabled = 1 ORDER BY sort_order, name, id`,
 			),
@@ -167,42 +183,34 @@ export const quoteCheckoutPaymentChannelsFn = createServerFn({ method: "POST" })
 				503,
 				"Payment channel unavailable",
 			);
-		const rows = channelsResult.results as Array<{
-			id: string;
-			name: string;
-			provider: string;
-			fee_bps: number;
-			fixed_fee_minor: string;
-			logo_object_key: string | null;
-			logo_updated_at: number | null;
-		}>;
+		const rows = channelsResult.results as CheckoutChannelRow[];
 		const prices = pricesResult.results as Array<{
 			channel_id: string;
 			sellable_item_id: string;
 			price_minor: string;
 		}>;
-		return rows
-			.filter((channel) => paymentChannelIsVisible(request, channel))
-			.map((channel) => ({
-				id: channel.id,
-				name: channel.name,
-				provider: channel.provider,
-				feeBps: channel.fee_bps,
-				fixedFeeMinor: channel.fixed_fee_minor,
-				logoUrl:
-					channel.logo_object_key && channel.logo_updated_at
-						? configurationLogoUrl(
-								"payment",
-								channel.id,
-								channel.logo_updated_at,
-							)
-						: null,
-				itemPrices: Object.fromEntries(
-					prices
-						.filter((price) => price.channel_id === channel.id)
-						.map((price) => [price.sellable_item_id, price.price_minor]),
-				),
-			}));
+		const visible = rows.filter((channel) =>
+			paymentChannelIsVisible(request, channel),
+		);
+		const limits = await checkoutChannelLimits(db, visible);
+		return visible.map((channel) => ({
+			id: channel.id,
+			name: channel.name,
+			provider: channel.provider,
+			feeBps: channel.fee_bps,
+			fixedFeeMinor: channel.fixed_fee_minor,
+			// Alipay QR limits; the checkout hides channels that cannot take the amount.
+			limits: limits.get(channel.id) ?? null,
+			logoUrl:
+				channel.logo_object_key && channel.logo_updated_at
+					? configurationLogoUrl("payment", channel.id, channel.logo_updated_at)
+					: null,
+			itemPrices: Object.fromEntries(
+				prices
+					.filter((price) => price.channel_id === channel.id)
+					.map((price) => [price.sellable_item_id, price.price_minor]),
+			),
+		}));
 	});
 
 export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
@@ -435,7 +443,9 @@ export const refreshStoreOrderFn = createServerFn({ method: "POST" })
 		if (order.status !== "pending_payment")
 			return withOrderGrowth(db, order, growthAccess);
 		const reconciliation = await reconcileShopOrderPayment(db, order.id);
-		if (!reconciliation.checked)
+		// Split payments: finish a fully paid order, show the next part's QR.
+		const split = await resumeSplitPayment(db, order.id);
+		if (!reconciliation.checked && !split.split)
 			return withOrderGrowth(db, order, growthAccess);
 		const queue = getCloudflareEnv(request).COMMERCE_QUEUE;
 		if (queue) {
@@ -465,11 +475,22 @@ export const retryStorePaymentFn = createServerFn({ method: "POST" })
 			throw new DomainError("order_not_payable", 409, "Order cannot be paid");
 		const attempt = await db
 			.prepare(
-				`SELECT channel_id, status, currency FROM payment_attempts WHERE order_id = ?
-				 ORDER BY created_at DESC, id DESC LIMIT 1`,
+				`SELECT id, channel_id, status, currency, split_part_count FROM payment_attempts
+				 WHERE order_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
 			)
 			.bind(order.id)
-			.first<{ channel_id: string; status: string; currency: string }>();
+			.first<{
+				id: string;
+				channel_id: string;
+				status: string;
+				currency: string;
+				split_part_count: number | null;
+			}>();
+		// A split payment in progress keeps its plan: show the next part's QR.
+		if (attempt?.split_part_count && attempt.status === "pending") {
+			await resumeSplitPayment(db, order.id);
+			return { id: attempt.id, status: "pending" };
+		}
 		if (!attempt)
 			throw new DomainError(
 				"payment_channel_unavailable",

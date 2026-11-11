@@ -45,6 +45,16 @@ export async function expireStoreOrders(
 				 AND EXISTS (SELECT 1 FROM shop_orders WHERE id = ? AND status = 'expired' AND version = ?)`,
 				)
 				.bind(now, order.id, order.id, nextVersion),
+			// Unpaid parts of a split payment die with the order; paid parts are
+			// refunded by settleSplitPayments.
+			db
+				.prepare(
+					`UPDATE payment_split_parts SET status = 'expired', failure_code = 'order_expired',
+				 updated_at = ? WHERE status IN ('created', 'pending')
+				 AND payment_attempt_id IN (SELECT id FROM payment_attempts WHERE order_id = ?)
+				 AND EXISTS (SELECT 1 FROM shop_orders WHERE id = ? AND status = 'expired' AND version = ?)`,
+				)
+				.bind(now, order.id, order.id, nextVersion),
 			db
 				.prepare(
 					`INSERT INTO shop_order_events

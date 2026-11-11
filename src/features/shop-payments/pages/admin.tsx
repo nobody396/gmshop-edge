@@ -57,6 +57,7 @@ import {
 	formatNumber,
 } from "#/lib/format";
 import { useCurrentProTableUrlState } from "#/lib/pro-table-url-state";
+import { decimalToMinor, minorToDecimal } from "#/lib/units";
 import { m } from "#/paraglide/messages";
 
 type ChannelPageResult = Awaited<ReturnType<typeof listPaymentChannelsFn>>;
@@ -162,6 +163,11 @@ export function PaymentConfigurationsPage() {
 								{paymentProviderLabel(row.original.provider)} ·{" "}
 								{row.original.currency}
 							</span>
+							{row.original.provider === "alipay_qr" ? (
+								<span className="block text-muted-foreground text-xs">
+									{channelLimitSummary(row.original)}
+								</span>
+							) : null}
 						</div>
 					</div>
 				),
@@ -409,6 +415,11 @@ function newChannelValues(
 		alipaySellerId: "",
 		alipayPrivateKeyPem: "",
 		alipayPublicKeyPem: "",
+		alipayMode: provider === "alipay_qr" ? "qr" : "page",
+		splitEnabled: false,
+		perPaymentMaxMinor: "0",
+		dailyMaxMinor: "0",
+		splitMaxParts: 10,
 		wechatAppId: "",
 		wechatMchId: "",
 		wechatMerchantSerialNumber: "",
@@ -486,6 +497,48 @@ function channelFormSchema(editing: boolean) {
 			required: !editing,
 			extra,
 			hidden: (values: Record<string, unknown>) => values.type !== "cryptomus",
+		},
+		{
+			name: "alipayMode",
+			label: m.payment_channels_alipay_mode(),
+			valueType: "select" as const,
+			required: true,
+			fieldProps: {
+				options: [
+					{ value: "page", label: m.payment_channels_alipay_mode_page() },
+					{ value: "qr", label: m.payment_channels_alipay_mode_qr() },
+				],
+			},
+			formItemProps: { className: "sm:col-span-2" },
+			hidden: (values: Record<string, unknown>) => values.type !== "alipay",
+		},
+		{
+			name: "perPaymentMaxMinor",
+			label: m.payment_channels_per_payment_max(),
+			tooltip: m.payment_channels_per_payment_max_hint(),
+			fieldProps: { inputMode: "decimal" },
+			hidden: alipayQrHidden,
+		},
+		{
+			name: "dailyMaxMinor",
+			label: m.payment_channels_daily_max(),
+			tooltip: m.payment_channels_daily_max_hint(),
+			fieldProps: { inputMode: "decimal" },
+			hidden: alipayQrHidden,
+		},
+		{
+			name: "splitEnabled",
+			label: m.payment_channels_split_enabled(),
+			tooltip: m.payment_channels_split_enabled_hint(),
+			valueType: "switch" as const,
+			hidden: alipayQrHidden,
+		},
+		{
+			name: "splitMaxParts",
+			label: m.payment_channels_split_max_parts(),
+			fieldProps: { inputMode: "numeric" },
+			hidden: (values: Record<string, unknown>) =>
+				alipayQrHidden(values) || !values.splitEnabled,
 		},
 		{
 			name: "alipayAppId",
@@ -647,6 +700,11 @@ function channelValues(channel: Channel) {
 		alipaySellerId: "",
 		alipayPrivateKeyPem: "",
 		alipayPublicKeyPem: "",
+		alipayMode: channel.provider === "alipay_qr" ? "qr" : "page",
+		splitEnabled: channel.splitEnabled,
+		perPaymentMaxMinor: minorToYuanInput(channel.perPaymentMaxMinor),
+		dailyMaxMinor: minorToYuanInput(channel.dailyMaxMinor),
+		splitMaxParts: channel.splitMaxParts,
 		wechatAppId: "",
 		wechatMchId: "",
 		wechatMerchantSerialNumber: "",
@@ -665,6 +723,8 @@ function paymentProviderLabel(
 	if (provider === "gmpay") return "GMpay";
 	if (provider === "cryptomus") return "Cryptomus";
 	if (provider === "epay") return "EPay";
+	if (provider === "alipay_qr")
+		return `Alipay · ${m.payment_channels_alipay_mode_qr()}`;
 	if (provider === "alipay_page" || provider === "alipay_wap") return "Alipay";
 	if (provider === "wechat_native" || provider === "wechat_h5")
 		return "WeChat Pay";
@@ -689,7 +749,8 @@ function paymentProviderFromForm(
 	values: Record<string, unknown>,
 ): PaymentProvider {
 	const type = String(values.type ?? "stripe") as PaymentProviderFamily;
-	if (type === "alipay") return "alipay_page";
+	if (type === "alipay")
+		return values.alipayMode === "qr" ? "alipay_qr" : "alipay_page";
 	if (type === "wechat") return "wechat_native";
 	return type;
 }
@@ -721,6 +782,10 @@ function paymentChannelInputFromForm(
 		alipaySellerId: String(values.alipaySellerId ?? ""),
 		alipayPrivateKeyPem: String(values.alipayPrivateKeyPem ?? ""),
 		alipayPublicKeyPem: String(values.alipayPublicKeyPem ?? ""),
+		splitEnabled: values.splitEnabled === true,
+		perPaymentMaxMinor: yuanInputToMinor(values.perPaymentMaxMinor),
+		dailyMaxMinor: yuanInputToMinor(values.dailyMaxMinor),
+		splitMaxParts: numericFormValue(values.splitMaxParts ?? 10),
 		wechatAppId: String(values.wechatAppId ?? ""),
 		wechatMchId: String(values.wechatMchId ?? ""),
 		wechatMerchantSerialNumber: String(values.wechatMerchantSerialNumber ?? ""),
@@ -733,6 +798,36 @@ function paymentChannelInputFromForm(
 		defaultToken: String(values.defaultToken ?? ""),
 		defaultNetwork: String(values.defaultNetwork ?? ""),
 	};
+}
+
+function alipayQrHidden(values: Record<string, unknown>) {
+	return values.type !== "alipay" || values.alipayMode !== "qr";
+}
+
+/** Limits are entered in yuan; an invalid entry fails schema validation. */
+function yuanInputToMinor(value: unknown) {
+	const text = String(value ?? "").trim();
+	if (!text) return "0";
+	if (!/^\d{1,13}(?:\.\d{1,2})?$/.test(text)) return "invalid";
+	return decimalToMinor(text, 2).toString();
+}
+
+function minorToYuanInput(value: string) {
+	return minorToDecimal(value, 2).replace(/\.00$/, "");
+}
+
+function channelLimitSummary(channel: Channel) {
+	const amount = (value: string) =>
+		value === "0"
+			? m.payment_channels_limit_none()
+			: formatMinorAmount(value, channel.currency, 2);
+	return [
+		m.payment_channels_limit_per({
+			amount: amount(channel.perPaymentMaxMinor),
+		}),
+		m.payment_channels_limit_daily({ amount: amount(channel.dailyMaxMinor) }),
+		...(channel.splitEnabled ? [m.payment_channels_limit_split()] : []),
+	].join(" · ");
 }
 
 function numericFormValue(value: unknown) {

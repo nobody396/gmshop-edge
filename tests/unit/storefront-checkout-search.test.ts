@@ -95,7 +95,7 @@ describe("checkout payment preselection", () => {
 
 	it("is wired into checkout and the product page buy link", () => {
 		expect(checkoutPageSource).toContain(
-			"initialPaymentChannelId(channels.data ?? [], search.payment)",
+			"initialPaymentChannelId(offeredChannels, search.payment)",
 		);
 		expect(productPageSource).toContain("&payment=${encodeURIComponent(");
 		expect(productPageSource).toContain("aria-pressed={selected}");

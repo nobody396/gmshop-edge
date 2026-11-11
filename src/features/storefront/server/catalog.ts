@@ -93,7 +93,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			  WHERE priced_item.product_id = p.id AND priced_item.enabled = 1
 			   AND priced_item.sale_disabled = 0
 			   AND price_channel.enabled = 1
-			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap')
+			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap', 'alipay_qr')
 			  ORDER BY length(COALESCE(channel_price.price_minor, priced_item.price_minor)),
 			           COALESCE(channel_price.price_minor, priced_item.price_minor),
 			           priced_item.sort_order, priced_item.id LIMIT 1) AS mainland_min_price_minor,
@@ -107,7 +107,7 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 			  WHERE priced_item.product_id = p.id AND priced_item.enabled = 1
 			   AND priced_item.sale_disabled = 0
 			   AND price_channel.enabled = 1
-			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap')
+			   AND price_channel.provider IN ('epay', 'alipay_page', 'alipay_wap', 'alipay_qr')
 			  ORDER BY length(COALESCE(channel_price.price_minor, priced_item.price_minor)) DESC,
 			           COALESCE(channel_price.price_minor, priced_item.price_minor) DESC,
 			           priced_item.sort_order, priced_item.id LIMIT 1) AS mainland_max_price_minor,

@@ -10,6 +10,13 @@ import {
 } from "#/features/shop-payments/provider";
 
 const idSchema = z.uuid();
+/** Minor units; '0' = no limit. */
+const limitMinorSchema = z
+	.string()
+	.trim()
+	.regex(/^\d{1,15}$/)
+	.transform((value) => BigInt(value).toString())
+	.default("0");
 
 export const paymentChannelListSchema = z.object({
 	pageIndex: z.number().int().min(0).default(0),
@@ -33,6 +40,11 @@ export const paymentChannelInputSchema = z
 		fixedFeeMinor: z.string().trim().regex(/^\d+$/).max(40),
 		sortOrder: z.number().int().min(0).max(1_000_000),
 		enabled: z.boolean(),
+		/** Alipay QR (alipay_qr) only; ignored and reset for other providers. */
+		splitEnabled: z.boolean().default(false),
+		perPaymentMaxMinor: limitMinorSchema,
+		dailyMaxMinor: limitMinorSchema,
+		splitMaxParts: z.number().int().min(2).max(20).default(10),
 		stripeSecretKey: z.string().trim().max(512).optional(),
 		stripeWebhookSecret: z.string().trim().max(512).optional(),
 		cryptomusMerchantId: z.string().trim().max(64).optional(),
@@ -101,9 +113,13 @@ export const paymentChannelInputSchema = z
 			return;
 		}
 		if (
-			["alipay_page", "alipay_wap", "wechat_native", "wechat_h5"].includes(
-				value.provider,
-			) &&
+			[
+				"alipay_page",
+				"alipay_wap",
+				"alipay_qr",
+				"wechat_native",
+				"wechat_h5",
+			].includes(value.provider) &&
 			value.currency !== "CNY"
 		)
 			context.addIssue({
@@ -111,7 +127,29 @@ export const paymentChannelInputSchema = z
 				path: ["currency"],
 				message: "This provider requires CNY",
 			});
-		if (value.provider === "alipay_page" || value.provider === "alipay_wap") {
+		if (value.provider === "alipay_qr") {
+			if (value.splitEnabled && value.perPaymentMaxMinor === "0")
+				context.addIssue({
+					code: "custom",
+					path: ["perPaymentMaxMinor"],
+					message: "Split payments need a single-payment limit",
+				});
+			if (
+				value.dailyMaxMinor !== "0" &&
+				value.perPaymentMaxMinor !== "0" &&
+				BigInt(value.dailyMaxMinor) < BigInt(value.perPaymentMaxMinor)
+			)
+				context.addIssue({
+					code: "custom",
+					path: ["dailyMaxMinor"],
+					message: "The daily limit cannot be below the single-payment limit",
+				});
+		}
+		if (
+			value.provider === "alipay_page" ||
+			value.provider === "alipay_wap" ||
+			value.provider === "alipay_qr"
+		) {
 			const changingCredential = Boolean(
 				value.alipayAppId ||
 					value.alipaySellerId ||

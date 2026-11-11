@@ -113,6 +113,7 @@ describe("local acceptance seed contract", () => {
 			"alipay_wap",
 			"wechat_native",
 			"wechat_h5",
+			"alipay_qr",
 		]);
 		expect(new Set(channels.map((channel) => channel.provider))).toEqual(
 			new Set(paymentProviderValues),
@@ -128,6 +129,7 @@ describe("local acceptance seed contract", () => {
 			if (
 				channel.provider === "alipay_page" ||
 				channel.provider === "alipay_wap" ||
+				channel.provider === "alipay_qr" ||
 				channel.provider === "wechat_native" ||
 				channel.provider === "wechat_h5"
 			)
@@ -260,7 +262,11 @@ function credentialSchema(provider: AcceptancePaymentChannel["provider"]) {
 	if (provider === "cryptomus") return cryptomusCredentialSchema;
 	if (provider === "gmpay") return gmpayCredentialSchema;
 	if (provider === "epay") return epayCredentialSchema;
-	if (provider === "alipay_page" || provider === "alipay_wap")
+	if (
+		provider === "alipay_page" ||
+		provider === "alipay_wap" ||
+		provider === "alipay_qr"
+	)
 		return alipayCredentialSchema;
 	return wechatCredentialSchema;
 }

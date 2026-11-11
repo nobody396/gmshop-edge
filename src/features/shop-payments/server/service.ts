@@ -11,6 +11,12 @@ import { grossUpPaymentAmount } from "#/features/shop-payments/fees";
 import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import { epusdtMerchantOrderId } from "#/features/shop-payments/providers/epusdt";
+import {
+	assertSinglePaymentWithinLimits,
+	planChannelPayment,
+	processSplitPartEvent,
+	startSplitPayment,
+} from "#/features/shop-payments/server/split";
 import { supplierFallbackEnabledExpression } from "#/features/storefront/server/stock-availability";
 import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { mutateWallet } from "#/features/wallet/server/ledger";
@@ -58,6 +64,11 @@ type PaymentCreationContext = {
 	fixed_fee_minor: string;
 	fixed_channel_pricing: number;
 	has_channel_pricing: number;
+	order_expires_at: number;
+	split_enabled: number;
+	per_payment_max_minor: string;
+	daily_max_minor: string;
+	split_max_parts: number;
 };
 
 type OrderItem = EntitlementOrderItem & {
@@ -113,9 +124,11 @@ export async function createShopPayment(
 		.prepare(
 			`SELECT o.id AS order_id, o.order_number, o.status AS order_status,
 			 COALESCE((SELECT external_minor FROM order_balance_holds WHERE order_id=o.id AND state='held'),o.total_minor) AS amount_minor, o.currency, o.currency_decimals,
-			 o.contact_email, o.pricing_channel_id,
+			 o.contact_email, o.pricing_channel_id, o.expires_at AS order_expires_at,
 			 pc.id AS channel_id, pc.provider, pc.credential_encrypted,
 			 pc.default_token, pc.default_network, pc.fee_bps, pc.fixed_fee_minor,
+			 pc.split_enabled, pc.per_payment_max_minor, pc.daily_max_minor,
+			 pc.split_max_parts,
 			 (EXISTS (SELECT 1 FROM shop_order_items oi JOIN gpt_upgrade_orders u ON u.order_item_id=oi.id WHERE oi.order_id=o.id) OR NOT EXISTS (
 			  SELECT 1 FROM shop_order_items order_item
 			  WHERE order_item.order_id = o.id AND NOT EXISTS (
@@ -182,14 +195,18 @@ export async function createShopPayment(
 	const credential = await loadCredential(db, context.credential_encrypted);
 	const attemptId = crypto.randomUUID();
 	const now = Date.now();
+	// Alipay QR limits: a channel over its daily limit refuses the payment; an
+	// amount over the single-payment limit is split into parts when enabled.
+	const split = await planChannelPayment(db, context, quote, now);
 	const claimed = await db
 		.prepare(
 			`INSERT INTO payment_attempts
 			 (id, order_id, channel_id, idempotency_key, status, amount_minor, currency,
 			  currency_decimals, exchange_rate_id, exchange_rate, exchange_rate_direction,
 			  exchange_rate_source, exchange_rate_adjustment_bps, exchange_rate_observed_at,
-			  created_at, updated_at, order_amount_minor)
-			 VALUES (?, ?, ?, ?, 'created', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			  created_at, updated_at, order_amount_minor, split_part_count,
+			  processing_fee_minor)
+			 VALUES (?, ?, ?, ?, 'created', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(idempotency_key) DO NOTHING`,
 		)
 		.bind(
@@ -209,6 +226,8 @@ export async function createShopPayment(
 			now,
 			now,
 			context.amount_minor,
+			split?.parts.length ?? null,
+			split?.processingFeeMinor ?? null,
 		)
 		.run();
 	if (Number(claimed.meta.changes ?? 0) !== 1) {
@@ -226,30 +245,42 @@ export async function createShopPayment(
 		return presentAttempt(replay);
 	}
 	try {
-		const payment = await getPaymentProvider(context.provider).createPayment(
-			{
-				attemptId,
-				orderId: context.order_id,
-				orderNumber: context.order_number,
-				amountMinor: quote.amountMinor,
-				currency: quote.currency,
-				currencyDecimals: quote.currencyDecimals,
-				customerEmail: context.contact_email,
-				description: `Order ${context.order_number}`,
-				successUrl: input.successUrl,
-				cancelUrl: input.cancelUrl,
-				webhookUrl: new URL(
-					`/api/shop/payments/${encodeURIComponent(input.channelId)}/webhook`,
-					input.successUrl,
-				).toString(),
-				defaultToken: context.default_token,
-				defaultNetwork: context.default_network,
-				payerIp: input.payerIp,
-				payerMobile: input.payerMobile,
-			},
-			credential,
-			fetcher,
-		);
+		const paymentInput = {
+			attemptId,
+			orderId: context.order_id,
+			orderNumber: context.order_number,
+			amountMinor: quote.amountMinor,
+			currency: quote.currency,
+			currencyDecimals: quote.currencyDecimals,
+			customerEmail: context.contact_email,
+			description: `Order ${context.order_number}`,
+			successUrl: input.successUrl,
+			cancelUrl: input.cancelUrl,
+			webhookUrl: new URL(
+				`/api/shop/payments/${encodeURIComponent(input.channelId)}/webhook`,
+				input.successUrl,
+			).toString(),
+			defaultToken: context.default_token,
+			defaultNetwork: context.default_network,
+			payerIp: input.payerIp,
+			payerMobile: input.payerMobile,
+			expiresAt: context.order_expires_at,
+		};
+		const payment = split
+			? await startSplitPayment(db, {
+					channelId: context.channel_id,
+					provider: context.provider,
+					parts: split.parts,
+					payment: paymentInput,
+					credential,
+					fetcher,
+					now,
+				})
+			: await getPaymentProvider(context.provider).createPayment(
+					paymentInput,
+					credential,
+					fetcher,
+				);
 		await db
 			.prepare(
 				`UPDATE payment_attempts SET provider_payment_id = ?, checkout_url = ?,
@@ -371,6 +402,11 @@ export async function createWalletTopupPayment(
 		currencyDecimals: context.currency_decimals,
 		paymentCurrency: input.paymentCurrency ?? context.currency,
 	});
+	await assertSinglePaymentWithinLimits(
+		db,
+		context.channel_id,
+		quote.amountMinor,
+	);
 	const topupId = crypto.randomUUID();
 	const attemptId = crypto.randomUUID();
 	const now = Date.now();
@@ -548,11 +584,13 @@ export async function reconcilePendingShopPayments(
 			 WHERE pa.status IN ('pending','expired')
 			  AND o.status IN ('pending_payment','expired')
 			  AND pa.provider_payment_id IS NOT NULL
-			  AND pc.enabled=1 AND pc.provider IN ('epay','gmpay')
+			  AND pc.enabled=1 AND pa.split_part_count IS NULL
+			  AND (pc.provider IN ('epay','gmpay')
+			   OR (pc.provider='alipay_qr' AND pa.created_at>=?-7200000))
 			  AND pa.created_at>=?
 			 ORDER BY pa.created_at,pa.id LIMIT ?`,
 		)
-		.bind(now - 86_400_000, boundedLimit)
+		.bind(now, now - 86_400_000, boundedLimit)
 		.all<{
 			id: string;
 			channel_id: string;
@@ -596,7 +634,8 @@ export async function reconcileShopOrderPayment(
 			 WHERE pa.order_id=? AND pa.status IN ('pending','expired')
 			  AND o.status IN ('pending_payment','expired')
 			  AND pa.provider_payment_id IS NOT NULL
-			  AND pc.enabled=1 AND pc.provider IN ('epay','gmpay')
+			  AND pc.enabled=1 AND pa.split_part_count IS NULL
+			  AND pc.provider IN ('epay','gmpay','alipay_qr')
 			  AND pa.updated_at<=?
 			 ORDER BY pa.created_at DESC,pa.id DESC LIMIT 1`,
 		)
@@ -633,6 +672,8 @@ function logPaymentReconciliationFailure(
 		}),
 	);
 }
+
+export type PaymentEventResult = { duplicate: boolean; status: string };
 
 type ReconcilePaymentAttempt = {
 	id: string;
@@ -681,13 +722,17 @@ export async function processShopPaymentEvent(
 	db: D1Database,
 	channelId: string,
 	event: PaymentWebhookEvent,
-) {
+	options: { requirePendingOrder?: boolean } = {},
+): Promise<PaymentEventResult> {
 	const duplicate = await findPaymentReplayReceipt(
 		db,
 		channelId,
 		event.providerEventId,
 	);
 	if (duplicate) return presentPaymentReplayReceipt(duplicate, event);
+	// One part of a split payment: completes the order only with the last part.
+	const splitPart = await processSplitPartEvent(db, channelId, event);
+	if (splitPart) return splitPart;
 	const context = await loadPaymentContext(
 		db,
 		channelId,
@@ -840,7 +885,8 @@ export async function processShopPaymentEvent(
 		);
 	if (
 		!context.order_status ||
-		!["pending_payment", "expired"].includes(context.order_status)
+		!["pending_payment", "expired"].includes(context.order_status) ||
+		(options.requirePendingOrder && context.order_status !== "pending_payment")
 	)
 		throw new DomainError(
 			"order_not_payable",
@@ -1267,7 +1313,7 @@ export async function completeWalletStoreOrder(
 	return { duplicate: false, status: "paid" };
 }
 
-async function loadCredential(db: D1Database, encrypted: string | null) {
+export async function loadCredential(db: D1Database, encrypted: string | null) {
 	if (!encrypted) return {};
 	const runtime = await loadRuntimeConfig(db);
 	if (!runtime.commerceSecret)
@@ -1364,7 +1410,7 @@ function validateEventMoney(
 		);
 }
 
-function paymentEventStatement(
+export function paymentEventStatement(
 	db: D1Database,
 	channelId: string,
 	attemptId: string,
@@ -1399,7 +1445,7 @@ type PaymentReplayReceipt = {
 	payload_digest: string;
 };
 
-async function findPaymentReplayReceipt(
+export async function findPaymentReplayReceipt(
 	db: D1Database,
 	channelId: string,
 	providerEventId: string,
@@ -1414,7 +1460,7 @@ async function findPaymentReplayReceipt(
 		.first<PaymentReplayReceipt>();
 }
 
-function presentPaymentReplayReceipt(
+export function presentPaymentReplayReceipt(
 	receipt: PaymentReplayReceipt,
 	event: PaymentWebhookEvent,
 ) {
@@ -1458,7 +1504,7 @@ async function loadReleasedCouponUse(db: D1Database, orderId: string) {
 	return { couponId: row.coupon_id, available };
 }
 
-async function runPaymentEventBatch(
+export async function runPaymentEventBatch(
 	db: D1Database,
 	channelId: string,
 	event: PaymentWebhookEvent,

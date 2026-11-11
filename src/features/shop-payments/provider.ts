@@ -8,6 +8,7 @@ export const paymentProviderValues = [
 	"epay",
 	"alipay_page",
 	"alipay_wap",
+	"alipay_qr",
 	"wechat_native",
 	"wechat_h5",
 ] as const;
@@ -23,7 +24,12 @@ export type PaymentProviderFamily =
 export function paymentProviderFamily(
 	provider: PaymentProvider,
 ): PaymentProviderFamily {
-	if (provider === "alipay_page" || provider === "alipay_wap") return "alipay";
+	if (
+		provider === "alipay_page" ||
+		provider === "alipay_wap" ||
+		provider === "alipay_qr"
+	)
+		return "alipay";
 	if (provider === "wechat_native" || provider === "wechat_h5") return "wechat";
 	return provider;
 }
@@ -52,6 +58,8 @@ export type CreatePaymentInput = {
 	defaultNetwork: string;
 	payerIp: string | null;
 	payerMobile?: boolean;
+	/** Latest moment the payment may still be made (the order's expiry). */
+	expiresAt?: number | null;
 };
 
 export type CreatedPayment = {

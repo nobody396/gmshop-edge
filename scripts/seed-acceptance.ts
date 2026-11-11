@@ -183,6 +183,18 @@ const paymentChannels = [
 		fixedFeeMinor: "0",
 		sortOrder: 700,
 	},
+	{
+		id: uuid(6, 9),
+		provider: "alipay_qr",
+		name: "支付宝订单码支付",
+		currency: "CNY",
+		defaultToken: "",
+		defaultNetwork: "",
+		credential: alipayCredential("qr"),
+		feeBps: 60,
+		fixedFeeMinor: "0",
+		sortOrder: 800,
+	},
 ] as const;
 
 const products = [
@@ -1922,9 +1934,14 @@ function automationInputDefinitions() {
 	] as const;
 }
 
-function alipayCredential(mode: "page" | "wap") {
+function alipayCredential(mode: "page" | "wap" | "qr") {
 	return {
-		appId: mode === "page" ? "2026000000000001" : "2026000000000002",
+		appId:
+			mode === "page"
+				? "2026000000000001"
+				: mode === "wap"
+					? "2026000000000002"
+					: "2026000000000003",
 		sellerId: "2088000000000001",
 		privateKeyPem:
 			"-----BEGIN PRIVATE KEY-----\nDEMO ALIPAY PRIVATE KEY NOT REAL\n-----END PRIVATE KEY-----",
