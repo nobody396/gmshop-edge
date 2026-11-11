@@ -143,6 +143,7 @@ export type RuntimeEnv = {
 	SUPPLIER_ALERT_TOKEN?: string;
 	SUPPLIER_TOPUP_RUNNER_TOKEN?: string;
 	INVOICE_LOOKUP_TOKEN?: string;
+	APPSTORE_PRICES_TOKEN?: string;
 	GMSHOP_EDGEONE_ORIGIN_VERIFY?: string;
 	INDEXNOW_KEY?: string;
 	TURNSTILE_SITE_KEY?: string;

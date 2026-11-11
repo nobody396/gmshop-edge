@@ -15,6 +15,13 @@ export const staticGuidePages = [
 		description: "买到的 Apple ID 怎么登录 App Store：旧版和新版系统两种方法。",
 	},
 	{
+		slug: "appstore-prices",
+		path: "/guides/appstore-prices",
+		title: "各区 App Store 开会员价格对比：ChatGPT、Claude、Gemini",
+		description:
+			"美区、日区、菲区、土区 App Store 里 ChatGPT、Claude、Google AI 会员价，换算成人民币，每天更新。",
+	},
+	{
 		slug: "claude-network-check",
 		path: "/guides/claude-network-check",
 		title: "Claude 网络自查指南：地区、IP、客户端与评分",

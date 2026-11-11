@@ -7,6 +7,7 @@ interface __BaseEnv_Env {
 	IPROYAL_API_TOKEN?: string;
 	SUPPLIER_ALERT_TOKEN?: string;
 	SUPPLIER_TOPUP_RUNNER_TOKEN?: string;
+	APPSTORE_PRICES_TOKEN?: string;
 	CACHE: KVNamespace;
 	FILES: R2Bucket;
 	DB: D1Database;

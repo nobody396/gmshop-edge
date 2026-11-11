@@ -8,7 +8,9 @@ export function applySecurityHeaders(request: Request, response: Response) {
 		"permissions-policy",
 		"camera=(), microphone=(), geolocation=(), payment=()",
 	);
-	headers.set("cross-origin-resource-policy", "same-origin");
+	// A public cross-origin endpoint may set its own policy.
+	if (!headers.has("cross-origin-resource-policy"))
+		headers.set("cross-origin-resource-policy", "same-origin");
 	headers.set("cross-origin-opener-policy", "same-origin");
 	headers.set(
 		"content-security-policy",

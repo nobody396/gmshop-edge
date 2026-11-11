@@ -50,6 +50,8 @@ const reviewedPublicServerModules = [
 	"src/features/gpt-upgrade/server/functions.ts",
 	// Read-only published guides; drafts and reserved slugs resolve to null.
 	"src/features/guides/server/functions.ts",
+	// Read-only App Store price comparison snapshot (public page data).
+	"src/features/appstore-prices/server/functions.ts",
 	"src/features/installation/server/functions.ts",
 	"src/features/promotions/server/functions.ts",
 	// Signed one-click unsubscribe: HMAC over the address, no session.

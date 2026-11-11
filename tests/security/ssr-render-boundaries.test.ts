@@ -49,6 +49,7 @@ describe("SSR render data boundaries", () => {
 
 		expect(ownersOf("queryClient.ensureQueryData(")).toEqual([
 			"src/routes/(public)/guides/$slug.tsx",
+			"src/routes/(public)/guides/appstore-prices.tsx",
 			"src/routes/(public)/guides/index.tsx",
 			"src/routes/(public)/index.tsx",
 			"src/routes/(public)/products/$productId.tsx",
