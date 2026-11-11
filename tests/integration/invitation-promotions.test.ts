@@ -200,6 +200,42 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		expect(created.totalMinor).toBe("107760");
 		expect(await rewardOf(created.id)).toBe("0");
 	});
+	it("on a shared IP, pays only for a buyer who was already a paying customer before the invitation", async () => {
+		await db
+			.prepare(
+				"INSERT INTO sessions(id,expires_at,token,created_at,updated_at,ip_address,user_id) VALUES ('shared-exit',?,'shared-exit-token',1,1,'203.0.113.9',?)",
+			)
+			.bind(Date.now() + 86_400_000, promoter)
+			.run();
+		const code = await openReferralCoupon(db, promoter);
+		const sharedIpOrder = () =>
+			createMultiStoreOrder(
+				db,
+				{
+					email: "buyer@example.com",
+					couponCode: code.code,
+					idempotencyKey: crypto.randomUUID(),
+					items: [{ sellableItemId: sku, quantity: 1 }],
+				},
+				{
+					userId: buyer,
+					identityEmail: "buyer@example.com",
+					clientIp: "203.0.113.9",
+				},
+			);
+		// No purchase of their own before the code existed: looks like the referrer.
+		const fresh = await sharedIpOrder();
+		expect(fresh.totalMinor).toBe("107760");
+		expect(await rewardOf(fresh.id)).toBe("0");
+		// A colleague who had already paid for an order before the invitation earns the referrer the reward.
+		await db
+			.prepare(`INSERT INTO shop_orders(id,order_number,user_id,contact_email,normalized_contact_email,status,currency,currency_decimals,subtotal_minor,discount_minor,total_minor,paid_minor,expires_at,paid_at,created_at,updated_at)
+   VALUES ('earlier','EARLIER',?,'buyer@example.com','buyer@example.com','completed','CNY',2,'100','0','100','100',1,2,2,2)`)
+			.bind(buyer)
+			.run();
+		const colleague = await sharedIpOrder();
+		expect(await rewardOf(colleague.id)).toBe("560");
+	});
 	it("rejects identified self-referrals", async () => {
 		const code = await openReferralCoupon(db, promoter);
 		await expect(order(code.code, promoter)).rejects.toThrow(/own invitation/);
