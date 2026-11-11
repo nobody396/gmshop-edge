@@ -554,6 +554,7 @@ function guideCopy(): Record<string, string> {
 		appleus: m.guide_appleus(),
 		applejp: m.guide_applejp(),
 		appletr: m.guide_appletr(),
+		appleph: m.guide_appleph(),
 		reseller_target: m.guide_reseller_target(),
 		reseller_shop: m.guide_reseller_shop(),
 		reseller_shop_hint: m.guide_reseller_shop_hint(),
