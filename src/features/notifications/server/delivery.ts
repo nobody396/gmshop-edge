@@ -348,53 +348,12 @@ export async function processEmailNotification(
 			409,
 			"Notification delivery is already processing",
 		);
-	if (await deliveryOrderRefunding(db, row)) {
-		// A business wait, not a provider failure: park the email and schedule
-		// a fresh outbox event instead of burning the queue's retry budget.
-		const later = now + refundingRecheckMs;
-		await db.batch([
-			db
-				.prepare(
-					`UPDATE notification_deliveries SET status = 'pending',
-					 error_code = 'order_refunding', next_attempt_at = ?, updated_at = ?
-					 WHERE id = ? AND status = 'sending'`,
-				)
-				.bind(later, now, row.id),
-			db
-				.prepare(
-					`INSERT INTO outbox_events
-					 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
-					  status, attempt_count, next_attempt_at, created_at, updated_at)
-					 VALUES (?, 'notification.requested', 'notification_delivery', ?, ?, ?,
-					  'pending', 0, ?, ?, ?)`,
-				)
-				.bind(
-					crypto.randomUUID(),
-					row.id,
-					`notification-refund-hold:${row.id}:${row.attempt_count + 1}`,
-					JSON.stringify({ notificationDeliveryId: row.id }),
-					later,
-					now,
-					now,
-				),
-		]);
-		return { duplicate: false, status: "deferred" };
-	}
-	// Last look right before handing the content to a provider, so a refund
-	// that completed after the claim still stops the send.
-	const lateWithdrawal = await withdrawnDeliveryReason(db, row);
-	if (lateWithdrawal) {
-		await db
-			.prepare(
-				`UPDATE notification_deliveries SET status = 'suppressed', error_code = ?,
-				 next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'`,
-			)
-			.bind(lateWithdrawal, Date.now(), row.id)
-			.run();
-		return { duplicate: false, status: "suppressed" };
-	}
 	let cloudflareBindingError: DomainError | null = null;
 	for (const config of configs) {
+		// Re-check before every provider attempt: a slow failing provider must
+		// not give a refund time to complete before the fallback gets the content.
+		const stop = await stopForRefund(db, row);
+		if (stop) return stop;
 		const result = await tryEmailConfig(
 			runtime.commerceSecret,
 			config,
@@ -514,6 +473,56 @@ const withdrawnDeliverySql = `SELECT 1 FROM delivery_records d
   OR g.status IN ('refunded', 'revoked') OR ce.status = 'revoked')`;
 
 const refundingRecheckMs = 5 * 60_000;
+
+// Checked right before content goes to a provider (after the claim): a
+// completed refund suppresses the email; a refund still in flight parks it
+// with a fresh delayed outbox event. Parking is a business wait, so it gives
+// back the claim's attempt (provider backoff only counts real sends) and does
+// not throw, so the queue's limited retry budget is not spent on it.
+async function stopForRefund(db: D1Database, row: DeliveryRow) {
+	const withdrawn = await withdrawnDeliveryReason(db, row);
+	if (withdrawn) {
+		await db
+			.prepare(
+				`UPDATE notification_deliveries SET status = 'suppressed', error_code = ?,
+				 next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'`,
+			)
+			.bind(withdrawn, Date.now(), row.id)
+			.run();
+		return { duplicate: false, status: "suppressed" } as const;
+	}
+	if (!(await deliveryOrderRefunding(db, row))) return null;
+	const now = Date.now();
+	const later = now + refundingRecheckMs;
+	await db.batch([
+		db
+			.prepare(
+				`UPDATE notification_deliveries SET status = 'pending',
+				 attempt_count = MAX(0, attempt_count - 1),
+				 error_code = 'order_refunding', next_attempt_at = ?, updated_at = ?
+				 WHERE id = ? AND status = 'sending'`,
+			)
+			.bind(later, now, row.id),
+		db
+			.prepare(
+				`INSERT INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+				  status, attempt_count, next_attempt_at, created_at, updated_at)
+				 VALUES (?, 'notification.requested', 'notification_delivery', ?, ?, ?,
+				  'pending', 0, ?, ?, ?)`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				row.id,
+				`notification-refund-hold:${row.id}:${crypto.randomUUID()}`,
+				JSON.stringify({ notificationDeliveryId: row.id }),
+				later,
+				now,
+				now,
+			),
+	]);
+	return { duplicate: false, status: "deferred" } as const;
+}
 
 function withdrawnDeliveryBindings(row: DeliveryRow) {
 	return [row.entitlement_id, row.entitlement_id, row.asset_id];

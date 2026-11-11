@@ -453,20 +453,32 @@ async function refundCancelledApiOrder(
 	// Only return what this order took from the wallet and has not already
 	// given back (for example an earlier partial refund).
 	const cancelKey = `supplier-api-cancel:${id}`;
-	const ledger = await db
+	const entries = await db
 		.prepare(
-			`SELECT
-			 COALESCE(SUM(CASE WHEN direction = 'debit' AND source_type = 'shop_order'
-			   THEN CAST(amount_minor AS INTEGER) END), 0) AS debited,
-			 COALESCE(SUM(CASE WHEN direction = 'credit' AND source_type = 'refund'
-			   AND idempotency_key <> ? THEN CAST(amount_minor AS INTEGER) END), 0) AS refunded
+			`SELECT direction, source_type, amount_minor, idempotency_key
 			 FROM wallet_entries WHERE user_id = ? AND source_id = ?`,
 		)
-		.bind(cancelKey, userId, order.shop_order_id)
-		.first<{ debited: number; refunded: number }>();
-	const remaining =
-		BigInt(Math.min(Number(ledger?.debited ?? 0), Number(order.total_minor))) -
-		BigInt(ledger?.refunded ?? 0);
+		.bind(userId, order.shop_order_id)
+		.all<{
+			direction: string;
+			source_type: string;
+			amount_minor: string;
+			idempotency_key: string;
+		}>();
+	let debited = 0n;
+	let refunded = 0n;
+	for (const entry of entries.results) {
+		if (entry.direction === "debit" && entry.source_type === "shop_order")
+			debited += BigInt(entry.amount_minor);
+		else if (
+			entry.direction === "credit" &&
+			entry.source_type === "refund" &&
+			entry.idempotency_key !== cancelKey
+		)
+			refunded += BigInt(entry.amount_minor);
+	}
+	const total = BigInt(order.total_minor);
+	const remaining = (debited < total ? debited : total) - refunded;
 	if (remaining <= 0n) return;
 	await mutateWallet(db, {
 		userId,

@@ -722,3 +722,104 @@ test("cancelling an API order after a partial wallet refund returns only the res
 		db.close();
 	}
 });
+
+test("holding an email during a refund does not count as a provider attempt", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime);
+		await db
+			.prepare("UPDATE shop_orders SET status='refunding' WHERE id=?")
+			.bind(email.ids.shop_order_id)
+			.run();
+		for (let hold = 0; hold < 3; hold += 1) {
+			await db
+				.prepare(
+					"UPDATE notification_deliveries SET next_attempt_at=? WHERE id=?",
+				)
+				.bind(Date.now() - 1, email.queued.id)
+				.run();
+			expect(await email.send()).toMatchObject({ status: "deferred" });
+		}
+		const held = await db
+			.prepare(
+				"SELECT attempt_count,(SELECT COUNT(*) FROM outbox_events WHERE aggregate_id=notification_deliveries.id AND idempotency_key LIKE 'notification-refund-hold:%') wakes FROM notification_deliveries WHERE id=?",
+			)
+			.bind(email.queued.id)
+			.first<any>();
+		expect(held).toMatchObject({ attempt_count: 0, wakes: 3 });
+	} finally {
+		db.close();
+	}
+});
+
+test("a refund completing while the first provider fails keeps the fallback provider from getting the content", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime);
+		// Two channels and no pinned channel, so a failure falls back.
+		await db.batch([
+			db.prepare(
+				"INSERT INTO notification_channel_configs(id,channel,provider,name,from_address,enabled,sort_order) VALUES('email-b','email','cloudflare_email','Fallback','noreply@audit.local',1,9)",
+			),
+			db
+				.prepare(
+					"UPDATE notification_deliveries SET channel_config_id=NULL WHERE id=?",
+				)
+				.bind(email.queued.id),
+		]);
+		const { processEmailNotification } = await import(
+			"#/features/notifications/server/delivery"
+		);
+		let calls = 0;
+		const result = await processEmailNotification(db as any, email.queued.id, {
+			cloudflareEmail: {
+				send: async () => {
+					calls += 1;
+					// The first provider is slow and fails; the refund completes meanwhile.
+					await db
+						.prepare("UPDATE shop_orders SET status='refunded' WHERE id=?")
+						.bind(email.ids.shop_order_id)
+						.run();
+					throw new Error("provider down");
+				},
+			} as any,
+		});
+		expect(result).toMatchObject({ status: "suppressed" });
+		expect(calls).toBe(1);
+	} finally {
+		db.close();
+	}
+});
+
+test("an API cancel refund stays exact beyond 2^53", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime, false);
+		const big = "9007199254740993";
+		await db.batch([
+			db
+				.prepare("UPDATE shop_orders SET total_minor=? WHERE id=?")
+				.bind(big, email.ids.shop_order_id),
+			db
+				.prepare(
+					"UPDATE wallet_entries SET amount_minor=? WHERE direction='debit' AND source_id=?",
+				)
+				.bind(big, email.ids.shop_order_id),
+			db
+				.prepare(
+					"INSERT INTO wallet_entries(id,user_id,direction,amount_minor,balance_before_minor,balance_after_minor,currency,source_type,source_id,idempotency_key,created_at) VALUES('partial','buyer','credit','1','0','1','USD','refund',?,'wallet-refund:partial',1)",
+				)
+				.bind(email.ids.shop_order_id),
+			db.prepare("UPDATE users SET balance_minor='0' WHERE id='buyer'"),
+		]);
+		await cancelSupplierApiOrder(db as any, "buyer", email.created.order_id);
+		const credit = await db
+			.prepare(
+				"SELECT amount_minor FROM wallet_entries WHERE idempotency_key LIKE 'supplier-api-cancel:%'",
+			)
+			.first<any>();
+		expect(credit.amount_minor).toBe("9007199254740992");
+	} finally {
+		db.close();
+	}
+});
