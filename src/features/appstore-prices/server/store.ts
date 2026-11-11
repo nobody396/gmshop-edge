@@ -2,12 +2,33 @@ import { ZodError } from "zod";
 import { requireRestockAuthorization } from "#/features/catalog/server/restock-api";
 import { DomainError } from "#/lib/domain-error";
 import type { CloudflareBindings } from "#/server/runtime/cloudflare";
+import { appStorePriceApps, appStoreRegions } from "../config";
 import {
 	type AppStorePriceSnapshot,
 	appStoreIngestSchema,
 	buildAppStoreSnapshot,
 	parseAppStoreSnapshot,
 } from "../snapshot";
+
+/** Display names for other storefronts (the agent shop) reading the JSON. */
+function appStorePricesLayout() {
+	return {
+		regions: appStoreRegions,
+		apps: appStorePriceApps.map((app) => ({
+			id: app.id,
+			title: app.title,
+			titleEn: app.titleEn,
+			tiers: app.tiers.map((tier) => ({
+				id: tier.id,
+				label: tier.label,
+				labelEn: tier.labelEn,
+				period: tier.period,
+				hint: tier.hint ?? null,
+				hintEn: tier.hintEn ?? null,
+			})),
+		})),
+	};
+}
 
 export const appStorePricesSettingKey = "appstore_prices.snapshot";
 const maxIngestBytes = 200_000;
@@ -108,7 +129,7 @@ export async function handleAppStorePricesPublic(env: CloudflareBindings) {
 		);
 	const snapshot = await loadAppStoreSnapshot(env.DB);
 	return Response.json(
-		{ ok: true, snapshot },
+		{ ok: true, layout: appStorePricesLayout(), snapshot },
 		{
 			headers: {
 				...headers,

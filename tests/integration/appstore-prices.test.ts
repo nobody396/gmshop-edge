@@ -54,7 +54,7 @@ describe("App Store price endpoints", { timeout: 30_000 }, () => {
 
 	it("stores an authorized ingest and serves it to any origin", async () => {
 		const empty = await handleAppStorePricesPublic(env());
-		expect(await empty.json()).toEqual({ ok: true, snapshot: null });
+		expect(await empty.json()).toMatchObject({ ok: true, snapshot: null });
 
 		const denied = await handleAppStorePricesIngest(
 			post("wrong", payload),
@@ -92,6 +92,7 @@ describe("App Store price endpoints", { timeout: 30_000 }, () => {
 				}[];
 			};
 		};
+		expect(JSON.stringify(body)).not.toContain("laoshirenvip");
 		const plus = body.snapshot.apps
 			.find((app) => app.id === "chatgpt")
 			?.tiers.find((tier) => tier.id === "plus");
