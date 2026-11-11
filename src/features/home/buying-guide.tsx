@@ -496,6 +496,8 @@ function guideCopy(): Record<string, string> {
 		gemini_target: m.guide_gemini_target(),
 		geminiready: m.guide_geminiready(),
 		geminiown: m.guide_geminiown(),
+		suno: m.guide_suno(),
+		suno_hint: m.guide_suno_hint(),
 		telegram: m.guide_telegram(),
 		telegram_hint: m.guide_telegram_hint(),
 		tg_target: m.guide_tg_target(),

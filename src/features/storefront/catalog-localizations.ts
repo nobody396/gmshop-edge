@@ -281,6 +281,34 @@ After-sales
 - Your own account: if activation does not succeed, contact support.
 - No no-reason refunds after delivery.`,
 	},
+	"8f5c1623-9374-458d-92fa-48ee78668de7": {
+		name: "Suno Premier membership｜1 month",
+		description: `Suno Premier for 1 month (Suno's official $30/month tier). After payment you automatically receive a recharge code and a recharge link; submit the code on the recharge page to activate Premier on your own Suno account. Nobody else needs to sign in to your account.
+
+Included
+- Suno Premier for 1 month: Suno's top individual plan with the largest monthly allowance; Suno's official page decides the exact benefits.
+
+What you receive
+A recharge code and a recharge link, shown on the order page for viewing and copying.
+
+How to use
+1. Sign in at https://suno.com with the Suno account you want to recharge.
+2. Copy the code on the order page and open the recharge link from the order.
+3. Submit the code as the page asks to finish the recharge.
+4. Go back to Suno and check that the plan shows Premier.
+5. If the recharge fails, wait a while and submit again.
+
+Before you buy
+- You can renew early without waiting for expiry, but the new membership replaces the remaining time; it does not add up.
+- Use only one code per account; do not submit several codes to the same account. Contact support if anything goes wrong.
+- Unused codes do not expire, so you can buy now and recharge later.
+- Do not share the account, switch IPs often, or use bulk-registered accounts; these commonly lead to bans.
+
+After-sales
+- 30-day guarantee against losing the membership: if it drops within that period, the unused days are refunded.
+- Account bans are not covered (bans almost always come from the account itself).
+- No no-reason refunds once the code is delivered.`,
+	},
 	"64812c48-9026-4ef7-874d-b332d2a39b1a": {
 		name: "Gemini Pro｜18 months｜Activation link",
 		description: `An 18-month Gemini Pro activation link. Delivered automatically after payment; open it with your own Google account to claim. Only the link is sold; no Google account is included.
@@ -846,6 +874,16 @@ ${claudeRestrictions}`,
 			"Gemini Ultra 20X, Google AI Ultra for 1 month, applied to your own Google account",
 			"Check that the plan shows Ultra after activation; contact support if activation does not succeed",
 			"The account must have no active Google One / Google AI subscription and be in a country where Google AI Ultra is available (not mainland China or Hong Kong); support confirms eligibility before activation",
+		),
+	},
+	"eff390c0-8cd9-497b-9ade-dfafe07d0439": {
+		name: "Suno Premier｜1 month｜Self-serve recharge code",
+		policy: policy(
+			"Automatic delivery, 24/7",
+			"A recharge code and recharge link are delivered automatically after payment, usually within 1 minute; view them on the order page.",
+			"Suno Premier for 1 month on your own Suno account; early renewal replaces the remaining time instead of adding to it",
+			"30-day guarantee against losing the membership, with unused days refunded; bans are not covered; no no-reason refunds once delivered",
+			"One code per account; do not submit several codes to the same account; do not share the account, switch IPs often or use bulk-registered accounts",
 		),
 	},
 	"39d831df-4919-49a4-8896-8ccfdbd33d83": {
