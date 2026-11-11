@@ -315,7 +315,7 @@ export async function processEmailNotification(
 	).then((value) => emailMessageSchema.parse(JSON.parse(value)));
 	const suppression =
 		(await recipientSuppressionReason(db, message.to, row.event)) ??
-		(await withdrawnEntitlementReason(db, row.entitlement_id));
+		(await withdrawnDeliveryReason(db, row));
 	if (suppression) {
 		const changed = await db
 			.prepare(
@@ -338,9 +338,9 @@ export async function processEmailNotification(
 			 attempt_count = attempt_count + 1, updated_at = ?
 			 WHERE id = ? AND status IN ('pending', 'failed')
 			 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-			 AND NOT EXISTS (${withdrawnEntitlementSql})`,
+			 AND NOT EXISTS (${withdrawnDeliverySql})`,
 		)
-		.bind(now, row.id, now, row.entitlement_id)
+		.bind(now, row.id, now, ...withdrawnDeliveryBindings(row))
 		.run();
 	if (Number(claimed.meta.changes ?? 0) !== 1)
 		throw new DomainError(
@@ -348,13 +348,50 @@ export async function processEmailNotification(
 			409,
 			"Notification delivery is already processing",
 		);
-	if (await orderRefunding(db, row.entitlement_id)) {
-		await recordFailure(db, row.id, row.attempt_count + 1, "order_refunding");
-		throw new DomainError(
-			"notification_order_refunding",
-			503,
-			"Order refund is in progress",
-		);
+	if (await deliveryOrderRefunding(db, row)) {
+		// A business wait, not a provider failure: park the email and schedule
+		// a fresh outbox event instead of burning the queue's retry budget.
+		const later = now + refundingRecheckMs;
+		await db.batch([
+			db
+				.prepare(
+					`UPDATE notification_deliveries SET status = 'pending',
+					 error_code = 'order_refunding', next_attempt_at = ?, updated_at = ?
+					 WHERE id = ? AND status = 'sending'`,
+				)
+				.bind(later, now, row.id),
+			db
+				.prepare(
+					`INSERT INTO outbox_events
+					 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+					  status, attempt_count, next_attempt_at, created_at, updated_at)
+					 VALUES (?, 'notification.requested', 'notification_delivery', ?, ?, ?,
+					  'pending', 0, ?, ?, ?)`,
+				)
+				.bind(
+					crypto.randomUUID(),
+					row.id,
+					`notification-refund-hold:${row.id}:${row.attempt_count + 1}`,
+					JSON.stringify({ notificationDeliveryId: row.id }),
+					later,
+					now,
+					now,
+				),
+		]);
+		return { duplicate: false, status: "deferred" };
+	}
+	// Last look right before handing the content to a provider, so a refund
+	// that completed after the claim still stops the send.
+	const lateWithdrawal = await withdrawnDeliveryReason(db, row);
+	if (lateWithdrawal) {
+		await db
+			.prepare(
+				`UPDATE notification_deliveries SET status = 'suppressed', error_code = ?,
+				 next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'`,
+			)
+			.bind(lateWithdrawal, Date.now(), row.id)
+			.run();
+		return { duplicate: false, status: "suppressed" };
 	}
 	let cloudflareBindingError: DomainError | null = null;
 	for (const config of configs) {
@@ -462,40 +499,49 @@ async function loadEmailDeliveryConfigs(
 	return rows.results;
 }
 
-// A completed refund or cancellation revokes what the email would hand over;
-// an email still queued for such an order must never be sent.
-const withdrawnEntitlementSql = `SELECT 1 FROM customer_entitlements ce
- LEFT JOIN shop_order_items oi ON oi.id = ce.order_item_id
- LEFT JOIN shop_orders so ON so.id = oi.order_id
- WHERE ce.id = ? AND (ce.status = 'revoked'
-  OR so.status IN ('refunded', 'cancelled'))`;
+// The email belongs to one delivery (asset_id) of one order line. Judge that
+// line's own order and grant: a renewal shares its entitlement with earlier
+// orders, so the entitlement's first order says nothing about this email.
+// A completed refund/cancellation of this line, or a revoked entitlement,
+// withdraws what the email would hand over, so it must never be sent.
+const withdrawnDeliverySql = `SELECT 1 FROM delivery_records d
+ JOIN shop_order_items oi ON oi.id = d.order_item_id
+ JOIN shop_orders so ON so.id = oi.order_id
+ LEFT JOIN entitlement_grants g ON g.source_order_item_id = oi.id
+  AND g.entitlement_id = ?
+ LEFT JOIN customer_entitlements ce ON ce.id = ?
+ WHERE d.id = ? AND (so.status IN ('refunded', 'cancelled')
+  OR g.status IN ('refunded', 'revoked') OR ce.status = 'revoked')`;
 
-// While any refund (full or partial) is in flight, hold the email until the
-// order settles instead of racing the refund.
-async function orderRefunding(db: D1Database, entitlementId: string | null) {
-	if (!entitlementId) return false;
-	const row = await db
-		.prepare(
-			`SELECT 1 FROM customer_entitlements ce
-			 JOIN shop_order_items oi ON oi.id = ce.order_item_id
-			 JOIN shop_orders so ON so.id = oi.order_id
-			 WHERE ce.id = ? AND so.status = 'refunding'`,
-		)
-		.bind(entitlementId)
-		.first();
-	return Boolean(row);
+const refundingRecheckMs = 5 * 60_000;
+
+function withdrawnDeliveryBindings(row: DeliveryRow) {
+	return [row.entitlement_id, row.entitlement_id, row.asset_id];
 }
 
-async function withdrawnEntitlementReason(
-	db: D1Database,
-	entitlementId: string | null,
-) {
-	if (!entitlementId) return null;
+async function withdrawnDeliveryReason(db: D1Database, row: DeliveryRow) {
+	if (!row.asset_id) return null;
 	const withdrawn = await db
-		.prepare(withdrawnEntitlementSql)
-		.bind(entitlementId)
+		.prepare(withdrawnDeliverySql)
+		.bind(...withdrawnDeliveryBindings(row))
 		.first();
 	return withdrawn ? "entitlement_withdrawn" : null;
+}
+
+// While any refund (full or partial) of this line's order is in flight, hold
+// the email until the order settles instead of racing the refund.
+async function deliveryOrderRefunding(db: D1Database, row: DeliveryRow) {
+	if (!row.asset_id) return false;
+	const refunding = await db
+		.prepare(
+			`SELECT 1 FROM delivery_records d
+			 JOIN shop_order_items oi ON oi.id = d.order_item_id
+			 JOIN shop_orders so ON so.id = oi.order_id
+			 WHERE d.id = ? AND so.status = 'refunding'`,
+		)
+		.bind(row.asset_id)
+		.first();
+	return Boolean(refunding);
 }
 
 async function recordDeliveredNotificationAccess(

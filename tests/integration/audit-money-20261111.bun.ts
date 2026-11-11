@@ -459,8 +459,265 @@ test("a queued card email is never sent after the order is fully refunded", asyn
 			.first<any>();
 		expect(note).toMatchObject({
 			status: "suppressed",
-			error_code: "entitlement_withdrawn",
+			error_code: "order_refunded",
 		});
+	} finally {
+		db.close();
+	}
+});
+
+// --- Follow-up regressions from the fix review ---------------------------
+
+async function queuedCardEmail(db: any, runtime: any, deliver = true) {
+	await db
+		.prepare(
+			"INSERT INTO users(id,name,email,email_verified,enabled,balance_minor) VALUES('buyer','Fixture','fixture@example.invalid',1,1,'10000')",
+		)
+		.run();
+	await db
+		.prepare(
+			"UPDATE product_sellable_items SET fulfillment_source='local',supplier_status=NULL,price_minor='10000' WHERE id='item'",
+		)
+		.run();
+	await db
+		.prepare(
+			"INSERT INTO supplier_export_listings(id,sellable_item_id,price_minor,currency,currency_decimals,enabled) VALUES('listing','item','10000','USD',2,1)",
+		)
+		.run();
+	await db
+		.prepare(
+			"INSERT INTO supplier_api_keys(id,user_id,name,key_id,secret_encrypted) VALUES('key-row','buyer','fixture','fixture-key','unused-fixture')",
+		)
+		.run();
+	await db
+		.prepare(
+			"INSERT INTO stock_entries(id,sellable_item_id,content_encrypted,key_version,content_fingerprint,content_mask,status) VALUES('stock','item',?,1,'fixture-fingerprint','fixture','available')",
+		)
+		.bind(
+			await encryptSecret(
+				"SYNTHETIC-NOT-A-CARD",
+				runtime.commerceSecret,
+				"stock-entry",
+			),
+		)
+		.run();
+	const created = await createSupplierApiOrder(
+		db,
+		{
+			userId: "buyer",
+			keyId: "fixture-key",
+			keyRowId: "key-row",
+			allowedCallbackOrigin: null,
+		},
+		{ skuId: "item", quantity: 1, downstreamOrderNo: "AUDIT-FOLLOWUP" },
+	);
+	const { processDelivery } = await import(
+		"#/features/fulfillment/server/process"
+	);
+	const { enqueueEmailNotification, processEmailNotification } = await import(
+		"#/features/notifications/server/delivery"
+	);
+	const ids = await db
+		.prepare(
+			"SELECT api.shop_order_id,i.id order_item_id,dr.id delivery_id,g.entitlement_id FROM supplier_api_orders api JOIN shop_order_items i ON i.order_id=api.shop_order_id JOIN delivery_records dr ON dr.order_item_id=i.id JOIN entitlement_grants g ON g.source_order_item_id=i.id WHERE api.id=?",
+		)
+		.bind(created.order_id)
+		.first();
+	if (!deliver)
+		return {
+			created,
+			ids,
+			queued: null as any,
+			send: null as any,
+			sends: () => 0,
+		};
+	await processDelivery(db, ids.delivery_id);
+	await db
+		.prepare(
+			"INSERT INTO notification_channel_configs(id,channel,provider,name,from_address,enabled) VALUES('email','email','cloudflare_email','Fixture','noreply@audit.local',1)",
+		)
+		.run();
+	const queued = await enqueueEmailNotification(db, {
+		event: "delivery_ready",
+		idempotencyKey: "fixture-followup",
+		message: {
+			to: "fixture@audit.local",
+			from: "noreply@audit.local",
+			replyTo: "",
+			subject: "Fixture",
+			text: "SYNTHETIC-NOT-A-CARD",
+			html: "",
+		},
+		asset: {
+			entitlementId: ids.entitlement_id,
+			assetType: "stock_secret",
+			assetId: ids.delivery_id,
+			accessEventType: "email_content_sent",
+		},
+	});
+	let sends = 0;
+	const send = (target: any = db) =>
+		processEmailNotification(target, queued.id, {
+			cloudflareEmail: {
+				send: async () => {
+					sends += 1;
+					return { messageId: "mock-only" };
+				},
+			} as any,
+		});
+	return { created, ids, queued, send, sends: () => sends };
+}
+
+test("a renewal's email is judged by its own order line, not the shared entitlement's first order", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime);
+		// The shared entitlement now points at an earlier, refunded order line.
+		await db.batch([
+			db.prepare(
+				"INSERT INTO shop_orders(id,order_number,status,currency,currency_decimals,subtotal_minor,discount_minor,total_minor,paid_minor,expires_at,created_at,updated_at) VALUES('old-order','OLD-1','refunded','USD',2,'0','0','0','0',1,1,1)",
+			),
+			db.prepare(
+				"INSERT INTO shop_order_items(id,order_id,product_id,sellable_item_id,product_name,delivery_component_id,delivery_component_type,delivery_component_version,sellable_item_name,quantity,unit_price_minor,discount_minor,subtotal_minor,created_at,updated_at) VALUES('old-item','old-order','product','item','Product','item','stock',1,'SKU',1,'0','0','0',1,1)",
+			),
+			db
+				.prepare(
+					"UPDATE customer_entitlements SET order_item_id='old-item' WHERE id=?",
+				)
+				.bind(email.ids.entitlement_id),
+		]);
+		await email.send();
+		expect(email.sends()).toBe(1);
+	} finally {
+		db.close();
+	}
+});
+
+test("a refunded renewal's email is suppressed even while the shared entitlement stays active", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime);
+		await db.batch([
+			db
+				.prepare("UPDATE shop_orders SET status='refunded' WHERE id=?")
+				.bind(email.ids.shop_order_id),
+			db
+				.prepare(
+					"UPDATE entitlement_grants SET status='refunded' WHERE source_order_item_id=?",
+				)
+				.bind(email.ids.order_item_id),
+			db
+				.prepare("UPDATE customer_entitlements SET status='active' WHERE id=?")
+				.bind(email.ids.entitlement_id),
+		]);
+		expect(await email.send()).toMatchObject({ status: "suppressed" });
+		expect(email.sends()).toBe(0);
+	} finally {
+		db.close();
+	}
+});
+
+test("an email held during a refund is rescheduled without burning queue retries, then sent once the refund settles", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime);
+		await db
+			.prepare("UPDATE shop_orders SET status='refunding' WHERE id=?")
+			.bind(email.ids.shop_order_id)
+			.run();
+		expect(await email.send()).toMatchObject({ status: "deferred" });
+		expect(email.sends()).toBe(0);
+		const held = await db
+			.prepare(
+				"SELECT status,error_code,next_attempt_at FROM notification_deliveries WHERE id=?",
+			)
+			.bind(email.queued.id)
+			.first<any>();
+		expect(held).toMatchObject({
+			status: "pending",
+			error_code: "order_refunding",
+		});
+		const wake = await db
+			.prepare(
+				"SELECT COUNT(*) n FROM outbox_events WHERE event_type='notification.requested' AND aggregate_id=? AND status='pending' AND next_attempt_at=?",
+			)
+			.bind(email.queued.id, held.next_attempt_at)
+			.first<any>();
+		expect(wake.n).toBe(1);
+		// The partial refund settles; the order is back to completed.
+		await db.batch([
+			db
+				.prepare("UPDATE shop_orders SET status='completed' WHERE id=?")
+				.bind(email.ids.shop_order_id),
+			db
+				.prepare(
+					"UPDATE notification_deliveries SET next_attempt_at=? WHERE id=?",
+				)
+				.bind(Date.now() - 1, email.queued.id),
+		]);
+		expect(await email.send()).toMatchObject({ status: "accepted" });
+		expect(email.sends()).toBe(1);
+	} finally {
+		db.close();
+	}
+});
+
+test("a refund completing after the send was claimed still stops the email", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime);
+		const racing = {
+			batch: db.batch.bind(db),
+			prepare(sql: string) {
+				const statement = db.prepare(sql);
+				if (!sql.includes("SET status = 'sending'")) return statement;
+				return {
+					bind: (...values: unknown[]) => {
+						const bound = statement.bind(...values);
+						return {
+							run: async () => {
+								const result = await bound.run();
+								await db
+									.prepare(
+										"UPDATE shop_orders SET status='refunded' WHERE id=?",
+									)
+									.bind(email.ids.shop_order_id)
+									.run();
+								return result;
+							},
+						};
+					},
+				};
+			},
+		};
+		expect(await email.send(racing)).toMatchObject({ status: "suppressed" });
+		expect(email.sends()).toBe(0);
+	} finally {
+		db.close();
+	}
+});
+
+test("cancelling an API order after a partial wallet refund returns only the rest", async () => {
+	const { db, runtime } = await fixture();
+	try {
+		const email = await queuedCardEmail(db, runtime, false);
+		// Still undelivered, so cancellable; record an earlier partial refund of
+		// 2000 for it.
+		await db.batch([
+			db
+				.prepare(
+					"INSERT INTO wallet_entries(id,user_id,direction,amount_minor,balance_before_minor,balance_after_minor,currency,source_type,source_id,idempotency_key,created_at) VALUES('partial','buyer','credit','2000','0','2000','USD','refund',?,'wallet-refund:partial',1)",
+				)
+				.bind(email.ids.shop_order_id),
+			db.prepare("UPDATE users SET balance_minor='2000' WHERE id='buyer'"),
+		]);
+		await cancelSupplierApiOrder(db as any, "buyer", email.created.order_id);
+		const wallet = await db
+			.prepare(
+				"SELECT balance_minor,(SELECT SUM(CAST(amount_minor AS INTEGER)) FROM wallet_entries WHERE direction='credit') credited FROM users WHERE id='buyer'",
+			)
+			.first<any>();
+		expect(wallet).toMatchObject({ balance_minor: "10000", credited: 10000 });
 	} finally {
 		db.close();
 	}

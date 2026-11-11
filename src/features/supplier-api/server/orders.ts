@@ -450,23 +450,32 @@ async function refundCancelledApiOrder(
 	id: string,
 	order: { shop_order_id: string; total_minor: string; currency: string },
 ) {
-	// Only return money that this order actually took from the wallet.
-	const debit = await db
+	// Only return what this order took from the wallet and has not already
+	// given back (for example an earlier partial refund).
+	const cancelKey = `supplier-api-cancel:${id}`;
+	const ledger = await db
 		.prepare(
-			`SELECT 1 FROM wallet_entries WHERE user_id = ? AND direction = 'debit'
-			 AND source_type = 'shop_order' AND source_id = ? LIMIT 1`,
+			`SELECT
+			 COALESCE(SUM(CASE WHEN direction = 'debit' AND source_type = 'shop_order'
+			   THEN CAST(amount_minor AS INTEGER) END), 0) AS debited,
+			 COALESCE(SUM(CASE WHEN direction = 'credit' AND source_type = 'refund'
+			   AND idempotency_key <> ? THEN CAST(amount_minor AS INTEGER) END), 0) AS refunded
+			 FROM wallet_entries WHERE user_id = ? AND source_id = ?`,
 		)
-		.bind(userId, order.shop_order_id)
-		.first();
-	if (!debit) return;
+		.bind(cancelKey, userId, order.shop_order_id)
+		.first<{ debited: number; refunded: number }>();
+	const remaining =
+		BigInt(Math.min(Number(ledger?.debited ?? 0), Number(order.total_minor))) -
+		BigInt(ledger?.refunded ?? 0);
+	if (remaining <= 0n) return;
 	await mutateWallet(db, {
 		userId,
 		direction: "credit",
-		amountMinor: order.total_minor,
+		amountMinor: remaining.toString(),
 		currency: order.currency,
 		sourceType: "refund",
 		sourceId: order.shop_order_id,
-		idempotencyKey: `supplier-api-cancel:${id}`,
+		idempotencyKey: cancelKey,
 		reason: "Supplier API order cancelled",
 	});
 }
