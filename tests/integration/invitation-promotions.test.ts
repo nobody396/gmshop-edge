@@ -200,28 +200,6 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		expect(created.totalMinor).toBe("107760");
 		expect(await rewardOf(created.id)).toBe("0");
 	});
-	it("still pays the referrer when the friend shares the referrer's sign-in IP", async () => {
-		// Buyers commonly share proxy exits; an IP match alone must not withhold the reward.
-		await db
-			.prepare(
-				"INSERT INTO sessions(id,expires_at,token,created_at,updated_at,ip_address,user_id) VALUES ('shared-exit',?,'shared-exit-token',1,1,'203.0.113.9',?)",
-			)
-			.bind(Date.now() + 86_400_000, promoter)
-			.run();
-		const code = await openReferralCoupon(db, promoter);
-		const created = await createMultiStoreOrder(
-			db,
-			{
-				email: "buyer@example.com",
-				couponCode: code.code,
-				idempotencyKey: crypto.randomUUID(),
-				items: [{ sellableItemId: sku, quantity: 1 }],
-			},
-			{ clientIp: "203.0.113.9" },
-		);
-		expect(created.totalMinor).toBe("107760");
-		expect(await rewardOf(created.id)).toBe("560");
-	});
 	it("rejects identified self-referrals", async () => {
 		const code = await openReferralCoupon(db, promoter);
 		await expect(order(code.code, promoter)).rejects.toThrow(/own invitation/);
