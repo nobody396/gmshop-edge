@@ -1,4 +1,5 @@
 const REQUEUE_BATCH_LIMIT = 10;
+const REQUEUE_SCAN_LIMIT = 200;
 const REQUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
 type BlockedSupplierOrder = {
@@ -14,7 +15,13 @@ type FundingAccount = {
 	balance_minor: string | null;
 	reserve_balance_minor: string;
 	max_order_cost_minor: string | null;
-	balance_synced_at: number | null;
+};
+
+type SnapshotRoute = {
+	provider: string;
+	normalizedApiOrigin: string;
+	protocolVersion: string;
+	maxCostMinor: string;
 };
 
 /**
@@ -27,6 +34,8 @@ export async function requeueFundedSupplierOrders(
 	db: D1Database,
 	now = Date.now(),
 ) {
+	// Only orders whose route has a balance synced after the failure are
+	// candidates, so unfundable orders do not occupy the scan window forever.
 	const blocked = await db
 		.prepare(
 			`SELECT so.id, so.quantity, so.updated_at, so.binding_snapshot_json,
@@ -42,24 +51,42 @@ export async function requeueFundedSupplierOrders(
 			   AND so.created_at >= ?
 			   AND delivery.status = 'awaiting_supply'
 			   AND shop_order.status IN ('paid', 'fulfilling')
+			   AND EXISTS (SELECT 1 FROM supplier_accounts account
+			     WHERE account.provider =
+			       json_extract(so.binding_snapshot_json, '$.provider')
+			     AND account.normalized_api_origin =
+			       json_extract(so.binding_snapshot_json, '$.normalizedApiOrigin')
+			     AND account.protocol_version =
+			       json_extract(so.binding_snapshot_json, '$.protocolVersion')
+			     AND account.enabled = 1
+			     AND account.balance_synced_at > so.updated_at)
 			 ORDER BY so.created_at, so.id LIMIT ?`,
 		)
-		.bind(now - REQUEUE_MAX_AGE_MS, REQUEUE_BATCH_LIMIT)
+		.bind(now - REQUEUE_MAX_AGE_MS, REQUEUE_SCAN_LIMIT)
 		.all<BlockedSupplierOrder>();
 	let requeued = 0;
+	// Cost already promised to orders reopened in this run, per account.
+	const promised = new Map<string, bigint>();
 	for (const order of blocked.results) {
+		if (requeued >= REQUEUE_BATCH_LIMIT) break;
 		const snapshot = parseSnapshot(order.binding_snapshot_json);
 		if (!snapshot) continue;
-		const unitCost = cheaperCost(
+		const unitCost = expectedUnitCost(
 			order.reference_cost_minor,
 			snapshot.maxCostMinor,
 		);
-		const totalCost = BigInt(unitCost) * BigInt(Math.max(1, order.quantity));
-		if (
-			!(await hasFundedAccount(db, snapshot, order.updated_at, totalCost, now))
-		)
-			continue;
-		const outboxId = crypto.randomUUID();
+		// A known price above the order's cost cap would fail again upstream.
+		if (unitCost === null) continue;
+		const totalCost = unitCost * BigInt(Math.max(1, order.quantity));
+		const accountId = await fundedAccount(
+			db,
+			snapshot,
+			order.updated_at,
+			totalCost,
+			promised,
+			now,
+		);
+		if (!accountId) continue;
 		const [reopened] = await db.batch([
 			db
 				.prepare(
@@ -81,7 +108,7 @@ export async function requeueFundedSupplierOrders(
 					  WHERE id = ? AND state = 'pending' AND updated_at = ?)`,
 				)
 				.bind(
-					outboxId,
+					crypto.randomUUID(),
 					order.id,
 					`supplier-funded-requeue:${order.id}:${now}`,
 					JSON.stringify({ supplierOrderId: order.id }),
@@ -91,26 +118,24 @@ export async function requeueFundedSupplierOrders(
 					now,
 				),
 		]);
-		if (Number(reopened?.meta.changes ?? 0) === 1) requeued += 1;
+		if (Number(reopened?.meta.changes ?? 0) !== 1) continue;
+		requeued += 1;
+		promised.set(accountId, (promised.get(accountId) ?? 0n) + totalCost);
 	}
 	return { requeued };
 }
 
-async function hasFundedAccount(
+async function fundedAccount(
 	db: D1Database,
-	snapshot: {
-		provider: string;
-		normalizedApiOrigin: string;
-		protocolVersion: string;
-	},
+	snapshot: SnapshotRoute,
 	failedAt: number,
 	totalCost: bigint,
+	promised: Map<string, bigint>,
 	now: number,
 ) {
 	const accounts = await db
 		.prepare(
-			`SELECT id, balance_minor, reserve_balance_minor, max_order_cost_minor,
-			        balance_synced_at
+			`SELECT id, balance_minor, reserve_balance_minor, max_order_cost_minor
 			 FROM supplier_accounts WHERE provider = ?
 			 AND normalized_api_origin = ? AND protocol_version = ?
 			 AND enabled = 1 AND health_status <> 'unavailable'
@@ -142,18 +167,21 @@ async function hasFundedAccount(
 		const available =
 			BigInt(account.balance_minor ?? "0") -
 			BigInt(account.reserve_balance_minor) -
-			BigInt(commitments?.committed ?? 0);
-		if (available >= totalCost) return true;
+			BigInt(commitments?.committed ?? 0) -
+			(promised.get(account.id) ?? 0n);
+		if (available >= totalCost) return account.id;
 	}
-	return false;
+	return null;
 }
 
-function cheaperCost(reference: string | null, max: string) {
-	if (reference === null || !/^\d+$/.test(reference)) return max;
-	return BigInt(reference) < BigInt(max) ? reference : max;
+function expectedUnitCost(reference: string | null, max: string) {
+	const cap = BigInt(max);
+	if (reference === null || !/^\d+$/.test(reference)) return cap;
+	const known = BigInt(reference);
+	return known > cap ? null : known;
 }
 
-function parseSnapshot(value: string) {
+function parseSnapshot(value: string): SnapshotRoute | null {
 	try {
 		const parsed = JSON.parse(value) as Record<string, unknown>;
 		if (

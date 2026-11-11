@@ -489,6 +489,38 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		).toEqual({ state: "uncertain", selected_account_id: "account" });
 	});
 
+	it("keeps a balance-blocked supplier order failed while the known price exceeds its cost cap", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const now = Date.now();
+		await db.batch([
+			db
+				.prepare(
+					`UPDATE supplier_orders SET state='failed',
+					 last_error_code='supplier_accounts_exhausted', updated_at=?`,
+				)
+				.bind(now - 120_000),
+			db.prepare(
+				"UPDATE supplier_bindings SET reference_cost_minor='200' WHERE id='binding'",
+			),
+			db
+				.prepare(
+					"UPDATE supplier_accounts SET balance_minor='100000', balance_synced_at=?",
+				)
+				.bind(now),
+		]);
+		expect(await requeueFundedSupplierOrders(db, now)).toEqual({
+			requeued: 0,
+		});
+		await db
+			.prepare(
+				"UPDATE supplier_bindings SET reference_cost_minor='100' WHERE id='binding'",
+			)
+			.run();
+		expect(await requeueFundedSupplierOrders(db, now)).toEqual({
+			requeued: 1,
+		});
+	});
+
 	it("never requeues a balance-blocked supplier order whose delivery already finished", async () => {
 		await completeFreeStoreOrder(db, "order");
 		const now = Date.now();
