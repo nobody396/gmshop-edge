@@ -248,30 +248,37 @@ Warranty
 - Links already claimed (including by someone else after posting in a group) and banned or restricted accounts are not covered.`,
 	},
 	"b99dfd6a-2206-4dc9-aea9-85e86c3f8d66": {
-		name: "Gemini Ultra ready-made account｜1 month",
-		description: `A ready-made Google account with the Google AI Ultra 20X plan (Google's $199.99/month tier) active for 1 month. Delivered automatically after payment. This is a ready-made account; it cannot be applied to your own account.
+		name: "Gemini Ultra 20X｜1 month",
+		description: `Google AI Ultra 20X plan (Google's $199.99/month tier) for 1 month. Two options:
+- Ready-made account: a Google account with Ultra active is delivered automatically after payment; it is not applied to your own account.
+- Applied to your own account (¥100 more than the ready-made account): a CDK is delivered automatically after payment; send it to support and we activate Ultra on your own Google account.
 
 Included
 - Google AI Ultra 20X for 1 month: 20 times the Gemini usage of AI Pro, with Google's strongest models Gemini 4 Carbon and Gemini 4 Argon, plus Deep Research, Antigravity, Flow video (25,000 credits a month), Project Genie and more; Google's official page decides the exact benefits.
 
-What you receive
+[Ready-made account] What you receive
 Account, password and recovery email, in the format "account----password----recovery email". Some accounts also come with a 2FA key at the end: "account----password----recovery email----2FA key".
 
-How to use
+[Ready-made account] How to use
 1. View the delivered account details on the order page.
 2. Open https://gemini.google.com and sign in with the delivered account and password.
 3. If Google asks you to verify, enter the delivered recovery email address when prompted; if your details include a 2FA key, you can also add it to an authenticator app (such as Google Authenticator) and enter the 6-digit code.
 4. After signing in, check that the plan shows Ultra.
 5. We suggest adding your own recovery email or phone and keeping the details safe.
 
+[Your own account] How to use
+1. Before ordering, make sure the account qualifies: no active Google One / Google AI subscription, and the account region is a country where Google AI Ultra is available (not mainland China or Hong Kong). Ask support first if unsure.
+2. After payment, copy the CDK from the order page.
+3. Open the Telegram support bot https://t.me/laoshirenai_support_bot , send the CDK and your Google email, and follow support's instructions. Support is online 08:00–22:00 (Beijing time); activation is done manually.
+4. After activation, open https://gemini.google.com and check that the plan shows Ultra.
+
 Before you buy
-- This is a ready-made account; it cannot be applied to your own account.
 - Sign in from a stable network, avoid frequent IP or device changes, and do not share the account; otherwise Google's risk controls are more likely to trigger.
 - Follow Google's rules; nothing can guarantee the account is never restricted or banned.
 
 After-sales
-- First sign-in only: sign in and check soon after delivery; if the first sign-in fails, keep a screenshot of the error and contact support from the order page.
-- Restrictions, bans or other problems after a successful first sign-in (including those caused by account sharing, unusual networks, device switching or rule violations) are not covered, and the membership is not guaranteed to last the full month.
+- Ready-made accounts cover the first sign-in only: sign in and check soon after delivery; if the first sign-in fails, keep a screenshot of the error and contact support from the order page. Restrictions, bans or other problems after a successful first sign-in (including those caused by account sharing, unusual networks, device switching or rule violations) are not covered, and the membership is not guaranteed to last the full month.
+- Your own account: if activation does not succeed, contact support.
 - No no-reason refunds after delivery.`,
 	},
 	"64812c48-9026-4ef7-874d-b332d2a39b1a": {
@@ -829,6 +836,16 @@ ${claudeRestrictions}`,
 			"Gemini Ultra 20X ready-made account with Google AI Ultra for 1 month; it cannot be applied to your own account",
 			"First sign-in only: sign in and check soon after delivery; contact support if the first sign-in fails",
 			"Do not share the account or switch IPs or devices frequently; restrictions or bans are not covered",
+		),
+	},
+	"ee138689-0a97-4d1d-9763-839fb75fc59d": {
+		name: "Gemini Ultra｜Your own account｜1 month",
+		policy: policy(
+			"A CDK is delivered automatically after payment; send it to support and we activate Gemini Ultra 20X on your own Google account",
+			"The CDK arrives automatically, usually within 1 minute; activation is done manually by support (online 08:00–22:00 Beijing time)",
+			"Gemini Ultra 20X, Google AI Ultra for 1 month, applied to your own Google account",
+			"Check that the plan shows Ultra after activation; contact support if activation does not succeed",
+			"The account must have no active Google One / Google AI subscription and be in a country where Google AI Ultra is available (not mainland China or Hong Kong); support confirms eligibility before activation",
 		),
 	},
 	"39d831df-4919-49a4-8896-8ccfdbd33d83": {
