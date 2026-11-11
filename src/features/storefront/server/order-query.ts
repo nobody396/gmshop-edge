@@ -52,6 +52,7 @@ export async function getStoreOrder(
 		afterSales,
 		emailNotificationAvailability,
 		balanceHolds,
+		splitParts,
 	] = await db.batch([
 		db
 			.prepare(
@@ -190,6 +191,15 @@ export async function getStoreOrder(
 				 WHERE order_id = ? AND state IN ('held', 'consumed') LIMIT 1`,
 			)
 			.bind(order.id),
+		db
+			.prepare(
+				`SELECT part.payment_attempt_id, part.part_index, part.part_count,
+				 part.amount_minor, part.status, part.refunded_minor
+				 FROM payment_split_parts part
+				 JOIN payment_attempts pa ON pa.id = part.payment_attempt_id
+				 WHERE pa.order_id = ? ORDER BY part.part_index`,
+			)
+			.bind(order.id),
 	]);
 	const balanceHold = rows(balanceHolds)[0];
 	// Reward/wallet balance reserved at checkout; the customer pays only the external remainder.
@@ -225,7 +235,9 @@ export async function getStoreOrder(
 		createdAt: Number(order.created_at),
 		updatedAt: Number(order.updated_at),
 		items: rows(items).map(presentItem),
-		payments: rows(payments).map(presentPayment),
+		payments: rows(payments).map((payment) =>
+			presentPayment(payment, rows(splitParts)),
+		),
 		deliveries: rows(deliveries).map(presentDelivery),
 		events: rows(events).map(presentEvent),
 		downloads: rows(downloads).map(presentDownload),
@@ -282,8 +294,21 @@ function presentItem(row: Record<string, unknown>) {
 			: null,
 	};
 }
-function presentPayment(row: Record<string, unknown>) {
+function presentPayment(
+	row: Record<string, unknown>,
+	splitParts: Record<string, unknown>[],
+) {
 	return {
+		/** Parts of a split payment in order; empty for a single payment. */
+		splitParts: splitParts
+			.filter((part) => part.payment_attempt_id === row.id)
+			.map((part) => ({
+				index: Number(part.part_index),
+				count: Number(part.part_count),
+				amountMinor: String(part.amount_minor),
+				status: String(part.status),
+				refundedMinor: String(part.refunded_minor),
+			})),
 		id: String(row.id),
 		status: String(row.status),
 		amountMinor: String(row.amount_minor),

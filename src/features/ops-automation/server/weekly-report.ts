@@ -40,6 +40,8 @@ type OrderRow = {
 	cost_missing: number;
 	fee_bps: number | null;
 	fixed_fee_minor: string | null;
+	/** Split payments: the sum of every part's fee. */
+	processing_fee_minor: string | null;
 	payment_currency: string | null;
 };
 
@@ -68,18 +70,20 @@ function summarize(rows: OrderRow[]): PeriodMetrics {
 	for (const row of rows) {
 		const total = Number(row.total_minor);
 		const fee =
-			row.fee_bps === null
-				? 0
-				: Number(
-						paymentProcessingFeeAmount(
-							row.total_minor,
-							row.fee_bps,
-							// A fixed fee in another currency cannot be applied to a CNY total.
-							row.payment_currency === "CNY"
-								? (row.fixed_fee_minor ?? "0")
-								: "0",
-						),
-					);
+			row.processing_fee_minor !== null && row.payment_currency === "CNY"
+				? Number(row.processing_fee_minor)
+				: row.fee_bps === null
+					? 0
+					: Number(
+							paymentProcessingFeeAmount(
+								row.total_minor,
+								row.fee_bps,
+								// A fixed fee in another currency cannot be applied to a CNY total.
+								row.payment_currency === "CNY"
+									? (row.fixed_fee_minor ?? "0")
+									: "0",
+							),
+						);
 		metrics.orders += 1;
 		metrics.revenueMinor += total;
 		if (row.is_agent) {
@@ -148,6 +152,9 @@ export async function buildWeeklyReport(input: {
 			   JOIN payment_channels channel ON channel.id = payment.channel_id
 			   WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
 			   ORDER BY payment.succeeded_at DESC, payment.id DESC LIMIT 1) AS fixed_fee_minor,
+			  (SELECT payment.processing_fee_minor FROM payment_attempts payment
+			   WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
+			   ORDER BY payment.succeeded_at DESC, payment.id DESC LIMIT 1) AS processing_fee_minor,
 			  (SELECT channel.currency FROM payment_attempts payment
 			   JOIN payment_channels channel ON channel.id = payment.channel_id
 			   WHERE payment.order_id = orders.id AND payment.status = 'succeeded'

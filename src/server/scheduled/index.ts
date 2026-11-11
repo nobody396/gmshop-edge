@@ -27,6 +27,7 @@ import { runRenewalReminders } from "#/features/renewals/server/scheduler";
 import { expireStoreOrders } from "#/features/shop-orders/server/expiration";
 import { publishPendingRefunds } from "#/features/shop-payments/server/refunds";
 import { reconcilePendingShopPayments } from "#/features/shop-payments/server/service";
+import { settleSplitPayments } from "#/features/shop-payments/server/split";
 import { publishPendingInventoryEvents } from "#/features/supplier-api/server/inventory-events";
 import { publishPendingSupplierOrders } from "#/features/suppliers/server/outbox";
 import { runTelegramMaintenance } from "#/features/telegram/server/maintenance";
@@ -59,6 +60,11 @@ export async function runScheduledCommerceWork(
 		scheduledAt,
 	);
 	const expired = await expireStoreOrders(env.DB, scheduledAt);
+	const splitPayments = await settleSplitPayments(
+		env.DB,
+		fetch,
+		scheduledAt,
+	).catch(() => ({ status: "failed" as const }));
 	const promotionRewards = await settlePromotionRewards(env.DB, scheduledAt);
 	const deliveries = await publishPendingDeliveries(
 		env.DB,
@@ -209,6 +215,7 @@ export async function runScheduledCommerceWork(
 		bulkCodeTopUp,
 		ownedCodeTopUp,
 		expired,
+		splitPayments,
 		deliveries,
 		suppliers,
 		inventoryEvents,

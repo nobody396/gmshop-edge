@@ -73,7 +73,7 @@ export async function listSupplyConsole(
 				 (SELECT price.price_minor FROM sellable_item_channel_prices price
 				  JOIN payment_channels channel ON channel.id = price.channel_id
 				  WHERE price.sellable_item_id = item.id AND price.enabled = 1
-				   AND channel.name = '支付宝') AS alipay_minor,
+				   AND channel.name = '支付宝' AND channel.price_source_channel_id IS NULL) AS alipay_minor,
 				 (SELECT listing.price_minor FROM supplier_export_listings listing
 				  WHERE listing.sellable_item_id = item.id AND listing.enabled = 1) AS supply_minor,
 				 (SELECT COUNT(*) FROM stock_entries stock

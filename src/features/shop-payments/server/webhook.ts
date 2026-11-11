@@ -28,7 +28,11 @@ export async function handleShopPaymentWebhookRequest(
 					"Content-Type": "text/plain; charset=utf-8",
 				},
 			});
-		if (result.provider === "alipay_page" || result.provider === "alipay_wap")
+		if (
+			result.provider === "alipay_page" ||
+			result.provider === "alipay_wap" ||
+			result.provider === "alipay_qr"
+		)
 			return new Response("success", {
 				headers: {
 					"Cache-Control": "no-store",

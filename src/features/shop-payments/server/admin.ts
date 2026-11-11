@@ -14,12 +14,22 @@ import {
 } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import {
+	manualSplitRefundSchema,
 	paymentChannelEnabledSchema,
 	paymentChannelIdSchema,
 	paymentChannelInputSchema,
 	paymentChannelListSchema,
 	paymentChannelOrderSchema,
 } from "#/features/shop-payments/schema";
+import {
+	assertPriceSource,
+	priceLinkStatements,
+} from "#/features/shop-payments/server/price-link";
+import {
+	channelHasUnsettledSplitPayments,
+	completeSplitRefundsManually,
+	listManualSplitRefunds,
+} from "#/features/shop-payments/server/split";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import { createAuditStatement } from "#/server/audit";
@@ -48,6 +58,11 @@ type ChannelRow = {
 	fixed_fee_minor: string;
 	sort_order: number;
 	enabled: number;
+	split_enabled: number;
+	per_payment_max_minor: string;
+	daily_max_minor: string;
+	split_max_parts: number;
+	price_source_channel_id: string | null;
 	last_health_status: "unknown" | "healthy" | "unhealthy";
 	last_checked_at: number | null;
 	created_at: number;
@@ -132,15 +147,44 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 		);
 		const id = data.id ?? crypto.randomUUID();
 		const now = Date.now();
+		const limits = channelLimitValues(data);
+		// Alipay channels may switch between 网站支付 and 订单码支付; other
+		// providers keep their stored product.
+		const provider =
+			before && paymentProviderFamily(data.provider) !== "alipay"
+				? before.provider
+				: data.provider;
+		// An open split plan keeps using its channel's product (QR, expiry,
+		// refunds): the product may change only once every plan is settled.
+		if (
+			before &&
+			before.provider !== provider &&
+			(await channelHasUnsettledSplitPayments(db.$client, before.id))
+		)
+			throw new DomainError(
+				"payment_provider_in_use",
+				409,
+				"Settle open split payments before changing the payment product",
+			);
+		const priceSourceId =
+			provider === "alipay_qr" ? (data.priceSourceChannelId ?? null) : null;
+		await assertPriceSource(db.$client, id, priceSourceId);
+		const link = priceLinkStatements(db.$client, {
+			channelId: id,
+			sourceId: priceSourceId,
+			now,
+		});
 		const mutation = data.id
 			? db.$client
 					.prepare(
-						`UPDATE payment_channels SET name = ?, currency = ?, default_token = ?,
+						`UPDATE payment_channels SET provider = ?, name = ?, currency = ?, default_token = ?,
 						 default_network = ?, credential_encrypted = ?,
 					 credential_key_version = 1, fee_bps = ?, fixed_fee_minor = ?, sort_order = ?,
-					 enabled = ?, last_health_status = 'unknown', last_checked_at = NULL, updated_at = ? WHERE id = ?`,
+					 enabled = ?, split_enabled = ?, per_payment_max_minor = ?, daily_max_minor = ?,
+					 split_max_parts = ?, price_source_channel_id = ?, last_health_status = 'unknown', last_checked_at = NULL, updated_at = ? WHERE id = ?`,
 					)
 					.bind(
+						provider,
 						data.name,
 						data.currency,
 						data.defaultToken,
@@ -150,6 +194,11 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						data.fixedFeeMinor,
 						data.sortOrder,
 						data.enabled,
+						limits.splitEnabled,
+						limits.perPaymentMaxMinor,
+						limits.dailyMaxMinor,
+						limits.splitMaxParts,
+						priceSourceId,
 						now,
 						id,
 					)
@@ -158,8 +207,10 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						`INSERT INTO payment_channels
 					 (id, provider, name, currency, default_token, default_network,
 					  credential_encrypted, credential_key_version,
-					  fee_bps, fixed_fee_minor, sort_order, enabled, last_health_status, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'unknown', ?, ?)`,
+					  fee_bps, fixed_fee_minor, sort_order, enabled, split_enabled,
+					  per_payment_max_minor, daily_max_minor, split_max_parts,
+					  price_source_channel_id, last_health_status, created_at, updated_at)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?)`,
 					)
 					.bind(
 						id,
@@ -173,28 +224,62 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						data.fixedFeeMinor,
 						data.sortOrder,
 						data.enabled,
+						limits.splitEnabled,
+						limits.perPaymentMaxMinor,
+						limits.dailyMaxMinor,
+						limits.splitMaxParts,
+						priceSourceId,
 						now,
 						now,
 					);
 		await db.$client.batch([
+			...link.before,
 			mutation,
+			...link.after,
 			createAuditStatement(db.$client, request, currentUser.id, {
 				action: data.id ? "payment_channel.updated" : "payment_channel.created",
 				targetType: "payment_channel",
 				targetId: id,
 				before: before ? presentChannel(before) : null,
 				after: {
-					provider: data.provider,
+					provider,
 					name: data.name,
 					currency: data.currency,
 					defaultToken: data.defaultToken,
 					defaultNetwork: data.defaultNetwork,
 					enabled: data.enabled,
+					...limits,
+					priceSourceChannelId: priceSourceId,
 					hasCredential: true,
 				},
 			}),
 		]);
 		return { id };
+	});
+
+export const listManualSplitRefundsFn = createServerFn({
+	method: "GET",
+}).handler(async () => {
+	const { db } = await getAdminServerContext(
+		systemPermission("payments", "read"),
+	);
+	return listManualSplitRefunds(db.$client);
+});
+
+/** 已人工退款: the owner refunded a split part in the Alipay console by hand. */
+export const completeManualSplitRefundFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof manualSplitRefundSchema>) =>
+		manualSplitRefundSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const { currentUser, db } = await getAdminServerContext(
+			systemPermission("orders", "update"),
+		);
+		return completeSplitRefundsManually(db.$client, {
+			rowIds: [data.id],
+			reference: data.reference,
+			actorUserId: currentUser.id,
+		});
 	});
 
 export const setPaymentChannelEnabledFn = createServerFn({ method: "POST" })
@@ -534,7 +619,7 @@ function credentialValue(data: z.output<typeof paymentChannelInputSchema>) {
 			webhookSecret: data.stripeWebhookSecret,
 		});
 	}
-	if (data.provider === "alipay_page" || data.provider === "alipay_wap") {
+	if (paymentProviderFamily(data.provider) === "alipay") {
 		if (
 			!data.alipayAppId &&
 			!data.alipaySellerId &&
@@ -584,6 +669,23 @@ function credentialValue(data: z.output<typeof paymentChannelInputSchema>) {
 	});
 }
 
+/** Limits apply to Alipay QR channels only; other providers keep the defaults. */
+function channelLimitValues(data: z.output<typeof paymentChannelInputSchema>) {
+	if (data.provider !== "alipay_qr")
+		return {
+			splitEnabled: false,
+			perPaymentMaxMinor: "0",
+			dailyMaxMinor: "0",
+			splitMaxParts: 10,
+		};
+	return {
+		splitEnabled: data.splitEnabled,
+		perPaymentMaxMinor: data.perPaymentMaxMinor,
+		dailyMaxMinor: data.dailyMaxMinor,
+		splitMaxParts: data.splitMaxParts,
+	};
+}
+
 async function channelPaymentMethod(
 	row: ChannelRow,
 	commerceSecret: string | null,
@@ -621,6 +723,11 @@ function presentChannel(row: ChannelRow) {
 		fixedFeeMinor: row.fixed_fee_minor,
 		sortOrder: row.sort_order,
 		enabled: Boolean(row.enabled),
+		splitEnabled: Boolean(row.split_enabled),
+		perPaymentMaxMinor: row.per_payment_max_minor ?? "0",
+		dailyMaxMinor: row.daily_max_minor ?? "0",
+		splitMaxParts: Number(row.split_max_parts ?? 10),
+		priceSourceChannelId: row.price_source_channel_id ?? null,
 		healthStatus: row.last_health_status,
 		lastCheckedAt: row.last_checked_at,
 		hasCredential: Boolean(row.credential_encrypted),

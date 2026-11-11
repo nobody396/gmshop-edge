@@ -2,7 +2,12 @@ type CloudflareRequest = Request & {
 	cf?: { country?: string };
 };
 
-const mainlandPaymentProviders = new Set(["epay", "alipay_page", "alipay_wap"]);
+const mainlandPaymentProviders = new Set([
+	"epay",
+	"alipay_page",
+	"alipay_wap",
+	"alipay_qr",
+]);
 
 export function requestIsFromMainlandChina(request: Request) {
 	return (request as CloudflareRequest).cf?.country === "CN";

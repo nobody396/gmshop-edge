@@ -9,6 +9,10 @@ import {
 } from "#/features/promotions/server/refunds";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
+import {
+	completeSplitRefundsManually,
+	refundSplitPayment,
+} from "#/features/shop-payments/server/split";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret } from "#/lib/secrets";
 import { createAuditStatement } from "#/server/audit";
@@ -582,22 +586,26 @@ export async function processShopRefund(
 		};
 	}
 	try {
-		const result = refund.provider_refund_id
-			? await adapter.queryRefund(
-					refund.provider_refund_id,
-					credential,
-					fetcher,
-				)
-			: await adapter.refundPayment(
-					{
-						refundId: refund.id,
-						providerPaymentId: refund.provider_payment_id,
-						amountMinor: refund.payment_amount_minor,
-						reason: refund.reason,
-					},
-					credential,
-					fetcher,
-				);
+		// Split payments refund part by part (never through the parent's `split:` id).
+		const splitResult = await refundSplitPayment(db, refund, fetcher);
+		const result = splitResult
+			? splitResult
+			: refund.provider_refund_id
+				? await adapter.queryRefund(
+						refund.provider_refund_id,
+						credential,
+						fetcher,
+					)
+				: await adapter.refundPayment(
+						{
+							refundId: refund.id,
+							providerPaymentId: refund.provider_payment_id,
+							amountMinor: refund.payment_amount_minor,
+							reason: refund.reason,
+						},
+						credential,
+						fetcher,
+					);
 		if (result.status === "pending")
 			return scheduleRefundCheck(
 				db,
@@ -698,8 +706,17 @@ export async function completeManualShopRefund(
 		throw new DomainError("refund_not_found", 404, "Refund not found");
 	if (refund.status === "succeeded")
 		return { id: refund.id, status: "succeeded" as const, duplicate: true };
+	// Split payments refund automatically but may need a human when only some
+	// parts could be refunded; their remaining shares are closed here too.
+	const splitRefund = await db
+		.prepare("SELECT 1 FROM payment_split_refunds WHERE refund_id = ? LIMIT 1")
+		.bind(refund.id)
+		.first();
+	// Manual providers always confirm by hand. Automatic providers reach
+	// manual_action_required only when the provider's answer could not be
+	// reconciled (money may have moved) or a split refund was partly refused:
+	// the admin confirms with the provider's refund reference.
 	if (
-		getPaymentProvider(refund.provider).refundMode !== "manual" ||
 		refund.status !== "processing" ||
 		refund.failure_code !== "manual_action_required"
 	)
@@ -732,6 +749,12 @@ export async function completeManualShopRefund(
 			duplicate: true,
 		};
 	}
+	if (splitRefund)
+		await completeSplitRefundsManually(db, {
+			refundId: refund.id,
+			reference: normalizedReference,
+			actorUserId: context.actorUserId,
+		});
 	return finalizeRefund(
 		db,
 		refund,

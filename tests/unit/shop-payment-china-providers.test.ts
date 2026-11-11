@@ -142,6 +142,7 @@ describe("China payment providers", () => {
 			status: "succeeded",
 			amountMinor: "12345",
 			currency: "CNY",
+			providerTradeNo: "2026072400000000000001",
 		});
 	});
 

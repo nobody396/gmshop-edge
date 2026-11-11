@@ -59,6 +59,8 @@ type SaleAlertRow = {
 	payment_currency: string | null;
 	payment_currency_decimals: number | null;
 	payment_fee_bps: number | null;
+	/** Split payments: the sum of every part's fee. */
+	payment_processing_fee_minor?: string | null;
 	payment_fixed_fee_minor: string | null;
 	wallet_balance_after_minor: string | null;
 	internal_supply_count: number;
@@ -234,6 +236,10 @@ export async function publishPendingOwnerSaleAlerts(input: {
 			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
 			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
 			                  payment.id DESC LIMIT 1) AS payment_fee_bps,
+			        (SELECT payment.processing_fee_minor FROM payment_attempts payment
+			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
+			         ORDER BY payment.succeeded_at DESC, payment.created_at DESC,
+			                  payment.id DESC LIMIT 1) AS payment_processing_fee_minor,
 			        (SELECT channel.fixed_fee_minor FROM payment_attempts payment
 			         JOIN payment_channels channel ON channel.id = payment.channel_id
 			         WHERE payment.order_id = orders.id AND payment.status = 'succeeded'
@@ -428,11 +434,12 @@ export function formatFeishuOwnerSaleAlert(
 		const paymentMinor = BigInt(row.payment_amount_minor);
 		paidMinor = row.payment_amount_minor;
 		const feeMinor = BigInt(
-			paymentProcessingFeeAmount(
-				row.payment_amount_minor,
-				row.payment_fee_bps ?? 0,
-				row.payment_fixed_fee_minor ?? "0",
-			),
+			row.payment_processing_fee_minor ??
+				paymentProcessingFeeAmount(
+					row.payment_amount_minor,
+					row.payment_fee_bps ?? 0,
+					row.payment_fixed_fee_minor ?? "0",
+				),
 		);
 		const surchargeMinor = paymentMinor - BigInt(row.total_minor);
 		const customerCoveredFeeMinor = surchargeMinor > 0n ? surchargeMinor : 0n;

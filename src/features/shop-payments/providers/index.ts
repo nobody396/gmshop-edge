@@ -3,7 +3,10 @@ import type {
 	PaymentProviderAdapter,
 } from "#/features/shop-payments/provider";
 import { DomainError } from "#/lib/domain-error";
-import { createAutomaticAlipayProvider } from "./alipay";
+import {
+	createAlipayQrProvider,
+	createAutomaticAlipayProvider,
+} from "./alipay";
 import { cryptomusPaymentProvider } from "./cryptomus";
 import { epayPaymentProvider } from "./epay";
 import { gmpayPaymentProvider } from "./gmpay";
@@ -20,6 +23,7 @@ const providers: Record<PaymentProvider, PaymentProviderAdapter> = {
 	epay: epayPaymentProvider,
 	alipay_page: automaticAlipayProvider,
 	alipay_wap: automaticAlipayProvider,
+	alipay_qr: createAlipayQrProvider(),
 	wechat_native: automaticWechatPayProvider,
 	wechat_h5: automaticWechatPayProvider,
 };

@@ -52,7 +52,11 @@ import {
 } from "#/features/exchange-rates/currency-context";
 import { readReferral } from "#/features/promotions/referral-storage";
 import { quotePromotionFn } from "#/features/promotions/server/functions";
-import { paymentSurchargeAmount } from "#/features/shop-payments/fees";
+import {
+	channelPaymentAmount,
+	limitsSplitCapMinor,
+	paymentLimitDecision,
+} from "#/features/shop-payments/split";
 import {
 	useLocalCart,
 	writeLocalCart,
@@ -381,14 +385,14 @@ export function StorefrontCheckoutPage() {
 		const remainder = afterDiscount - used;
 		return fixedPrices || remainder === 0n
 			? remainder
-			: remainder +
-					BigInt(
-						paymentSurchargeAmount(
-							remainder.toString(),
-							channel.feeBps,
-							channel.fixedFeeMinor,
-						),
-					);
+			: BigInt(
+					channelPaymentAmount(
+						remainder.toString(),
+						channel.feeBps,
+						channel.fixedFeeMinor,
+						limitsSplitCapMinor(channel.limits),
+					),
+				);
 	};
 	const wallet = useQuery({
 		queryKey: ["wallet", session.data?.user.id],
@@ -413,17 +417,34 @@ export function StorefrontCheckoutPage() {
 				: orderDue
 			: 0n;
 	const externalDue = orderDue - balanceUsed;
+	// Same calculation as the server, including split payments' per-part fees.
 	const surcharge =
 		selectedChannel && !selectedChannelHasFixedPrices && externalDue > 0n
 			? BigInt(
-					paymentSurchargeAmount(
+					channelPaymentAmount(
 						externalDue.toString(),
 						selectedChannel.feeBps,
 						selectedChannel.fixedFeeMinor,
+						limitsSplitCapMinor(selectedChannel.limits),
 					),
-				)
+				) - externalDue
 			: 0n;
 	const payableTotal = externalDue + surcharge;
+	// Alipay QR limits: hide a channel this amount cannot be paid through
+	// (amounts are comparable only when the store prices in CNY).
+	const channelSplitParts = (
+		channel: NonNullable<typeof channels.data>[number],
+	) => {
+		if (!channel.limits || currencyItem?.currency !== "CNY") return 1;
+		const decision = paymentLimitDecision(
+			channel.limits,
+			channelAmountDue(channel),
+		);
+		return decision.allowed ? decision.parts : 0;
+	};
+	const offeredChannels = (channels.data ?? []).filter(
+		(channel) => channelSplitParts(channel) > 0,
+	);
 	const accessWalletPending = Boolean(
 		hasAgentAccess &&
 			session.data?.user &&
@@ -459,7 +480,7 @@ export function StorefrontCheckoutPage() {
 		!signInRequired &&
 		baseTotal > 0n &&
 		!channels.isPending &&
-		(channels.isError || (!channels.data?.length && !walletAvailable));
+		(channels.isError || (!offeredChannels.length && !walletAvailable));
 	useEffect(() => {
 		if (items.length) trackCommerceEvent({ eventType: "checkout_started" });
 	}, [items.length]);
@@ -469,7 +490,7 @@ export function StorefrontCheckoutPage() {
 			setEmail(accountEmail);
 	}, [session.data?.user.email]);
 	useEffect(() => {
-		const first = initialPaymentChannelId(channels.data ?? [], search.payment);
+		const first = initialPaymentChannelId(offeredChannels, search.payment);
 		if (hasAgentAccess && !paymentChannelId) {
 			if (wallet.isPending) return;
 			if (walletAvailable) {
@@ -480,11 +501,11 @@ export function StorefrontCheckoutPage() {
 		if (
 			first &&
 			paymentChannelId !== "wallet" &&
-			!channels.data?.some((channel) => channel.id === paymentChannelId)
+			!offeredChannels.some((channel) => channel.id === paymentChannelId)
 		)
 			setPaymentChannelId(first);
 	}, [
-		channels.data,
+		offeredChannels,
 		search.payment,
 		paymentChannelId,
 		hasAgentAccess,
@@ -985,7 +1006,7 @@ export function StorefrontCheckoutPage() {
 											value="wallet"
 										/>
 									) : null}
-									{channels.data?.map((channel) => (
+									{offeredChannels.map((channel) => (
 										<CheckoutPaymentOption
 											amount={
 												currencyItem && "currency" in currencyItem ? (
@@ -998,14 +1019,19 @@ export function StorefrontCheckoutPage() {
 											}
 											checked={paymentChannelId === channel.id}
 											detail={
-												channel.feeBps > 0 &&
-												!items.every(
-													(item) => channel.itemPrices[item.sellableItemId],
-												)
-													? m.store_payment_fee_rate({
-															rate: (channel.feeBps / 100).toFixed(2),
+												channelSplitParts(channel) > 1
+													? m.store_checkout_split_notice({
+															count: channelSplitParts(channel),
 														})
-													: null
+													: channel.feeBps > 0 &&
+															!items.every(
+																(item) =>
+																	channel.itemPrices[item.sellableItemId],
+															)
+														? m.store_payment_fee_rate({
+																rate: (channel.feeBps / 100).toFixed(2),
+															})
+														: null
 											}
 											icon={
 												<PaymentProviderLogo

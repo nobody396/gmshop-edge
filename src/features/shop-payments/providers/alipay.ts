@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { PaymentCreationError } from "#/features/shop-payments/creation-error";
 import {
 	alipayCredentialSchema,
 	type PaymentProviderAdapter,
+	type RefundPaymentInput,
 } from "#/features/shop-payments/provider";
 import { sha256Hex } from "#/features/shop-payments/signature";
 import { DomainError } from "#/lib/domain-error";
@@ -102,18 +104,33 @@ export function createAlipayProvider(
 					amountMinor: null,
 					currency: "CNY",
 				};
+			const status =
+				response.trade_status === "TRADE_SUCCESS" ||
+				response.trade_status === "TRADE_FINISHED"
+					? "succeeded"
+					: response.trade_status === "TRADE_CLOSED"
+						? "expired"
+						: "pending";
+			// A signed answer is only evidence for the trade we asked about, with
+			// the amount it reports: never infer a paid amount.
+			if (
+				status === "succeeded" &&
+				(response.out_trade_no !== providerPaymentId ||
+					!response.total_amount ||
+					!/^\d+(?:\.\d{1,2})?$/.test(response.total_amount))
+			)
+				throw new DomainError(
+					"payment_provider_invalid_response",
+					502,
+					"Alipay query does not describe the requested trade",
+				);
 			return {
-				status:
-					response.trade_status === "TRADE_SUCCESS" ||
-					response.trade_status === "TRADE_FINISHED"
-						? "succeeded"
-						: response.trade_status === "TRADE_CLOSED"
-							? "expired"
-							: "pending",
+				status,
 				amountMinor: response.total_amount
 					? decimalToCnyMinor(response.total_amount)
 					: null,
 				currency: "CNY",
+				providerTradeNo: response.trade_no ?? null,
 			};
 		},
 		async parseWebhook(request, rawCredential) {
@@ -155,6 +172,7 @@ export function createAlipayProvider(
 				amountMinor: decimalToCnyMinor(event.total_amount),
 				currency: "CNY",
 				merchantOrderId: event.out_trade_no,
+				providerTradeNo: event.trade_no,
 				payloadDigest: await sha256Hex(body),
 			};
 		},
@@ -174,6 +192,8 @@ export function createAlipayProvider(
 				refundResponseSchema,
 				fetcher,
 			);
+			if (response.code === "10000")
+				assertRefundResponseMatches(response, input);
 			return {
 				providerRefundId: `${input.providerPaymentId}:${outRequestNo}`,
 				status: response.code === "10000" ? "succeeded" : "failed",
@@ -228,6 +248,140 @@ export function createAlipayProvider(
 	};
 }
 
+const precreateResponseSchema = z.object({
+	code: z.string(),
+	msg: z.string().optional(),
+	sub_code: z.string().optional(),
+	sub_msg: z.string().optional(),
+	out_trade_no: z.string().optional(),
+	qr_code: z.string().optional(),
+});
+
+const closeResponseSchema = z.object({
+	code: z.string(),
+	sub_code: z.string().optional(),
+});
+
+/** Default lifetime of a QR trade that is not bound to an order (wallet top-ups). */
+const defaultQrLifetimeMs = 30 * 60_000;
+
+/**
+ * 订单码支付 (alipay.trade.precreate, product QR_CODE_OFFLINE): Alipay returns a
+ * qr.alipay.com URL that desktop customers scan and mobile customers tap to
+ * open the Alipay app. Query, callback and refund are the shared trade APIs.
+ */
+export function createAlipayQrProvider(): PaymentProviderAdapter {
+	const shared = createAlipayProvider("FAST_INSTANT_TRADE_PAY");
+	return {
+		...shared,
+		checkoutPresentation: "qr",
+		async createPayment(input, rawCredential, fetcher = fetch) {
+			assertCny(input.currency, input.currencyDecimals);
+			const credential = alipayCredentialSchema.parse(rawCredential);
+			const outTradeNo = compactId(input.attemptId);
+			const now = Date.now();
+			const deadline = input.expiresAt ?? now + defaultQrLifetimeMs;
+			// Whole minutes, rounded down: the QR must close no later than the order.
+			const minutes = Math.floor((deadline - now) / 60_000);
+			if (minutes < 1)
+				throw new DomainError(
+					"order_not_payable",
+					409,
+					"Order expires before a payment can be made",
+				);
+			const response = await callAlipay(
+				credential,
+				"alipay.trade.precreate",
+				{
+					out_trade_no: outTradeNo,
+					total_amount: minorToDecimal(input.amountMinor, 2),
+					subject: input.description.slice(0, 256),
+					product_code: "QR_CODE_OFFLINE",
+					timeout_express: `${minutes}m`,
+				},
+				"alipay_trade_precreate_response",
+				precreateResponseSchema,
+				fetcher,
+				{ notify_url: input.webhookUrl },
+			).catch((error: unknown) => {
+				if (error instanceof DomainError) throw error;
+				if (error instanceof z.ZodError)
+					throw new PaymentCreationError(
+						"payment_provider_invalid_response",
+						{},
+					);
+				throw new PaymentCreationError(
+					error instanceof Error &&
+						["TimeoutError", "AbortError"].includes(error.name)
+						? "payment_provider_timeout"
+						: "payment_provider_network_error",
+					{},
+				);
+			});
+			const qrCode = response.qr_code
+				? safeAlipayQrUrl(response.qr_code)
+				: null;
+			if (response.code !== "10000" || !qrCode)
+				throw new PaymentCreationError("payment_provider_rejected", {
+					providerCode: response.sub_code ?? response.code,
+					providerMessage: response.sub_msg?.slice(0, 240),
+				});
+			if (response.out_trade_no && response.out_trade_no !== outTradeNo)
+				throw new DomainError(
+					"payment_provider_invalid_response",
+					502,
+					"Alipay returned another trade",
+				);
+			return {
+				providerPaymentId: outTradeNo,
+				checkoutUrl: qrCode,
+				expiresAt: now + minutes * 60_000,
+			};
+		},
+	};
+}
+
+/** Only Alipay's own HTTPS QR host is ever shown to customers. */
+function safeAlipayQrUrl(value: string) {
+	const url = URL.parse(value);
+	return url &&
+		url.protocol === "https:" &&
+		(url.hostname === "qr.alipay.com" ||
+			url.hostname.endsWith(".alipay.com")) &&
+		!url.username &&
+		!url.password
+		? url.toString()
+		: null;
+}
+
+/**
+ * Closes an unpaid trade so its QR can no longer be paid. A trade the buyer never
+ * scanned does not exist at Alipay yet and counts as closed. Any other answer
+ * (for example a trade paid meanwhile) is "failed": query the trade first.
+ */
+export async function closeAlipayTrade(
+	rawCredential: unknown,
+	outTradeNo: string,
+	fetcher: typeof fetch = fetch,
+): Promise<"closed" | "failed"> {
+	const credential = alipayCredentialSchema.parse(rawCredential);
+	const response = await callAlipay(
+		credential,
+		"alipay.trade.close",
+		{ out_trade_no: outTradeNo },
+		"alipay_trade_close_response",
+		closeResponseSchema,
+		fetcher,
+	);
+	if (response.code === "10000" || response.sub_code === "ACQ.TRADE_NOT_EXIST")
+		return "closed";
+	return "failed";
+}
+
+export function alipayOutTradeNo(id: string) {
+	return compactId(id);
+}
+
 export function createAutomaticAlipayProvider(): PaymentProviderAdapter {
 	const desktop = createAlipayProvider("FAST_INSTANT_TRADE_PAY");
 	const mobile = createAlipayProvider("QUICK_WAP_WAY");
@@ -250,11 +404,13 @@ async function callAlipay<T>(
 	responseKey: string,
 	schema: z.ZodType<T>,
 	fetcher: typeof fetch,
+	extra: Record<string, string> = {},
 ) {
 	const parameters = await signedAlipayParameters(
 		credential,
 		method,
 		bizContent,
+		extra,
 	);
 	const response = await fetcher(gateway, {
 		method: "POST",
@@ -447,6 +603,36 @@ function alipayTimestamp(date = new Date()) {
 		parts.map((part) => [part.type, part.value]),
 	);
 	return `${value.year}-${value.month}-${value.day} ${value.hour}:${value.minute}:${value.second}`;
+}
+
+/**
+ * A successful refund answer must name the refunded trade and report the
+ * trade's cumulative refunded amount (refund_fee). Anything else means money
+ * may or may not have moved: hand it to manual reconciliation.
+ */
+function assertRefundResponseMatches(
+	response: z.output<typeof refundResponseSchema>,
+	input: RefundPaymentInput,
+) {
+	const refunded =
+		response.refund_fee && /^\d+(?:\.\d{1,2})?$/.test(response.refund_fee)
+			? BigInt(decimalToCnyMinor(response.refund_fee))
+			: null;
+	const matches =
+		response.out_trade_no === input.providerPaymentId &&
+		refunded !== null &&
+		(input.expectedRefundedTotalMinor != null
+			? refunded === BigInt(input.expectedRefundedTotalMinor)
+			: refunded >= BigInt(input.amountMinor)) &&
+		(input.providerTradeNo == null ||
+			response.trade_no == null ||
+			response.trade_no === input.providerTradeNo);
+	if (!matches)
+		throw new DomainError(
+			"payment_refund_reconciliation_required",
+			409,
+			"Alipay refund answer does not match the request",
+		);
 }
 
 function decimalToCnyMinor(value: string) {

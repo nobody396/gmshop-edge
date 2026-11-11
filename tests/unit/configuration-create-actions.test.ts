@@ -37,9 +37,12 @@ describe("configuration create actions", () => {
 			'fieldsClassName="grid gap-4 space-y-0 sm:grid-cols-2"',
 		);
 		expect(source).toContain('className: "sm:col-span-2"');
-		expect(source).not.toContain('name: "alipayMode"');
+		// Alipay channels choose 网站支付 (page/wap picked per device) or 订单码支付.
+		expect(source).toContain('name: "alipayMode"');
 		expect(source).not.toContain('name: "wechatMode"');
-		expect(source).toContain('if (type === "alipay") return "alipay_page"');
+		expect(source).toContain(
+			'return values.alipayMode === "qr" ? "alipay_qr" : "alipay_page"',
+		);
 		expect(source).toContain('if (type === "wechat") return "wechat_native"');
 		expect(source).toContain('name: "epusdtPaymentMethod"');
 		expect(source).toContain("onPendingChange={setCreatingLogo}");

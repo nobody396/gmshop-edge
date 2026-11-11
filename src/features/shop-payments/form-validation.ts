@@ -27,6 +27,7 @@ function paymentChannelFieldError(field: string, provider: string) {
 		case "currency":
 			return provider === "alipay_page" ||
 				provider === "alipay_wap" ||
+				provider === "alipay_qr" ||
 				provider === "wechat_native" ||
 				provider === "wechat_h5"
 				? m.payment_channels_validation_cny_currency()
@@ -74,6 +75,12 @@ function paymentChannelFieldError(field: string, provider: string) {
 			return m.payment_channels_validation_serial_number();
 		case "wechatApiV3Key":
 			return m.payment_channels_validation_api_v3_key();
+		case "perPaymentMaxMinor":
+			return m.payment_channels_validation_per_payment_max();
+		case "dailyMaxMinor":
+			return m.payment_channels_validation_daily_max();
+		case "splitMaxParts":
+			return m.payment_channels_validation_split_max_parts();
 		default:
 			return m.payment_channels_validation_invalid();
 	}
