@@ -919,10 +919,13 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 		expect((await parts())[1]?.checkout_url).toMatch(
 			/^https:\/\/qr\.alipay\.com/,
 		);
-		// Once the plan expires only the collected ¥1500 counts.
+		// Once the plan expires only the collected ¥1500 counts. Usage is read at
+		// the payment time: the expiry may already fall on the next Beijing day.
 		const now = (await order())?.expires_at ?? 0;
 		await expireStoreOrders(db, now + 1);
-		expect(await channelDailyUsageMinor(db, channelId, now + 1)).toBe(150000n);
+		expect(await channelDailyUsageMinor(db, channelId, Date.now())).toBe(
+			150000n,
+		);
 	});
 
 	// The plan is frozen at the first part: a new single-payment limit does not change it.
