@@ -1597,6 +1597,29 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 				.first(),
 		).toEqual({ status: "expired" });
 	});
+
+	// Review 5, #14: cancelling an unpaid split order closes its QR on the next run.
+	it("closes the open part's QR on the first run after the order is cancelled", async () => {
+		await startPayment();
+		const [first] = await parts();
+		await db
+			.prepare(
+				"UPDATE shop_orders SET status='cancelled', cancelled_at=?, version=version+1 WHERE id=?",
+			)
+			.bind(Date.now(), orderId)
+			.run();
+		await settleSplitPayments(
+			db,
+			simulator.fetch as unknown as typeof fetch,
+			Date.now() + 60_000,
+		);
+		expect(
+			simulator
+				.calledWith("alipay.trade.close")
+				.map((call) => call.business.out_trade_no),
+		).toEqual([first?.provider_payment_id]);
+		expect((await parts())[0]?.status).toBe("closed");
+	});
 });
 
 async function configureTelegram(db: D1Database) {

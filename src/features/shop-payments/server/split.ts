@@ -893,8 +893,12 @@ async function reconcileSplitParts(
 			 pa.currency, pc.provider, pc.credential_encrypted
 			 FROM payment_split_parts part
 			 JOIN payment_attempts pa ON pa.id=part.payment_attempt_id
+			 JOIN shop_orders o ON o.id=pa.order_id
 			 JOIN payment_channels pc ON pc.id=part.channel_id
 			 WHERE part.status='pending' AND part.provider_payment_id IS NOT NULL
+			  -- Parts of orders that can no longer be paid (cancelled, expired,
+			  -- refunded…) are queried and closed by closeDeadParts only.
+			  AND pa.status='pending' AND o.status='pending_payment'
 			  AND (? IS NULL OR part.payment_attempt_id=?)
 			  AND part.created_at>=? AND part.updated_at<=?
 			  AND (part.next_check_at IS NULL OR part.next_check_at<=?)
