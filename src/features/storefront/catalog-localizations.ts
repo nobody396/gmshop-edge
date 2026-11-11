@@ -163,6 +163,7 @@ Which region
 · Japan: the Japanese App Store, for apps and games listed there.
 · Turkey: the Turkish App Store, where many subscriptions are priced lower (actual prices follow the App Store).
 · Philippines: the Philippine App Store, where some app subscriptions are also priced lower (actual prices follow the App Store).
+· Not sure which region is cheapest for a subscription? Compare App Store prices by region: https://laoshirenvip.com/guides/appstore-prices
 
 What you receive
 One line of account details on the order page:

@@ -40,6 +40,7 @@ import { Label } from "#/components/ui/label";
 import { Skeleton } from "#/components/ui/skeleton";
 import { AgentAccessCheckout } from "#/features/agent-access/components/access";
 import { agentAccessKind } from "#/features/agent-access/products";
+import { appStorePricesPath } from "#/features/appstore-prices/config";
 import { authClient } from "#/features/auth/auth-client";
 import {
 	claudeEnvTrafficProductId,
@@ -62,6 +63,7 @@ import {
 	ClaudePurchaseGuide,
 	claudeRechargeProductId,
 } from "#/features/storefront/components/claude-purchase-guide";
+import { LinkifiedText } from "#/features/storefront/components/linkified-text";
 import {
 	StorefrontProductCard,
 	StorefrontProductCardSkeleton,
@@ -424,6 +426,15 @@ export function StorefrontProductPage({
 						>
 							<BookOpen aria-hidden="true" className="size-4 shrink-0" />
 							<p>查看图文教程：买到的 Apple ID 怎么登录 App Store</p>
+						</a>
+					) : null}
+					{data.id === appleIdProductId ? (
+						<a
+							className="mt-2 flex max-w-2xl items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3 font-semibold text-primary text-sm leading-6 transition-colors hover:bg-primary/15 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+							href={appStorePricesPath}
+						>
+							<BookOpen aria-hidden="true" className="size-4 shrink-0" />
+							<p>不知道哪个区开会员最便宜？看各区 App Store 价格对比</p>
 						</a>
 					) : null}
 					{data.description && data.id === claudeRechargeProductId ? (
@@ -820,7 +831,7 @@ export function StorefrontProductPage({
 								{m.store_product_intro()}
 							</h2>
 							<p className="mt-3 whitespace-pre-wrap text-muted-foreground text-sm leading-7">
-								{data.description}
+								<LinkifiedText text={data.description ?? ""} />
 							</p>
 						</section>
 					) : null}
