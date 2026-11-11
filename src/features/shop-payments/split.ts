@@ -1,3 +1,8 @@
+import {
+	grossUpPaymentAmount,
+	paymentProcessingFeeAmount,
+} from "#/features/shop-payments/fees";
+
 /**
  * Limits and split payments for Alipay 订单码支付 (`alipay_qr`). A personal
  * Alipay account without a business licence may collect at most a fixed amount
@@ -73,6 +78,50 @@ const dayMs = 24 * 60 * 60_000;
 /** Start (UTC ms) of the Beijing calendar day containing `now`. */
 export function beijingDayStart(now: number) {
 	return Math.floor((now + beijingOffsetMs) / dayMs) * dayMs - beijingOffsetMs;
+}
+
+/** Beijing calendar date (YYYY-MM-DD) of `now`; the daily-limit bucket. */
+export function beijingDay(now: number) {
+	return new Date(beijingDayStart(now) + beijingOffsetMs)
+		.toISOString()
+		.slice(0, 10);
+}
+
+/**
+ * What the customer pays through a channel for `amountMinor` of goods. A
+ * single payment is grossed up once; a split payment must cover the fee of
+ * every part (each part pays its own fixed fee and rounds its own percentage),
+ * so the total grows until total − Σ part fees ≥ amount. The checkout page and
+ * the server use this same function.
+ */
+export function channelPaymentAmount(
+	amountMinor: string,
+	feeBps: number,
+	fixedFeeMinor: string,
+	splitCapMinor: string | null,
+) {
+	const amount = BigInt(amountMinor);
+	let total = BigInt(grossUpPaymentAmount(amountMinor, feeBps, fixedFeeMinor));
+	if (!splitCapMinor || BigInt(splitCapMinor) <= 0n || amount === 0n)
+		return total.toString();
+	for (let round = 0; round < 1_000; round += 1) {
+		const fees = splitPaymentAmount(total.toString(), splitCapMinor).reduce(
+			(sum, part) =>
+				sum + BigInt(paymentProcessingFeeAmount(part, feeBps, fixedFeeMinor)),
+			0n,
+		);
+		const shortfall = amount + fees - total;
+		if (shortfall <= 0n) return total.toString();
+		total += shortfall;
+	}
+	throw new Error("Split payment amount does not converge");
+}
+
+/** Split cap of checkout limits, or null when the channel never splits. */
+export function limitsSplitCapMinor(limits: PaymentChannelLimits | null) {
+	return limits?.splitEnabled && BigInt(limits.perPaymentMaxMinor) > 0n
+		? limits.perPaymentMaxMinor
+		: null;
 }
 
 export function splitOrderExpiry(

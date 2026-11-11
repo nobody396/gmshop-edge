@@ -12,11 +12,13 @@ import type { PaymentWebhookEvent } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import { epusdtMerchantOrderId } from "#/features/shop-payments/providers/epusdt";
 import {
-	assertSinglePaymentWithinLimits,
+	channelSplitCapMinor,
 	planChannelPayment,
 	processSplitPartEvent,
 	startSplitPayment,
+	walletTopupLimits,
 } from "#/features/shop-payments/server/split";
+import { channelPaymentAmount } from "#/features/shop-payments/split";
 import { supplierFallbackEnabledExpression } from "#/features/storefront/server/stock-availability";
 import { resolveSupplierUsageUrl } from "#/features/suppliers/customer-usage";
 import { mutateWallet } from "#/features/wallet/server/ledger";
@@ -181,10 +183,12 @@ export async function createShopPayment(
 			409,
 			"Order balance reservation is unavailable",
 		);
-	const paymentAmountMinor = grossUpPaymentAmount(
+	// A split payment covers every part's fee (shared with the checkout page).
+	const paymentAmountMinor = channelPaymentAmount(
 		context.amount_minor,
 		context.fixed_channel_pricing ? 0 : context.fee_bps,
 		context.fixed_channel_pricing ? "0" : context.fixed_fee_minor,
+		channelSplitCapMinor(context),
 	);
 	const quote = await quotePaymentCurrency(db, {
 		amountMinor: paymentAmountMinor,
@@ -402,11 +406,7 @@ export async function createWalletTopupPayment(
 		currencyDecimals: context.currency_decimals,
 		paymentCurrency: input.paymentCurrency ?? context.currency,
 	});
-	await assertSinglePaymentWithinLimits(
-		db,
-		context.channel_id,
-		quote.amountMinor,
-	);
+	await walletTopupLimits(db, context.channel_id, quote.amountMinor);
 	const topupId = crypto.randomUUID();
 	const attemptId = crypto.randomUUID();
 	const now = Date.now();
@@ -722,7 +722,7 @@ export async function processShopPaymentEvent(
 	db: D1Database,
 	channelId: string,
 	event: PaymentWebhookEvent,
-	options: { requirePendingOrder?: boolean } = {},
+	options: { requirePendingOrder?: boolean; now?: number } = {},
 ): Promise<PaymentEventResult> {
 	const duplicate = await findPaymentReplayReceipt(
 		db,
@@ -926,7 +926,7 @@ export async function processShopPaymentEvent(
 		.prepare(`${orderItemsForFulfillmentSql} WHERE oi.order_id = ?`)
 		.bind(context.order_id)
 		.all<OrderItem>();
-	const now = Date.now();
+	const now = options.now ?? Date.now();
 	const nextVersion = context.order_version + 1;
 	const previousOrderStatus = context.order_status as
 		| "pending_payment"
@@ -951,7 +951,8 @@ export async function processShopPaymentEvent(
 			.prepare(
 				`UPDATE shop_orders SET status = 'paid', paid_minor = total_minor,
 				 paid_at = ?, cancelled_at = NULL, version = ?, updated_at = ?
-				 WHERE id = ? AND status = ? AND version = ?`,
+				 WHERE id = ? AND status = ? AND version = ?
+				 AND (? = 0 OR expires_at > ?)`,
 			)
 			.bind(
 				now,
@@ -960,7 +961,18 @@ export async function processShopPaymentEvent(
 				context.order_id,
 				previousOrderStatus,
 				context.order_version,
+				options.requirePendingOrder ? 1 : 0,
+				now,
 			),
+		// Split payments must be paid in full before the deadline: otherwise the
+		// whole batch (receipt included) rolls back and the parts are refunded.
+		...(options.requirePendingOrder
+			? [
+					db.prepare(
+						"SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('split_payment_deadline_passed', '$') END",
+					),
+				]
+			: []),
 		db
 			.prepare(
 				`INSERT INTO shop_order_events

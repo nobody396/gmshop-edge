@@ -36,8 +36,9 @@ import { decimalToMinor, minorToDecimal } from "#/lib/units";
  * with the full total. Each part is its own Alipay trade in
  * payment_split_parts and is created only after the previous part is paid. The
  * parent succeeds — through the normal order-paid transition — only when every
- * part is paid. Paid parts of an order that expires or is cancelled first are
- * refunded automatically (payment_split_refunds) and reported to the owner.
+ * part is paid before the order's deadline. Paid parts of an order that
+ * expires or is cancelled first are refunded automatically
+ * (payment_split_refunds) and reported to the owner.
  */
 
 type ChannelLimitRow = {
@@ -50,6 +51,7 @@ type ChannelLimitRow = {
 };
 
 const maxAutomaticRefundAttempts = 3;
+const refundLeaseMs = 120_000;
 const retryableRefundCodes = new Set([
 	"20000",
 	"ACQ.SYSTEM_ERROR",
@@ -58,13 +60,22 @@ const retryableRefundCodes = new Set([
 ]);
 const reconcileWindowMs = 2 * 60 * 60_000;
 const settleWindowMs = 2 * 24 * 60 * 60_000;
+const checkBackoffMs = 5 * 60_000;
 
 export function channelUsesPaymentLimits(provider: string) {
 	return splitPaymentProviders.has(provider);
 }
 
-/** What the channel collected today (Beijing day): single payments + parts. */
-export async function channelCollectedTodayMinor(
+/**
+ * Best-effort estimate of a channel's use of today's limit (Beijing day). The
+ * daily limit is a customer-experience guard, not a money guard: Alipay
+ * enforces the real limit, and parts of a plan Alipay refuses are refunded on
+ * expiry. Counted: payments collected today by actual payment time (single
+ * payments and split parts), plus what is still unpaid on split plans that
+ * are open (started, not expired, not fully paid). Checked only when a
+ * payment or a plan's first part is created; later parts are not checked.
+ */
+export async function channelDailyUsageMinor(
 	db: D1Database,
 	channelId: string,
 	now = Date.now(),
@@ -79,9 +90,16 @@ export async function channelCollectedTodayMinor(
 			   AND succeeded_at>=? AND succeeded_at<?),0)
 			 + COALESCE((SELECT SUM(CAST(amount_minor AS INTEGER)) FROM payment_split_parts
 			  WHERE channel_id=? AND status='succeeded'
-			   AND succeeded_at>=? AND succeeded_at<?),0) AS total`,
+			   AND succeeded_at>=? AND succeeded_at<?),0)
+			 + COALESCE((SELECT SUM(CAST(part.amount_minor AS INTEGER))
+			  FROM payment_split_parts part
+			  JOIN payment_attempts pa ON pa.id=part.payment_attempt_id
+			  JOIN shop_orders o ON o.id=pa.order_id
+			  WHERE part.channel_id=? AND part.status<>'succeeded'
+			   AND pa.status IN ('created','pending')
+			   AND o.status='pending_payment' AND o.expires_at>?),0) AS total`,
 		)
-		.bind(channelId, from, to, channelId, from, to)
+		.bind(channelId, from, to, channelId, from, to, channelId, now)
 		.first<{ total: number | string | null }>();
 	return BigInt(String(row?.total ?? 0));
 }
@@ -95,14 +113,8 @@ export async function channelLimits(
 	const dailyMax = BigInt(channel.daily_max_minor || "0");
 	let dailyRemainingMinor: string | null = null;
 	if (dailyMax > 0n) {
-		const collected = await channelCollectedTodayMinor(
-			db,
-			channel.channel_id,
-			now,
-		);
-		dailyRemainingMinor = (
-			dailyMax > collected ? dailyMax - collected : 0n
-		).toString();
+		const used = await channelDailyUsageMinor(db, channel.channel_id, now);
+		dailyRemainingMinor = (dailyMax > used ? dailyMax - used : 0n).toString();
 	}
 	return {
 		perPaymentMaxMinor: channel.per_payment_max_minor || "0",
@@ -112,7 +124,7 @@ export async function channelLimits(
 	};
 }
 
-function limitError(reason: string) {
+export function limitError(reason: string) {
 	return new DomainError(
 		"payment_channel_limit_exceeded",
 		409,
@@ -120,6 +132,15 @@ function limitError(reason: string) {
 			? "This payment method has reached today's limit"
 			: "The amount exceeds this payment method's limit",
 	);
+}
+
+/** Single-payment cap used to split, or null when the channel never splits. */
+export function channelSplitCapMinor(channel: ChannelLimitRow) {
+	return channelUsesPaymentLimits(channel.provider) &&
+		Boolean(channel.split_enabled) &&
+		BigInt(channel.per_payment_max_minor || "0") > 0n
+		? channel.per_payment_max_minor
+		: null;
 }
 
 /**
@@ -161,7 +182,7 @@ export async function planChannelPayment(
 }
 
 /** Wallet top-ups are never split: they only have to fit the limits. */
-export async function assertSinglePaymentWithinLimits(
+export async function walletTopupLimits(
 	db: D1Database,
 	channelId: string,
 	amountMinor: string,
@@ -174,9 +195,9 @@ export async function assertSinglePaymentWithinLimits(
 		)
 		.bind(channelId)
 		.first<ChannelLimitRow>();
-	if (!channel) return;
+	if (!channel) return null;
 	const limits = await channelLimits(db, channel, now);
-	if (!limits) return;
+	if (!limits) return null;
 	const decision = paymentLimitDecision(limits, amountMinor, {
 		allowSplit: false,
 	});
@@ -213,6 +234,34 @@ export async function checkoutChannelLimits(
 		if (limits) result.set(channel.id, limits);
 	}
 	return result;
+}
+
+/**
+ * A channel has split payments that are not settled yet: a plan still being
+ * paid, a part not closed, or money on an unfinished plan not fully refunded.
+ * Its payment product must not change meanwhile.
+ */
+export async function channelHasUnsettledSplitPayments(
+	db: D1Database,
+	channelId: string,
+) {
+	const row = await db
+		.prepare(
+			`SELECT 1 AS open FROM payment_split_parts part
+			 JOIN payment_attempts pa ON pa.id = part.payment_attempt_id
+			 WHERE part.channel_id = ? AND (
+			  pa.status IN ('created','pending')
+			  OR part.status IN ('created','pending')
+			  OR (part.status IN ('expired','failed') AND part.provider_payment_id IS NOT NULL)
+			  OR (part.status = 'succeeded' AND pa.status <> 'succeeded'
+			   AND CAST(part.refunded_minor AS INTEGER) < CAST(part.amount_minor AS INTEGER))
+			  OR EXISTS (SELECT 1 FROM payment_split_refunds refund
+			   WHERE refund.part_id = part.id AND refund.status IN ('pending','failed','manual'))
+			 ) LIMIT 1`,
+		)
+		.bind(channelId)
+		.first();
+	return Boolean(row);
 }
 
 /**
@@ -335,19 +384,17 @@ async function createPartTrade(
 			.run();
 		return created;
 	} catch (error) {
-		const now = Date.now();
-		await db.batch([
-			db
-				.prepare(
-					`UPDATE payment_split_parts SET status='failed', failure_code=?, updated_at=?
-					 WHERE id=? AND status='pending'`,
-				)
-				.bind(
-					error instanceof DomainError ? error.code : "provider_create_failed",
-					now,
-					input.partId,
-				),
-		]);
+		await db
+			.prepare(
+				`UPDATE payment_split_parts SET status='failed', failure_code=?, updated_at=?
+				 WHERE id=? AND status='pending'`,
+			)
+			.bind(
+				error instanceof DomainError ? error.code : "provider_create_failed",
+				Date.now(),
+				input.partId,
+			)
+			.run();
 		throw error;
 	}
 }
@@ -393,18 +440,21 @@ async function loadParent(db: D1Database, attemptId: string) {
 /**
  * Completes the order once every part is paid, through the same order-paid
  * transition as a single payment (idempotent: one completion event per parent).
- * The order must still be awaiting payment; parts paid for an order that
- * expired meanwhile are refunded by settleSplitPayments instead.
+ * The order must still be awaiting payment and inside its deadline — checked
+ * again inside the order-paid batch — otherwise nothing is fulfilled and the
+ * paid parts are refunded by settleSplitPayments.
  */
 export async function completeSplitPaymentIfReady(
 	db: D1Database,
 	attemptId: string,
+	now = Date.now(),
 ): Promise<PaymentEventResult | null> {
 	const parent = await loadParent(db, attemptId);
 	if (
 		!parent ||
 		parent.status !== "pending" ||
 		parent.order_status !== "pending_payment" ||
+		parent.order_expires_at <= now ||
 		Number(parent.paid_parts) < Number(parent.split_part_count)
 	)
 		return null;
@@ -420,13 +470,15 @@ export async function completeSplitPaymentIfReady(
 			merchantOrderId: null,
 			payloadDigest: `split-complete:${parent.id}`,
 		},
-		{ requirePendingOrder: true },
+		{ requirePendingOrder: true, now },
 	);
 }
 
 /**
  * Makes sure the next unpaid part has a live QR on the parent attempt (the
- * order page shows the parent's checkout URL). Safe to call repeatedly.
+ * order page shows the parent's checkout URL). Safe to call repeatedly. The
+ * plan (part count, amounts, fee snapshot) was frozen when it was created; the
+ * daily limit is not checked again for later parts.
  */
 export async function ensureNextSplitPart(
 	db: D1Database,
@@ -439,7 +491,9 @@ export async function ensureNextSplitPart(
 		!parent ||
 		parent.status !== "pending" ||
 		parent.order_status !== "pending_payment" ||
-		parent.order_expires_at <= now
+		parent.order_expires_at <= now ||
+		// The channel's product is frozen while plans are open (see admin save).
+		!channelUsesPaymentLimits(parent.provider)
 	)
 		return null;
 	const next = await db
@@ -539,10 +593,12 @@ type PartContext = {
 	status: string;
 	checkout_url: string | null;
 	provider_payment_id: string;
+	provider_trade_no: string | null;
 	attempt_status: string;
 	currency: string;
 	currency_decimals: number;
 	order_status: string;
+	order_expires_at: number;
 };
 
 /**
@@ -554,13 +610,14 @@ export async function processSplitPartEvent(
 	channelId: string,
 	event: PaymentWebhookEvent,
 	fetcher: typeof fetch = fetch,
+	now = Date.now(),
 ): Promise<PaymentEventResult | null> {
 	const part = await db
 		.prepare(
 			`SELECT part.id, part.payment_attempt_id, part.part_index, part.part_count,
 			 part.amount_minor, part.status, part.checkout_url, part.provider_payment_id,
-			 pa.status AS attempt_status, pa.currency, pa.currency_decimals,
-			 o.status AS order_status
+			 part.provider_trade_no, pa.status AS attempt_status, pa.currency,
+			 pa.currency_decimals, o.status AS order_status, o.expires_at AS order_expires_at
 			 FROM payment_split_parts part
 			 JOIN payment_attempts pa ON pa.id=part.payment_attempt_id
 			 JOIN shop_orders o ON o.id=pa.order_id
@@ -569,7 +626,6 @@ export async function processSplitPartEvent(
 		.bind(channelId, event.providerPaymentId)
 		.first<PartContext>();
 	if (!part) return null;
-	const now = Date.now();
 	const receipt = (status: "processed" | "rejected") =>
 		paymentEventStatement(
 			db,
@@ -582,7 +638,7 @@ export async function processSplitPartEvent(
 	const run = async (
 		statements: D1PreparedStatement[],
 		status: string,
-	): Promise<{ duplicate: boolean; status: string }> => {
+	): Promise<PaymentEventResult> => {
 		const result = await runPaymentEventBatch(db, channelId, event, statements);
 		if (result.duplicate)
 			return presentPaymentReplayReceipt(result.duplicate, event);
@@ -604,23 +660,27 @@ export async function processSplitPartEvent(
 			],
 			"expired",
 		);
-	validatePartMoney(part, event);
+	validatePartPayment(part, event);
+	const tradeNo = event.providerTradeNo ?? null;
 	const late =
 		part.attempt_status !== "pending" ||
-		part.order_status !== "pending_payment";
+		part.order_status !== "pending_payment" ||
+		part.order_expires_at <= now;
 	if (late) {
-		// The money is real but the order is no longer payable: never fulfil.
-		// Record it for review; settleSplitPayments refunds it and alerts the owner.
+		// The money is real but the order can no longer be paid (expired,
+		// cancelled, or past its deadline even if expiry has not run yet): never
+		// fulfil. Recorded for review; settleSplitPayments refunds it and alerts.
 		return run(
 			[
 				receipt("rejected"),
 				db
 					.prepare(
 						`UPDATE payment_split_parts SET status='succeeded',
-						 succeeded_at=COALESCE(succeeded_at, ?), failure_code='late_payment', updated_at=?
+						 succeeded_at=COALESCE(succeeded_at, ?), failure_code='late_payment',
+						 provider_trade_no=COALESCE(provider_trade_no, ?), updated_at=?
 						 WHERE id=? AND status<>'succeeded'`,
 					)
-					.bind(now, now, part.id),
+					.bind(now, tradeNo, now, part.id),
 				db
 					.prepare(
 						`UPDATE payment_attempts SET failure_code='split_late_payment', updated_at=?
@@ -641,6 +701,7 @@ export async function processSplitPartEvent(
 							amountMinor: part.amount_minor,
 							orderStatus: part.order_status,
 							attemptStatus: part.attempt_status,
+							pastDeadline: part.order_expires_at <= now,
 						}),
 						now,
 					),
@@ -654,9 +715,10 @@ export async function processSplitPartEvent(
 			db
 				.prepare(
 					`UPDATE payment_split_parts SET status='succeeded', succeeded_at=?,
-					 failure_code=NULL, updated_at=? WHERE id=? AND status<>'succeeded'`,
+					 provider_trade_no=COALESCE(provider_trade_no, ?), failure_code=NULL,
+					 updated_at=? WHERE id=? AND status<>'succeeded'`,
 				)
-				.bind(now, now, part.id),
+				.bind(now, tradeNo, now, part.id),
 			// Hide the paid QR; the next part's QR replaces it.
 			db
 				.prepare(
@@ -671,20 +733,22 @@ export async function processSplitPartEvent(
 	const completed = await completeSplitPaymentIfReady(
 		db,
 		part.payment_attempt_id,
+		now,
 	).catch((error: unknown) => {
-		// Retried by the order page and settleSplitPayments.
+		// Retried by the order page and settleSplitPayments; a deadline miss
+		// leaves the order to expire and be refunded.
 		logSplitFailure("split_completion_failed", part.payment_attempt_id, error);
 		return null;
 	});
 	if (completed) return { duplicate: false, status: completed.status };
-	await ensureNextSplitPart(db, part.payment_attempt_id, fetcher).catch(
+	await ensureNextSplitPart(db, part.payment_attempt_id, fetcher, now).catch(
 		(error: unknown) =>
 			logSplitFailure("split_next_part_failed", part.payment_attempt_id, error),
 	);
 	return recorded;
 }
 
-function validatePartMoney(part: PartContext, event: PaymentWebhookEvent) {
+function validatePartPayment(part: PartContext, event: PaymentWebhookEvent) {
 	let decimalMinor: string | null = null;
 	try {
 		decimalMinor =
@@ -704,7 +768,11 @@ function validatePartMoney(part: PartContext, event: PaymentWebhookEvent) {
 		(event.currency != null &&
 			event.currency.toUpperCase() !== part.currency.toUpperCase()) ||
 		(event.merchantOrderId != null &&
-			event.merchantOrderId !== part.provider_payment_id)
+			event.merchantOrderId !== part.provider_payment_id) ||
+		// Once known, the Alipay trade number of a part never changes.
+		(part.provider_trade_no != null &&
+			event.providerTradeNo != null &&
+			event.providerTradeNo !== part.provider_trade_no)
 	)
 		throw new DomainError(
 			"payment_amount_mismatch",
@@ -746,7 +814,7 @@ export async function resumeSplitPayment(
 		minIdleMs: 3_000,
 		limit: 1,
 	});
-	const completed = await completeSplitPaymentIfReady(db, parent.id).catch(
+	const completed = await completeSplitPaymentIfReady(db, parent.id, now).catch(
 		(error: unknown) => {
 			logSplitFailure("split_completion_failed", parent.id, error);
 			return null;
@@ -758,6 +826,58 @@ export async function resumeSplitPayment(
 				logSplitFailure("split_next_part_failed", parent.id, error),
 		);
 	return { split: true as const, completed: Boolean(completed) };
+}
+
+type CheckablePart = {
+	id: string;
+	channel_id: string;
+	provider_payment_id: string;
+	amount_minor: string;
+	currency: string;
+	provider: string;
+	credential_encrypted: string | null;
+};
+
+/**
+ * A provider query that failed: back off this part so other candidates (and
+ * other channels) get their turn in the next bounded scan.
+ */
+function deferPartCheck(db: D1Database, partId: string, now: number) {
+	return db
+		.prepare(
+			"UPDATE payment_split_parts SET next_check_at=?, updated_at=? WHERE id=? AND status<>'succeeded'",
+		)
+		.bind(now + checkBackoffMs, now, partId)
+		.run();
+}
+
+/**
+ * Records a part the provider reports as paid. The query result must name the
+ * same trade and carry the paid amount; anything else is left for review.
+ */
+async function recordQueriedPayment(
+	db: D1Database,
+	part: CheckablePart,
+	query: Awaited<
+		ReturnType<ReturnType<typeof getPaymentProvider>["queryPayment"]>
+	>,
+) {
+	if (query.amountMinor == null)
+		throw new DomainError(
+			"payment_provider_invalid_response",
+			502,
+			"Paid trade without an amount",
+		);
+	await processShopPaymentEvent(db, part.channel_id, {
+		providerEventId: `payment-reconcile:${part.channel_id}:${part.id}`,
+		providerPaymentId: part.provider_payment_id,
+		type: "payment_succeeded",
+		amountMinor: query.amountMinor,
+		currency: query.currency ?? part.currency,
+		merchantOrderId: part.provider_payment_id,
+		providerTradeNo: query.providerTradeNo ?? null,
+		payloadDigest: `payment-reconcile:${part.id}`,
+	});
 }
 
 /** Queries pending parts with the provider; a paid part goes through the event path. */
@@ -777,24 +897,18 @@ async function reconcileSplitParts(
 			 WHERE part.status='pending' AND part.provider_payment_id IS NOT NULL
 			  AND (? IS NULL OR part.payment_attempt_id=?)
 			  AND part.created_at>=? AND part.updated_at<=?
-			 ORDER BY part.updated_at, part.id LIMIT ?`,
+			  AND (part.next_check_at IS NULL OR part.next_check_at<=?)
+			 ORDER BY COALESCE(part.next_check_at, 0), part.updated_at, part.id LIMIT ?`,
 		)
 		.bind(
 			scope.attemptId ?? null,
 			scope.attemptId ?? null,
 			now - reconcileWindowMs,
 			now - scope.minIdleMs,
+			now,
 			scope.limit,
 		)
-		.all<{
-			id: string;
-			channel_id: string;
-			provider_payment_id: string;
-			amount_minor: string;
-			currency: string;
-			provider: string;
-			credential_encrypted: string | null;
-		}>();
+		.all<CheckablePart>();
 	let succeeded = 0;
 	for (const part of parts.results) {
 		try {
@@ -805,25 +919,18 @@ async function reconcileSplitParts(
 				fetcher,
 			);
 			if (query.status === "succeeded") {
-				await processShopPaymentEvent(db, part.channel_id, {
-					providerEventId: `payment-reconcile:${part.channel_id}:${part.id}`,
-					providerPaymentId: part.provider_payment_id,
-					type: "payment_succeeded",
-					amountMinor: query.amountMinor ?? part.amount_minor,
-					currency: query.currency ?? part.currency,
-					merchantOrderId: null,
-					payloadDigest: `payment-reconcile:${part.id}`,
-				});
+				await recordQueriedPayment(db, part, query);
 				succeeded += 1;
 				continue;
 			}
 			await db
 				.prepare(
-					"UPDATE payment_split_parts SET updated_at=? WHERE id=? AND status='pending'",
+					"UPDATE payment_split_parts SET updated_at=?, next_check_at=NULL WHERE id=? AND status='pending'",
 				)
 				.bind(now, part.id)
 				.run();
 		} catch (error) {
+			await deferPartCheck(db, part.id, now);
 			logSplitFailure("split_part_reconcile_failed", part.id, error);
 		}
 	}
@@ -847,16 +954,16 @@ export async function settleSplitPayments(
 		.prepare(
 			`SELECT pa.id FROM payment_attempts pa JOIN shop_orders o ON o.id=pa.order_id
 			 WHERE pa.split_part_count IS NOT NULL AND pa.status='pending'
-			  AND o.status='pending_payment' AND pa.created_at>=?
+			  AND o.status='pending_payment' AND o.expires_at>? AND pa.created_at>=?
 			  AND (SELECT COUNT(*) FROM payment_split_parts part
 			   WHERE part.payment_attempt_id=pa.id AND part.status='succeeded') = pa.split_part_count
 			 LIMIT 20`,
 		)
-		.bind(now - settleWindowMs)
+		.bind(now, now - settleWindowMs)
 		.all<{ id: string }>();
 	let completed = 0;
 	for (const row of ready.results) {
-		const result = await completeSplitPaymentIfReady(db, row.id).catch(
+		const result = await completeSplitPaymentIfReady(db, row.id, now).catch(
 			(error: unknown) => {
 				logSplitFailure("split_completion_failed", row.id, error);
 				return null;
@@ -909,18 +1016,11 @@ async function closeDeadParts(
 			 WHERE part.status IN ('pending','expired','failed')
 			  AND part.provider_payment_id IS NOT NULL AND ${deadPartCondition}
 			  AND part.created_at>=? AND part.updated_at<=?
-			 ORDER BY part.updated_at, part.id LIMIT 20`,
+			  AND (part.next_check_at IS NULL OR part.next_check_at<=?)
+			 ORDER BY COALESCE(part.next_check_at, 0), part.updated_at, part.id LIMIT 20`,
 		)
-		.bind(now - settleWindowMs, now - 50_000)
-		.all<{
-			id: string;
-			channel_id: string;
-			provider_payment_id: string;
-			amount_minor: string;
-			currency: string;
-			provider: string;
-			credential_encrypted: string | null;
-		}>();
+		.bind(now - settleWindowMs, now - 50_000, now)
+		.all<CheckablePart>();
 	let closed = 0;
 	for (const part of parts.results) {
 		try {
@@ -932,15 +1032,7 @@ async function closeDeadParts(
 			);
 			if (query.status === "succeeded") {
 				// Paid at the last moment: recorded as a late payment and refunded below.
-				await processShopPaymentEvent(db, part.channel_id, {
-					providerEventId: `payment-reconcile:${part.channel_id}:${part.id}`,
-					providerPaymentId: part.provider_payment_id,
-					type: "payment_succeeded",
-					amountMinor: query.amountMinor ?? part.amount_minor,
-					currency: query.currency ?? part.currency,
-					merchantOrderId: null,
-					payloadDigest: `payment-reconcile:${part.id}`,
-				});
+				await recordQueriedPayment(db, part, query);
 				continue;
 			}
 			const result =
@@ -951,21 +1043,20 @@ async function closeDeadParts(
 							part.provider_payment_id,
 							fetcher,
 						);
+			if (result !== "closed") {
+				await deferPartCheck(db, part.id, now);
+				continue;
+			}
 			await db
 				.prepare(
-					`UPDATE payment_split_parts SET status=?, updated_at=?
+					`UPDATE payment_split_parts SET status='closed', next_check_at=NULL, updated_at=?
 					 WHERE id=? AND status IN ('pending','expired','failed')`,
-				)
-				.bind(result === "closed" ? "closed" : "expired", now, part.id)
-				.run();
-			if (result === "closed") closed += 1;
-		} catch (error) {
-			await db
-				.prepare(
-					"UPDATE payment_split_parts SET updated_at=? WHERE id=? AND status<>'succeeded'",
 				)
 				.bind(now, part.id)
 				.run();
+			closed += 1;
+		} catch (error) {
+			await deferPartCheck(db, part.id, now);
 			logSplitFailure("split_part_close_failed", part.id, error);
 		}
 	}
@@ -1033,16 +1124,24 @@ type PartRefundRow = {
 	status: string;
 	attempt_count: number;
 	provider_payment_id: string;
+	provider_trade_no: string | null;
+	refunded_minor: string;
 	provider: string;
 	credential_encrypted: string | null;
 };
 
+type PartRefundOutcome = "succeeded" | "uncertain" | "manual" | "skipped";
+
 /**
  * Refunds one part (one payment_split_refunds row). The row id is Alipay's
- * out_request_no, so retrying the same row never refunds twice. A provider
- * refusal needs a human at once; network errors are retried up to maxAttempts.
+ * out_request_no, so retrying the same row never refunds twice. The claim is a
+ * lease (attempt_count + next_attempt_at); results are written back only for
+ * the attempt that holds it, and only a pending/failed → succeeded transition
+ * adds to the part's refunded amount. A provider refusal or a response that
+ * does not match the request needs a human at once; network and system errors
+ * stay "uncertain" and are retried with the same out_request_no.
  */
-async function runPartRefund(
+export async function runPartRefund(
 	db: D1Database,
 	rowId: string,
 	attemptCount: number,
@@ -1052,21 +1151,29 @@ async function runPartRefund(
 		reason: string;
 		maxAttempts: number;
 	},
-): Promise<"succeeded" | "failed" | "manual" | "skipped"> {
+): Promise<PartRefundOutcome> {
+	const attempt = attemptCount + 1;
 	const claim = await db
 		.prepare(
-			`UPDATE payment_split_refunds SET attempt_count=attempt_count+1,
-			 next_attempt_at=?, updated_at=? WHERE id=? AND attempt_count=?
-			 AND status IN ('pending','failed')`,
+			`UPDATE payment_split_refunds SET attempt_count=?, next_attempt_at=?, updated_at=?
+			 WHERE id=? AND attempt_count=? AND status IN ('pending','failed')
+			  AND (next_attempt_at IS NULL OR next_attempt_at<=?)`,
 		)
-		.bind(options.now + 120_000, options.now, rowId, attemptCount)
+		.bind(
+			attempt,
+			options.now + refundLeaseMs,
+			options.now,
+			rowId,
+			attemptCount,
+			options.now,
+		)
 		.run();
 	if (Number(claim.meta.changes ?? 0) !== 1) return "skipped";
 	const row = await db
 		.prepare(
 			`SELECT refund.id, refund.part_id, refund.amount_minor, refund.status,
-			 refund.attempt_count, part.provider_payment_id, pc.provider,
-			 pc.credential_encrypted
+			 refund.attempt_count, part.provider_payment_id, part.provider_trade_no,
+			 part.refunded_minor, pc.provider, pc.credential_encrypted
 			 FROM payment_split_refunds refund
 			 JOIN payment_split_parts part ON part.id=refund.part_id
 			 JOIN payment_channels pc ON pc.id=part.channel_id
@@ -1077,6 +1184,7 @@ async function runPartRefund(
 	if (!row) return "skipped";
 	let result: PaymentRefund | null = null;
 	let failureCode = "refund_request_failed";
+	let reconciliation = false;
 	try {
 		const credential = await loadCredential(db, row.credential_encrypted);
 		result = await getPaymentProvider(row.provider).refundPayment(
@@ -1085,6 +1193,10 @@ async function runPartRefund(
 				providerPaymentId: row.provider_payment_id,
 				amountMinor: row.amount_minor,
 				reason: options.reason,
+				expectedRefundedTotalMinor: (
+					BigInt(row.refunded_minor) + BigInt(row.amount_minor)
+				).toString(),
+				providerTradeNo: row.provider_trade_no,
 			},
 			credential,
 			options.fetcher,
@@ -1092,16 +1204,20 @@ async function runPartRefund(
 	} catch (error) {
 		failureCode =
 			error instanceof DomainError ? error.code : "refund_request_failed";
+		reconciliation =
+			error instanceof DomainError &&
+			error.code === "payment_refund_reconciliation_required";
 	}
 	const now = Date.now();
 	if (result?.status === "succeeded") {
-		await db.batch([
+		const written = await db.batch([
 			db
 				.prepare(
 					`UPDATE payment_split_refunds SET status='succeeded', failure_code=NULL,
-					 next_attempt_at=NULL, completed_at=?, updated_at=? WHERE id=? AND status<>'succeeded'`,
+					 next_attempt_at=NULL, completed_at=?, updated_at=?
+					 WHERE id=? AND attempt_count=? AND status IN ('pending','failed')`,
 				)
-				.bind(now, now, row.id),
+				.bind(now, now, row.id, attempt),
 			db
 				.prepare(
 					`UPDATE payment_split_parts SET
@@ -1112,7 +1228,8 @@ async function runPartRefund(
 			db
 				.prepare(
 					`INSERT INTO audit_logs (id, action, target_type, target_id, after, created_at)
-					 VALUES (?, 'payment.split_refund_succeeded', 'payment_split_part', ?, ?, ?)`,
+					 SELECT ?, 'payment.split_refund_succeeded', 'payment_split_part', ?, ?, ?
+					 WHERE EXISTS (SELECT 1 FROM payment_split_refunds WHERE id=? AND status='succeeded' AND attempt_count=?)`,
 				)
 				.bind(
 					crypto.randomUUID(),
@@ -1122,22 +1239,26 @@ async function runPartRefund(
 						amountMinor: row.amount_minor,
 					}),
 					now,
+					row.id,
+					attempt,
 				),
 		]);
-		return "succeeded";
+		return Number(written[0]?.meta.changes ?? 0) === 1
+			? "succeeded"
+			: "skipped";
 	}
 	if (result) failureCode = result.failureCode ?? result.status;
-	// Alipay asks to retry system errors with the same out_request_no.
 	const retryable =
-		result === null ||
-		result.status === "pending" ||
-		retryableRefundCodes.has(failureCode);
-	const manual = !retryable || row.attempt_count >= options.maxAttempts;
-	await db.batch([
+		!reconciliation &&
+		(result === null ||
+			result.status === "pending" ||
+			retryableRefundCodes.has(failureCode));
+	const manual = !retryable || attempt >= options.maxAttempts;
+	const written = await db.batch([
 		db
 			.prepare(
 				`UPDATE payment_split_refunds SET status=?, failure_code=?, next_attempt_at=?,
-				 updated_at=? WHERE id=?`,
+				 updated_at=? WHERE id=? AND attempt_count=? AND status IN ('pending','failed')`,
 			)
 			.bind(
 				manual ? "manual" : "failed",
@@ -1145,11 +1266,13 @@ async function runPartRefund(
 				manual ? null : now + 300_000,
 				now,
 				row.id,
+				attempt,
 			),
 		db
 			.prepare(
 				`INSERT INTO audit_logs (id, action, target_type, target_id, after, created_at)
-				 VALUES (?, 'payment.split_refund_failed', 'payment_split_part', ?, ?, ?)`,
+				 SELECT ?, 'payment.split_refund_failed', 'payment_split_part', ?, ?, ?
+				 WHERE changes()=1`,
 			)
 			.bind(
 				crypto.randomUUID(),
@@ -1163,7 +1286,8 @@ async function runPartRefund(
 				now,
 			),
 	]);
-	return manual ? "manual" : "failed";
+	if (Number(written[0]?.meta.changes ?? 0) !== 1) return "skipped";
+	return manual ? "manual" : "uncertain";
 }
 
 async function alertSplitRefunds(
@@ -1202,7 +1326,7 @@ async function alertSplitRefunds(
 		const text =
 			row.status === "succeeded"
 				? `【拆单付款已自动退款】订单 ${row.order_number} 没在时限内付完（订单状态 ${row.order_status}），已把${part} ${amount} 原路退回支付宝。没有发货。\n支付宝商户订单号：${row.provider_payment_id}`
-				: `【拆单退款失败·需人工处理】订单 ${row.order_number} 没在时限内付完，${part} ${amount} 自动原路退款失败（${row.failure_code ?? "unknown"}）。没有发货。请到支付宝商家后台按商户订单号 ${row.provider_payment_id} 手动退款。`;
+				: `【拆单退款失败·需人工处理】订单 ${row.order_number} 没在时限内付完，${part} ${amount} 自动原路退款失败（${row.failure_code ?? "unknown"}）。没有发货。请到支付宝商家后台按商户订单号 ${row.provider_payment_id} 手动退款，退完在后台「支付渠道 → 拆单退款待人工处理」点「已人工退款」填支付宝退款单号结案。`;
 		let delivered = false;
 		try {
 			delivered = Boolean(
@@ -1227,6 +1351,14 @@ async function alertSplitRefunds(
  * Admin refund of a paid split order: the refund is spread over the paid parts
  * (latest part first) and each share is refunded on its own Alipay trade.
  * Returns null when the refund's payment is not a split payment.
+ *
+ * - every share refunded → succeeded;
+ * - any share uncertain (network/system error) → pending: the parent refund
+ *   stays processing and the order refunding; retried with the same ids;
+ * - nothing refunded and every share refused → failed (nothing moved);
+ * - some shares refunded, others refused → throws
+ *   `payment_refund_reconciliation_required` (manual confirmation); never
+ *   reported as "not refunded", so the order is never restored to paid.
  */
 export async function refundSplitPayment(
 	db: D1Database,
@@ -1309,46 +1441,181 @@ export async function refundSplitPayment(
 			),
 		);
 	}
-	const rows = await db
-		.prepare(
-			`SELECT refund.id, refund.status, refund.attempt_count, refund.failure_code
-			 FROM payment_split_refunds refund
-			 JOIN payment_split_parts part ON part.id=refund.part_id
-			 WHERE refund.refund_id=? ORDER BY part.part_index DESC`,
-		)
-		.bind(refund.id)
-		.all<{
-			id: string;
-			status: string;
-			attempt_count: number;
-			failure_code: string | null;
-		}>();
-	let failureCode: string | null = null;
+	const load = () =>
+		db
+			.prepare(
+				`SELECT refund.id, refund.status, refund.attempt_count, refund.failure_code
+				 FROM payment_split_refunds refund
+				 JOIN payment_split_parts part ON part.id=refund.part_id
+				 WHERE refund.refund_id=? ORDER BY part.part_index DESC`,
+			)
+			.bind(refund.id)
+			.all<{
+				id: string;
+				status: string;
+				attempt_count: number;
+				failure_code: string | null;
+			}>();
+	const rows = await load();
+	const anySucceeded = rows.results.some((row) => row.status === "succeeded");
 	for (const row of rows.results) {
 		if (row.status === "succeeded") continue;
-		if (row.status === "manual")
-			// The admin retried: give the part another chance.
+		if (row.status === "manual" && !anySucceeded)
+			// An admin retry of a refund that moved no money: try the refused shares again.
 			await db
 				.prepare(
-					"UPDATE payment_split_refunds SET status='failed', updated_at=? WHERE id=? AND status='manual'",
+					"UPDATE payment_split_refunds SET status='failed', next_attempt_at=NULL, updated_at=? WHERE id=? AND status='manual'",
 				)
 				.bind(Date.now(), row.id)
 				.run();
-		const status = await runPartRefund(db, row.id, row.attempt_count, {
+		if (row.status === "manual" && anySucceeded) continue;
+		await runPartRefund(db, row.id, row.attempt_count, {
 			fetcher,
 			now: Date.now(),
 			reason: refund.reason,
 			maxAttempts: Number.MAX_SAFE_INTEGER,
 		});
-		if (status !== "succeeded") {
-			const current = await db
-				.prepare("SELECT failure_code FROM payment_split_refunds WHERE id=?")
-				.bind(row.id)
-				.first<{ failure_code: string | null }>();
-			failureCode = current?.failure_code ?? "split_refund_failed";
-		}
 	}
-	return failureCode
-		? { providerRefundId, status: "failed", failureCode }
-		: { providerRefundId, status: "succeeded", failureCode: null };
+	const after = (await load()).results;
+	const succeeded = after.filter((row) => row.status === "succeeded").length;
+	if (succeeded === after.length)
+		return { providerRefundId, status: "succeeded", failureCode: null };
+	const uncertain = after.some((row) =>
+		["pending", "failed"].includes(row.status),
+	);
+	if (uncertain)
+		return {
+			providerRefundId,
+			status: "pending",
+			failureCode: "split_refund_in_progress",
+		};
+	if (succeeded === 0)
+		return {
+			providerRefundId,
+			status: "failed",
+			failureCode:
+				after.find((row) => row.failure_code)?.failure_code ??
+				"split_refund_failed",
+		};
+	throw new DomainError(
+		"payment_refund_reconciliation_required",
+		409,
+		"Part of the split refund was refused; confirm the rest manually",
+	);
+}
+
+/**
+ * Closes split refund shares that were refunded by hand in the Alipay merchant
+ * console. `refundRowIds` limits it to given rows; `refundId` to one admin refund.
+ * Each share moves to succeeded once and adds to its part's refunded amount.
+ */
+export async function completeSplitRefundsManually(
+	db: D1Database,
+	input: {
+		rowIds?: string[];
+		refundId?: string;
+		reference: string;
+		actorUserId: string;
+	},
+) {
+	const reference = input.reference.trim();
+	if (!reference || reference.length > 200)
+		throw new DomainError(
+			"refund_reference_invalid",
+			400,
+			"External refund reference is required",
+		);
+	const rows = await db
+		.prepare(
+			`SELECT id, part_id, amount_minor FROM payment_split_refunds
+			 WHERE status IN ('pending','failed','manual')
+			  AND (? IS NULL OR refund_id = ?)
+			  AND (? IS NULL OR id IN (SELECT value FROM json_each(?)))`,
+		)
+		.bind(
+			input.refundId ?? null,
+			input.refundId ?? null,
+			input.rowIds ? "rows" : null,
+			JSON.stringify(input.rowIds ?? []),
+		)
+		.all<{ id: string; part_id: string; amount_minor: string }>();
+	const now = Date.now();
+	let completed = 0;
+	for (const row of rows.results) {
+		const results = await db.batch([
+			db
+				.prepare(
+					`UPDATE payment_split_refunds SET status='succeeded', failure_code=NULL,
+					 next_attempt_at=NULL, completed_at=?, manual_reference=?, completed_by=?,
+					 updated_at=? WHERE id=? AND status IN ('pending','failed','manual')`,
+				)
+				.bind(now, reference, input.actorUserId, now, row.id),
+			db
+				.prepare(
+					`UPDATE payment_split_parts SET
+					 refunded_minor=CAST(CAST(refunded_minor AS INTEGER)+CAST(? AS INTEGER) AS TEXT),
+					 updated_at=? WHERE id=? AND changes()=1`,
+				)
+				.bind(row.amount_minor, now, row.part_id),
+			db
+				.prepare(
+					`INSERT INTO audit_logs (id, actor_user_id, action, target_type, target_id, after, created_at)
+					 SELECT ?, ?, 'payment.split_refund_manually_completed', 'payment_split_part', ?, ?, ?
+					 WHERE EXISTS (SELECT 1 FROM payment_split_refunds WHERE id=? AND status='succeeded' AND completed_at=?)`,
+				)
+				.bind(
+					crypto.randomUUID(),
+					input.actorUserId,
+					row.part_id,
+					JSON.stringify({
+						refundRowId: row.id,
+						amountMinor: row.amount_minor,
+						reference,
+					}),
+					now,
+					row.id,
+					now,
+				),
+		]);
+		completed += Number(results[0]?.meta.changes ?? 0);
+	}
+	return { completed };
+}
+
+/** Split refund shares waiting for a human (admin list). */
+export async function listManualSplitRefunds(db: D1Database) {
+	const rows = await db
+		.prepare(
+			`SELECT refund.id, refund.amount_minor, refund.status, refund.failure_code,
+			 refund.reason, refund.created_at, part.part_index, part.part_count,
+			 part.provider_payment_id, o.order_number
+			 FROM payment_split_refunds refund
+			 JOIN payment_split_parts part ON part.id=refund.part_id
+			 JOIN payment_attempts pa ON pa.id=part.payment_attempt_id
+			 JOIN shop_orders o ON o.id=pa.order_id
+			 WHERE refund.status='manual' AND refund.refund_id IS NULL
+			 ORDER BY refund.created_at, refund.id LIMIT 100`,
+		)
+		.all<{
+			id: string;
+			amount_minor: string;
+			status: string;
+			failure_code: string | null;
+			reason: string;
+			created_at: number;
+			part_index: number;
+			part_count: number;
+			provider_payment_id: string;
+			order_number: string;
+		}>();
+	return rows.results.map((row) => ({
+		id: row.id,
+		amountMinor: row.amount_minor,
+		failureCode: row.failure_code,
+		createdAt: Number(row.created_at),
+		partIndex: Number(row.part_index),
+		partCount: Number(row.part_count),
+		merchantTradeNo: row.provider_payment_id,
+		orderNumber: row.order_number,
+	}));
 }

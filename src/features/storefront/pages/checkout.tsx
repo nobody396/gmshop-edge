@@ -52,8 +52,11 @@ import {
 } from "#/features/exchange-rates/currency-context";
 import { readReferral } from "#/features/promotions/referral-storage";
 import { quotePromotionFn } from "#/features/promotions/server/functions";
-import { paymentSurchargeAmount } from "#/features/shop-payments/fees";
-import { paymentLimitDecision } from "#/features/shop-payments/split";
+import {
+	channelPaymentAmount,
+	limitsSplitCapMinor,
+	paymentLimitDecision,
+} from "#/features/shop-payments/split";
 import {
 	useLocalCart,
 	writeLocalCart,
@@ -382,14 +385,14 @@ export function StorefrontCheckoutPage() {
 		const remainder = afterDiscount - used;
 		return fixedPrices || remainder === 0n
 			? remainder
-			: remainder +
-					BigInt(
-						paymentSurchargeAmount(
-							remainder.toString(),
-							channel.feeBps,
-							channel.fixedFeeMinor,
-						),
-					);
+			: BigInt(
+					channelPaymentAmount(
+						remainder.toString(),
+						channel.feeBps,
+						channel.fixedFeeMinor,
+						limitsSplitCapMinor(channel.limits),
+					),
+				);
 	};
 	const wallet = useQuery({
 		queryKey: ["wallet", session.data?.user.id],
@@ -414,15 +417,17 @@ export function StorefrontCheckoutPage() {
 				: orderDue
 			: 0n;
 	const externalDue = orderDue - balanceUsed;
+	// Same calculation as the server, including split payments' per-part fees.
 	const surcharge =
 		selectedChannel && !selectedChannelHasFixedPrices && externalDue > 0n
 			? BigInt(
-					paymentSurchargeAmount(
+					channelPaymentAmount(
 						externalDue.toString(),
 						selectedChannel.feeBps,
 						selectedChannel.fixedFeeMinor,
+						limitsSplitCapMinor(selectedChannel.limits),
 					),
-				)
+				) - externalDue
 			: 0n;
 	const payableTotal = externalDue + surcharge;
 	// Alipay QR limits: hide a channel this amount cannot be paid through

@@ -72,6 +72,8 @@ export type PaymentQuery = {
 	status: "pending" | "succeeded" | "failed" | "expired";
 	amountMinor: string | null;
 	currency: string | null;
+	/** Provider's own trade number (Alipay trade_no), when it reports one. */
+	providerTradeNo?: string | null;
 };
 
 export type RefundPaymentInput = {
@@ -79,6 +81,10 @@ export type RefundPaymentInput = {
 	providerPaymentId: string;
 	amountMinor: string;
 	reason: string;
+	/** Total refunded on the trade once this refund succeeds (when known). */
+	expectedRefundedTotalMinor?: string;
+	/** Provider trade number recorded for the payment (when known). */
+	providerTradeNo?: string | null;
 };
 
 export type PaymentRefund = {
@@ -99,6 +105,8 @@ export type PaymentWebhookEvent = {
 	amountDecimal?: string | null;
 	currency: string | null;
 	merchantOrderId?: string | null;
+	/** Provider's own trade number (Alipay trade_no), when it reports one. */
+	providerTradeNo?: string | null;
 	payloadDigest: string;
 };
 

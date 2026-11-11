@@ -9,7 +9,10 @@ import {
 } from "#/features/promotions/server/refunds";
 import type { ShopOrderStatus } from "#/features/shop-orders/schema";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
-import { refundSplitPayment } from "#/features/shop-payments/server/split";
+import {
+	completeSplitRefundsManually,
+	refundSplitPayment,
+} from "#/features/shop-payments/server/split";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret } from "#/lib/secrets";
 import { createAuditStatement } from "#/server/audit";
@@ -703,8 +706,15 @@ export async function completeManualShopRefund(
 		throw new DomainError("refund_not_found", 404, "Refund not found");
 	if (refund.status === "succeeded")
 		return { id: refund.id, status: "succeeded" as const, duplicate: true };
+	// Split payments refund automatically but may need a human when only some
+	// parts could be refunded; their remaining shares are closed here too.
+	const splitRefund = await db
+		.prepare("SELECT 1 FROM payment_split_refunds WHERE refund_id = ? LIMIT 1")
+		.bind(refund.id)
+		.first();
 	if (
-		getPaymentProvider(refund.provider).refundMode !== "manual" ||
+		(getPaymentProvider(refund.provider).refundMode !== "manual" &&
+			!splitRefund) ||
 		refund.status !== "processing" ||
 		refund.failure_code !== "manual_action_required"
 	)
@@ -737,6 +747,12 @@ export async function completeManualShopRefund(
 			duplicate: true,
 		};
 	}
+	if (splitRefund)
+		await completeSplitRefundsManually(db, {
+			refundId: refund.id,
+			reference: normalizedReference,
+			actorUserId: context.actorUserId,
+		});
 	return finalizeRefund(
 		db,
 		refund,

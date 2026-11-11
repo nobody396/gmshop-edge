@@ -3,6 +3,7 @@ import { PaymentCreationError } from "#/features/shop-payments/creation-error";
 import {
 	alipayCredentialSchema,
 	type PaymentProviderAdapter,
+	type RefundPaymentInput,
 } from "#/features/shop-payments/provider";
 import { sha256Hex } from "#/features/shop-payments/signature";
 import { DomainError } from "#/lib/domain-error";
@@ -103,18 +104,33 @@ export function createAlipayProvider(
 					amountMinor: null,
 					currency: "CNY",
 				};
+			const status =
+				response.trade_status === "TRADE_SUCCESS" ||
+				response.trade_status === "TRADE_FINISHED"
+					? "succeeded"
+					: response.trade_status === "TRADE_CLOSED"
+						? "expired"
+						: "pending";
+			// A signed answer is only evidence for the trade we asked about, with
+			// the amount it reports: never infer a paid amount.
+			if (
+				status === "succeeded" &&
+				(response.out_trade_no !== providerPaymentId ||
+					!response.total_amount ||
+					!/^\d+(?:\.\d{1,2})?$/.test(response.total_amount))
+			)
+				throw new DomainError(
+					"payment_provider_invalid_response",
+					502,
+					"Alipay query does not describe the requested trade",
+				);
 			return {
-				status:
-					response.trade_status === "TRADE_SUCCESS" ||
-					response.trade_status === "TRADE_FINISHED"
-						? "succeeded"
-						: response.trade_status === "TRADE_CLOSED"
-							? "expired"
-							: "pending",
+				status,
 				amountMinor: response.total_amount
 					? decimalToCnyMinor(response.total_amount)
 					: null,
 				currency: "CNY",
+				providerTradeNo: response.trade_no ?? null,
 			};
 		},
 		async parseWebhook(request, rawCredential) {
@@ -156,6 +172,7 @@ export function createAlipayProvider(
 				amountMinor: decimalToCnyMinor(event.total_amount),
 				currency: "CNY",
 				merchantOrderId: event.out_trade_no,
+				providerTradeNo: event.trade_no,
 				payloadDigest: await sha256Hex(body),
 			};
 		},
@@ -175,6 +192,8 @@ export function createAlipayProvider(
 				refundResponseSchema,
 				fetcher,
 			);
+			if (response.code === "10000")
+				assertRefundResponseMatches(response, input);
 			return {
 				providerRefundId: `${input.providerPaymentId}:${outRequestNo}`,
 				status: response.code === "10000" ? "succeeded" : "failed",
@@ -584,6 +603,36 @@ function alipayTimestamp(date = new Date()) {
 		parts.map((part) => [part.type, part.value]),
 	);
 	return `${value.year}-${value.month}-${value.day} ${value.hour}:${value.minute}:${value.second}`;
+}
+
+/**
+ * A successful refund answer must name the refunded trade and report the
+ * trade's cumulative refunded amount (refund_fee). Anything else means money
+ * may or may not have moved: hand it to manual reconciliation.
+ */
+function assertRefundResponseMatches(
+	response: z.output<typeof refundResponseSchema>,
+	input: RefundPaymentInput,
+) {
+	const refunded =
+		response.refund_fee && /^\d+(?:\.\d{1,2})?$/.test(response.refund_fee)
+			? BigInt(decimalToCnyMinor(response.refund_fee))
+			: null;
+	const matches =
+		response.out_trade_no === input.providerPaymentId &&
+		refunded !== null &&
+		(input.expectedRefundedTotalMinor != null
+			? refunded === BigInt(input.expectedRefundedTotalMinor)
+			: refunded >= BigInt(input.amountMinor)) &&
+		(input.providerTradeNo == null ||
+			response.trade_no == null ||
+			response.trade_no === input.providerTradeNo);
+	if (!matches)
+		throw new DomainError(
+			"payment_refund_reconciliation_required",
+			409,
+			"Alipay refund answer does not match the request",
+		);
 }
 
 function decimalToCnyMinor(value: string) {

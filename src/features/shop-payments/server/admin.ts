@@ -14,12 +14,22 @@ import {
 } from "#/features/shop-payments/provider";
 import { getPaymentProvider } from "#/features/shop-payments/providers";
 import {
+	manualSplitRefundSchema,
 	paymentChannelEnabledSchema,
 	paymentChannelIdSchema,
 	paymentChannelInputSchema,
 	paymentChannelListSchema,
 	paymentChannelOrderSchema,
 } from "#/features/shop-payments/schema";
+import {
+	assertPriceSource,
+	priceLinkStatements,
+} from "#/features/shop-payments/server/price-link";
+import {
+	channelHasUnsettledSplitPayments,
+	completeSplitRefundsManually,
+	listManualSplitRefunds,
+} from "#/features/shop-payments/server/split";
 import { DomainError } from "#/lib/domain-error";
 import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import { createAuditStatement } from "#/server/audit";
@@ -52,6 +62,7 @@ type ChannelRow = {
 	per_payment_max_minor: string;
 	daily_max_minor: string;
 	split_max_parts: number;
+	price_source_channel_id: string | null;
 	last_health_status: "unknown" | "healthy" | "unhealthy";
 	last_checked_at: number | null;
 	created_at: number;
@@ -143,6 +154,26 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 			before && paymentProviderFamily(data.provider) !== "alipay"
 				? before.provider
 				: data.provider;
+		// An open split plan keeps using its channel's product (QR, expiry,
+		// refunds): the product may change only once every plan is settled.
+		if (
+			before &&
+			before.provider !== provider &&
+			(await channelHasUnsettledSplitPayments(db.$client, before.id))
+		)
+			throw new DomainError(
+				"payment_provider_in_use",
+				409,
+				"Settle open split payments before changing the payment product",
+			);
+		const priceSourceId =
+			provider === "alipay_qr" ? (data.priceSourceChannelId ?? null) : null;
+		await assertPriceSource(db.$client, id, priceSourceId);
+		const link = priceLinkStatements(db.$client, {
+			channelId: id,
+			sourceId: priceSourceId,
+			now,
+		});
 		const mutation = data.id
 			? db.$client
 					.prepare(
@@ -150,7 +181,7 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						 default_network = ?, credential_encrypted = ?,
 					 credential_key_version = 1, fee_bps = ?, fixed_fee_minor = ?, sort_order = ?,
 					 enabled = ?, split_enabled = ?, per_payment_max_minor = ?, daily_max_minor = ?,
-					 split_max_parts = ?, last_health_status = 'unknown', last_checked_at = NULL, updated_at = ? WHERE id = ?`,
+					 split_max_parts = ?, price_source_channel_id = ?, last_health_status = 'unknown', last_checked_at = NULL, updated_at = ? WHERE id = ?`,
 					)
 					.bind(
 						provider,
@@ -167,6 +198,7 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						limits.perPaymentMaxMinor,
 						limits.dailyMaxMinor,
 						limits.splitMaxParts,
+						priceSourceId,
 						now,
 						id,
 					)
@@ -177,8 +209,8 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 					  credential_encrypted, credential_key_version,
 					  fee_bps, fixed_fee_minor, sort_order, enabled, split_enabled,
 					  per_payment_max_minor, daily_max_minor, split_max_parts,
-					  last_health_status, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?)`,
+					  price_source_channel_id, last_health_status, created_at, updated_at)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?)`,
 					)
 					.bind(
 						id,
@@ -196,11 +228,14 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 						limits.perPaymentMaxMinor,
 						limits.dailyMaxMinor,
 						limits.splitMaxParts,
+						priceSourceId,
 						now,
 						now,
 					);
 		await db.$client.batch([
+			...link.before,
 			mutation,
+			...link.after,
 			createAuditStatement(db.$client, request, currentUser.id, {
 				action: data.id ? "payment_channel.updated" : "payment_channel.created",
 				targetType: "payment_channel",
@@ -214,11 +249,37 @@ export const savePaymentChannelFn = createServerFn({ method: "POST" })
 					defaultNetwork: data.defaultNetwork,
 					enabled: data.enabled,
 					...limits,
+					priceSourceChannelId: priceSourceId,
 					hasCredential: true,
 				},
 			}),
 		]);
 		return { id };
+	});
+
+export const listManualSplitRefundsFn = createServerFn({
+	method: "GET",
+}).handler(async () => {
+	const { db } = await getAdminServerContext(
+		systemPermission("payments", "read"),
+	);
+	return listManualSplitRefunds(db.$client);
+});
+
+/** 已人工退款: the owner refunded a split part in the Alipay console by hand. */
+export const completeManualSplitRefundFn = createServerFn({ method: "POST" })
+	.validator((input: z.input<typeof manualSplitRefundSchema>) =>
+		manualSplitRefundSchema.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const { currentUser, db } = await getAdminServerContext(
+			systemPermission("orders", "update"),
+		);
+		return completeSplitRefundsManually(db.$client, {
+			rowIds: [data.id],
+			reference: data.reference,
+			actorUserId: currentUser.id,
+		});
 	});
 
 export const setPaymentChannelEnabledFn = createServerFn({ method: "POST" })
@@ -666,6 +727,7 @@ function presentChannel(row: ChannelRow) {
 		perPaymentMaxMinor: row.per_payment_max_minor ?? "0",
 		dailyMaxMinor: row.daily_max_minor ?? "0",
 		splitMaxParts: Number(row.split_max_parts ?? 10),
+		priceSourceChannelId: row.price_source_channel_id ?? null,
 		healthStatus: row.last_health_status,
 		lastCheckedAt: row.last_checked_at,
 		hasCredential: Boolean(row.credential_encrypted),

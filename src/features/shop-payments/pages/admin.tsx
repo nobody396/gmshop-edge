@@ -17,7 +17,7 @@ import {
 	ConfigurationLogoField,
 } from "#/components/configuration-logo-field";
 import { ProButton } from "#/components/pro/base/button";
-import { ModalForm } from "#/components/pro/form";
+import { formBooleanValue, ModalForm } from "#/components/pro/form";
 import { ProTable, type ProTableState } from "#/components/pro/table";
 import { PaymentProviderLogo } from "#/components/provider-logo";
 import { Badge } from "#/components/ui/badge";
@@ -39,7 +39,9 @@ import {
 	type paymentProviderValues,
 } from "#/features/shop-payments/provider";
 import {
+	completeManualSplitRefundFn,
 	deletePaymentChannelFn,
+	listManualSplitRefundsFn,
 	listPaymentChannelsFn,
 	removePaymentChannelLogoFn,
 	reorderPaymentChannelsFn,
@@ -79,6 +81,29 @@ export function PaymentConfigurationsPage() {
 	const [creatingLogo, setCreatingLogo] =
 		useState<ConfigurationLogoDraft | null>(null);
 	const [deleting, setDeleting] = useState<Channel | null>(null);
+	const [closingSplitRefund, setClosingSplitRefund] = useState<string | null>(
+		null,
+	);
+	const channelOptions = useQuery({
+		queryKey: ["admin", "payment-configurations", "options", refreshKey],
+		queryFn: () =>
+			listPaymentChannelsFn({
+				data: { pageIndex: 0, pageSize: 100, search: "" },
+			}),
+	});
+	const manualSplitRefunds = useQuery({
+		queryKey: ["admin", "payment-configurations", "manual-split-refunds"],
+		queryFn: () => listManualSplitRefundsFn(),
+	});
+	const closeSplitRefund = useMutation({
+		mutationFn: completeManualSplitRefundFn,
+		onSuccess: async () => {
+			setClosingSplitRefund(null);
+			await manualSplitRefunds.refetch();
+			toast.success(m.shop_orders_manual_refund_completed());
+		},
+		onError: showError,
+	});
 	const refresh = useCallback(async () => {
 		await client.invalidateQueries({
 			queryKey: ["admin", "payment-configurations"],
@@ -305,7 +330,83 @@ export function PaymentConfigurationsPage() {
 					toolbarSearch={{ columnId: "name", placeholder: m.common_search() }}
 					table={{ stickyHeader: true }}
 				/>
+				{manualSplitRefunds.data?.length ? (
+					<section className="grid gap-3 rounded-2xl border p-4">
+						<div>
+							<h2 className="font-semibold">
+								{m.payment_channels_manual_split_refunds()}
+							</h2>
+							<p className="text-muted-foreground text-sm">
+								{m.payment_channels_manual_split_refunds_description()}
+							</p>
+						</div>
+						<ul className="divide-y">
+							{manualSplitRefunds.data.map((row) => (
+								<li
+									className="flex flex-wrap items-center justify-between gap-3 py-3"
+									key={row.id}
+								>
+									<div className="min-w-0 text-sm">
+										<strong className="block">
+											{row.orderNumber} ·{" "}
+											{formatMinorAmount(row.amountMinor, "CNY", 2)} ·{" "}
+											{row.partIndex}/{row.partCount}
+										</strong>
+										<span className="break-all text-muted-foreground text-xs">
+											{row.merchantTradeNo} · {row.failureCode ?? "—"}
+										</span>
+									</div>
+									<ProButton
+										onClick={() => setClosingSplitRefund(row.id)}
+										size="sm"
+										variant="outline"
+									>
+										{m.payment_channels_manual_split_refund_close()}
+									</ProButton>
+								</li>
+							))}
+						</ul>
+					</section>
+				) : null}
 			</div>
+			{closingSplitRefund ? (
+				<ModalForm
+					key={closingSplitRefund}
+					open
+					onOpenChange={(open) => !open && setClosingSplitRefund(null)}
+					title={m.payment_channels_manual_split_refund_close()}
+					description={m.shop_orders_manual_refund_description()}
+					schema={[
+						{
+							name: "reference",
+							label: m.payment_channels_manual_split_refund_reference(),
+							required: true,
+						},
+						{
+							name: "fundsReturned",
+							label: m.shop_orders_manual_refund_funds_returned(),
+							valueType: "switch" as const,
+							description:
+								m.shop_orders_manual_refund_funds_returned_description(),
+							initialValue: false,
+						},
+					]}
+					onFinish={async (values) => {
+						if (!formBooleanValue(values.fundsReturned)) {
+							toast.error(m.shop_orders_manual_refund_funds_not_returned());
+							return;
+						}
+						await closeSplitRefund.mutateAsync({
+							data: {
+								id: closingSplitRefund,
+								reference: String(values.reference ?? ""),
+								fundsReturned: true,
+							},
+						});
+					}}
+					onFinishFailed={showError}
+				/>
+			) : null}
 			{creatingProvider ? (
 				<ModalForm
 					key={creatingProvider}
@@ -316,7 +417,10 @@ export function PaymentConfigurationsPage() {
 						setCreatingLogo(null);
 					}}
 					title={m.payment_channels_new()}
-					schema={channelFormSchema(false)}
+					schema={channelFormSchema(
+						false,
+						priceSourceOptions(channelOptions.data?.data ?? []),
+					)}
 					initialValues={newChannelValues(
 						creatingProvider,
 						currencies.data?.baseCurrency ?? "USD",
@@ -350,7 +454,10 @@ export function PaymentConfigurationsPage() {
 					open
 					onOpenChange={(open) => !open && setEditing(null)}
 					title={m.payment_channels_edit()}
-					schema={channelFormSchema(true)}
+					schema={channelFormSchema(
+						true,
+						priceSourceOptions(channelOptions.data?.data ?? [], editing.id),
+					)}
 					initialValues={channelValues(editing)}
 					validate={(values) =>
 						paymentChannelFormErrors(
@@ -420,6 +527,7 @@ function newChannelValues(
 		perPaymentMaxMinor: "0",
 		dailyMaxMinor: "0",
 		splitMaxParts: 10,
+		priceSourceChannelId: "",
 		wechatAppId: "",
 		wechatMchId: "",
 		wechatMerchantSerialNumber: "",
@@ -432,7 +540,21 @@ function newChannelValues(
 	};
 }
 
-function channelFormSchema(editing: boolean) {
+function priceSourceOptions(channels: Channel[], selfId?: string) {
+	return [
+		{ value: "", label: m.payment_channels_price_source_none() },
+		...channels
+			.filter(
+				(channel) => channel.id !== selfId && !channel.priceSourceChannelId,
+			)
+			.map((channel) => ({ value: channel.id, label: channel.name })),
+	];
+}
+
+function channelFormSchema(
+	editing: boolean,
+	sourceOptions: { value: string; label: string }[],
+) {
 	const common = [
 		{
 			name: "type",
@@ -524,6 +646,15 @@ function channelFormSchema(editing: boolean) {
 			label: m.payment_channels_daily_max(),
 			tooltip: m.payment_channels_daily_max_hint(),
 			fieldProps: { inputMode: "decimal" },
+			hidden: alipayQrHidden,
+		},
+		{
+			name: "priceSourceChannelId",
+			label: m.payment_channels_price_source(),
+			tooltip: m.payment_channels_price_source_hint(),
+			valueType: "select" as const,
+			fieldProps: { options: sourceOptions },
+			formItemProps: { className: "sm:col-span-2" },
 			hidden: alipayQrHidden,
 		},
 		{
@@ -705,6 +836,7 @@ function channelValues(channel: Channel) {
 		perPaymentMaxMinor: minorToYuanInput(channel.perPaymentMaxMinor),
 		dailyMaxMinor: minorToYuanInput(channel.dailyMaxMinor),
 		splitMaxParts: channel.splitMaxParts,
+		priceSourceChannelId: channel.priceSourceChannelId ?? "",
 		wechatAppId: "",
 		wechatMchId: "",
 		wechatMerchantSerialNumber: "",
@@ -786,6 +918,9 @@ function paymentChannelInputFromForm(
 		perPaymentMaxMinor: yuanInputToMinor(values.perPaymentMaxMinor),
 		dailyMaxMinor: yuanInputToMinor(values.dailyMaxMinor),
 		splitMaxParts: numericFormValue(values.splitMaxParts ?? 10),
+		priceSourceChannelId: values.priceSourceChannelId
+			? String(values.priceSourceChannelId)
+			: null,
 		wechatAppId: String(values.wechatAppId ?? ""),
 		wechatMchId: String(values.wechatMchId ?? ""),
 		wechatMerchantSerialNumber: String(values.wechatMerchantSerialNumber ?? ""),

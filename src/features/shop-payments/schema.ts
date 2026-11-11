@@ -45,6 +45,8 @@ export const paymentChannelInputSchema = z
 		perPaymentMaxMinor: limitMinorSchema,
 		dailyMaxMinor: limitMinorSchema,
 		splitMaxParts: z.number().int().min(2).max(20).default(10),
+		/** Alipay QR only: charge exactly this channel's channel prices. */
+		priceSourceChannelId: idSchema.nullable().default(null),
 		stripeSecretKey: z.string().trim().max(512).optional(),
 		stripeWebhookSecret: z.string().trim().max(512).optional(),
 		cryptomusMerchantId: z.string().trim().max(64).optional(),
@@ -280,4 +282,10 @@ export const paymentChannelOrderSchema = z.object({
 export const paymentChannelEnabledSchema = z.object({
 	id: idSchema,
 	enabled: z.boolean(),
+});
+
+export const manualSplitRefundSchema = z.object({
+	id: idSchema,
+	reference: z.string().trim().min(1).max(200),
+	fundsReturned: z.literal(true),
 });

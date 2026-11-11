@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createAlipayQrProvider } from "#/features/shop-payments/providers/alipay";
+import { paymentProcessingFeeAmount } from "#/features/shop-payments/fees";
+import {
+	createAlipayProvider,
+	createAlipayQrProvider,
+} from "#/features/shop-payments/providers/alipay";
 import {
 	bytesToBase64,
 	rsaSha256Sign,
@@ -7,7 +11,9 @@ import {
 } from "#/features/shop-payments/providers/rsa";
 import { paymentChannelInputSchema } from "#/features/shop-payments/schema";
 import {
+	beijingDay,
 	beijingDayStart,
+	channelPaymentAmount,
 	paymentLimitDecision,
 	splitOrderExpiry,
 	splitPaymentAmount,
@@ -210,6 +216,159 @@ describe("Alipay order QR (precreate)", () => {
 				vi.fn() as unknown as typeof fetch,
 			),
 		).rejects.toMatchObject({ code: "order_not_payable" });
+	});
+});
+
+describe("split payment fees (#5)", () => {
+	it("covers every part's fee and keeps single payments unchanged", () => {
+		// ¥3000, ¥1 fixed fee per payment, ¥2000 cap: two parts pay two fees.
+		expect(channelPaymentAmount("300000", 0, "100", "200000")).toBe("300200");
+		expect(channelPaymentAmount("300000", 0, "100", null)).toBe("300100");
+		for (const [amount, bps, fixed, cap] of [
+			["300000", 60, "0", "200000"],
+			["400100", 60, "30", "200000"],
+			["999999", 38, "1", "33333"],
+			["150000", 60, "100", "200000"],
+		] as const) {
+			const total = channelPaymentAmount(amount, bps, fixed, cap);
+			const fees = splitPaymentAmount(total, cap).reduce(
+				(sum, part) =>
+					sum + BigInt(paymentProcessingFeeAmount(part, bps, fixed)),
+				0n,
+			);
+			expect(BigInt(total) - fees).toBeGreaterThanOrEqual(BigInt(amount));
+			expect(BigInt(total) - fees - BigInt(amount)).toBeLessThan(
+				BigInt(splitPaymentAmount(total, cap).length) + 2n,
+			);
+		}
+		expect(beijingDay(Date.UTC(2026, 10, 11, 16))).toBe("2026-11-12");
+	});
+});
+
+describe("Alipay response checks (#4)", () => {
+	const refundInput = {
+		refundId: "22222222-2222-4222-8222-222222222222",
+		providerPaymentId: "11111111111141118111111111111111",
+		amountMinor: "150000",
+		reason: "test",
+	};
+
+	async function setup() {
+		const merchant = await rsaPair();
+		const alipay = await rsaPair();
+		return {
+			alipay,
+			credential: {
+				appId: "2026000000000001",
+				sellerId: "2088000000000001",
+				privateKeyPem: merchant.privateKeyPem,
+				alipayPublicKeyPem: alipay.publicKeyPem,
+			},
+		};
+	}
+
+	it("accepts a refund answer only for the requested trade and amount", async () => {
+		const { alipay, credential } = await setup();
+		const provider = createAlipayProvider("FAST_INSTANT_TRADE_PAY");
+		const answer = (node: Record<string, unknown>) =>
+			(async () =>
+				signedResponse(
+					alipay.privateKeyPem,
+					"alipay_trade_refund_response",
+					node,
+				)) as unknown as typeof fetch;
+		await expect(
+			provider.refundPayment(
+				{ ...refundInput, expectedRefundedTotalMinor: "150000" },
+				credential,
+				answer({
+					code: "10000",
+					out_trade_no: refundInput.providerPaymentId,
+					refund_fee: "1500.00",
+				}),
+			),
+		).resolves.toMatchObject({ status: "succeeded" });
+		for (const node of [
+			{ code: "10000", out_trade_no: "other", refund_fee: "1500.00" },
+			{
+				code: "10000",
+				out_trade_no: refundInput.providerPaymentId,
+				refund_fee: "1.00",
+			},
+			{ code: "10000", out_trade_no: refundInput.providerPaymentId },
+			{ code: "10000", refund_fee: "1500.00" },
+		])
+			await expect(
+				provider.refundPayment(
+					{ ...refundInput, expectedRefundedTotalMinor: "150000" },
+					credential,
+					answer(node),
+				),
+			).rejects.toMatchObject({
+				code: "payment_refund_reconciliation_required",
+			});
+		await expect(
+			provider.refundPayment(
+				{ ...refundInput, providerTradeNo: "2026111100000000000001" },
+				credential,
+				answer({
+					code: "10000",
+					out_trade_no: refundInput.providerPaymentId,
+					trade_no: "2026111100000000000999",
+					refund_fee: "1500.00",
+				}),
+			),
+		).rejects.toMatchObject({ code: "payment_refund_reconciliation_required" });
+	});
+
+	it("never infers a paid amount or trade from a query answer", async () => {
+		const { alipay, credential } = await setup();
+		const provider = createAlipayProvider("FAST_INSTANT_TRADE_PAY");
+		const answer = (node: Record<string, unknown>) =>
+			(async () =>
+				signedResponse(
+					alipay.privateKeyPem,
+					"alipay_trade_query_response",
+					node,
+				)) as unknown as typeof fetch;
+		await expect(
+			provider.queryPayment(
+				refundInput.providerPaymentId,
+				credential,
+				answer({
+					code: "10000",
+					out_trade_no: refundInput.providerPaymentId,
+					trade_no: "2026111100000000000001",
+					trade_status: "TRADE_SUCCESS",
+					total_amount: "1500.00",
+				}),
+			),
+		).resolves.toEqual({
+			status: "succeeded",
+			amountMinor: "150000",
+			currency: "CNY",
+			providerTradeNo: "2026111100000000000001",
+		});
+		for (const node of [
+			{
+				code: "10000",
+				out_trade_no: refundInput.providerPaymentId,
+				trade_status: "TRADE_SUCCESS",
+			},
+			{
+				code: "10000",
+				out_trade_no: "other",
+				trade_status: "TRADE_SUCCESS",
+				total_amount: "1500.00",
+			},
+		])
+			await expect(
+				provider.queryPayment(
+					refundInput.providerPaymentId,
+					credential,
+					answer(node),
+				),
+			).rejects.toMatchObject({ code: "payment_provider_invalid_response" });
 	});
 });
 

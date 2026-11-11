@@ -25,6 +25,7 @@ CREATE TABLE payment_split_parts (
  part_count INTEGER NOT NULL,
  amount_minor TEXT NOT NULL,
  provider_payment_id TEXT,
+ provider_trade_no TEXT,
  checkout_url TEXT,
  notify_url TEXT NOT NULL,
  provider_expires_at INTEGER,
@@ -32,6 +33,7 @@ CREATE TABLE payment_split_parts (
  succeeded_at INTEGER,
  refunded_minor TEXT NOT NULL DEFAULT '0',
  failure_code TEXT,
+ next_check_at INTEGER,
  created_at INTEGER NOT NULL,
  updated_at INTEGER NOT NULL,
  CONSTRAINT payment_split_parts_index_check CHECK (part_index BETWEEN 1 AND part_count AND part_count BETWEEN 2 AND 20),
@@ -48,6 +50,8 @@ CREATE INDEX payment_split_parts_channel_succeeded_idx ON payment_split_parts(ch
 --> statement-breakpoint
 CREATE INDEX payment_split_parts_status_updated_idx ON payment_split_parts(status, updated_at, id);
 --> statement-breakpoint
+CREATE INDEX payment_split_parts_status_check_idx ON payment_split_parts(status, next_check_at, updated_at, id);
+--> statement-breakpoint
 -- 子付款的原路退款：订单过期/取消时自动退已付的笔（refund_id 为空），或后台整单退款按笔拆开（refund_id 指向 refunds）。
 -- id 去掉横线就是支付宝的 out_request_no，重试同一行不会重复退款。
 CREATE TABLE payment_split_refunds (
@@ -62,6 +66,8 @@ CREATE TABLE payment_split_refunds (
  failure_code TEXT,
  alerted_at INTEGER,
  completed_at INTEGER,
+ manual_reference TEXT,
+ completed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
  created_at INTEGER NOT NULL,
  updated_at INTEGER NOT NULL,
  CONSTRAINT payment_split_refunds_amount_check CHECK (amount_minor <> '' AND amount_minor NOT GLOB '*[^0-9]*' AND amount_minor <> '0'),
@@ -73,3 +79,63 @@ CREATE UNIQUE INDEX payment_split_refunds_part_refund_uidx ON payment_split_refu
 CREATE UNIQUE INDEX payment_split_refunds_part_automatic_uidx ON payment_split_refunds(part_id) WHERE refund_id IS NULL;
 --> statement-breakpoint
 CREATE INDEX payment_split_refunds_status_next_idx ON payment_split_refunds(status, next_attempt_at, id);
+--> statement-breakpoint
+-- 价格联动：渠道 A 的 price_source_channel_id = 渠道 B 时，A 的渠道专属价永远等于 B 的。
+-- B 的专属价增删改由下面的触发器同步到 A；直接把 A 改成与 B 不同的价格会被拒绝。
+ALTER TABLE payment_channels ADD COLUMN price_source_channel_id TEXT REFERENCES payment_channels(id) ON DELETE SET NULL;
+--> statement-breakpoint
+CREATE TRIGGER sellable_item_channel_prices_linked_insert_guard
+BEFORE INSERT ON sellable_item_channel_prices
+WHEN EXISTS (SELECT 1 FROM payment_channels WHERE id = NEW.channel_id AND price_source_channel_id IS NOT NULL)
+ AND NOT EXISTS (
+  SELECT 1 FROM sellable_item_channel_prices source
+  JOIN payment_channels linked ON linked.price_source_channel_id = source.channel_id
+  WHERE linked.id = NEW.channel_id AND source.sellable_item_id = NEW.sellable_item_id
+   AND source.price_minor = NEW.price_minor AND source.enabled = NEW.enabled)
+BEGIN
+ SELECT RAISE(ABORT, 'linked_channel_price_readonly');
+END;
+--> statement-breakpoint
+CREATE TRIGGER sellable_item_channel_prices_linked_update_guard
+BEFORE UPDATE ON sellable_item_channel_prices
+WHEN EXISTS (SELECT 1 FROM payment_channels WHERE id = NEW.channel_id AND price_source_channel_id IS NOT NULL)
+ AND NOT EXISTS (
+  SELECT 1 FROM sellable_item_channel_prices source
+  JOIN payment_channels linked ON linked.price_source_channel_id = source.channel_id
+  WHERE linked.id = NEW.channel_id AND source.sellable_item_id = NEW.sellable_item_id
+   AND source.price_minor = NEW.price_minor AND source.enabled = NEW.enabled)
+BEGIN
+ SELECT RAISE(ABORT, 'linked_channel_price_readonly');
+END;
+--> statement-breakpoint
+CREATE TRIGGER sellable_item_channel_prices_link_after_insert
+AFTER INSERT ON sellable_item_channel_prices
+BEGIN
+ INSERT INTO sellable_item_channel_prices
+  (id, sellable_item_id, channel_id, price_minor, enabled, created_at, updated_at)
+ SELECT NEW.id || ':' || linked.id, NEW.sellable_item_id, linked.id, NEW.price_minor,
+  NEW.enabled, NEW.created_at, NEW.updated_at
+ FROM payment_channels linked WHERE linked.price_source_channel_id = NEW.channel_id
+ ON CONFLICT(sellable_item_id, channel_id) DO UPDATE SET price_minor = excluded.price_minor,
+  enabled = excluded.enabled, updated_at = excluded.updated_at;
+END;
+--> statement-breakpoint
+CREATE TRIGGER sellable_item_channel_prices_link_after_update
+AFTER UPDATE OF price_minor, enabled ON sellable_item_channel_prices
+BEGIN
+ INSERT INTO sellable_item_channel_prices
+  (id, sellable_item_id, channel_id, price_minor, enabled, created_at, updated_at)
+ SELECT NEW.id || ':' || linked.id, NEW.sellable_item_id, linked.id, NEW.price_minor,
+  NEW.enabled, NEW.created_at, NEW.updated_at
+ FROM payment_channels linked WHERE linked.price_source_channel_id = NEW.channel_id
+ ON CONFLICT(sellable_item_id, channel_id) DO UPDATE SET price_minor = excluded.price_minor,
+  enabled = excluded.enabled, updated_at = excluded.updated_at;
+END;
+--> statement-breakpoint
+CREATE TRIGGER sellable_item_channel_prices_link_after_delete
+AFTER DELETE ON sellable_item_channel_prices
+BEGIN
+ DELETE FROM sellable_item_channel_prices
+ WHERE sellable_item_id = OLD.sellable_item_id
+  AND channel_id IN (SELECT id FROM payment_channels WHERE price_source_channel_id = OLD.channel_id);
+END;

@@ -16,6 +16,11 @@ import {
 	rsaSha256Sign,
 } from "#/features/shop-payments/providers/rsa";
 import {
+	assertPriceSource,
+	priceLinkStatements,
+} from "#/features/shop-payments/server/price-link";
+import {
+	completeManualShopRefund,
 	processShopRefund,
 	requestShopRefund,
 } from "#/features/shop-payments/server/refunds";
@@ -25,11 +30,18 @@ import {
 	processShopPaymentEvent,
 } from "#/features/shop-payments/server/service";
 import {
-	channelCollectedTodayMinor,
+	channelDailyUsageMinor,
+	channelHasUnsettledSplitPayments,
 	checkoutChannelLimits,
+	completeSplitPaymentIfReady,
+	completeSplitRefundsManually,
+	ensureNextSplitPart,
+	listManualSplitRefunds,
 	resumeSplitPayment,
+	runPartRefund,
 	settleSplitPayments,
 } from "#/features/shop-payments/server/split";
+import { beijingDayStart } from "#/features/shop-payments/split";
 import { upsertFeishuAlertSetting } from "#/features/telegram/server/feishu-alerts";
 import {
 	encryptTelegramOwnerAlertBotToken,
@@ -57,6 +69,13 @@ class AlipaySimulator {
 	telegram: string[] = [];
 	paid = new Map<string, string>();
 	refundFailure: string | null = null;
+	/** Per trade: "network" (HTTP 500), or an Alipay sub_code refusal. */
+	refundFailures = new Map<string, string>();
+	queryFailures = new Set<string>();
+	refunded = new Map<string, bigint>();
+	refundRequests = new Set<string>();
+	/** Runs inside the refund call, before Alipay answers (concurrency tests). */
+	onRefund: ((outTradeNo: string) => Promise<void>) | null = null;
 	constructor(private readonly privateKeyPem: string) {}
 
 	fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -81,6 +100,8 @@ class AlipaySimulator {
 				qr_code: `https://qr.alipay.com/bax${business.out_trade_no}`,
 			});
 		if (method === "alipay.trade.query") {
+			if (this.queryFailures.has(business.out_trade_no))
+				return new Response("unavailable", { status: 500 });
 			const amount = this.paid.get(business.out_trade_no);
 			return this.sign(
 				key,
@@ -96,17 +117,31 @@ class AlipaySimulator {
 		}
 		if (method === "alipay.trade.close")
 			return this.sign(key, { code: "40004", sub_code: "ACQ.TRADE_NOT_EXIST" });
-		if (method === "alipay.trade.refund")
-			return this.sign(
-				key,
-				this.refundFailure
-					? { code: "40004", sub_code: this.refundFailure }
-					: {
-							code: "10000",
-							out_trade_no: business.out_trade_no,
-							refund_fee: business.refund_amount,
-						},
-			);
+		if (method === "alipay.trade.refund") {
+			const trade = business.out_trade_no as string;
+			if (this.onRefund) await this.onRefund(trade);
+			const failure = this.refundFailures.get(trade) ?? this.refundFailure;
+			if (failure === "network")
+				return new Response("unavailable", { status: 500 });
+			if (failure) return this.sign(key, { code: "40004", sub_code: failure });
+			// Alipay answers with the trade's cumulative refunded amount; the same
+			// out_request_no is refunded only once.
+			const requestKey = `${trade}:${business.out_request_no}`;
+			if (!this.refundRequests.has(requestKey)) {
+				this.refundRequests.add(requestKey);
+				this.refunded.set(
+					trade,
+					(this.refunded.get(trade) ?? 0n) +
+						BigInt(Math.round(Number(business.refund_amount) * 100)),
+				);
+			}
+			const total = this.refunded.get(trade) ?? 0n;
+			return this.sign(key, {
+				code: "10000",
+				out_trade_no: trade,
+				refund_fee: (Number(total) / 100).toFixed(2),
+			});
+		}
 		return new Response("unexpected", { status: 500 });
 	});
 
@@ -336,8 +371,8 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 		expect(await count("SELECT COUNT(*) AS count FROM delivery_records")).toBe(
 			1,
 		);
-		// Each part counts once towards the daily total; the parent does not.
-		expect(await channelCollectedTodayMinor(db, channelId)).toBe(300000n);
+		// The plan's reservation counts once towards today's limit.
+		expect(await channelDailyUsageMinor(db, channelId)).toBe(300000n);
 	});
 
 	it("refunds the paid part when a split order expires and alerts the owner", async () => {
@@ -518,7 +553,7 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 			.prepare(
 				"UPDATE payment_attempts SET succeeded_at=? WHERE id='earlier-payment'",
 			)
-			.bind(now - 86_400_000 - 1)
+			.bind(beijingDayStart(now) - 1)
 			.run();
 		await expect(startPayment("next-day")).resolves.toMatchObject({
 			status: "pending",
@@ -616,6 +651,658 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 				.bind(refund.id)
 				.first(),
 		).toEqual({ status: "succeeded" });
+	});
+
+	async function payBoth() {
+		await startPayment();
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		const second = (await parts())[1];
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(second?.provider_payment_id as string, "150000", "n2"),
+		);
+		expect((await order())?.status).toBe("paid");
+		return { first, second };
+	}
+
+	async function adminRefund(amountMinor: string, key: string) {
+		return requestShopRefund(
+			db,
+			{ orderId, amountMinor, reason: "Customer request", idempotencyKey: key },
+			{
+				actorUserId: "customer-1",
+				request: new Request("https://shop.example/admin"),
+			},
+		);
+	}
+
+	async function refundRow(id: string) {
+		return db
+			.prepare(
+				"SELECT status, failure_code, next_attempt_at FROM refunds WHERE id=?",
+			)
+			.bind(id)
+			.first<{
+				status: string;
+				failure_code: string | null;
+				next_attempt_at: number | null;
+			}>();
+	}
+
+	// #1: one part refunded, the other uncertain → never back to paid.
+	it("keeps a partly refunded split order refunding and finishes with the same request ids", async () => {
+		const { first, second } = await payBoth();
+		simulator.refundFailures.set(
+			first?.provider_payment_id as string,
+			"network",
+		);
+		const refund = await adminRefund("300000", "split-partial-network");
+		await processShopRefund(
+			db,
+			refund.id,
+			simulator.fetch as unknown as typeof fetch,
+		);
+		expect((await order())?.status).toBe("refunding");
+		expect((await refundRow(refund.id))?.status).toBe("processing");
+		expect((await parts()).map((row) => row.refunded_minor)).toEqual([
+			"0",
+			"150000",
+		]);
+		// The network recovers; the next check refunds the rest exactly once.
+		simulator.refundFailures.clear();
+		await db
+			.prepare("UPDATE refunds SET next_attempt_at=0 WHERE id=?; ")
+			.bind(refund.id)
+			.run();
+		await db
+			.prepare("UPDATE payment_split_refunds SET next_attempt_at=0")
+			.run();
+		await processShopRefund(
+			db,
+			refund.id,
+			simulator.fetch as unknown as typeof fetch,
+		);
+		expect((await refundRow(refund.id))?.status).toBe("succeeded");
+		expect((await order())?.status).toBe("refunded");
+		expect((await parts()).map((row) => row.refunded_minor)).toEqual([
+			"150000",
+			"150000",
+		]);
+		expect(simulator.refunded.get(second?.provider_payment_id as string)).toBe(
+			150000n,
+		);
+		expect(simulator.refunded.get(first?.provider_payment_id as string)).toBe(
+			150000n,
+		);
+	});
+
+	// #1 + #9: one part refunded, the other refused → manual, then closed by hand.
+	it("sends a partly refused split refund to manual confirmation instead of restoring the order", async () => {
+		const { first } = await payBoth();
+		simulator.refundFailures.set(
+			first?.provider_payment_id as string,
+			"ACQ.SELLER_BALANCE_NOT_ENOUGH",
+		);
+		const refund = await adminRefund("300000", "split-partial-refused");
+		await processShopRefund(
+			db,
+			refund.id,
+			simulator.fetch as unknown as typeof fetch,
+		);
+		expect(await refundRow(refund.id)).toMatchObject({
+			status: "processing",
+			failure_code: "manual_action_required",
+		});
+		expect((await order())?.status).toBe("refunding");
+		await completeManualShopRefund(db, refund.id, "ALIPAY-REFUND-1", true, {
+			actorUserId: "customer-1",
+			request: new Request("https://shop.example/admin"),
+		});
+		expect((await refundRow(refund.id))?.status).toBe("succeeded");
+		expect((await order())?.status).toBe("refunded");
+		expect((await parts()).map((row) => row.refunded_minor)).toEqual([
+			"150000",
+			"150000",
+		]);
+		expect(
+			await db
+				.prepare(
+					"SELECT manual_reference FROM payment_split_refunds WHERE status='succeeded' AND manual_reference IS NOT NULL",
+				)
+				.first(),
+		).toEqual({ manual_reference: "ALIPAY-REFUND-1" });
+	});
+
+	// #2: the deadline passed but the expiry job has not run yet.
+	it("never completes a split order whose last part arrives after the deadline", async () => {
+		await startPayment();
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		const second = (await parts())[1];
+		await db
+			.prepare("UPDATE shop_orders SET expires_at=? WHERE id=?")
+			.bind(Date.now() - 5_000, orderId)
+			.run();
+		await expect(
+			processShopPaymentEvent(
+				db,
+				channelId,
+				paidEvent(second?.provider_payment_id as string, "150000", "n2"),
+			),
+		).resolves.toEqual({ duplicate: false, status: "reconciliation_required" });
+		expect((await order())?.status).toBe("pending_payment");
+		expect((await parent())?.status).toBe("pending");
+		expect(await count("SELECT COUNT(*) AS count FROM delivery_records")).toBe(
+			0,
+		);
+		// The guard is inside the order-paid batch: a completion attempted with a
+		// clock past the deadline rolls back entirely.
+		const expiresAt = (await order())?.expires_at ?? 0;
+		await db
+			.prepare("UPDATE shop_orders SET expires_at=? WHERE id=?")
+			.bind(expiresAt + 600_000, orderId)
+			.run();
+		await expect(
+			completeSplitPaymentIfReady(
+				db,
+				(await parent())?.id as string,
+				expiresAt + 600_000,
+			),
+		).resolves.toBeNull();
+		const parentRow = await parent();
+		await expect(
+			processShopPaymentEvent(
+				db,
+				channelId,
+				{
+					providerEventId: `split-complete:${parentRow?.id}`,
+					providerPaymentId: parentRow?.provider_payment_id as string,
+					type: "payment_succeeded",
+					amountMinor: "300000",
+					currency: "CNY",
+					merchantOrderId: null,
+					payloadDigest: `split-complete:${parentRow?.id}`,
+				},
+				{ requirePendingOrder: true, now: expiresAt + 600_001 },
+			),
+		).rejects.toThrow();
+		expect((await order())?.status).toBe("pending_payment");
+		expect(
+			await count(
+				"SELECT COUNT(*) AS count FROM replay_receipts WHERE external_id LIKE 'split-complete:%'",
+			),
+		).toBe(0);
+		// Expiry and settlement refund both parts.
+		const now = expiresAt + 600_002;
+		await expireStoreOrders(db, now);
+		await settleSplitPayments(
+			db,
+			simulator.fetch as unknown as typeof fetch,
+			now + 60_000,
+		);
+		expect(simulator.calledWith("alipay.trade.refund")).toHaveLength(2);
+	});
+
+	// #3 (best-effort guard): open plans' unpaid remainder counts; later parts are not checked.
+	it("counts open split plans against the daily limit and never re-checks later parts", async () => {
+		await db
+			.prepare(
+				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+				 VALUES ('commerce.default_currency', '"CNY"', 0, 1, 1)`,
+			)
+			.run();
+		await db
+			.prepare(
+				"UPDATE payment_channels SET daily_max_minor='400000' WHERE id=?",
+			)
+			.bind(channelId)
+			.run();
+		await startPayment();
+		const topup = (key: string) =>
+			createWalletTopupPayment(
+				db,
+				{
+					userId: "customer-1",
+					amountMinor: "150000",
+					channelId,
+					idempotencyKey: key,
+					successUrl: "https://shop.example/wallet",
+					cancelUrl: "https://shop.example/wallet",
+				},
+				simulator.fetch as unknown as typeof fetch,
+			);
+		// Nothing is paid yet, but the open ¥3000 plan still needs ¥3000 today.
+		expect(await channelDailyUsageMinor(db, channelId)).toBe(300000n);
+		await expect(topup("topup-over-open-plan")).rejects.toMatchObject({
+			code: "payment_channel_limit_exceeded",
+		});
+		const limits = await checkoutChannelLimits(db, [
+			{
+				id: channelId,
+				provider: "alipay_qr",
+				split_enabled: 1,
+				per_payment_max_minor: "200000",
+				daily_max_minor: "400000",
+				split_max_parts: 10,
+			},
+		]);
+		expect(limits.get(channelId)?.dailyRemainingMinor).toBe("100000");
+		// Paid part + unpaid remainder: still ¥3000.
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		expect(await channelDailyUsageMinor(db, channelId)).toBe(300000n);
+		// A lower limit set meanwhile does not stop the plan's next part.
+		await db
+			.prepare(
+				"UPDATE payment_channels SET daily_max_minor='100000' WHERE id=?",
+			)
+			.bind(channelId)
+			.run();
+		expect((await parts())[1]?.status).toBe("pending");
+		expect((await parts())[1]?.checkout_url).toMatch(
+			/^https:\/\/qr\.alipay\.com/,
+		);
+		// Once the plan expires only the collected ¥1500 counts.
+		const now = (await order())?.expires_at ?? 0;
+		await expireStoreOrders(db, now + 1);
+		expect(await channelDailyUsageMinor(db, channelId, now + 1)).toBe(150000n);
+	});
+
+	// The plan is frozen at the first part: a new single-payment limit does not change it.
+	it("keeps an open plan's parts when the admin changes the single-payment limit", async () => {
+		await startPayment();
+		await db
+			.prepare(
+				"UPDATE payment_channels SET per_payment_max_minor='100000', fee_bps=0 WHERE id=?",
+			)
+			.bind(channelId)
+			.run();
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		expect(
+			(await parts()).map((row) => [row.amount_minor, row.status]),
+		).toEqual([
+			["150000", "succeeded"],
+			["150000", "pending"],
+		]);
+		expect(await parent()).toMatchObject({
+			split_part_count: 2,
+			processing_fee_minor: "1800",
+		});
+		// A QR answer arriving late for a part already paid never reopens it.
+		await db
+			.prepare(
+				"UPDATE payment_split_parts SET status='succeeded' WHERE part_index=2",
+			)
+			.run();
+		await ensureNextSplitPart(
+			db,
+			(await parent())?.id as string,
+			simulator.fetch as unknown as typeof fetch,
+		);
+		expect((await parts()).map((row) => row.status)).toEqual([
+			"succeeded",
+			"succeeded",
+		]);
+	});
+
+	// #4: a signed answer must describe the requested trade and amount.
+	it("does not treat a paid query without the amount or for another trade as payment", async () => {
+		await startPayment();
+		const [first] = await parts();
+		const trade = first?.provider_payment_id as string;
+		const realFetch = simulator.fetch.getMockImplementation();
+		simulator.fetch.mockImplementation(async (input, init) => {
+			const body = new URLSearchParams(String(init?.body));
+			if (body.get("method") === "alipay.trade.query") {
+				const node = JSON.stringify({
+					code: "10000",
+					out_trade_no: trade,
+					trade_status: "TRADE_SUCCESS",
+				});
+				const sign = await rsaSha256Sign(alipay.privateKeyPem, node);
+				return new Response(
+					`{"alipay_trade_query_response":${node},"sign":${JSON.stringify(sign)}}`,
+				);
+			}
+			return (realFetch as typeof fetch)(input, init);
+		});
+		await resumeSplitPayment(
+			db,
+			orderId,
+			simulator.fetch as unknown as typeof fetch,
+			Date.now() + 5_000,
+		);
+		expect((await parts())[0]?.status).toBe("pending");
+		expect((await order())?.status).toBe("pending_payment");
+	});
+
+	// #4: a refund answer that does not match goes to manual handling.
+	it("sends a refund answer for another amount to manual handling", async () => {
+		await startPayment();
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		// Alipay reports more refunded on the trade than this request explains.
+		simulator.refunded.set(first?.provider_payment_id as string, 100n);
+		const now = Date.now();
+		await db
+			.prepare("UPDATE shop_orders SET expires_at=? WHERE id=?")
+			.bind(now - 1, orderId)
+			.run();
+		await expireStoreOrders(db, now);
+		await settleSplitPayments(
+			db,
+			simulator.fetch as unknown as typeof fetch,
+			now + 60_000,
+		);
+		expect(
+			await db
+				.prepare("SELECT status, failure_code FROM payment_split_refunds")
+				.first(),
+		).toEqual({
+			status: "manual",
+			failure_code: "payment_refund_reconciliation_required",
+		});
+		expect((await parts())[0]?.refunded_minor).toBe("0");
+	});
+
+	// #5: every part pays its own fixed fee.
+	it("charges enough that the split total covers every part's fee", async () => {
+		await db.batch([
+			db.prepare("DELETE FROM sellable_item_channel_prices"),
+			db.prepare("UPDATE shop_orders SET pricing_channel_id=NULL"),
+			db
+				.prepare(
+					"UPDATE payment_channels SET fee_bps=0, fixed_fee_minor='100' WHERE id=?",
+				)
+				.bind(channelId),
+		]);
+		await startPayment();
+		const rows = await parts();
+		const total = rows.reduce((sum, row) => sum + BigInt(row.amount_minor), 0n);
+		expect(total).toBe(300200n);
+		expect(rows.map((row) => row.amount_minor)).toEqual(["150100", "150100"]);
+		expect((await parent())?.processing_fee_minor).toBe("200");
+		expect(total - 200n).toBe(300000n);
+	});
+
+	// #6: a stale refund worker never overwrites a newer result.
+	it("keeps a refund that another worker completed while this one was waiting", async () => {
+		await startPayment();
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		await db
+			.prepare(
+				`INSERT INTO payment_split_refunds
+				 (id, part_id, refund_id, amount_minor, reason, status, created_at, updated_at)
+				 VALUES ('row-1', ?, NULL, '150000', 'order_not_paid_in_full', 'pending', 1, 1)`,
+			)
+			.bind(first?.id)
+			.run();
+		simulator.refundFailures.set(
+			first?.provider_payment_id as string,
+			"network",
+		);
+		simulator.onRefund = async () => {
+			// Worker B took over after A's lease and refunded successfully.
+			await db.batch([
+				db.prepare(
+					"UPDATE payment_split_refunds SET status='succeeded', attempt_count=attempt_count+1 WHERE id='row-1'",
+				),
+				db
+					.prepare(
+						"UPDATE payment_split_parts SET refunded_minor='150000' WHERE id=?",
+					)
+					.bind(first?.id),
+			]);
+		};
+		await expect(
+			runPartRefund(db, "row-1", 0, {
+				fetcher: simulator.fetch as unknown as typeof fetch,
+				now: Date.now(),
+				reason: "test",
+				maxAttempts: 3,
+			}),
+		).resolves.toBe("skipped");
+		expect(
+			await db
+				.prepare("SELECT status FROM payment_split_refunds WHERE id='row-1'")
+				.first(),
+		).toEqual({ status: "succeeded" });
+		expect((await parts())[0]?.refunded_minor).toBe("150000");
+		// A row still leased to a worker is not claimed again.
+		await db
+			.prepare(
+				"UPDATE payment_split_refunds SET status='failed', next_attempt_at=? WHERE id='row-1'",
+			)
+			.bind(Date.now() + 60_000)
+			.run();
+		simulator.onRefund = null;
+		await expect(
+			runPartRefund(db, "row-1", 1, {
+				fetcher: simulator.fetch as unknown as typeof fetch,
+				now: Date.now(),
+				reason: "test",
+				maxAttempts: 3,
+			}),
+		).resolves.toBe("skipped");
+	});
+
+	// #7: the payment product is frozen while split payments are open.
+	it("reports open split payments that block changing the payment product", async () => {
+		expect(await channelHasUnsettledSplitPayments(db, channelId)).toBe(false);
+		await startPayment();
+		// A plan is being paid: the channel's product must not change.
+		expect(await channelHasUnsettledSplitPayments(db, channelId)).toBe(true);
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		expect(await channelHasUnsettledSplitPayments(db, channelId)).toBe(true);
+		const second = (await parts())[1];
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(second?.provider_payment_id as string, "150000", "n2"),
+		);
+		// Fully paid and fulfilled: settled.
+		expect(await channelHasUnsettledSplitPayments(db, channelId)).toBe(false);
+	});
+
+	// #8: a part whose query keeps failing backs off instead of blocking the scan.
+	it("backs off parts whose provider query fails", async () => {
+		await startPayment();
+		const [first] = await parts();
+		simulator.queryFailures.add(first?.provider_payment_id as string);
+		const now = Date.now() + 60_000;
+		await settleSplitPayments(
+			db,
+			simulator.fetch as unknown as typeof fetch,
+			now,
+		);
+		const row = await db
+			.prepare("SELECT next_check_at FROM payment_split_parts WHERE id=?")
+			.bind(first?.id)
+			.first<{ next_check_at: number | null }>();
+		expect(row?.next_check_at).toBeGreaterThanOrEqual(now + 299_000);
+		const queries = simulator.calledWith("alipay.trade.query").length;
+		await settleSplitPayments(
+			db,
+			simulator.fetch as unknown as typeof fetch,
+			now + 60_000,
+		);
+		expect(simulator.calledWith("alipay.trade.query")).toHaveLength(queries);
+	});
+
+	// #9: a refund Alipay refused is closed by hand with its refund number.
+	it("closes a manual split refund with the Alipay refund number", async () => {
+		simulator.refundFailure = "ACQ.SELLER_BALANCE_NOT_ENOUGH";
+		await startPayment();
+		const [first] = await parts();
+		await processShopPaymentEvent(
+			db,
+			channelId,
+			paidEvent(first?.provider_payment_id as string, "150000", "n1"),
+		);
+		const now = Date.now();
+		await db
+			.prepare("UPDATE shop_orders SET expires_at=? WHERE id=?")
+			.bind(now - 1, orderId)
+			.run();
+		await expireStoreOrders(db, now);
+		await settleSplitPayments(
+			db,
+			simulator.fetch as unknown as typeof fetch,
+			now + 60_000,
+		);
+		const [manual] = await listManualSplitRefunds(db);
+		expect(manual).toMatchObject({ orderNumber: "GM100001", partIndex: 1 });
+		await expect(
+			completeSplitRefundsManually(db, {
+				rowIds: [manual?.id as string],
+				reference: " ",
+				actorUserId: "customer-1",
+			}),
+		).rejects.toMatchObject({ code: "refund_reference_invalid" });
+		await expect(
+			completeSplitRefundsManually(db, {
+				rowIds: [manual?.id as string],
+				reference: "2026111122001",
+				actorUserId: "customer-1",
+			}),
+		).resolves.toEqual({ completed: 1 });
+		await expect(
+			completeSplitRefundsManually(db, {
+				rowIds: [manual?.id as string],
+				reference: "2026111122001",
+				actorUserId: "customer-1",
+			}),
+		).resolves.toEqual({ completed: 0 });
+		expect((await parts())[0]?.refunded_minor).toBe("150000");
+		expect(await listManualSplitRefunds(db)).toEqual([]);
+		expect(
+			await db
+				.prepare(
+					"SELECT actor_user_id FROM audit_logs WHERE action='payment.split_refund_manually_completed'",
+				)
+				.all(),
+		).toMatchObject({ results: [{ actor_user_id: "customer-1" }] });
+	});
+
+	// Pricing: the QR channel always charges the 支付宝 channel's prices.
+	it("keeps a linked channel's prices equal to its source channel", async () => {
+		const epayId = "66666666-6666-4666-8666-666666666666";
+		await db.batch([
+			db.prepare(
+				`INSERT INTO payment_channels
+				 (id, provider, name, currency, fee_bps, fixed_fee_minor, sort_order, enabled,
+				  last_health_status, created_at, updated_at)
+				 VALUES ('${epayId}', 'epay', '支付宝', 'CNY', 0, '0', 50, 1, 'healthy', 1, 1)`,
+			),
+			db.prepare(
+				`INSERT INTO sellable_item_channel_prices
+				 (id, sellable_item_id, channel_id, price_minor, enabled, created_at, updated_at)
+				 VALUES ('epay-price', 'sellableItem-card', '${epayId}', '288000', 1, 1, 1)`,
+			),
+		]);
+		await assertPriceSource(db, channelId, epayId);
+		await expect(
+			assertPriceSource(db, channelId, channelId),
+		).rejects.toMatchObject({ code: "payment_price_source_invalid" });
+		const link = priceLinkStatements(db, {
+			channelId,
+			sourceId: epayId,
+			now: 2,
+		});
+		await db.batch([
+			...link.before,
+			db
+				.prepare(
+					"UPDATE payment_channels SET price_source_channel_id=? WHERE id=?",
+				)
+				.bind(epayId, channelId),
+			...link.after,
+		]);
+		const priceOf = async (channel: string) =>
+			(
+				await db
+					.prepare(
+						"SELECT price_minor, enabled FROM sellable_item_channel_prices WHERE channel_id=? AND sellable_item_id='sellableItem-card'",
+					)
+					.bind(channel)
+					.first<{ price_minor: string; enabled: number }>()
+			)?.price_minor ?? null;
+		expect(await priceOf(channelId)).toBe("288000");
+		// Pricing automation changes the 支付宝 price: the QR channel follows.
+		await db
+			.prepare(
+				"UPDATE sellable_item_channel_prices SET price_minor='299000', updated_at=3 WHERE id='epay-price'",
+			)
+			.run();
+		expect(await priceOf(channelId)).toBe("299000");
+		// A different price on the linked channel is refused.
+		await expect(
+			db
+				.prepare(
+					"UPDATE sellable_item_channel_prices SET price_minor='1' WHERE channel_id=?",
+				)
+				.bind(channelId)
+				.run(),
+		).rejects.toThrow(/linked_channel_price_readonly/);
+		// New and removed source prices are mirrored too.
+		await db.batch([
+			db.prepare(
+				`INSERT INTO product_sellable_items
+				 (id, product_id, name, currency, currency_decimals, price_minor,
+				  minimum_quantity, maximum_quantity, sort_order, enabled, created_at, updated_at)
+				 VALUES ('sellableItem-2', 'product-card', 'Two', 'CNY', 2, '500000', 1, 1, 200, 1, 1, 1)`,
+			),
+			db.prepare(
+				`INSERT INTO sellable_item_channel_prices
+				 (id, sellable_item_id, channel_id, price_minor, enabled, created_at, updated_at)
+				 VALUES ('epay-price-2', 'sellableItem-2', '${epayId}', '480000', 1, 4, 4)`,
+			),
+		]);
+		expect(
+			await db
+				.prepare(
+					"SELECT price_minor FROM sellable_item_channel_prices WHERE channel_id=? AND sellable_item_id='sellableItem-2'",
+				)
+				.bind(channelId)
+				.first(),
+		).toEqual({ price_minor: "480000" });
+		await db
+			.prepare("DELETE FROM sellable_item_channel_prices WHERE id='epay-price'")
+			.run();
+		expect(await priceOf(channelId)).toBeNull();
 	});
 });
 

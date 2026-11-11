@@ -1067,6 +1067,8 @@ export const paymentChannels = sqliteTable(
 		/** '0' = no daily (Beijing day) collection limit. */
 		dailyMaxMinor: text("daily_max_minor").notNull().default("0"),
 		splitMaxParts: integer("split_max_parts").notNull().default(10),
+		/** Channel prices mirror this channel's (DB triggers keep them equal). */
+		priceSourceChannelId: text("price_source_channel_id"),
 		lastHealthStatus: text("last_health_status", {
 			enum: ["unknown", "healthy", "unhealthy"],
 		})
@@ -1279,6 +1281,7 @@ export const paymentSplitParts = sqliteTable(
 		partCount: integer("part_count").notNull(),
 		amountMinor: text("amount_minor").notNull(),
 		providerPaymentId: text("provider_payment_id"),
+		providerTradeNo: text("provider_trade_no"),
 		checkoutUrl: text("checkout_url"),
 		notifyUrl: text("notify_url").notNull(),
 		providerExpiresAt: integer("provider_expires_at", { mode: "timestamp_ms" }),
@@ -1290,6 +1293,7 @@ export const paymentSplitParts = sqliteTable(
 		succeededAt: integer("succeeded_at", { mode: "timestamp_ms" }),
 		refundedMinor: text("refunded_minor").notNull().default("0"),
 		failureCode: text("failure_code"),
+		nextCheckAt: integer("next_check_at", { mode: "timestamp_ms" }),
 		...timestamps,
 	},
 	(table) => [
@@ -1307,6 +1311,12 @@ export const paymentSplitParts = sqliteTable(
 		),
 		index("payment_split_parts_status_updated_idx").on(
 			table.status,
+			table.updatedAt,
+			table.id,
+		),
+		index("payment_split_parts_status_check_idx").on(
+			table.status,
+			table.nextCheckAt,
 			table.updatedAt,
 			table.id,
 		),
@@ -1349,6 +1359,11 @@ export const paymentSplitRefunds = sqliteTable(
 		failureCode: text("failure_code"),
 		alertedAt: integer("alerted_at", { mode: "timestamp_ms" }),
 		completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+		/** Alipay refund number / evidence entered when closed by hand. */
+		manualReference: text("manual_reference"),
+		completedBy: text("completed_by").references(() => users.id, {
+			onDelete: "set null",
+		}),
 		...timestamps,
 	},
 	(table) => [

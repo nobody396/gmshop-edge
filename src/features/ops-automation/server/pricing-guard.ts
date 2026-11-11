@@ -959,11 +959,11 @@ async function loadItems(db: D1Database, onlyItemId?: string) {
 			  (SELECT price.id FROM sellable_item_channel_prices price
 			   JOIN payment_channels channel ON channel.id = price.channel_id
 			   WHERE price.sellable_item_id = item.id AND price.enabled = 1
-			    AND channel.name = '支付宝' LIMIT 1) AS alipay_price_id,
+			    AND channel.name = '支付宝' AND channel.price_source_channel_id IS NULL LIMIT 1) AS alipay_price_id,
 			  (SELECT price.price_minor FROM sellable_item_channel_prices price
 			   JOIN payment_channels channel ON channel.id = price.channel_id
 			   WHERE price.sellable_item_id = item.id AND price.enabled = 1
-			    AND channel.name = '支付宝' LIMIT 1) AS alipay_minor,
+			    AND channel.name = '支付宝' AND channel.price_source_channel_id IS NULL LIMIT 1) AS alipay_minor,
 			  (SELECT binding.reference_cost_minor FROM supplier_bindings binding
 			   WHERE binding.sellable_item_id = item.id AND binding.enabled = 1
 			    AND binding.provider = 'shared_stock'
