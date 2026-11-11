@@ -218,6 +218,10 @@ export const guideProducts = {
 		productId: "c70d10e8-b781-4782-bc98-1f034bcd069a",
 		itemId: "3d992ebc-cae7-4eaa-bb1c-c9a886c73d6b",
 	},
+	appleph: {
+		productId: "c70d10e8-b781-4782-bc98-1f034bcd069a",
+		itemId: "3b92ccfd-a4c3-48bd-84d8-8531367bc42f",
+	},
 	agentsite: {
 		productId: "19900000-0000-4000-8000-000000000001",
 		itemId: "19900000-0000-4000-8000-000000000002",
@@ -534,8 +538,18 @@ export function guideStep(a: readonly string[]): GuideStep {
 	}
 	if (family === "apple") {
 		if (!current)
-			return question("apple_target", ["appleus", "applejp", "appletr"]);
-		if (current === "appleus" || current === "applejp" || current === "appletr")
+			return question("apple_target", [
+				"appleus",
+				"applejp",
+				"appletr",
+				"appleph",
+			]);
+		if (
+			current === "appleus" ||
+			current === "applejp" ||
+			current === "appletr" ||
+			current === "appleph"
+		)
 			return result(current);
 	}
 	if (family === "reseller") {
