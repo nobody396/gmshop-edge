@@ -2,7 +2,8 @@
  * Stops unfinished supplier procurement and delivery once an order is fully
  * refunded. The statements run inside the refund's D1 batch, after the order
  * row was updated, and only touch rows while the order is `refunded`; a
- * partial or failed refund therefore changes nothing. Bulk AISOU procurement
+ * partial or failed refund therefore changes nothing. Queued delivery emails
+ * of the order are suppressed in the same batch. Bulk AISOU procurement
  * already settles refunded orders itself.
  */
 export function cancelOpenFulfillmentStatements(
@@ -51,5 +52,18 @@ export function cancelOpenFulfillmentStatements(
 				  ) AND status IN ('pending', 'processing') AND ${refunded}`,
 			)
 			.bind(now, now, orderId, orderId),
+		// Delivery emails not yet handed to a provider must not go out after a
+		// full refund (the sender re-checks too, for one already being sent).
+		db
+			.prepare(
+				`UPDATE notification_deliveries SET status = 'suppressed',
+				 error_code = 'order_refunded', next_attempt_at = NULL, updated_at = ?
+				 WHERE asset_id IN (
+				   SELECT delivery.id FROM delivery_records delivery
+				   JOIN shop_order_items item ON item.id = delivery.order_item_id
+				   WHERE item.order_id = ?
+				  ) AND status IN ('pending', 'failed') AND ${refunded}`,
+			)
+			.bind(now, orderId, orderId),
 	];
 }

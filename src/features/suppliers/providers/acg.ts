@@ -165,6 +165,14 @@ export class AcgAdapter implements SupplierAdapter {
 			},
 			{ validateDestination: !this.input.fetcher, audit: this.input.audit },
 		);
+		// A server error does not prove the supplier did not create (and charge)
+		// the order, so it must never be treated as a definitive rejection.
+		if (status >= 500)
+			throw new DomainError(
+				"supplier_request_uncertain",
+				502,
+				"Supplier request outcome is uncertain",
+			);
 		const envelope = z
 			.object({
 				code: z.union([z.string(), z.number()]),

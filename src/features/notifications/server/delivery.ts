@@ -313,11 +313,9 @@ export async function processEmailNotification(
 		row.message_encrypted,
 		runtime.commerceSecret,
 	).then((value) => emailMessageSchema.parse(JSON.parse(value)));
-	const suppression = await recipientSuppressionReason(
-		db,
-		message.to,
-		row.event,
-	);
+	const suppression =
+		(await recipientSuppressionReason(db, message.to, row.event)) ??
+		(await withdrawnDeliveryReason(db, row));
 	if (suppression) {
 		const changed = await db
 			.prepare(
@@ -339,9 +337,10 @@ export async function processEmailNotification(
 			`UPDATE notification_deliveries SET status = 'sending',
 			 attempt_count = attempt_count + 1, updated_at = ?
 			 WHERE id = ? AND status IN ('pending', 'failed')
-			 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)`,
+			 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+			 AND NOT EXISTS (${withdrawnDeliverySql})`,
 		)
-		.bind(now, row.id, now)
+		.bind(now, row.id, now, ...withdrawnDeliveryBindings(row))
 		.run();
 	if (Number(claimed.meta.changes ?? 0) !== 1)
 		throw new DomainError(
@@ -351,6 +350,10 @@ export async function processEmailNotification(
 		);
 	let cloudflareBindingError: DomainError | null = null;
 	for (const config of configs) {
+		// Re-check before every provider attempt: a slow failing provider must
+		// not give a refund time to complete before the fallback gets the content.
+		const stop = await stopForRefund(db, row);
+		if (stop) return stop;
 		const result = await tryEmailConfig(
 			runtime.commerceSecret,
 			config,
@@ -453,6 +456,101 @@ async function loadEmailDeliveryConfigs(
 		.bind(configId, configId, configId)
 		.all<EmailConfigRow>();
 	return rows.results;
+}
+
+// The email belongs to one delivery (asset_id) of one order line. Judge that
+// line's own order and grant: a renewal shares its entitlement with earlier
+// orders, so the entitlement's first order says nothing about this email.
+// A completed refund/cancellation of this line, or a revoked entitlement,
+// withdraws what the email would hand over, so it must never be sent.
+const withdrawnDeliverySql = `SELECT 1 FROM delivery_records d
+ JOIN shop_order_items oi ON oi.id = d.order_item_id
+ JOIN shop_orders so ON so.id = oi.order_id
+ LEFT JOIN entitlement_grants g ON g.source_order_item_id = oi.id
+  AND g.entitlement_id = ?
+ LEFT JOIN customer_entitlements ce ON ce.id = ?
+ WHERE d.id = ? AND (so.status IN ('refunded', 'cancelled')
+  OR g.status IN ('refunded', 'revoked') OR ce.status = 'revoked')`;
+
+const refundingRecheckMs = 5 * 60_000;
+
+// Checked right before content goes to a provider (after the claim): a
+// completed refund suppresses the email; a refund still in flight parks it
+// with a fresh delayed outbox event. Parking is a business wait, so it gives
+// back the claim's attempt (provider backoff only counts real sends) and does
+// not throw, so the queue's limited retry budget is not spent on it.
+async function stopForRefund(db: D1Database, row: DeliveryRow) {
+	const withdrawn = await withdrawnDeliveryReason(db, row);
+	if (withdrawn) {
+		await db
+			.prepare(
+				`UPDATE notification_deliveries SET status = 'suppressed', error_code = ?,
+				 next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'`,
+			)
+			.bind(withdrawn, Date.now(), row.id)
+			.run();
+		return { duplicate: false, status: "suppressed" } as const;
+	}
+	if (!(await deliveryOrderRefunding(db, row))) return null;
+	const now = Date.now();
+	const later = now + refundingRecheckMs;
+	await db.batch([
+		db
+			.prepare(
+				`UPDATE notification_deliveries SET status = 'pending',
+				 attempt_count = MAX(0, attempt_count - 1),
+				 error_code = 'order_refunding', next_attempt_at = ?, updated_at = ?
+				 WHERE id = ? AND status = 'sending'`,
+			)
+			.bind(later, now, row.id),
+		db
+			.prepare(
+				`INSERT INTO outbox_events
+				 (id, event_type, aggregate_type, aggregate_id, idempotency_key, payload,
+				  status, attempt_count, next_attempt_at, created_at, updated_at)
+				 VALUES (?, 'notification.requested', 'notification_delivery', ?, ?, ?,
+				  'pending', 0, ?, ?, ?)`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				row.id,
+				`notification-refund-hold:${row.id}:${crypto.randomUUID()}`,
+				JSON.stringify({ notificationDeliveryId: row.id }),
+				later,
+				now,
+				now,
+			),
+	]);
+	return { duplicate: false, status: "deferred" } as const;
+}
+
+function withdrawnDeliveryBindings(row: DeliveryRow) {
+	return [row.entitlement_id, row.entitlement_id, row.asset_id];
+}
+
+async function withdrawnDeliveryReason(db: D1Database, row: DeliveryRow) {
+	if (!row.asset_id) return null;
+	const withdrawn = await db
+		.prepare(withdrawnDeliverySql)
+		.bind(...withdrawnDeliveryBindings(row))
+		.first();
+	return withdrawn ? "entitlement_withdrawn" : null;
+}
+
+// While any refund (full or partial) of this line's order is in flight, hold
+// the email until the order settles instead of racing the refund.
+async function deliveryOrderRefunding(db: D1Database, row: DeliveryRow) {
+	if (!row.asset_id) return false;
+	const refunding = await db
+		.prepare(
+			`SELECT 1 FROM delivery_records d
+			 JOIN shop_order_items oi ON oi.id = d.order_item_id
+			 JOIN shop_orders so ON so.id = oi.order_id
+			 WHERE d.id = ? AND so.status = 'refunding'`,
+		)
+		.bind(row.asset_id)
+		.first();
+	return Boolean(refunding);
 }
 
 async function recordDeliveredNotificationAccess(

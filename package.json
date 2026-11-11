@@ -62,7 +62,7 @@
     "test": "bun run test:vitest && bun run test:bun-runtime && bun run test:support-attachments && bun run test:support-email && bun run test:support-away",
     "test:vitest": "vitest run",
     "test:vitest:shard": "bun scripts/vitest-shard.ts",
-    "test:bun-runtime": "bun test tests/unit/server/node-data-operations.test.ts tests/unit/server/node-runtime-adapters.test.ts tests/unit/server/node-server-runtime.test.ts ./tests/integration/promotion-wallet.bun.ts",
+    "test:bun-runtime": "bun test tests/unit/server/node-data-operations.test.ts tests/unit/server/node-runtime-adapters.test.ts tests/unit/server/node-server-runtime.test.ts ./tests/integration/promotion-wallet.bun.ts ./tests/integration/audit-money-20261111.bun.ts",
     "format": "biome format",
     "lint": "biome lint",
     "check": "biome check",
