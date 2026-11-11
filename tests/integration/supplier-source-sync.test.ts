@@ -198,6 +198,57 @@ describe("supplier source synchronization", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("runs automatic catalogs every three minutes by default and accepts a three-minute setting", async () => {
+		const now = 1_800_000_400_000;
+		await db
+			.prepare(
+				`INSERT INTO system_settings
+				 (key, value, is_secret, created_at, updated_at)
+				 VALUES ('suppliers.sync.status', ?, 0, ?, ?)`,
+			)
+			.bind(
+				JSON.stringify({
+					lastSyncedAt: now - 3 * 60_000,
+					lastStatus: "succeeded",
+					lastErrorCode: null,
+				}),
+				now,
+				now,
+			)
+			.run();
+		await expect(loadSupplierSyncSettings(db)).resolves.toMatchObject({
+			enabled: true,
+			intervalMs: 3 * 60_000,
+		});
+		let requests = 0;
+		const result = await syncSupplierCatalogsIfDue({
+			db,
+			cache,
+			runtime,
+			now,
+			fetcher: async (input) => {
+				requests += 1;
+				return new URL(String(input)).pathname.endsWith("/categories")
+					? categoriesResponse()
+					: catalogResponse();
+			},
+		});
+		expect(result.sourceCount).toBeGreaterThan(0);
+		expect(requests).toBeGreaterThan(0);
+
+		await db
+			.prepare(
+				`INSERT INTO system_settings
+				 (key, value, is_secret, created_at, updated_at)
+				 VALUES ('suppliers.sync.config', ?, 0, ?, ?)`,
+			)
+			.bind(JSON.stringify({ enabled: true, intervalMs: 180_000 }), now, now)
+			.run();
+		await expect(loadSupplierSyncSettings(db)).resolves.toMatchObject({
+			intervalMs: 180_000,
+		});
+	});
+
 	it("cools a failed account and continues with another account in the source", async () => {
 		const apiKeys: string[] = [];
 		const fetcher: typeof fetch = async (input, init) => {

@@ -3,7 +3,8 @@ import type { RuntimeConfig } from "#/server/runtime-config";
 import type { SupplierProvider } from "../schema";
 import { syncSupplierSource } from "./source-sync";
 
-const DEFAULT_INTERVAL_MS = 10 * 60_000;
+// Owner 2026-11-11: restocks must show up within ~3 minutes.
+const DEFAULT_INTERVAL_MS = 3 * 60_000;
 
 export const supplierSyncSettingKeys = {
 	config: "suppliers.sync.config",

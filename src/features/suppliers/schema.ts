@@ -61,7 +61,7 @@ export const supplierSyncSettingsSchema = z.object({
 	intervalMs: z
 		.number()
 		.int()
-		.min(10 * 60_000)
+		.min(3 * 60_000)
 		.max(30 * 86_400_000),
 });
 

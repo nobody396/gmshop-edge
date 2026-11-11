@@ -661,7 +661,7 @@ function SupplierSyncSettingsForm({
 					tooltip: m.supplier_sync_all_sources(),
 					fieldProps: {
 						inputMode: "numeric",
-						min: 10,
+						min: 3,
 						max: 43_200,
 						suffix: m.unit_minutes(),
 					},
@@ -699,7 +699,7 @@ function SupplierSyncSettingsForm({
 			]}
 			initialValues={{
 				enabled: settings?.enabled ?? true,
-				intervalMinutes: (settings?.intervalMs ?? 600_000) / 60_000,
+				intervalMinutes: (settings?.intervalMs ?? 180_000) / 60_000,
 				syncMode: "smart",
 			}}
 			submitter={({ submitting }) => (
@@ -732,7 +732,7 @@ function SupplierSyncSettingsForm({
 				try {
 					await onSave({
 						enabled: formBooleanValue(values.enabled),
-						intervalMs: Number(values.intervalMinutes ?? 10) * 60_000,
+						intervalMs: Number(values.intervalMinutes ?? 3) * 60_000,
 					});
 					if (syncAfterSave.current) await onSync(values.syncMode === "full");
 				} finally {
