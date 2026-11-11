@@ -2583,6 +2583,8 @@
 	"guide_gemini_target": "Which option?",
 	"guide_geminiready": "Ready-made account (an account with Ultra already active)",
 	"guide_geminiown": "Applied to your own Google account",
+	"guide_suno": "Suno",
+	"guide_suno_hint": "Premier self-serve recharge code",
 	"guide_apple": "Apple ID",
 	"guide_apple_hint": "US / Japan / Turkey aged accounts",
 	"guide_reseller": "Become a reseller",

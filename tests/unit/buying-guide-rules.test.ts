@@ -359,6 +359,10 @@ it("sends Free accounts to India card-paid Go and covers the newer catalog", () 
 		kind: "result",
 		product: "tg12",
 	});
+	expect(guideStep(["suno"])).toEqual({
+		kind: "result",
+		product: "suno",
+	});
 	expect(guideStep(["gmail", "gmailus"])).toEqual({
 		kind: "result",
 		product: "gmailus",

@@ -182,6 +182,10 @@ export const guideProducts = {
 		productId: "b99dfd6a-2206-4dc9-aea9-85e86c3f8d66",
 		itemId: "ee138689-0a97-4d1d-9763-839fb75fc59d",
 	},
+	suno: {
+		productId: "8f5c1623-9374-458d-92fa-48ee78668de7",
+		itemId: "eff390c0-8cd9-497b-9ade-dfafe07d0439",
+	},
 	tg3: {
 		productId: "9e8b2987-1564-417e-8441-5936c5d592fa",
 		itemId: "bb484132-9c65-4ba4-908b-9043afdf7f77",
@@ -270,6 +274,7 @@ export function guideStep(a: readonly string[]): GuideStep {
 			"compute",
 			"x",
 			"gemini",
+			"suno",
 			"telegram",
 			"apple",
 			"gmail",
@@ -511,6 +516,7 @@ export function guideStep(a: readonly string[]): GuideStep {
 		if (current === "geminiready" || current === "geminiown")
 			return result(current);
 	}
+	if (family === "suno") return result("suno");
 	if (family === "telegram") {
 		if (!current) return question("tg_target", ["tg3", "tg6", "tg12"]);
 		if (current === "tg3" || current === "tg6" || current === "tg12")
