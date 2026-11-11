@@ -249,18 +249,18 @@ Warranty
 	},
 	"b99dfd6a-2206-4dc9-aea9-85e86c3f8d66": {
 		name: "Gemini Ultra ready-made account｜1 month",
-		description: `A ready-made Google account with Google AI Ultra active for 1 month. Delivered automatically after payment. This is a ready-made account; it cannot be applied to your own account.
+		description: `A ready-made Google account with the Google AI Ultra 20X plan (Google's $199.99/month tier) active for 1 month. Delivered automatically after payment. This is a ready-made account; it cannot be applied to your own account.
 
 Included
-- Google AI Ultra for 1 month: Gemini's top models and highest usage limits; Google's official page decides the exact benefits.
+- Google AI Ultra 20X for 1 month: 20 times the Gemini usage of AI Pro, with Google's strongest models Gemini 4 Carbon and Gemini 4 Argon, plus Deep Research, Antigravity, Flow video (25,000 credits a month), Project Genie and more; Google's official page decides the exact benefits.
 
 What you receive
-Account, password, recovery email and 2FA key, in the format "account----password----recovery email----2FA key". Sign-in asks for a 2FA code: add the 2FA key to an authenticator app (such as Google Authenticator) to generate it.
+Account, password and recovery email, in the format "account----password----recovery email". Some accounts also come with a 2FA key at the end: "account----password----recovery email----2FA key".
 
 How to use
 1. View the delivered account details on the order page.
-2. Add the 2FA key to your authenticator app.
-3. Open https://gemini.google.com , sign in with the delivered account and password, and enter the 6-digit code from the app.
+2. Open https://gemini.google.com and sign in with the delivered account and password.
+3. If Google asks you to verify, enter the delivered recovery email address when prompted; if your details include a 2FA key, you can also add it to an authenticator app (such as Google Authenticator) and enter the 6-digit code.
 4. After signing in, check that the plan shows Ultra.
 5. We suggest adding your own recovery email or phone and keeping the details safe.
 
@@ -270,8 +270,8 @@ Before you buy
 - Follow Google's rules; nothing can guarantee the account is never restricted or banned.
 
 After-sales
-- Only delivered details that cannot sign in are covered. Sign in and check soon after delivery; if sign-in fails, keep a screenshot of the error and contact support from the order page.
-- Restrictions or bans caused by account sharing, unusual networks, device switching or rule violations are not covered.
+- First sign-in only: sign in and check soon after delivery; if the first sign-in fails, keep a screenshot of the error and contact support from the order page.
+- Restrictions, bans or other problems after a successful first sign-in (including those caused by account sharing, unusual networks, device switching or rule violations) are not covered, and the membership is not guaranteed to last the full month.
 - No no-reason refunds after delivery.`,
 	},
 	"64812c48-9026-4ef7-874d-b332d2a39b1a": {
@@ -824,10 +824,10 @@ ${claudeRestrictions}`,
 	"a3fc7472-b5f5-45b2-93e4-0123a8d2c9e4": {
 		name: "Gemini Ultra｜Ready-made account｜1 month",
 		policy: policy(
-			"Delivered automatically after payment: a Google account with Ultra active (account, password, recovery email, 2FA key)",
+			"Delivered automatically after payment: a Google account with Ultra 20X active (account, password, recovery email; some accounts also include a 2FA key)",
 			"Automatic, usually within 1 minute; view it on the order page",
-			"Gemini Ultra ready-made account with Google AI Ultra for 1 month; it cannot be applied to your own account",
-			"Only delivered details that cannot sign in are covered; sign in and check soon after delivery",
+			"Gemini Ultra 20X ready-made account with Google AI Ultra for 1 month; it cannot be applied to your own account",
+			"First sign-in only: sign in and check soon after delivery; contact support if the first sign-in fails",
 			"Do not share the account or switch IPs or devices frequently; restrictions or bans are not covered",
 		),
 	},
