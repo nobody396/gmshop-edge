@@ -22,6 +22,7 @@ import { createSupplierCredentialVault } from "#/features/suppliers/secrets";
 import { createSupplierHttpAudit } from "#/features/suppliers/server/diagnostics";
 import { handleDujiaoSupplierCallback } from "#/features/suppliers/server/dujiao-callback";
 import { processSupplierOrder } from "#/features/suppliers/server/process";
+import { requeueFundedSupplierOrders } from "#/features/suppliers/server/requeue-funded";
 import { decryptSecret, encryptSecret } from "#/lib/secrets";
 import {
 	createInitialRuntimeConfig,
@@ -400,6 +401,117 @@ describe("supplier fulfillment", { timeout: 30_000 }, () => {
 		expect(
 			await db.prepare("SELECT status FROM stock_entries").first(),
 		).toEqual({ status: "reserved" });
+	});
+
+	it("requeues a balance-blocked supplier order once a later balance sync can pay for it", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const order = await db
+			.prepare("SELECT id, delivery_record_id FROM supplier_orders")
+			.first<{ id: string; delivery_record_id: string }>();
+		const unfunded: typeof fetch = async (input, init) => {
+			const req = new Request(input, init);
+			if (req.url.endsWith("/ping"))
+				return Response.json({
+					ok: true,
+					site_name: "Supplier",
+					balance: "0.00",
+					currency: "CNY",
+				});
+			return pendingSupplierFetcher(input, init);
+		};
+		await expect(
+			processSupplierOrder(db, order?.id ?? "", { fetcher: unfunded }),
+		).rejects.toMatchObject({ code: "supplier_accounts_exhausted" });
+		const failedAt = (
+			await db
+				.prepare("SELECT updated_at FROM supplier_orders")
+				.first<{ updated_at: number }>()
+		)?.updated_at as number;
+
+		// Balance not refreshed since the failure: stay failed.
+		await db
+			.prepare(
+				"UPDATE supplier_accounts SET balance_minor='100000', balance_synced_at=?",
+			)
+			.bind(failedAt - 1)
+			.run();
+		expect(await requeueFundedSupplierOrders(db, failedAt + 60_000)).toEqual({
+			requeued: 0,
+		});
+
+		// Refreshed but still too low for 2 × reference cost 100: stay failed.
+		await db
+			.prepare(
+				"UPDATE supplier_accounts SET balance_minor='150', balance_synced_at=?",
+			)
+			.bind(failedAt + 1)
+			.run();
+		expect(await requeueFundedSupplierOrders(db, failedAt + 60_000)).toEqual({
+			requeued: 0,
+		});
+
+		await db
+			.prepare("UPDATE supplier_accounts SET balance_minor='100000'")
+			.run();
+		expect(await requeueFundedSupplierOrders(db, failedAt + 60_000)).toEqual({
+			requeued: 1,
+		});
+		expect(await requeueFundedSupplierOrders(db, failedAt + 60_000)).toEqual({
+			requeued: 0,
+		});
+		expect(
+			await db
+				.prepare("SELECT state, last_error_code FROM supplier_orders")
+				.first(),
+		).toEqual({ state: "pending", last_error_code: null });
+		expect(
+			(
+				await db
+					.prepare(
+						`SELECT status FROM outbox_events
+						 WHERE event_type='supplier.requested' AND aggregate_id=?
+						 AND idempotency_key LIKE 'supplier-funded-requeue:%'`,
+					)
+					.bind(order?.id)
+					.all()
+			).results,
+		).toEqual([{ status: "pending" }]);
+
+		await expect(
+			processSupplierOrder(db, order?.id ?? "", {
+				fetcher: pendingSupplierFetcher,
+			}),
+		).rejects.toMatchObject({ code: "supplier_order_pending" });
+		expect(
+			await db
+				.prepare("SELECT state, selected_account_id FROM supplier_orders")
+				.first(),
+		).toEqual({ state: "uncertain", selected_account_id: "account" });
+	});
+
+	it("never requeues a balance-blocked supplier order whose delivery already finished", async () => {
+		await completeFreeStoreOrder(db, "order");
+		const now = Date.now();
+		await db.batch([
+			db
+				.prepare(
+					`UPDATE supplier_orders SET state='failed',
+					 last_error_code='supplier_accounts_exhausted', updated_at=?`,
+				)
+				.bind(now - 120_000),
+			db.prepare("UPDATE delivery_records SET status='delivered'"),
+			db
+				.prepare(
+					"UPDATE supplier_accounts SET balance_minor='100000', balance_synced_at=?",
+				)
+				.bind(now),
+		]);
+		expect(await requeueFundedSupplierOrders(db, now)).toEqual({
+			requeued: 0,
+		});
+		expect(
+			await db.prepare("SELECT state FROM supplier_orders").first(),
+		).toEqual({ state: "failed" });
 	});
 
 	it("exports owned stock only; fallback catalogue cannot expand a new reseller purchase", async () => {

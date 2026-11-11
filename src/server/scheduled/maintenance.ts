@@ -118,6 +118,7 @@ export async function runMaintenance(
 		exchangeRatesSyncFailed: exchangeRates?.failed ?? 0,
 		supplierBalancesUpdated: suppliers.balancesUpdated,
 		supplierBalancesFailed: suppliers.balancesFailed,
+		supplierFundedOrdersRequeued: suppliers.fundedOrdersRequeued,
 		supplierCatalogsUpdated: suppliers.catalogsUpdated,
 		supplierCatalogsSkipped: suppliers.catalogsSkipped,
 		supplierCatalogsFailed: suppliers.catalogsFailed,
