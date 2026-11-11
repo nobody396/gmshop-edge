@@ -51,6 +51,7 @@ export async function getStoreOrder(
 		automationArtifacts,
 		afterSales,
 		emailNotificationAvailability,
+		balanceHolds,
 	] = await db.batch([
 		db
 			.prepare(
@@ -183,7 +184,21 @@ export async function getStoreOrder(
 			`SELECT 1 AS available FROM notification_channel_configs
 			 WHERE channel = 'email' AND enabled = 1 LIMIT 1`,
 		),
+		db
+			.prepare(
+				`SELECT cash_minor, reward_minor, external_minor FROM order_balance_holds
+				 WHERE order_id = ? AND state IN ('held', 'consumed') LIMIT 1`,
+			)
+			.bind(order.id),
 	]);
+	const balanceHold = rows(balanceHolds)[0];
+	// Reward/wallet balance reserved at checkout; the customer pays only the external remainder.
+	const balanceAppliedMinor = balanceHold
+		? (
+				BigInt(String(balanceHold.cash_minor)) +
+				BigInt(String(balanceHold.reward_minor))
+			).toString()
+		: "0";
 	return {
 		id: String(order.id),
 		orderNumber: String(order.order_number),
@@ -197,6 +212,10 @@ export async function getStoreOrder(
 		subtotalMinor: String(order.subtotal_minor),
 		discountMinor: String(order.discount_minor),
 		totalMinor: String(order.total_minor),
+		balanceAppliedMinor,
+		payableMinor: balanceHold
+			? String(balanceHold.external_minor)
+			: String(order.total_minor),
 		paidMinor: String(order.paid_minor),
 		expiresAt: Number(order.expires_at),
 		paidAt: nullableNumber(order.paid_at),

@@ -895,6 +895,7 @@
 	"store_checkout_select_option": "请选择",
 	"store_checkout_next_step": "提交后显示收款码，付款后自动发货，卡密在订单页领取",
 	"store_checkout_payable": "应付",
+	"store_order_balance_applied": "奖励/余额抵扣",
 	"store_checkout_amount_due": "到手价",
 	"store_account_order_more_items": "等 {count} 件",
 	"store_continue_shopping": "继续选购",

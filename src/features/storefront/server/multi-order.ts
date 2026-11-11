@@ -334,7 +334,6 @@ export async function createMultiStoreOrder(
 			? await referralRewardWithheld(db, coupon.referrer_user_id, {
 					userId: access.userId,
 					email: normalizedContactEmail,
-					ip: access.clientIp,
 					rewardMinor: BigInt(promotion.rewardMinor),
 				})
 			: false;
@@ -1398,9 +1397,10 @@ async function claimNewOrderBudget(
 const referralRewardMonthlyCapMinor = 100_000n;
 
 /**
- * Same person behind the order (email up to a +tag, an email the referrer has
- * ordered with, or an IP the referrer signed in from), or the monthly cap is
- * reached. Guests and unverified accounts earn the referrer a reward too
+ * Same person behind the order (email up to a +tag, or an email the referrer has
+ * ordered with), or the monthly cap is reached. IP is deliberately not a signal:
+ * most buyers reach the shop through the same few proxy exits, so a shared IP
+ * withheld genuine invitations (2026-11-11, a friend's order on a shared exit). Guests and unverified accounts earn the referrer a reward too
  * (owner 2026-11-07): the budget never exceeds 35% of margin, so a disguised
  * self-purchase still leaves the sale profitable.
  */
@@ -1410,7 +1410,6 @@ async function referralRewardWithheld(
 	buyer: {
 		userId: string | null | undefined;
 		email: string | null | undefined;
-		ip: string | null | undefined;
 		rewardMinor: bigint;
 	},
 ) {
@@ -1429,17 +1428,6 @@ async function referralRewardWithheld(
 		.bind(referrerUserId)
 		.all<{ email: string }>();
 	if (ownEmails.results.some((row) => canonicalEmail(row.email) === buyerEmail))
-		return true;
-	const ip = buyer.ip?.trim();
-	if (
-		ip &&
-		(await db
-			.prepare(
-				"SELECT 1 FROM sessions WHERE user_id = ? AND ip_address = ? LIMIT 1",
-			)
-			.bind(referrerUserId, ip)
-			.first())
-	)
 		return true;
 	const beijingMonthStart =
 		Date.UTC(

@@ -150,6 +150,7 @@ export function StorefrontOrderPage({
 		return <OrderLoadingSkeleton />;
 	}
 	const data = order.data;
+	const balanceApplied = BigInt(data.balanceAppliedMinor) > 0n;
 	const paymentReturnPending =
 		paymentReturning && data.status === "pending_payment";
 	const latestPayment = data.payments[0];
@@ -357,17 +358,19 @@ export function StorefrontOrderPage({
 							<div className="flex h-full flex-col gap-7 lg:sticky lg:top-26">
 								<div>
 									<p className="font-medium text-muted-foreground text-sm">
-										{m.store_order_total()}
+										{balanceApplied
+											? m.store_checkout_payable()
+											: m.store_order_total()}
 									</p>
 									<strong className="mt-2 block text-4xl text-primary tracking-tight">
 										{formatMinorAmountWithSymbol(
-											data.totalMinor,
+											data.payableMinor,
 											data.currency,
 											data.currencyDecimals,
 										)}
 									</strong>
 								</div>
-								{BigInt(data.discountMinor) > 0n ? (
+								{BigInt(data.discountMinor) > 0n || balanceApplied ? (
 									<div className="grid gap-2 text-sm">
 										<div className="flex justify-between gap-4">
 											<span className="text-muted-foreground">
@@ -381,19 +384,36 @@ export function StorefrontOrderPage({
 												)}
 											</span>
 										</div>
-										<div className="flex justify-between gap-4">
-											<span className="text-muted-foreground">
-												{m.coupons_value()}
-											</span>
-											<span>
-												-
-												{formatMinorAmountWithSymbol(
-													data.discountMinor,
-													data.currency,
-													data.currencyDecimals,
-												)}
-											</span>
-										</div>
+										{BigInt(data.discountMinor) > 0n ? (
+											<div className="flex justify-between gap-4">
+												<span className="text-muted-foreground">
+													{m.coupons_value()}
+												</span>
+												<span>
+													-
+													{formatMinorAmountWithSymbol(
+														data.discountMinor,
+														data.currency,
+														data.currencyDecimals,
+													)}
+												</span>
+											</div>
+										) : null}
+										{balanceApplied ? (
+											<div className="flex justify-between gap-4">
+												<span className="text-muted-foreground">
+													{m.store_order_balance_applied()}
+												</span>
+												<span>
+													-
+													{formatMinorAmountWithSymbol(
+														data.balanceAppliedMinor,
+														data.currency,
+														data.currencyDecimals,
+													)}
+												</span>
+											</div>
+										) : null}
 									</div>
 								) : null}
 								{paymentReturnPending ? (

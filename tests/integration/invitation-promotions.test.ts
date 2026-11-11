@@ -28,6 +28,7 @@ import {
 	previewStoreCoupon,
 	quoteStoreCouponForVisitor,
 } from "#/features/storefront/server/multi-order";
+import { getStoreOrder } from "#/features/storefront/server/order-query";
 import { getWallet } from "#/features/wallet/server/ledger";
 import { applyMigrations } from "./migrations";
 
@@ -198,6 +199,28 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		});
 		expect(created.totalMinor).toBe("107760");
 		expect(await rewardOf(created.id)).toBe("0");
+	});
+	it("still pays the referrer when the friend shares the referrer's sign-in IP", async () => {
+		// Buyers commonly share proxy exits; an IP match alone must not withhold the reward.
+		await db
+			.prepare(
+				"INSERT INTO sessions(id,expires_at,token,created_at,updated_at,ip_address,user_id) VALUES ('shared-exit',?,'shared-exit-token',1,1,'203.0.113.9',?)",
+			)
+			.bind(Date.now() + 86_400_000, promoter)
+			.run();
+		const code = await openReferralCoupon(db, promoter);
+		const created = await createMultiStoreOrder(
+			db,
+			{
+				email: "buyer@example.com",
+				couponCode: code.code,
+				idempotencyKey: crypto.randomUUID(),
+				items: [{ sellableItemId: sku, quantity: 1 }],
+			},
+			{ clientIp: "203.0.113.9" },
+		);
+		expect(created.totalMinor).toBe("107760");
+		expect(await rewardOf(created.id)).toBe("560");
 	});
 	it("rejects identified self-referrals", async () => {
 		const code = await openReferralCoupon(db, promoter);
@@ -393,6 +416,31 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		expect(await getWallet(db, buyer)).toMatchObject({
 			balanceMinor: "2000",
 			rewardBalanceMinor: "800",
+		});
+	});
+	it("shows the order page what the customer actually pays after rewards and balance", async () => {
+		await db
+			.prepare(
+				"UPDATE users SET balance_minor='2000',reward_balance_minor='800' WHERE id=?",
+			)
+			.bind(buyer)
+			.run();
+		const id = await emptyOrder();
+		await db
+			.prepare("UPDATE shop_orders SET order_number='GMHOLDVIEW01' WHERE id=?")
+			.bind(id)
+			.run();
+		await reserveOrderBalance(db, id, buyer);
+		expect(
+			await getStoreOrder(
+				db,
+				{ orderNumber: "GMHOLDVIEW01" },
+				{ userId: buyer },
+			),
+		).toMatchObject({
+			totalMinor: "10000",
+			balanceAppliedMinor: "2800",
+			payableMinor: "7200",
 		});
 	});
 	it("does not overspend a wallet across concurrent orders", async () => {
