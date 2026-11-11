@@ -174,9 +174,13 @@ export const guideProducts = {
 		productId: "e5c81556-03be-43fd-bf3f-e248c16cc34d",
 		itemId: "bb584d1c-4444-4581-a2e1-5ddeab2f0f87",
 	},
-	gemini: {
+	geminiready: {
 		productId: "b99dfd6a-2206-4dc9-aea9-85e86c3f8d66",
 		itemId: "a3fc7472-b5f5-45b2-93e4-0123a8d2c9e4",
+	},
+	geminiown: {
+		productId: "b99dfd6a-2206-4dc9-aea9-85e86c3f8d66",
+		itemId: "ee138689-0a97-4d1d-9763-839fb75fc59d",
 	},
 	tg3: {
 		productId: "9e8b2987-1564-417e-8441-5936c5d592fa",
@@ -501,7 +505,11 @@ export function guideStep(a: readonly string[]): GuideStep {
 		if (offer === "offer_yes") return result(`${target}h50`);
 		if (offer === "offer_no") return result(target);
 	}
-	if (family === "gemini") return result("gemini");
+	if (family === "gemini") {
+		if (!current) return question("gemini_target", ["geminiready", "geminiown"]);
+		if (current === "geminiready" || current === "geminiown")
+			return result(current);
+	}
 	if (family === "telegram") {
 		if (!current) return question("tg_target", ["tg3", "tg6", "tg12"]);
 		if (current === "tg3" || current === "tg6" || current === "tg12")

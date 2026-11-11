@@ -343,6 +343,18 @@ it("sends Free accounts to India card-paid Go and covers the newer catalog", () 
 		product: "go",
 		warning: "overwrite30",
 	});
+	expect(guideStep(["gemini"])).toMatchObject({
+		kind: "question",
+		options: ["geminiready", "geminiown"],
+	});
+	expect(guideStep(["gemini", "geminiown"])).toEqual({
+		kind: "result",
+		product: "geminiown",
+	});
+	expect(guideStep(["gemini", "geminiready"])).toEqual({
+		kind: "result",
+		product: "geminiready",
+	});
 	expect(guideStep(["telegram", "tg12"])).toEqual({
 		kind: "result",
 		product: "tg12",
