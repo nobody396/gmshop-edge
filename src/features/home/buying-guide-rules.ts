@@ -506,7 +506,8 @@ export function guideStep(a: readonly string[]): GuideStep {
 		if (offer === "offer_no") return result(target);
 	}
 	if (family === "gemini") {
-		if (!current) return question("gemini_target", ["geminiready", "geminiown"]);
+		if (!current)
+			return question("gemini_target", ["geminiready", "geminiown"]);
 		if (current === "geminiready" || current === "geminiown")
 			return result(current);
 	}
