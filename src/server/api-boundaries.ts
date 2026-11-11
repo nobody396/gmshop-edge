@@ -16,6 +16,8 @@ const publicGetPatterns = [
 	/^\/api\/claude-env\/relay\/v1\/desired$/,
 	/^\/api\/ops\/redeem-cutover$/,
 	/^\/api\/ops\/attribution$/,
+	// Read-only App Store price comparison, any origin (agent shop reads it).
+	/^\/api\/public\/appstore-prices$/,
 	/^\/api\/ops\/guides$/,
 	opsGuidePattern,
 	// Claude env traffic buyer CLI; Bearer RESTOCK_API_TOKEN checked by the handler.
@@ -43,6 +45,8 @@ const publicPostPatterns = [
 	// Gateway / Mac runner bearer tokens are checked by the handlers.
 	/^\/api\/ops\/supplier-topup\/(?:offer|claim|result)$/,
 	/^\/api\/ops\/claude-env\/traffic\/purchases$/,
+	// Daily scraper; Bearer APPSTORE_PRICES_TOKEN checked by the handler.
+	/^\/api\/ops\/appstore-prices$/,
 	/^\/api\/ops\/guides\/[A-Za-z0-9_-]{1,120}\/(?:publish|unpublish)$/,
 	/^\/api\/support\/web\/(?:conversations|messages|replies\/ack|close)$/,
 	/^\/api\/telegram\/(?:webhook|owner-webhook)$/,

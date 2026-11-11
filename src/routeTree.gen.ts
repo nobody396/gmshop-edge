@@ -65,10 +65,12 @@ import { Route as GoItemItemIdRouteImport } from './routes/go/item/$itemId'
 import { Route as ApiTelegramWebhookRouteImport } from './routes/api/telegram/webhook'
 import { Route as ApiTelegramOwnerWebhookRouteImport } from './routes/api/telegram/owner-webhook'
 import { Route as ApiShopInvoiceOrderRouteImport } from './routes/api/shop/invoice-order'
+import { Route as ApiPublicAppstorePricesRouteImport } from './routes/api/public/appstore-prices'
 import { Route as ApiOpsRestockRouteImport } from './routes/api/ops/restock'
 import { Route as ApiOpsRedeemRestockRouteImport } from './routes/api/ops/redeem-restock'
 import { Route as ApiOpsRedeemCutoverRouteImport } from './routes/api/ops/redeem-cutover'
 import { Route as ApiOpsAttributionRouteImport } from './routes/api/ops/attribution'
+import { Route as ApiOpsAppstorePricesRouteImport } from './routes/api/ops/appstore-prices'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminDownloadAssetsRouteImport } from './routes/api/admin/download-assets'
 import { Route as AdminSuppliersProductsRouteImport } from './routes/admin/suppliers/products'
@@ -101,6 +103,7 @@ import { Route as publicUnsubscribeRenewalRouteImport } from './routes/(public)/
 import { Route as publicProductsProductIdRouteImport } from './routes/(public)/products/$productId'
 import { Route as publicOrdersOrderNumberRouteImport } from './routes/(public)/orders/$orderNumber'
 import { Route as publicGuidesClaudeNetworkCheckRouteImport } from './routes/(public)/guides/claude-network-check'
+import { Route as publicGuidesAppstorePricesRouteImport } from './routes/(public)/guides/appstore-prices'
 import { Route as publicGuidesAppleIdLoginRouteImport } from './routes/(public)/guides/apple-id-login'
 import { Route as publicGuidesSlugRouteImport } from './routes/(public)/guides/$slug'
 import { Route as publicAccountWalletRouteImport } from './routes/(public)/account/wallet'
@@ -436,6 +439,11 @@ const ApiShopInvoiceOrderRoute = ApiShopInvoiceOrderRouteImport.update({
   path: '/api/shop/invoice-order',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAppstorePricesRoute = ApiPublicAppstorePricesRouteImport.update({
+  id: '/api/public/appstore-prices',
+  path: '/api/public/appstore-prices',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOpsRestockRoute = ApiOpsRestockRouteImport.update({
   id: '/api/ops/restock',
   path: '/api/ops/restock',
@@ -454,6 +462,11 @@ const ApiOpsRedeemCutoverRoute = ApiOpsRedeemCutoverRouteImport.update({
 const ApiOpsAttributionRoute = ApiOpsAttributionRouteImport.update({
   id: '/api/ops/attribution',
   path: '/api/ops/attribution',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOpsAppstorePricesRoute = ApiOpsAppstorePricesRouteImport.update({
+  id: '/api/ops/appstore-prices',
+  path: '/api/ops/appstore-prices',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -621,6 +634,12 @@ const publicGuidesClaudeNetworkCheckRoute =
   publicGuidesClaudeNetworkCheckRouteImport.update({
     id: '/guides/claude-network-check',
     path: '/guides/claude-network-check',
+    getParentRoute: () => publicRouteRoute,
+  } as any)
+const publicGuidesAppstorePricesRoute =
+  publicGuidesAppstorePricesRouteImport.update({
+    id: '/guides/appstore-prices',
+    path: '/guides/appstore-prices',
     getParentRoute: () => publicRouteRoute,
   } as any)
 const publicGuidesAppleIdLoginRoute =
@@ -988,6 +1007,7 @@ export interface FileRoutesByFullPath {
   '/account/wallet': typeof publicAccountWalletRoute
   '/guides/$slug': typeof publicGuidesSlugRoute
   '/guides/apple-id-login': typeof publicGuidesAppleIdLoginRoute
+  '/guides/appstore-prices': typeof publicGuidesAppstorePricesRoute
   '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
@@ -1020,10 +1040,12 @@ export interface FileRoutesByFullPath {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/appstore-prices': typeof ApiOpsAppstorePricesRoute
   '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/public/appstore-prices': typeof ApiPublicAppstorePricesRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
@@ -1126,6 +1148,7 @@ export interface FileRoutesByTo {
   '/account/wallet': typeof publicAccountWalletRoute
   '/guides/$slug': typeof publicGuidesSlugRoute
   '/guides/apple-id-login': typeof publicGuidesAppleIdLoginRoute
+  '/guides/appstore-prices': typeof publicGuidesAppstorePricesRoute
   '/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/products/$productId': typeof publicProductsProductIdRoute
@@ -1158,10 +1181,12 @@ export interface FileRoutesByTo {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/appstore-prices': typeof ApiOpsAppstorePricesRoute
   '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/public/appstore-prices': typeof ApiPublicAppstorePricesRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
@@ -1276,6 +1301,7 @@ export interface FileRoutesById {
   '/(public)/account/wallet': typeof publicAccountWalletRoute
   '/(public)/guides/$slug': typeof publicGuidesSlugRoute
   '/(public)/guides/apple-id-login': typeof publicGuidesAppleIdLoginRoute
+  '/(public)/guides/appstore-prices': typeof publicGuidesAppstorePricesRoute
   '/(public)/guides/claude-network-check': typeof publicGuidesClaudeNetworkCheckRoute
   '/(public)/orders/$orderNumber': typeof publicOrdersOrderNumberRoute
   '/(public)/products/$productId': typeof publicProductsProductIdRoute
@@ -1308,10 +1334,12 @@ export interface FileRoutesById {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/appstore-prices': typeof ApiOpsAppstorePricesRoute
   '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/public/appstore-prices': typeof ApiPublicAppstorePricesRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
   '/api/telegram/webhook': typeof ApiTelegramWebhookRoute
@@ -1425,6 +1453,7 @@ export interface FileRouteTypes {
     | '/account/wallet'
     | '/guides/$slug'
     | '/guides/apple-id-login'
+    | '/guides/appstore-prices'
     | '/guides/claude-network-check'
     | '/orders/$orderNumber'
     | '/products/$productId'
@@ -1457,10 +1486,12 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/appstore-prices'
     | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
+    | '/api/public/appstore-prices'
     | '/api/shop/invoice-order'
     | '/api/telegram/owner-webhook'
     | '/api/telegram/webhook'
@@ -1563,6 +1594,7 @@ export interface FileRouteTypes {
     | '/account/wallet'
     | '/guides/$slug'
     | '/guides/apple-id-login'
+    | '/guides/appstore-prices'
     | '/guides/claude-network-check'
     | '/orders/$orderNumber'
     | '/products/$productId'
@@ -1595,10 +1627,12 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/appstore-prices'
     | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
+    | '/api/public/appstore-prices'
     | '/api/shop/invoice-order'
     | '/api/telegram/owner-webhook'
     | '/api/telegram/webhook'
@@ -1712,6 +1746,7 @@ export interface FileRouteTypes {
     | '/(public)/account/wallet'
     | '/(public)/guides/$slug'
     | '/(public)/guides/apple-id-login'
+    | '/(public)/guides/appstore-prices'
     | '/(public)/guides/claude-network-check'
     | '/(public)/orders/$orderNumber'
     | '/(public)/products/$productId'
@@ -1744,10 +1779,12 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/appstore-prices'
     | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
+    | '/api/public/appstore-prices'
     | '/api/shop/invoice-order'
     | '/api/telegram/owner-webhook'
     | '/api/telegram/webhook'
@@ -1824,10 +1861,12 @@ export interface RootRouteChildren {
   ApiSiteLogoRoute: typeof ApiSiteLogoRoute
   ApiAdminDownloadAssetsRoute: typeof ApiAdminDownloadAssetsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiOpsAppstorePricesRoute: typeof ApiOpsAppstorePricesRoute
   ApiOpsAttributionRoute: typeof ApiOpsAttributionRoute
   ApiOpsRedeemCutoverRoute: typeof ApiOpsRedeemCutoverRoute
   ApiOpsRedeemRestockRoute: typeof ApiOpsRedeemRestockRoute
   ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
+  ApiPublicAppstorePricesRoute: typeof ApiPublicAppstorePricesRoute
   ApiShopInvoiceOrderRoute: typeof ApiShopInvoiceOrderRoute
   ApiTelegramOwnerWebhookRoute: typeof ApiTelegramOwnerWebhookRoute
   ApiTelegramWebhookRoute: typeof ApiTelegramWebhookRoute
@@ -2262,6 +2301,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiShopInvoiceOrderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/appstore-prices': {
+      id: '/api/public/appstore-prices'
+      path: '/api/public/appstore-prices'
+      fullPath: '/api/public/appstore-prices'
+      preLoaderRoute: typeof ApiPublicAppstorePricesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ops/restock': {
       id: '/api/ops/restock'
       path: '/api/ops/restock'
@@ -2288,6 +2334,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ops/attribution'
       fullPath: '/api/ops/attribution'
       preLoaderRoute: typeof ApiOpsAttributionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/appstore-prices': {
+      id: '/api/ops/appstore-prices'
+      path: '/api/ops/appstore-prices'
+      fullPath: '/api/ops/appstore-prices'
+      preLoaderRoute: typeof ApiOpsAppstorePricesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -2512,6 +2565,13 @@ declare module '@tanstack/react-router' {
       path: '/guides/claude-network-check'
       fullPath: '/guides/claude-network-check'
       preLoaderRoute: typeof publicGuidesClaudeNetworkCheckRouteImport
+      parentRoute: typeof publicRouteRoute
+    }
+    '/(public)/guides/appstore-prices': {
+      id: '/(public)/guides/appstore-prices'
+      path: '/guides/appstore-prices'
+      fullPath: '/guides/appstore-prices'
+      preLoaderRoute: typeof publicGuidesAppstorePricesRouteImport
       parentRoute: typeof publicRouteRoute
     }
     '/(public)/guides/apple-id-login': {
@@ -2965,6 +3025,7 @@ interface publicRouteRouteChildren {
   publicIndexRoute: typeof publicIndexRoute
   publicGuidesSlugRoute: typeof publicGuidesSlugRoute
   publicGuidesAppleIdLoginRoute: typeof publicGuidesAppleIdLoginRoute
+  publicGuidesAppstorePricesRoute: typeof publicGuidesAppstorePricesRoute
   publicGuidesClaudeNetworkCheckRoute: typeof publicGuidesClaudeNetworkCheckRoute
   publicOrdersOrderNumberRoute: typeof publicOrdersOrderNumberRoute
   publicProductsProductIdRoute: typeof publicProductsProductIdRoute
@@ -2985,6 +3046,7 @@ const publicRouteRouteChildren: publicRouteRouteChildren = {
   publicIndexRoute: publicIndexRoute,
   publicGuidesSlugRoute: publicGuidesSlugRoute,
   publicGuidesAppleIdLoginRoute: publicGuidesAppleIdLoginRoute,
+  publicGuidesAppstorePricesRoute: publicGuidesAppstorePricesRoute,
   publicGuidesClaudeNetworkCheckRoute: publicGuidesClaudeNetworkCheckRoute,
   publicOrdersOrderNumberRoute: publicOrdersOrderNumberRoute,
   publicProductsProductIdRoute: publicProductsProductIdRoute,
@@ -3240,10 +3302,12 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSiteLogoRoute: ApiSiteLogoRoute,
   ApiAdminDownloadAssetsRoute: ApiAdminDownloadAssetsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiOpsAppstorePricesRoute: ApiOpsAppstorePricesRoute,
   ApiOpsAttributionRoute: ApiOpsAttributionRoute,
   ApiOpsRedeemCutoverRoute: ApiOpsRedeemCutoverRoute,
   ApiOpsRedeemRestockRoute: ApiOpsRedeemRestockRoute,
   ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,
+  ApiPublicAppstorePricesRoute: ApiPublicAppstorePricesRoute,
   ApiShopInvoiceOrderRoute: ApiShopInvoiceOrderRoute,
   ApiTelegramOwnerWebhookRoute: ApiTelegramOwnerWebhookRoute,
   ApiTelegramWebhookRoute: ApiTelegramWebhookRoute,
@@ -3294,3 +3358,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
