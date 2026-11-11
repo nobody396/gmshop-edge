@@ -789,7 +789,10 @@ export async function processShopPaymentEvent(
 		context.topup_amount_minor &&
 		context.topup_currency
 	) {
-		if (context.topup_status !== "pending")
+		// A verified success may arrive after the top-up expired or failed (late
+		// on-chain confirmation); the money is real, so credit it. The wallet
+		// idempotency key keeps this to one credit per top-up.
+		if (!["pending", "expired", "failed"].includes(context.topup_status ?? ""))
 			throw new DomainError(
 				"topup_not_payable",
 				409,
@@ -816,12 +819,12 @@ export async function processShopPaymentEvent(
 			),
 			db
 				.prepare(
-					"UPDATE payment_attempts SET status = 'succeeded', succeeded_at = ?, updated_at = ?, failure_code = NULL WHERE id = ? AND status IN ('created', 'pending')",
+					"UPDATE payment_attempts SET status = 'succeeded', succeeded_at = ?, updated_at = ?, failure_code = NULL WHERE id = ? AND status IN ('created', 'pending', 'expired', 'failed')",
 				)
 				.bind(now, now, context.attempt_id),
 			db
 				.prepare(
-					"UPDATE wallet_topups SET status = 'paid', paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
+					"UPDATE wallet_topups SET status = 'paid', paid_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'expired', 'failed')",
 				)
 				.bind(now, now, context.wallet_topup_id),
 		]);

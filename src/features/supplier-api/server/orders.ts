@@ -372,7 +372,8 @@ export async function cancelSupplierApiOrder(
 		.prepare(
 			`SELECT api.id, api.state, api.shop_order_id, shop_order.status,
 			 shop_order.total_minor, shop_order.currency, item.id AS order_item_id,
-			 delivery.id AS delivery_id, delivery.status AS delivery_status
+			 delivery.id AS delivery_id, delivery.status AS delivery_status,
+			 delivery.error_code AS delivery_error_code
 			 FROM supplier_api_orders api
 			 JOIN shop_orders shop_order ON shop_order.id = api.shop_order_id
 			 JOIN shop_order_items item ON item.order_id = shop_order.id
@@ -390,11 +391,17 @@ export async function cancelSupplierApiOrder(
 			order_item_id: string;
 			delivery_id: string | null;
 			delivery_status: string | null;
+			delivery_error_code: string | null;
 		}>();
 	if (!row)
 		throw new DomainError("supplier_order_not_found", 404, "Order not found");
-	if (row.state === "cancelled")
+	if (row.state === "cancelled") {
+		// A previous cancel may have committed before its wallet refund ran.
+		// Finish that refund on retry; the idempotency key makes it at most once.
+		if (row.delivery_error_code === "supplier_api_cancelled")
+			await refundCancelledApiOrder(db, userId, id, row);
 		return { ok: true, order_id: id, status: "cancelled" };
+	}
 	if (
 		row.delivery_status !== "pending" ||
 		!["paid", "fulfilling"].includes(row.status)
@@ -433,17 +440,35 @@ export async function cancelSupplierApiOrder(
 			409,
 			"Order cannot be cancelled",
 		);
+	await refundCancelledApiOrder(db, userId, id, row);
+	return { ok: true, order_id: id, status: "cancelled" };
+}
+
+async function refundCancelledApiOrder(
+	db: D1Database,
+	userId: string,
+	id: string,
+	order: { shop_order_id: string; total_minor: string; currency: string },
+) {
+	// Only return money that this order actually took from the wallet.
+	const debit = await db
+		.prepare(
+			`SELECT 1 FROM wallet_entries WHERE user_id = ? AND direction = 'debit'
+			 AND source_type = 'shop_order' AND source_id = ? LIMIT 1`,
+		)
+		.bind(userId, order.shop_order_id)
+		.first();
+	if (!debit) return;
 	await mutateWallet(db, {
 		userId,
 		direction: "credit",
-		amountMinor: row.total_minor,
-		currency: row.currency,
+		amountMinor: order.total_minor,
+		currency: order.currency,
 		sourceType: "refund",
-		sourceId: row.shop_order_id,
+		sourceId: order.shop_order_id,
 		idempotencyKey: `supplier-api-cancel:${id}`,
 		reason: "Supplier API order cancelled",
 	});
-	return { ok: true, order_id: id, status: "cancelled" };
 }
 
 // The wallet debit failed after the order row was written (for example a

@@ -307,6 +307,14 @@ export class DujiaoNextAdapter implements SupplierAdapter {
 			},
 			{ validateDestination: !this.input.fetcher, audit: this.input.audit },
 		);
+		// A server error does not prove the supplier did not create (and charge)
+		// the order, so it must never be treated as a definitive rejection.
+		if (status >= 500)
+			throw new DomainError(
+				"supplier_request_uncertain",
+				502,
+				"Supplier request outcome is uncertain",
+			);
 		if (status !== 200) throw providerError(body);
 		return body;
 	}

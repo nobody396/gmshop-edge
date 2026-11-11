@@ -313,11 +313,9 @@ export async function processEmailNotification(
 		row.message_encrypted,
 		runtime.commerceSecret,
 	).then((value) => emailMessageSchema.parse(JSON.parse(value)));
-	const suppression = await recipientSuppressionReason(
-		db,
-		message.to,
-		row.event,
-	);
+	const suppression =
+		(await recipientSuppressionReason(db, message.to, row.event)) ??
+		(await withdrawnEntitlementReason(db, row.entitlement_id));
 	if (suppression) {
 		const changed = await db
 			.prepare(
@@ -339,9 +337,10 @@ export async function processEmailNotification(
 			`UPDATE notification_deliveries SET status = 'sending',
 			 attempt_count = attempt_count + 1, updated_at = ?
 			 WHERE id = ? AND status IN ('pending', 'failed')
-			 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)`,
+			 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+			 AND NOT EXISTS (${withdrawnEntitlementSql})`,
 		)
-		.bind(now, row.id, now)
+		.bind(now, row.id, now, row.entitlement_id)
 		.run();
 	if (Number(claimed.meta.changes ?? 0) !== 1)
 		throw new DomainError(
@@ -349,6 +348,14 @@ export async function processEmailNotification(
 			409,
 			"Notification delivery is already processing",
 		);
+	if (await orderRefunding(db, row.entitlement_id)) {
+		await recordFailure(db, row.id, row.attempt_count + 1, "order_refunding");
+		throw new DomainError(
+			"notification_order_refunding",
+			503,
+			"Order refund is in progress",
+		);
+	}
 	let cloudflareBindingError: DomainError | null = null;
 	for (const config of configs) {
 		const result = await tryEmailConfig(
@@ -453,6 +460,42 @@ async function loadEmailDeliveryConfigs(
 		.bind(configId, configId, configId)
 		.all<EmailConfigRow>();
 	return rows.results;
+}
+
+// A completed refund or cancellation revokes what the email would hand over;
+// an email still queued for such an order must never be sent.
+const withdrawnEntitlementSql = `SELECT 1 FROM customer_entitlements ce
+ LEFT JOIN shop_order_items oi ON oi.id = ce.order_item_id
+ LEFT JOIN shop_orders so ON so.id = oi.order_id
+ WHERE ce.id = ? AND (ce.status = 'revoked'
+  OR so.status IN ('refunded', 'cancelled'))`;
+
+// While any refund (full or partial) is in flight, hold the email until the
+// order settles instead of racing the refund.
+async function orderRefunding(db: D1Database, entitlementId: string | null) {
+	if (!entitlementId) return false;
+	const row = await db
+		.prepare(
+			`SELECT 1 FROM customer_entitlements ce
+			 JOIN shop_order_items oi ON oi.id = ce.order_item_id
+			 JOIN shop_orders so ON so.id = oi.order_id
+			 WHERE ce.id = ? AND so.status = 'refunding'`,
+		)
+		.bind(entitlementId)
+		.first();
+	return Boolean(row);
+}
+
+async function withdrawnEntitlementReason(
+	db: D1Database,
+	entitlementId: string | null,
+) {
+	if (!entitlementId) return null;
+	const withdrawn = await db
+		.prepare(withdrawnEntitlementSql)
+		.bind(entitlementId)
+		.first();
+	return withdrawn ? "entitlement_withdrawn" : null;
 }
 
 async function recordDeliveredNotificationAccess(
