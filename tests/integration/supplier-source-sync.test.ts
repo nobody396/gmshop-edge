@@ -77,6 +77,35 @@ describe("supplier source synchronization", { timeout: 30_000 }, () => {
 		expect(requests).toBe(2);
 	});
 
+	it("refreshes a source catalog every three minutes", async () => {
+		let requests = 0;
+		const fetcher: typeof fetch = async (input) => {
+			requests += 1;
+			if (new URL(String(input)).pathname.endsWith("/categories"))
+				return categoriesResponse();
+			return catalogResponse();
+		};
+		const start = 1_800_000_000_000;
+		const sync = (now: number) =>
+			syncSupplierSource({
+				db,
+				runtime,
+				source,
+				trigger: "scheduled",
+				now,
+				fetcher,
+			});
+		await expect(sync(start)).resolves.toMatchObject({ skipped: false });
+		await expect(sync(start + 3 * 60_000 - 1)).resolves.toEqual({
+			skipped: true,
+			reason: "already_synced",
+		});
+		await expect(sync(start + 3 * 60_000)).resolves.toMatchObject({
+			skipped: false,
+		});
+		expect(requests).toBe(4);
+	});
+
 	it("synchronizes every enabled source while sharing one request per source", async () => {
 		await seedAccount(
 			db,
