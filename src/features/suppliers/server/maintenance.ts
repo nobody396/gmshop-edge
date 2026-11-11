@@ -4,6 +4,7 @@ import {
 	type SupplierAccountRuntimeRow,
 } from "./account-runtime";
 import { claimSupplierApiBudget } from "./rate-limit";
+import { requeueFundedSupplierOrders } from "./requeue-funded";
 import { syncSupplierCatalogsIfDue } from "./sync-settings";
 
 const BALANCE_SYNC_INTERVAL_MS = 5 * 60_000;
@@ -71,6 +72,9 @@ export async function runSupplierMaintenance(input: {
 			balancesFailed += 1;
 		}
 	}
+	const funded = await requeueFundedSupplierOrders(input.db, now).catch(() => ({
+		requeued: 0,
+	}));
 	const catalogs = await syncSupplierCatalogsIfDue({
 		db: input.db,
 		cache: input.cache,
@@ -81,6 +85,7 @@ export async function runSupplierMaintenance(input: {
 	return {
 		balancesUpdated,
 		balancesFailed,
+		fundedOrdersRequeued: funded.requeued,
 		catalogsUpdated: catalogs.updated,
 		catalogsSkipped: catalogs.skipped,
 		catalogsFailed: catalogs.failed,
