@@ -39,6 +39,7 @@ export const pricingGuardSettingKeys = {
 	retailMarginFromMinor: "pricing.retail_margin_from_minor",
 	floorExemptItems: "pricing.floor_exempt_items",
 	equalPriceGroups: "pricing.equal_price_groups",
+	linkedItems: "pricing.linked_items",
 	restockResumeItems: restockResumeSettingKey,
 } as const;
 
@@ -403,6 +404,63 @@ export function equalizeGroup(members: GroupMember[]) {
 
 const groupsSchema = z.array(z.array(z.string()).min(2));
 
+const linkedItemsSchema = z.array(
+	z.object({
+		item: z.string().min(1),
+		base: z.string().min(1),
+		priceOffsetMinor: z.number().int(),
+		costOffsetMinor: z.number().int(),
+	}),
+);
+
+export type LinkedItemPrices = {
+	usdtMinor: number;
+	alipayMinor: number | null;
+	agentMinor: number | null;
+	costMinor: number;
+};
+
+/**
+ * Owner 2026-11-11: some items are priced as another item plus a fixed amount
+ * (Gemini Ultra own-account = ready-made account + ¥100, cost + ¥60). Every
+ * price follows the base both ways; null when nothing would change.
+ */
+export function linkedItemPlan(
+	item: LinkedItemPrices,
+	base: LinkedItemPrices,
+	offsets: { priceOffsetMinor: number; costOffsetMinor: number },
+) {
+	const usdtNew = base.usdtMinor + offsets.priceOffsetMinor;
+	const alipayNew =
+		item.alipayMinor === null || base.alipayMinor === null
+			? item.alipayMinor
+			: base.alipayMinor + offsets.priceOffsetMinor;
+	const agentNew =
+		item.agentMinor === null || base.agentMinor === null
+			? item.agentMinor
+			: base.agentMinor + offsets.priceOffsetMinor;
+	const costNew = base.costMinor + offsets.costOffsetMinor;
+	if (
+		usdtNew === item.usdtMinor &&
+		alipayNew === item.alipayMinor &&
+		agentNew === item.agentMinor &&
+		costNew === item.costMinor
+	)
+		return null;
+	return {
+		plan: {
+			usdtOld: item.usdtMinor,
+			usdtNew,
+			alipayOld: item.alipayMinor,
+			alipayNew,
+			agentOld: item.agentMinor,
+			agentNew,
+			auto: true,
+		} satisfies PricePlan,
+		costNew,
+	};
+}
+
 type ItemRow = {
 	id: string;
 	product_id: string;
@@ -413,6 +471,7 @@ type ItemRow = {
 	usdt_price_id: string | null;
 	alipay_price_id: string | null;
 	alipay_minor: string | null;
+	cost_minor: string | null;
 	bound_cost_minor: string | null;
 	bound_origin: string | null;
 	agent_listing_id: string | null;
@@ -672,6 +731,47 @@ export async function runPricingGuard(input: {
 			});
 		}
 	}
+	// Linked items last: they follow their base item's final prices.
+	const links = linkedItemsSchema.safeParse(
+		settings.get(pricingGuardSettingKeys.linkedItems),
+	);
+	for (const link of links.success ? links.data : []) {
+		const [[row], [base]] = await Promise.all([
+			loadItems(input.db, link.item),
+			loadItems(input.db, link.base),
+		]);
+		if (!row || !base) continue;
+		const prices = (item: ItemRow, cost: string | null) => ({
+			usdtMinor: Number(item.price_minor),
+			alipayMinor:
+				item.alipay_minor === null ? null : Number(item.alipay_minor),
+			agentMinor:
+				item.agent_price_minor === null ? null : Number(item.agent_price_minor),
+			costMinor: Number(cost ?? 0),
+		});
+		const linked = linkedItemPlan(
+			prices(row, row.cost_minor),
+			prices(base, base.bound_cost_minor ?? base.cost_minor),
+			link,
+		);
+		if (!linked) continue;
+		const applied = await applyPlan(input.db, row, linked.plan, {
+			costMinor: linked.costNew,
+			floorMinor,
+			supplierMinor: linked.costNew,
+			now,
+			action: "pricing_guard.linked_item",
+		});
+		// A lost race is retried tomorrow; never turn it into an approval button.
+		if (!applied) continue;
+		outcomes.push({
+			label: `${row.product_name} · ${row.item_name}（跟随 ${base.item_name}）`,
+			costMinor: linked.costNew,
+			plan: linked.plan,
+			applied,
+			itemId: row.id,
+		});
+	}
 	// Proposals also move the baseline, so an ignored button is not re-sent daily.
 	await settingStatement(
 		input.db,
@@ -851,7 +951,7 @@ async function loadItems(db: D1Database, onlyItemId?: string) {
 	const rows = await db
 		.prepare(
 			`SELECT item.id, item.product_id, product.name AS product_name,
-			  item.name AS item_name, item.price_minor, item.version,
+			  item.name AS item_name, item.price_minor, item.version, item.cost_minor,
 			  (SELECT price.id FROM sellable_item_channel_prices price
 			   JOIN payment_channels channel ON channel.id = price.channel_id
 			   WHERE price.sellable_item_id = item.id AND price.enabled = 1
