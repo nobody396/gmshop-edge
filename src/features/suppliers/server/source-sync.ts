@@ -23,7 +23,8 @@ import {
 	rebindPayload,
 } from "./rebind-proposal";
 
-const CATALOG_SYNC_WINDOW_MS = 10 * 60_000;
+// Owner 2026-11-11: restocks must show up within ~3 minutes (was 10).
+const CATALOG_SYNC_WINDOW_MS = 3 * 60_000;
 const CATALOG_CACHE_TTL_SECONDS = 15 * 60;
 const MAX_CATALOG_PRODUCTS = 10_000;
 
