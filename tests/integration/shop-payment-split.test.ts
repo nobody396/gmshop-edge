@@ -28,6 +28,7 @@ import {
 	createShopPayment,
 	createWalletTopupPayment,
 	processShopPaymentEvent,
+	reconcilePendingShopPayments,
 } from "#/features/shop-payments/server/service";
 import {
 	channelDailyUsageMinor,
@@ -1388,6 +1389,93 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 		});
 		expect((await refundRow(refund.id))?.status).toBe("succeeded");
 		expect((await order())?.status).toBe("refunded");
+	});
+
+	// Review 3, #11: old unpaid attempts of other channels never starve a new QR payment.
+	it("checks every pending payment in turn so a paid QR payment is found", async () => {
+		const epayId = "77777777-7777-4777-8777-777777777777";
+		const now = Date.now();
+		await db.batch([
+			db
+				.prepare(
+					"UPDATE payment_channels SET split_enabled=0, per_payment_max_minor='0' WHERE id=?",
+				)
+				.bind(channelId),
+			db.prepare(
+				`INSERT INTO payment_channels
+				 (id, provider, name, currency, fee_bps, fixed_fee_minor, sort_order, enabled,
+				  last_health_status, created_at, updated_at)
+				 VALUES ('${epayId}', 'epay', 'EPay', 'CNY', 0, '0', 50, 1, 'healthy', 1, 1)`,
+			),
+			...Array.from({ length: 20 }, (_, index) =>
+				db
+					.prepare(
+						`INSERT INTO payment_attempts
+						 (id, order_id, channel_id, provider_payment_id, idempotency_key, status,
+						  amount_minor, currency, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, ?, 'pending', '300000', 'CNY', ?, ?)`,
+					)
+					.bind(
+						`old-${index}`,
+						orderId,
+						epayId,
+						`old-trade-${index}`,
+						`old-${index}`,
+						now - 3_600_000 + index,
+						now - 3_600_000 + index,
+					),
+			),
+		]);
+		await startPayment("single-qr");
+		const single = await parent();
+		expect(single?.split_part_count).toBeNull();
+		simulator.paid.set(single?.provider_payment_id as string, "3000.00");
+		for (let run = 0; run < 3; run += 1)
+			await reconcilePendingShopPayments(
+				db,
+				simulator.fetch as unknown as typeof fetch,
+				now + run * 60_000,
+				20,
+			);
+		expect((await order())?.status).toBe("paid");
+	});
+
+	// Review 3: a single QR payment confirmed only after local expiry is not silent.
+	it("delivers a single QR payment confirmed after the order expired, recording the late payment", async () => {
+		await db
+			.prepare(
+				"UPDATE payment_channels SET split_enabled=0, per_payment_max_minor='0' WHERE id=?",
+			)
+			.bind(channelId)
+			.run();
+		await startPayment("single-late");
+		const single = await parent();
+		const now = Date.now();
+		await db
+			.prepare("UPDATE shop_orders SET expires_at=? WHERE id=?")
+			.bind(now - 1, orderId)
+			.run();
+		await expireStoreOrders(db, now);
+		expect((await order())?.status).toBe("expired");
+		simulator.paid.set(single?.provider_payment_id as string, "3000.00");
+		await reconcilePendingShopPayments(
+			db,
+			simulator.fetch as unknown as typeof fetch,
+			now + 60_000,
+		);
+		expect((await order())?.status).toBe("paid");
+		expect(
+			await db
+				.prepare(
+					"SELECT from_status, to_status FROM shop_order_events WHERE event_type='payment_succeeded'",
+				)
+				.first(),
+		).toEqual({ from_status: "expired", to_status: "paid" });
+		expect(
+			await count(
+				"SELECT COUNT(*) AS count FROM outbox_events WHERE event_type='shop_order.paid'",
+			),
+		).toBe(1);
 	});
 });
 

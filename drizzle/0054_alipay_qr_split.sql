@@ -14,6 +14,12 @@ ALTER TABLE payment_attempts ADD COLUMN split_part_count INTEGER CHECK (split_pa
 --> statement-breakpoint
 ALTER TABLE payment_attempts ADD COLUMN processing_fee_minor TEXT CHECK (processing_fee_minor IS NULL OR (processing_fee_minor <> '' AND processing_fee_minor NOT GLOB '*[^0-9]*'));
 --> statement-breakpoint
+-- 支付补查的下一次检查时间：每次查询（没付或查询出错）都往后推，定时任务按它轮转候选，
+-- 旧的未付款记录不会一直占住每分钟的查询名额。
+ALTER TABLE payment_attempts ADD COLUMN next_check_at INTEGER;
+--> statement-breakpoint
+CREATE INDEX payment_attempts_status_check_idx ON payment_attempts(status, next_check_at, created_at, id);
+--> statement-breakpoint
 CREATE INDEX payment_attempts_channel_succeeded_idx ON payment_attempts(channel_id, succeeded_at);
 --> statement-breakpoint
 -- 每一笔子付款都是独立的支付宝交易（out_trade_no = 本行 id 去掉横线）。

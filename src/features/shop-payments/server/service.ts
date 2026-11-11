@@ -578,7 +578,7 @@ export async function reconcilePendingShopPayments(
 	const attempts = await db
 		.prepare(
 			`SELECT pa.id,pa.channel_id,pa.provider_payment_id,pa.amount_minor,pa.currency,
-			 pc.provider,pc.credential_encrypted
+			 pa.created_at,pc.provider,pc.credential_encrypted
 			 FROM payment_attempts pa JOIN payment_channels pc ON pc.id=pa.channel_id
 			 JOIN shop_orders o ON o.id=pa.order_id
 			 WHERE pa.status IN ('pending','expired')
@@ -588,18 +588,11 @@ export async function reconcilePendingShopPayments(
 			  AND (pc.provider IN ('epay','gmpay')
 			   OR (pc.provider='alipay_qr' AND pa.created_at>=?-7200000))
 			  AND pa.created_at>=?
-			 ORDER BY pa.created_at,pa.id LIMIT ?`,
+			  AND (pa.next_check_at IS NULL OR pa.next_check_at<=?)
+			 ORDER BY COALESCE(pa.next_check_at,0),pa.created_at,pa.id LIMIT ?`,
 		)
-		.bind(now, now - 86_400_000, boundedLimit)
-		.all<{
-			id: string;
-			channel_id: string;
-			provider_payment_id: string;
-			amount_minor: string;
-			currency: string;
-			provider: string;
-			credential_encrypted: string | null;
-		}>();
+		.bind(now, now - 86_400_000, now, boundedLimit)
+		.all<ReconcilePaymentAttempt>();
 	let succeeded = 0;
 	let pending = 0;
 	let failed = 0;
@@ -613,6 +606,7 @@ export async function reconcilePendingShopPayments(
 			succeeded += 1;
 		} catch (error) {
 			failed += 1;
+			await deferPaymentCheck(db, attempt, now);
 			logPaymentReconciliationFailure(attempt, error);
 		}
 	}
@@ -628,7 +622,7 @@ export async function reconcileShopOrderPayment(
 	const attempt = await db
 		.prepare(
 			`SELECT pa.id,pa.channel_id,pa.provider_payment_id,pa.amount_minor,pa.currency,
-			 pc.provider,pc.credential_encrypted
+			 pa.created_at,pc.provider,pc.credential_encrypted
 			 FROM payment_attempts pa JOIN payment_channels pc ON pc.id=pa.channel_id
 			 JOIN shop_orders o ON o.id=pa.order_id
 			 WHERE pa.order_id=? AND pa.status IN ('pending','expired')
@@ -675,8 +669,31 @@ function logPaymentReconciliationFailure(
 
 export type PaymentEventResult = { duplicate: boolean; status: string };
 
+/**
+ * Pushes an unpaid (or unreadable) attempt's next scheduled check back, so the
+ * bounded scan rotates through every candidate instead of re-reading the same
+ * oldest rows. Young payments are checked often, older ones less.
+ */
+function deferPaymentCheck(
+	db: D1Database,
+	attempt: Pick<ReconcilePaymentAttempt, "id" | "created_at">,
+	now: number,
+) {
+	const backoff = Math.min(
+		900_000,
+		Math.max(60_000, Math.floor((now - Number(attempt.created_at)) / 10)),
+	);
+	return db
+		.prepare(
+			"UPDATE payment_attempts SET next_check_at=?, updated_at=? WHERE id=? AND status IN ('pending','expired')",
+		)
+		.bind(now + backoff, now, attempt.id)
+		.run();
+}
+
 type ReconcilePaymentAttempt = {
 	id: string;
+	created_at: number;
 	channel_id: string;
 	provider_payment_id: string;
 	amount_minor: string;
@@ -698,12 +715,7 @@ async function reconcilePaymentAttempt(
 		fetcher,
 	);
 	if (query.status !== "succeeded") {
-		await db
-			.prepare(
-				"UPDATE payment_attempts SET updated_at=? WHERE id=? AND status IN ('pending','expired')",
-			)
-			.bind(now, attempt.id)
-			.run();
+		await deferPaymentCheck(db, attempt, now);
 		return "pending" as const;
 	}
 	await processShopPaymentEvent(db, attempt.channel_id, {
