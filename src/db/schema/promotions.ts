@@ -1,4 +1,10 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	index,
+	integer,
+	primaryKey,
+	sqliteTable,
+	text,
+} from "drizzle-orm/sqlite-core";
 import { users } from "./auth";
 import { shopOrders } from "./commerce";
 export const rewardEntries = sqliteTable(
@@ -62,5 +68,22 @@ export const promotionRewards = sqliteTable(
 			t.createdAt,
 			t.orderId,
 		),
+	],
+);
+
+/** Browsers (gm_device cookie) each account has signed in on; used only to spot self-referrals. */
+export const userDevices = sqliteTable(
+	"user_devices",
+	{
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		deviceId: text("device_id").notNull(),
+		firstSeenAt: integer("first_seen_at").notNull(),
+		lastSeenAt: integer("last_seen_at").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.userId, t.deviceId] }),
+		index("user_devices_device_idx").on(t.deviceId),
 	],
 );

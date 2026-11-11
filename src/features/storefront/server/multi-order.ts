@@ -119,6 +119,7 @@ export async function createMultiStoreOrder(
 		identityEmail?: string;
 		pricingChannelId?: string;
 		clientIp?: string | null;
+		deviceId?: string | null;
 	} = {},
 ) {
 	const input = multiStoreOrderSchema.parse(rawInput);
@@ -334,7 +335,7 @@ export async function createMultiStoreOrder(
 			? await referralRewardWithheld(db, coupon.referrer_user_id, {
 					userId: access.userId,
 					email: normalizedContactEmail,
-					ip: access.clientIp,
+					deviceId: access.deviceId,
 					rewardMinor: BigInt(promotion.rewardMinor),
 				})
 			: false;
@@ -1399,9 +1400,8 @@ const referralRewardMonthlyCapMinor = 100_000n;
 
 /**
  * Same person behind the order (email up to a +tag, an email the referrer has
- * ordered with, or an IP the referrer signed in from unless the buyer is an
- * established customer from before the invitation), or the monthly cap is
- * reached. Guests and unverified accounts earn the referrer a reward too
+ * ordered with, or a browser the referrer has signed in on), or the monthly cap
+ * is reached. Guests and unverified accounts earn the referrer a reward too
  * (owner 2026-11-07): the budget never exceeds 35% of margin, so a disguised
  * self-purchase still leaves the sale profitable.
  */
@@ -1411,7 +1411,7 @@ async function referralRewardWithheld(
 	buyer: {
 		userId: string | null | undefined;
 		email: string | null | undefined;
-		ip: string | null | undefined;
+		deviceId: string | null | undefined;
 		rewardMinor: bigint;
 	},
 ) {
@@ -1431,16 +1431,16 @@ async function referralRewardWithheld(
 		.all<{ email: string }>();
 	if (ownEmails.results.some((row) => canonicalEmail(row.email) === buyerEmail))
 		return true;
-	const ip = buyer.ip?.trim();
+	// Same browser the referrer has signed in on. A shared IP alone is not used:
+	// colleagues and friends share office networks and proxy exits (owner 2026-11-11).
 	if (
-		ip &&
+		buyer.deviceId &&
 		(await db
 			.prepare(
-				"SELECT 1 FROM sessions WHERE user_id = ? AND ip_address = ? LIMIT 1",
+				"SELECT 1 FROM user_devices WHERE user_id = ? AND device_id = ? LIMIT 1",
 			)
-			.bind(referrerUserId, ip)
-			.first()) &&
-		!(await establishedBeforeInvitation(db, referrerUserId, buyer.userId))
+			.bind(referrerUserId, buyer.deviceId)
+			.first())
 	)
 		return true;
 	const beijingMonthStart =
@@ -1461,33 +1461,6 @@ async function referralRewardWithheld(
 	return (
 		BigInt(earned?.total ?? 0) + buyer.rewardMinor >
 		referralRewardMonthlyCapMinor
-	);
-}
-
-/**
- * A shared IP alone is weak evidence: colleagues and friends often share an
- * office network or proxy exit. The buyer is treated as a separate person when
- * their account and a paid order of their own both predate the referrer's
- * invitation code (owner 2026-11-11, a colleague's order was withheld).
- */
-async function establishedBeforeInvitation(
-	db: D1Database,
-	referrerUserId: string,
-	buyerUserId: string | null | undefined,
-) {
-	if (!buyerUserId) return false;
-	return Boolean(
-		await db
-			.prepare(
-				`SELECT 1 FROM users u
-				 JOIN coupons c ON c.purpose = 'referral' AND c.referrer_user_id = ?
-				 WHERE u.id = ? AND u.created_at < c.created_at
-				  AND EXISTS (SELECT 1 FROM shop_orders o WHERE o.user_id = u.id
-				   AND o.paid_at IS NOT NULL AND o.paid_at < c.created_at)
-				 LIMIT 1`,
-			)
-			.bind(referrerUserId, buyerUserId)
-			.first(),
 	);
 }
 

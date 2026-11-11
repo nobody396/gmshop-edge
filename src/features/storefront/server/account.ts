@@ -1,5 +1,9 @@
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { getAuth } from "#/features/auth/server/auth";
+import {
+	deviceIdFromRequest,
+	recordUserDevice,
+} from "#/features/promotions/device";
 import { DomainError } from "#/lib/domain-error";
 
 export type StoreSessionUser = {
@@ -39,6 +43,8 @@ export async function resolveStoreAccount(
 		return null;
 	}
 	const { user } = session;
+	const deviceId = deviceIdFromRequest(request);
+	if (deviceId) await recordUserDevice(db, user.id, deviceId);
 	const normalizedEmail = user.email.trim().toLowerCase();
 	if (user.emailVerified && !isInternalIdentityEmail(normalizedEmail))
 		await claimGuestCommerceHistory(db, user.id, normalizedEmail);

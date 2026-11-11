@@ -5,6 +5,7 @@ import { requireStorefrontPermission } from "#/features/access/storefront-access
 import { recordOrderAttribution } from "#/features/attribution/server/order-attribution";
 import { isInternalIdentityEmail } from "#/features/auth/identity-email";
 import { publishPendingDeliveries } from "#/features/fulfillment/server/outbox";
+import { deviceIdFromRequest } from "#/features/promotions/device";
 import {
 	cancelUnstartedBalancePayment,
 	reserveOrderBalance,
@@ -61,6 +62,7 @@ export const createStoreOrderFn = createServerFn({ method: "POST" })
 			userId: account?.user.id,
 			identityEmail: account?.user.email,
 			clientIp: request.headers.get("cf-connecting-ip"),
+			deviceId: deviceIdFromRequest(request),
 		});
 		if (!order.duplicate) await recordOrderAttribution(db, order.id, request);
 		return order;
@@ -241,6 +243,7 @@ export const checkoutStoreOrderFn = createServerFn({ method: "POST" })
 			userId: account?.user.id,
 			identityEmail: account?.user.email,
 			clientIp: request.headers.get("cf-connecting-ip"),
+			deviceId: deviceIdFromRequest(request),
 			pricingChannelId:
 				data.walletPayment || !data.paymentChannelId
 					? undefined
