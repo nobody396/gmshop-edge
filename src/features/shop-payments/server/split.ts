@@ -1355,10 +1355,11 @@ async function alertSplitRefunds(
  * - every share refunded → succeeded;
  * - any share uncertain (network/system error) → pending: the parent refund
  *   stays processing and the order refunding; retried with the same ids;
- * - nothing refunded and every share refused → failed (nothing moved);
- * - some shares refunded, others refused → throws
+ * - any share whose answer did not match (money may have moved) or some
+ *   shares refunded and others refused → throws
  *   `payment_refund_reconciliation_required` (manual confirmation); never
- *   reported as "not refunded", so the order is never restored to paid.
+ *   reported as "not refunded", so the order is never restored to paid;
+ * - nothing refunded and every share definitely refused → failed.
  */
 export async function refundSplitPayment(
 	db: D1Database,
@@ -1458,9 +1459,10 @@ export async function refundSplitPayment(
 			}>();
 	const rows = await load();
 	const anySucceeded = rows.results.some((row) => row.status === "succeeded");
+	const anyUnexplained = rows.results.some(unexplainedRefund);
 	for (const row of rows.results) {
 		if (row.status === "succeeded") continue;
-		if (row.status === "manual" && !anySucceeded)
+		if (row.status === "manual" && !anySucceeded && !anyUnexplained)
 			// An admin retry of a refund that moved no money: try the refused shares again.
 			await db
 				.prepare(
@@ -1468,7 +1470,7 @@ export async function refundSplitPayment(
 				)
 				.bind(Date.now(), row.id)
 				.run();
-		if (row.status === "manual" && anySucceeded) continue;
+		if (row.status === "manual" && (anySucceeded || anyUnexplained)) continue;
 		await runPartRefund(db, row.id, row.attempt_count, {
 			fetcher,
 			now: Date.now(),
@@ -1489,7 +1491,7 @@ export async function refundSplitPayment(
 			status: "pending",
 			failureCode: "split_refund_in_progress",
 		};
-	if (succeeded === 0)
+	if (succeeded === 0 && !after.some(unexplainedRefund))
 		return {
 			providerRefundId,
 			status: "failed",
@@ -1501,6 +1503,17 @@ export async function refundSplitPayment(
 		"payment_refund_reconciliation_required",
 		409,
 		"Part of the split refund was refused; confirm the rest manually",
+	);
+}
+
+/** A share whose Alipay answer did not match the request: money may have moved. */
+function unexplainedRefund(row: {
+	status: string;
+	failure_code: string | null;
+}) {
+	return (
+		row.status === "manual" &&
+		row.failure_code === "payment_refund_reconciliation_required"
 	);
 }
 

@@ -712,9 +712,11 @@ export async function completeManualShopRefund(
 		.prepare("SELECT 1 FROM payment_split_refunds WHERE refund_id = ? LIMIT 1")
 		.bind(refund.id)
 		.first();
+	// Manual providers always confirm by hand. Automatic providers reach
+	// manual_action_required only when the provider's answer could not be
+	// reconciled (money may have moved) or a split refund was partly refused:
+	// the admin confirms with the provider's refund reference.
 	if (
-		(getPaymentProvider(refund.provider).refundMode !== "manual" &&
-			!splitRefund) ||
 		refund.status !== "processing" ||
 		refund.failure_code !== "manual_action_required"
 	)

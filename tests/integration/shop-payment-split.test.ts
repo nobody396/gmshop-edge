@@ -74,6 +74,8 @@ class AlipaySimulator {
 	queryFailures = new Set<string>();
 	refunded = new Map<string, bigint>();
 	refundRequests = new Set<string>();
+	/** Answers refunds as if for another trade (a mismatched signed answer). */
+	refundAnswerTrade: string | null = null;
 	/** Runs inside the refund call, before Alipay answers (concurrency tests). */
 	onRefund: ((outTradeNo: string) => Promise<void>) | null = null;
 	constructor(private readonly privateKeyPem: string) {}
@@ -138,7 +140,7 @@ class AlipaySimulator {
 			const total = this.refunded.get(trade) ?? 0n;
 			return this.sign(key, {
 				code: "10000",
-				out_trade_no: trade,
+				out_trade_no: this.refundAnswerTrade ?? trade,
 				refund_fee: (Number(total) / 100).toFixed(2),
 			});
 		}
@@ -1303,6 +1305,89 @@ describe("Alipay QR split payments", { timeout: 60_000 }, () => {
 			.prepare("DELETE FROM sellable_item_channel_prices WHERE id='epay-price'")
 			.run();
 		expect(await priceOf(channelId)).toBeNull();
+	});
+
+	// Review 2, #1: a refund Alipay may have made is never closed as "not refunded".
+	it("keeps a split refund with an unexplained Alipay answer in manual confirmation even with no local success", async () => {
+		const { second } = await payBoth();
+		// Someone refunded ¥1 of the last part in the Alipay console earlier.
+		simulator.refunded.set(second?.provider_payment_id as string, 100n);
+		const refund = await adminRefund("100000", "split-unexplained");
+		await processShopRefund(
+			db,
+			refund.id,
+			simulator.fetch as unknown as typeof fetch,
+		);
+		expect(await refundRow(refund.id)).toMatchObject({
+			status: "processing",
+			failure_code: "manual_action_required",
+		});
+		expect((await order())?.status).toBe("refunding");
+		await completeManualShopRefund(db, refund.id, "ALIPAY-REFUND-2", true, {
+			actorUserId: "customer-1",
+			request: new Request("https://shop.example/admin"),
+		});
+		expect((await refundRow(refund.id))?.status).toBe("succeeded");
+		expect((await parts()).map((row) => row.refunded_minor)).toEqual([
+			"0",
+			"100000",
+		]);
+	});
+
+	// Review 2, #1: a definite refusal that moved no money is still a failure.
+	it("fails a split refund that Alipay refused entirely", async () => {
+		await payBoth();
+		simulator.refundFailure = "ACQ.SELLER_BALANCE_NOT_ENOUGH";
+		const refund = await adminRefund("100000", "split-refused");
+		await processShopRefund(
+			db,
+			refund.id,
+			simulator.fetch as unknown as typeof fetch,
+		);
+		expect((await refundRow(refund.id))?.status).toBe("failed");
+		expect((await order())?.status).toBe("paid");
+	});
+
+	// Review 2, #10: website-Alipay refunds that need reconciliation can be closed by hand.
+	it("lets an unexplained website-Alipay refund be confirmed by hand", async () => {
+		await db.batch([
+			db
+				.prepare(
+					"UPDATE payment_channels SET provider='alipay_page', split_enabled=0 WHERE id=?",
+				)
+				.bind(channelId),
+		]);
+		const created = await startPayment("page-payment");
+		const trade = (await parent())?.provider_payment_id as string;
+		expect(created.status).toBe("pending");
+		await processShopPaymentEvent(db, channelId, {
+			providerEventId: "alipay:page-paid",
+			providerPaymentId: trade,
+			type: "payment_succeeded",
+			amountMinor: "300000",
+			currency: "CNY",
+			merchantOrderId: trade,
+			payloadDigest: "page-paid",
+		});
+		expect((await order())?.status).toBe("paid");
+		simulator.refundAnswerTrade = "another-trade";
+		const refund = await adminRefund("300000", "page-unexplained");
+		await processShopRefund(
+			db,
+			refund.id,
+			simulator.fetch as unknown as typeof fetch,
+		);
+		expect(await refundRow(refund.id)).toMatchObject({
+			status: "processing",
+			failure_code: "manual_action_required",
+		});
+		expect((await order())?.status).toBe("refunding");
+		await completeManualShopRefund(db, refund.id, "ALIPAY-REFUND-3", true, {
+			actorUserId: "customer-1",
+			request: new Request("https://shop.example/admin"),
+		});
+		expect((await refundRow(refund.id))?.status).toBe("succeeded");
+		expect((await order())?.status).toBe("refunded");
 	});
 });
 
