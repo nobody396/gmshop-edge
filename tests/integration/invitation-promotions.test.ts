@@ -1,6 +1,10 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	deviceIdFromRequest,
+	recordUserDevice,
+} from "#/features/promotions/device";
+import {
 	cancelUnstartedBalancePayment,
 	reserveOrderBalance,
 	settlePromotionRewards,
@@ -200,15 +204,18 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		expect(created.totalMinor).toBe("107760");
 		expect(await rewardOf(created.id)).toBe("0");
 	});
-	it("on a shared IP, pays only for a buyer who was already a paying customer before the invitation", async () => {
+	it("pays friends on the referrer's IP but withholds orders from a browser the referrer signed in on", async () => {
+		const referrerBrowser = "a".repeat(32),
+			friendBrowser = "b".repeat(32);
 		await db
 			.prepare(
 				"INSERT INTO sessions(id,expires_at,token,created_at,updated_at,ip_address,user_id) VALUES ('shared-exit',?,'shared-exit-token',1,1,'203.0.113.9',?)",
 			)
 			.bind(Date.now() + 86_400_000, promoter)
 			.run();
+		await recordUserDevice(db, promoter, referrerBrowser);
 		const code = await openReferralCoupon(db, promoter);
-		const sharedIpOrder = () =>
+		const place = (deviceId: string | null) =>
 			createMultiStoreOrder(
 				db,
 				{
@@ -221,20 +228,45 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 					userId: buyer,
 					identityEmail: "buyer@example.com",
 					clientIp: "203.0.113.9",
+					deviceId,
 				},
 			);
-		// No purchase of their own before the code existed: looks like the referrer.
-		const fresh = await sharedIpOrder();
-		expect(fresh.totalMinor).toBe("107760");
-		expect(await rewardOf(fresh.id)).toBe("0");
-		// A colleague who had already paid for an order before the invitation earns the referrer the reward.
-		await db
-			.prepare(`INSERT INTO shop_orders(id,order_number,user_id,contact_email,normalized_contact_email,status,currency,currency_decimals,subtotal_minor,discount_minor,total_minor,paid_minor,expires_at,paid_at,created_at,updated_at)
-   VALUES ('earlier','EARLIER',?,'buyer@example.com','buyer@example.com','completed','CNY',2,'100','0','100','100',1,2,2,2)`)
-			.bind(buyer)
-			.run();
-		const colleague = await sharedIpOrder();
-		expect(await rewardOf(colleague.id)).toBe("560");
+		// A new friend on the same network, own browser: the referrer earns the reward.
+		const friend = await place(friendBrowser);
+		expect(friend.totalMinor).toBe("107760");
+		expect(await rewardOf(friend.id)).toBe("560");
+		// Without a device tag (cookies blocked) a shared IP alone does not withhold either.
+		expect(await rewardOf((await place(null)).id)).toBe("560");
+		// The referrer's own browser: the buyer keeps the discount, no reward.
+		const own = await place(referrerBrowser);
+		expect(own.totalMinor).toBe("107760");
+		expect(await rewardOf(own.id)).toBe("0");
+	});
+	it("records each signed-in browser once a day at most", async () => {
+		const device = "c".repeat(32);
+		await recordUserDevice(db, promoter, device, 1_000);
+		await recordUserDevice(db, promoter, device, 2_000);
+		await recordUserDevice(db, promoter, device, 1_000 + 86_400_001);
+		expect(
+			await db
+				.prepare(
+					"SELECT first_seen_at,last_seen_at FROM user_devices WHERE user_id=? AND device_id=?",
+				)
+				.bind(promoter, device)
+				.first(),
+		).toEqual({ first_seen_at: 1_000, last_seen_at: 1_000 + 86_400_001 });
+		expect(
+			deviceIdFromRequest(
+				new Request("https://x", {
+					headers: { cookie: `a=1; gm_device=${device}` },
+				}),
+			),
+		).toBe(device);
+		expect(
+			deviceIdFromRequest(
+				new Request("https://x", { headers: { cookie: "gm_device=bad" } }),
+			),
+		).toBeNull();
 	});
 	it("rejects identified self-referrals", async () => {
 		const code = await openReferralCoupon(db, promoter);
