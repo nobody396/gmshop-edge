@@ -28,6 +28,7 @@ import {
 	previewStoreCoupon,
 	quoteStoreCouponForVisitor,
 } from "#/features/storefront/server/multi-order";
+import { getStoreOrder } from "#/features/storefront/server/order-query";
 import { getWallet } from "#/features/wallet/server/ledger";
 import { applyMigrations } from "./migrations";
 
@@ -393,6 +394,31 @@ describe("invitation and personal recall checkout", { timeout: 30000 }, () => {
 		expect(await getWallet(db, buyer)).toMatchObject({
 			balanceMinor: "2000",
 			rewardBalanceMinor: "800",
+		});
+	});
+	it("shows the order page what the customer actually pays after rewards and balance", async () => {
+		await db
+			.prepare(
+				"UPDATE users SET balance_minor='2000',reward_balance_minor='800' WHERE id=?",
+			)
+			.bind(buyer)
+			.run();
+		const id = await emptyOrder();
+		await db
+			.prepare("UPDATE shop_orders SET order_number='GMHOLDVIEW01' WHERE id=?")
+			.bind(id)
+			.run();
+		await reserveOrderBalance(db, id, buyer);
+		expect(
+			await getStoreOrder(
+				db,
+				{ orderNumber: "GMHOLDVIEW01" },
+				{ userId: buyer },
+			),
+		).toMatchObject({
+			totalMinor: "10000",
+			balanceAppliedMinor: "2800",
+			payableMinor: "7200",
 		});
 	});
 	it("does not overspend a wallet across concurrent orders", async () => {

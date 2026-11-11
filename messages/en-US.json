@@ -895,6 +895,7 @@
 	"store_checkout_select_option": "Select an option",
 	"store_checkout_next_step": "After you submit, a payment code appears. Once paid, the order is delivered automatically and your code is on the order page.",
 	"store_checkout_payable": "To pay",
+	"store_order_balance_applied": "Rewards / balance applied",
 	"store_checkout_amount_due": "You pay",
 	"store_account_order_more_items": "· {count} items",
 	"store_continue_shopping": "Continue shopping",
