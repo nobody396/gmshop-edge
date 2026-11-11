@@ -155,13 +155,14 @@ Warranty
 - Delivery is complete once the account details are sent; no refunds. Sign-in problems are handled by the replacement warranty above.`,
 	},
 	"c70d10e8-b781-4782-bc98-1f034bcd069a": {
-		name: "Apple ID｜US / Japan / Turkey｜Aged account",
+		name: "Apple ID｜US / Japan / Turkey / Philippines｜Aged account",
 		description: `Accounts registered over a year ago, one buyer per account, with security questions; you can change the password yourself. Delivered automatically after payment, for downloading and buying apps from other regions on the App Store.
 
 Which region
 · US: the widest app selection; ChatGPT, Claude, Gemini, Grok, and other AI apps can all be downloaded and purchased in-app. If unsure, choose US.
 · Japan: the Japanese App Store, for apps and games listed there.
 · Turkey: the Turkish App Store, where many subscriptions are priced lower (actual prices follow the App Store).
+· Philippines: the Philippine App Store, where some app subscriptions are also priced lower (actual prices follow the App Store).
 
 What you receive
 One line of account details on the order page:
@@ -833,6 +834,10 @@ ${claudeRestrictions}`,
 	"3d992ebc-cae7-4eaa-bb1c-c9a886c73d6b": {
 		name: "Turkey Apple ID｜Aged account (over 1 year)",
 		policy: appleIdPolicy("Turkey"),
+	},
+	"3b92ccfd-a4c3-48bd-84d8-8531367bc42f": {
+		name: "Philippines Apple ID｜Aged account (over 1 year)",
+		policy: appleIdPolicy("Philippines"),
 	},
 	"1f69eef9-2806-41fd-b3f0-70c1988a14e6": {
 		name: "Perplexity Max｜1 month｜No credits",
