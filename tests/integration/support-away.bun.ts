@@ -422,9 +422,8 @@ test("a reservation code gets only its fixed reply, never the away note on top",
 	const response = await run(() =>
 		currentWebSupportConversation(db, customerRequest(), 0),
 	);
-	expect(response.replies.map((reply) => reply.text)).toEqual([
-		"已收到预定码，请加 QQ",
-	]);
+	expect(response.replies).toHaveLength(1);
+	expect(response.replies[0]).toMatchObject({ text: "已收到预定码，请加 QQ" });
 	expect(sent.some((item) => item.text?.includes("老板，我这会儿不在"))).toBe(
 		false,
 	);
