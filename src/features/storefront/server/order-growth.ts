@@ -5,6 +5,7 @@ import { storefrontStockExpression } from "./stock-availability";
 
 export const crossSellSettingKey = "growth.cross_sell";
 const maxRecommendations = 3;
+const maxRecommendationCandidates = 30;
 const growthStatuses = new Set(["paid", "fulfilling", "completed"]);
 const agentAccessProductIds = new Set<string>(
 	Object.values(agentAccessProducts).map((product) => product.productId),
@@ -63,6 +64,34 @@ export type OrderGrowth = {
 };
 
 /**
+ * Whether an order may show invitation prompts (order page block, delivery
+ * email line): same rules as loadOrderGrowth, in one query whose bindings do
+ * not grow with the order size, and without loading recommendations.
+ */
+export async function isGrowthEligibleOrder(
+	db: D1Database,
+	order: { id: string; status: string; refundedAt: number | null },
+) {
+	if (!growthStatuses.has(order.status) || order.refundedAt != null)
+		return false;
+	const agentIds = [...agentAccessProductIds];
+	const row = await db
+		.prepare(
+			`SELECT EXISTS(SELECT 1 FROM shop_order_items WHERE order_id = ?) AS has_items,
+			 EXISTS(SELECT 1 FROM supplier_api_orders WHERE shop_order_id = ?) AS via_supplier_api,
+			 EXISTS(SELECT 1 FROM shop_order_items WHERE order_id = ?
+			  AND product_id IN (${agentIds.map(() => "?").join(",")})) AS agent_access`,
+		)
+		.bind(order.id, order.id, order.id, ...agentIds)
+		.first<{
+			has_items: number;
+			via_supplier_api: number;
+			agent_access: number;
+		}>();
+	return Boolean(row?.has_items && !row.via_supplier_api && !row.agent_access);
+}
+
+/**
  * Growth blocks for the customer order page. Only paid storefront orders get them:
  * never agent-access purchases and never orders placed through the supplier API.
  */
@@ -117,7 +146,10 @@ export async function loadOrderGrowth(
 	);
 	const candidates = [
 		...new Set([...purchased].flatMap((itemId) => mapping.get(itemId) ?? [])),
-	].filter((id) => !purchased.has(id));
+	]
+		.filter((id) => !purchased.has(id))
+		// Bounded so a many-SKU order stays under D1's 100 bound parameters.
+		.slice(0, maxRecommendationCandidates);
 	const referral = referralQuoteFor(items);
 	return {
 		signedIn: access.signedIn,

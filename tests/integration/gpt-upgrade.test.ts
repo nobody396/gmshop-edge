@@ -382,10 +382,56 @@ describe("quoted ChatGPT upgrades", { timeout: 30_000 }, () => {
 			)
 			.first<string>("message_encrypted");
 		expect(encrypted).toBeTruthy();
+		const text = JSON.parse(
+			await decryptNotificationMessage(encrypted ?? "", secret),
+		).text;
+		expect(text).toContain(upgradeDeliveryContent(statusUrl));
+		// Our own links are tagged; the invite line closes a storefront delivery email.
+		expect(text).toMatch(
+			/https:\/\/shop\.example\/account\/orders\/GM[0-9A-F]+\?utm_source=order_email&utm_medium=email&utm_campaign=delivery_ready\n/,
+		);
 		expect(
-			JSON.parse(await decryptNotificationMessage(encrypted ?? "", secret))
-				.text,
-		).toContain(upgradeDeliveryContent(statusUrl));
+			text.endsWith(
+				"\n\nInvite friends to order: they save, and you earn credit for your next purchase. Get your invite link: https://shop.example/account?utm_source=order_email&utm_medium=email&utm_campaign=delivery_invite",
+			),
+		).toBe(true);
+	});
+	it("still queues the delivery email without the invite line when the invite check fails", async () => {
+		const d = await paid();
+		await db
+			.prepare(
+				"INSERT INTO system_settings(key,value) VALUES ('runtime.better_auth_url','\"https://shop.example\"')",
+			)
+			.run();
+		await db
+			.prepare(
+				"INSERT INTO notification_channel_configs(id,channel,name,provider,api_key_encrypted,api_key_version,from_address,enabled) VALUES ('fixture-email','email','Email','resend',?,1,'Shop <mail@example.test>',1)",
+			)
+			.bind(await encryptNotificationConfig("fixture-email-key", secret))
+			.run();
+		await processDelivery(db, d.id);
+		// Break the invite eligibility query; the email must not depend on it.
+		await db
+			.prepare(
+				"ALTER TABLE supplier_api_orders RENAME TO supplier_api_orders_off",
+			)
+			.run();
+		await expect(fanOutPendingCommerceNotifications(db)).resolves.toMatchObject(
+			{ deliveries: 1 },
+		);
+		const encrypted = await db
+			.prepare(
+				"SELECT message_encrypted FROM notification_deliveries WHERE event='delivery_ready'",
+			)
+			.first<string>("message_encrypted");
+		expect(encrypted).toBeTruthy();
+		const text = JSON.parse(
+			await decryptNotificationMessage(encrypted ?? "", secret),
+		).text;
+		expect(text).toContain(upgradeDeliveryContent(statusUrl));
+		expect(text).toContain("utm_campaign=delivery_ready");
+		expect(text).not.toContain("delivery_invite");
+		expect(text).not.toMatch(/invite|邀请/i);
 	});
 	it("backs off transient failures, suppresses duplicates, and recovers through the scheduler", async () => {
 		const d = await paid();

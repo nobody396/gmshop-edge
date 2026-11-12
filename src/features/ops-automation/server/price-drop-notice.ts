@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ownLinkTags, withUtm } from "#/features/attribution/utm";
 import { sendOwnerAlert } from "#/features/telegram/server/owner-alerts";
 import { telegramRuntime } from "#/features/telegram/server/sync";
 import { loadSettings, settingStatement } from "./shared";
@@ -52,7 +53,12 @@ export function composePriceDropNotice(
 	origin: string,
 	itemId: string,
 	copy: PriceDropCopy,
+	tagged = true,
 ) {
+	const productUrl = new URL(
+		`/products/${copy.productId}?item=${itemId}`,
+		origin,
+	).toString();
 	const heading = `📉 降价通知｜${copy.title}`;
 	const quote = [
 		"🌐 繁體 · English · Русский · Tiếng Việt",
@@ -66,7 +72,7 @@ export function composePriceDropNotice(
 		`${copy.sku} 已降价，欢迎选购`,
 		`${copy.pitch}；付款后自动发卡密`,
 		"",
-		`🛒 ${new URL(`/products/${copy.productId}?item=${itemId}`, origin)}`,
+		`🛒 ${tagged ? withUtm(productUrl, ownLinkTags.telegramChannel("price_drop")) : productUrl}`,
 		"",
 		"",
 	].join("\n");
@@ -194,11 +200,19 @@ export async function runPriceDropNotices(input: {
 			continue;
 		}
 		const cover = await input.files.get(coverKey(row.target_id));
-		const { caption, entities } = composePriceDropNotice(
+		// The campaign tags are dropped when they alone would push the caption over the limit.
+		let { caption, entities } = composePriceDropNotice(
 			origin,
 			row.target_id,
 			copy,
 		);
+		if (caption.length > captionLimit)
+			({ caption, entities } = composePriceDropNotice(
+				origin,
+				row.target_id,
+				copy,
+				false,
+			));
 		if (
 			!cover ||
 			!botToken ||

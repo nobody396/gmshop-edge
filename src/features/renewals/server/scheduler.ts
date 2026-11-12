@@ -36,6 +36,7 @@ import {
 	loadRenewalCodePrefixes,
 } from "./code-prefixes";
 import {
+	renewalInviteUrl,
 	renewalOrigin,
 	renewalSiteDomain,
 	renewalUnsubscribeUrl,
@@ -794,7 +795,7 @@ async function sendDueReminders(
 					runtime,
 					row.recipient_email,
 				),
-				inviteUrl: `${origin}/account`,
+				inviteUrl: renewalInviteUrl(origin, row.stage),
 				recallCoupon:
 					row.stage === "recall"
 						? await issueReminderRecallCoupon(db, row, now)

@@ -1,10 +1,13 @@
+import { ownLinkTags, withUtm } from "#/features/attribution/utm";
 import { decryptDeliveryContent } from "#/features/fulfillment/secrets";
 import {
 	redeemUrlForOrder,
 	withRedeemHost,
 } from "#/features/redeem-warehouse/redeem-host";
+import { isGrowthEligibleOrder } from "#/features/storefront/server/order-growth";
 import { formatMinorAmount } from "#/lib/format";
 import { type SupportedLocale, supportedLocales } from "#/lib/locales";
+import { m } from "#/paraglide/messages";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import {
 	builtinNotificationTemplate,
@@ -117,6 +120,7 @@ export async function fanOutPendingCommerceNotifications(
 		const orderPath = order.user_id
 			? `/account/orders/${encodeURIComponent(order.order_number)}`
 			: `/orders/${encodeURIComponent(order.order_number)}`;
+		const siteOrigin = runtime.betterAuthUrl || "https://localhost";
 		const values = {
 			site_name: await loadSiteName(db),
 			order_number: order.order_number,
@@ -128,10 +132,10 @@ export async function fanOutPendingCommerceNotifications(
 				order.currency_decimals,
 				locale,
 			),
-			order_url: new URL(
-				orderPath,
-				runtime.betterAuthUrl || "https://localhost",
-			).toString(),
+			order_url: withUtm(
+				new URL(orderPath, siteOrigin).toString(),
+				ownLinkTags.orderEmail(event),
+			),
 			case_number: order.case_number ?? "",
 			resolution: order.resolution ?? "",
 		};
@@ -161,6 +165,10 @@ export async function fanOutPendingCommerceNotifications(
 						: withRedeemHost(plaintext, await redeemUrlForOrder(db, order.id));
 			}
 			const rendered = renderNotificationTemplate(template.body, values);
+			const invite =
+				row.event_type === "delivery.ready"
+					? await deliveryInviteLine(db, order, siteOrigin, locale)
+					: null;
 			await enqueueConfiguredEmailNotification(db, {
 				event,
 				idempotencyKey: `commerce-event:${row.id}:email:${order.normalized_contact_email}`,
@@ -170,7 +178,9 @@ export async function fanOutPendingCommerceNotifications(
 						builtinNotificationTemplate(event, locale).subject,
 					values,
 				),
-				text: deliveryContent ? `${rendered}\n\n${deliveryContent}` : rendered,
+				text: [rendered, deliveryContent, invite]
+					.filter((part): part is string => Boolean(part))
+					.join("\n\n"),
 				locale,
 				asset: deliveryPolicy
 					? {
@@ -188,6 +198,40 @@ export async function fanOutPendingCommerceNotifications(
 		await markOutboxPublished(db, row.id);
 	}
 	return { processed: rows.results.length, deliveries: delivered };
+}
+
+/**
+ * One invite line for the delivery email, only for orders that may show the
+ * order page's invite block (never agent-access, supplier-API or refunded
+ * orders). Best effort: any failure drops the line, never the email.
+ */
+export async function deliveryInviteLine(
+	db: D1Database,
+	order: Pick<OrderRow, "id" | "status" | "refunded_at">,
+	siteOrigin: string,
+	locale: SupportedLocale,
+) {
+	try {
+		if (
+			!(await isGrowthEligibleOrder(db, {
+				id: order.id,
+				status: order.status,
+				refundedAt: order.refunded_at,
+			}))
+		)
+			return null;
+		return m.promotion_invite_email_line(
+			{
+				url: withUtm(
+					new URL("/account", siteOrigin).toString(),
+					ownLinkTags.orderEmail("delivery_invite"),
+				),
+			},
+			{ locale },
+		);
+	} catch {
+		return null;
+	}
 }
 
 async function loadBuildNotificationChannel(
@@ -310,7 +354,7 @@ function loadOrder(db: D1Database, condition: string, id: string) {
 		.prepare(
 			`SELECT o.id, o.order_number, o.user_id, o.normalized_contact_email,
 			 o.locale, u.preferred_locale,
-			 o.status, o.currency, o.currency_decimals, o.total_minor,
+			 o.status, o.currency, o.currency_decimals, o.total_minor, o.refunded_at,
 			 (SELECT product_name FROM shop_order_items WHERE order_id = o.id
 			  ORDER BY created_at, id LIMIT 1) AS product_name
 			 FROM shop_orders o
@@ -416,6 +460,7 @@ type OrderRow = {
 	currency: string;
 	currency_decimals: number;
 	total_minor: string;
+	refunded_at: number | null;
 	product_name: string | null;
 	case_number?: string | null;
 	resolution?: string | null;

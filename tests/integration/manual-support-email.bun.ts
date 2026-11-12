@@ -181,7 +181,9 @@ test("manual request pins official channel, encrypts generic body and deduplicat
 	);
 	expect(message.from).toBe(supportReplyEmailSender);
 	expect(message.to).toBe("synthetic-customer@proton.me");
-	expect(message.text).toContain("https://laoshirenvip.com/#support");
+	expect(message.text).toContain(
+		"https://laoshirenvip.com/?utm_source=support&utm_medium=email&utm_campaign=support_reply#support",
+	);
 	expect(message.text).not.toContain("private transcript");
 	expect(message.text).not.toContain(cid);
 	expect((await requestManualSupportEmail(db, api, input)).duplicate).toBe(

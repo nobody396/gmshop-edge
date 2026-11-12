@@ -1,4 +1,5 @@
 import type { Api } from "grammy";
+import { ownLinkTags, withUtm } from "#/features/attribution/utm";
 import {
 	enqueueEmailNotification,
 	supportReplyEmailEvent,
@@ -125,10 +126,14 @@ export async function requestManualSupportEmail(
 		locale === "zh-CN"
 			? "老实人AI VIP：客服已回复你的咨询"
 			: "LaoshirenAI VIP: support has replied";
+	const supportUrl = withUtm(
+		"https://laoshirenvip.com/#support",
+		ownLinkTags.supportReply,
+	);
 	const text =
 		locale === "zh-CN"
-			? "客服已回复你的在线咨询，请返回网页继续沟通：\nhttps://laoshirenvip.com/#support\n\n请使用此前咨询时的浏览器打开链接。站内消息和附件保存 2 天，请及时查看。\n这是一封提醒邮件，请勿直接回复。"
-			: "Support has replied to your online conversation. Return to the website:\nhttps://laoshirenvip.com/#support\n\nOpen this link in the browser used for the original conversation. Messages and attachments are retained for 2 days.\nThis is a notification; please do not reply to this email.";
+			? `客服已回复你的在线咨询，请返回网页继续沟通：\n${supportUrl}\n\n请使用此前咨询时的浏览器打开链接。站内消息和附件保存 2 天，请及时查看。\n这是一封提醒邮件，请勿直接回复。`
+			: `Support has replied to your online conversation. Return to the website:\n${supportUrl}\n\nOpen this link in the browser used for the original conversation. Messages and attachments are retained for 2 days.\nThis is a notification; please do not reply to this email.`;
 	let delivery: Awaited<ReturnType<typeof enqueueEmailNotification>>;
 	try {
 		delivery = await enqueueEmailNotification(db, {

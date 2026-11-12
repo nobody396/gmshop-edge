@@ -166,7 +166,7 @@ describe("price-drop channel notices", () => {
 			"📉 降价通知｜Pro 100 标题",
 		);
 		expect(String(posts[0]?.get("caption"))).toContain(
-			`🛒 ${origin}/products/gpt?item=drop`,
+			`🛒 ${origin}/products/gpt?item=drop&utm_source=telegram&utm_medium=channel&utm_campaign=price_drop\n`,
 		);
 		expect(String(posts[0]?.get("caption"))).not.toContain("¥");
 		await expect(claim("a-drop")).resolves.toEqual({
@@ -235,5 +235,16 @@ describe("price-drop channel notices", () => {
 		expect(
 			caption.endsWith("🔄 代理卡网已同步 · Reseller catalog synced"),
 		).toBe(true);
+		// Without campaign tags (used only when they would overflow the caption).
+		const plain = composePriceDropNotice(
+			origin,
+			"drop",
+			copy("Pro 100"),
+			false,
+		);
+		expect(plain.caption).toContain(`🛒 ${origin}/products/gpt?item=drop\n`);
+		expect(plain.entities.map((entity) => entity.length)).toEqual(
+			entities.map((entity) => entity.length),
+		);
 	});
 });

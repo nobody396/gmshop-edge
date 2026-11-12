@@ -2,11 +2,40 @@ export const sourceCategories = [
 	"search",
 	"ai",
 	"social",
+	"email",
+	"referral",
+	"wechat_in_app",
+	"telegram_in_app",
+	"qq_in_app",
 	"direct",
 	"other",
 ] as const;
 
 export type SourceCategory = (typeof sourceCategories)[number];
+
+export const inAppBrowsers = ["wechat", "telegram", "qq"] as const;
+export type InAppBrowser = (typeof inAppBrowsers)[number];
+
+/** Invite links are `/?ref=INV-…`; renewal and cross-sell links reuse `ref` for other values. */
+export function isInviteRef(value: string | null | undefined) {
+	return /^INV-[A-Z0-9]{20}$/i.test(value?.trim() ?? "");
+}
+
+/**
+ * The in-app browser a page was opened in, from the User-Agent (plus the
+ * `TelegramWebviewProxy` bridge Telegram injects; its iOS browser keeps
+ * Safari's User-Agent). Null for ordinary browsers.
+ */
+export function detectInAppBrowser(
+	userAgent: string | null | undefined,
+	telegramWebview = false,
+): InAppBrowser | null {
+	const ua = userAgent ?? "";
+	if (/MicroMessenger/i.test(ua)) return "wechat";
+	if (telegramWebview || /Telegram/i.test(ua)) return "telegram";
+	if (/\sQQ\/\d/.test(ua)) return "qq";
+	return null;
+}
 
 // AI assistants come first: several live on search-engine domains
 // (yiyan.baidu.com, gemini.google.com).
@@ -114,16 +143,24 @@ function classifyUtmSource(
 }
 
 /**
- * Buckets a first touch: a known referrer wins, then an explicit utm_source;
- * no referrer and no campaign tags is a direct visit.
+ * Buckets a touch. Our own email links (utm_medium=email) win, since webmail
+ * referrers look like search or social; then an invite link without campaign
+ * tags; then a known referrer, then an explicit utm_source. With no referrer
+ * and no tags the in-app browser splits "direct" (WeChat, Telegram, QQ).
  */
 export function classifySource(input: {
 	referrerHost?: string | null;
 	utmSource?: string | null;
+	utmMedium?: string | null;
+	invite?: boolean | null;
+	inApp?: InAppBrowser | null;
 }): SourceCategory {
+	if (input.utmMedium?.trim().toLowerCase() === "email") return "email";
+	if (input.invite && !input.utmSource?.trim()) return "referral";
 	const fromReferrer = classifyHost(input.referrerHost);
 	if (fromReferrer && fromReferrer !== "other") return fromReferrer;
 	const fromUtm = classifyUtmSource(input.utmSource);
 	if (fromUtm && fromUtm !== "other") return fromUtm;
-	return fromReferrer || fromUtm ? "other" : "direct";
+	if (fromReferrer || fromUtm) return "other";
+	return input.inApp ? `${input.inApp}_in_app` : "direct";
 }

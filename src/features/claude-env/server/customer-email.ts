@@ -1,3 +1,4 @@
+import { ownLinkTags, withUtm } from "#/features/attribution/utm";
 import {
 	claudeEnvExpiryEmailEvent,
 	claudeEnvReadyEmailEvent,
@@ -132,12 +133,15 @@ export async function enqueueClaudeEnvReadyEmail(
 				.replace("T", " ")
 		: "—";
 	const content = renderClaudeEnvReadyEmail({
-		orderUrl: new URL(
-			row.via_api
-				? claudeEnvAccountPath
-				: `/account/orders/${encodeURIComponent(row.order_number)}`,
-			origin,
-		).toString(),
+		orderUrl: withUtm(
+			new URL(
+				row.via_api
+					? claudeEnvAccountPath
+					: `/account/orders/${encodeURIComponent(row.order_number)}`,
+				origin,
+			).toString(),
+			ownLinkTags.claudeEnv("env_ready"),
+		),
 		viaReseller: Boolean(row.via_api),
 		expiresText,
 		email: row.email,
@@ -333,7 +337,10 @@ export const enqueueClaudeEnvExpiryEmail: SendExpiryEmail = async (
 		daysLeft: input.daysLeft,
 		expiresAt: input.expiresAt,
 		plan: input.plan,
-		renewUrl: new URL(renewalPath(input.plan), origin).toString(),
+		renewUrl: withUtm(
+			new URL(renewalPath(input.plan), origin).toString(),
+			ownLinkTags.claudeEnv("env_expiry"),
+		),
 		unsubscribeUrl,
 		viaReseller: input.viaReseller,
 	});
@@ -491,12 +498,15 @@ export const enqueueClaudeEnvTrafficEmail: SendTrafficEmail = async (
 		usedBytes: input.usedBytes,
 		entitledBytes: input.entitledBytes,
 		periodEnd: input.periodEnd,
-		addTrafficUrl: new URL(
-			input.orderNumber
-				? `/account/orders/${encodeURIComponent(input.orderNumber)}#claude-env-traffic`
-				: `${claudeEnvAccountPath}#claude-env-traffic`,
-			origin,
-		).toString(),
+		addTrafficUrl: withUtm(
+			new URL(
+				input.orderNumber
+					? `/account/orders/${encodeURIComponent(input.orderNumber)}#claude-env-traffic`
+					: `${claudeEnvAccountPath}#claude-env-traffic`,
+				origin,
+			).toString(),
+			ownLinkTags.claudeEnv("env_traffic"),
+		),
 		viaReseller: input.orderNumber === null,
 	});
 	const delivery = await enqueueEmailNotification(db, {

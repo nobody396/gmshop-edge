@@ -17,8 +17,8 @@ import { applyMigrations } from "./migrations";
 const token = "synthetic-ops-token-that-is-long-enough";
 const content = {
 	subject: "【广告】Claude 成品号上新",
-	text: "新品上架。退订：{{unsubscribe_url}}",
-	html: '<p>新品上架。<a href="{{unsubscribe_url}}">退订</a></p>',
+	text: "新品上架：https://laoshirenvip.com/products/claude?item=a。退订：{{unsubscribe_url}}",
+	html: '<p>新品上架。<a href="https://laoshirenvip.com/products/claude?item=a&amp;x=1">去看看</a> <a href="{{unsubscribe_url}}">退订</a></p>',
 };
 
 describe("product announcement email", { timeout: 30000 }, () => {
@@ -233,6 +233,15 @@ describe("product announcement email", { timeout: 30000 }, () => {
 			expect(message.text).not.toContain("{{unsubscribe_url}}");
 			expect(message.html).toContain("/unsubscribe/renewal?e=");
 			expect(message.html).toContain("&amp;sig=");
+			// Links to the shop carry the campaign; the unsubscribe link is untouched.
+			expect(message.text).toContain(
+				"https://laoshirenvip.com/products/claude?item=a&utm_source=announcement&utm_medium=email&utm_campaign=claude-acct-1112。",
+			);
+			expect(message.html).toContain(
+				'href="https://laoshirenvip.com/products/claude?item=a&amp;x=1&amp;utm_source=announcement&amp;utm_medium=email&amp;utm_campaign=claude-acct-1112"',
+			);
+			expect(message.text).not.toMatch(/unsubscribe\/renewal\?[^\s]*utm_/);
+			expect(message.html).not.toMatch(/unsubscribe\/renewal\?[^"]*utm_/);
 			expect(message.headers["List-Unsubscribe"]).toContain(
 				"/api/shop/renewal/unsubscribe?e=",
 			);

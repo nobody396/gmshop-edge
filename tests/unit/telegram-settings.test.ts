@@ -33,15 +33,15 @@ describe("Telegram settings", () => {
 		).toBe(false);
 	});
 
-	it("uses fixed Mini App paths on the configured public origin", () => {
+	it("uses fixed, campaign-tagged Mini App paths on the configured public origin", () => {
 		expect(miniAppUrl("https://shop.example", "shop")).toBe(
-			"https://shop.example/",
+			"https://shop.example/?utm_source=telegram&utm_medium=bot&utm_campaign=miniapp_shop",
 		);
 		expect(miniAppUrl("https://shop.example", "orders")).toBe(
-			"https://shop.example/account/orders",
+			"https://shop.example/account/orders?utm_source=telegram&utm_medium=bot&utm_campaign=miniapp_orders",
 		);
 		expect(miniAppUrl("https://shop.example", "account")).toBe(
-			"https://shop.example/account/settings",
+			"https://shop.example/account/settings?utm_source=telegram&utm_medium=bot&utm_campaign=miniapp_account",
 		);
 	});
 });

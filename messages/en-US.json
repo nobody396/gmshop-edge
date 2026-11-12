@@ -2377,6 +2377,7 @@
 	"promotion_invite_link": "My invite link",
 	"promotion_invite_guest": "Sign in or register with your order email to get your personal invite link.",
 	"promotion_invite_sign_in": "Sign in / Register",
+	"promotion_invite_email_line": "Invite friends to order: they save, and you earn credit for your next purchase. Get your invite link: {url}",
 	"agent_program_title": "Agent management",
 	"agent_program_description": "Review sales, rebates and withdrawals. Recording a payout does not send money.",
 	"agent_program_agents": "Agents",

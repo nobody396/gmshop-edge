@@ -2377,6 +2377,7 @@
 	"promotion_invite_link": "我的邀请链接",
 	"promotion_invite_guest": "用下单邮箱登录或注册账号，即可获得专属邀请链接。",
 	"promotion_invite_sign_in": "登录 / 注册",
+	"promotion_invite_email_line": "邀请好友下单：好友立减，你拿返利，可抵下次消费。领取你的邀请链接：{url}",
 	"agent_program_title": "代理管理",
 	"agent_program_description": "查看销售、返还和提现；这里只记录打款，不会实际付款。",
 	"agent_program_agents": "代理",

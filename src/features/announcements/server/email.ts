@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ownLinkTags, tagOwnLinks } from "#/features/attribution/utm";
 import {
 	announcementEmailEvent,
 	enqueueEmailNotification,
@@ -8,7 +9,10 @@ import {
 	isReservedEmailRecipient,
 	recipientHash,
 } from "#/features/notifications/server/recipient-policy";
-import { renewalUnsubscribeUrl } from "#/features/renewals/server/links";
+import {
+	renewalOrigin,
+	renewalUnsubscribeUrl,
+} from "#/features/renewals/server/links";
 import { constantTimeEqual } from "#/lib/crypto";
 import { DomainError } from "#/lib/domain-error";
 import { claimFixedWindowRateLimit } from "#/server/rate-limit";
@@ -200,6 +204,11 @@ export async function runAnnouncement(db: D1Database, raw: AnnouncementInput) {
 			"Approved sender unavailable",
 		);
 	const runtime = await loadRuntimeConfig(db);
+	// Tag links to our own site before the per-recipient unsubscribe link goes in.
+	const origin = renewalOrigin(runtime);
+	const tag = ownLinkTags.announcement(input.campaignKey);
+	const text = tagOwnLinks(input.text, origin, tag);
+	const html = tagOwnLinks(input.html, origin, tag, "html");
 	let accepted = 0;
 	let skipped = 0;
 	let failed = 0;
@@ -223,8 +232,8 @@ export async function runAnnouncement(db: D1Database, raw: AnnouncementInput) {
 					from: supportReplyEmailSender,
 					replyTo: "",
 					subject: input.subject,
-					text: input.text.replaceAll(unsubscribePlaceholder, unsubscribeUrl),
-					html: input.html.replaceAll(
+					text: text.replaceAll(unsubscribePlaceholder, unsubscribeUrl),
+					html: html.replaceAll(
 						unsubscribePlaceholder,
 						escapeHtmlAttribute(unsubscribeUrl),
 					),

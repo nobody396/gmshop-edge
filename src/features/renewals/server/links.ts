@@ -1,3 +1,4 @@
+import { ownLinkTags, withUtm } from "#/features/attribution/utm";
 import { recipientHash } from "#/features/notifications/server/recipient-policy";
 import { constantTimeEqual, hmacSha256Hex } from "#/lib/crypto";
 import type { RuntimeConfig } from "#/server/runtime-config";
@@ -128,5 +129,16 @@ export async function resolveRenewalClick(
 		)
 		.bind(now, now, row.id)
 		.run();
-	return `${origin}${renewalProductPath(row.product_id, row.sellable_item_id, row.stage)}`;
+	return withUtm(
+		`${origin}${renewalProductPath(row.product_id, row.sellable_item_id, row.stage)}`,
+		ownLinkTags.renewal(renewalStageRef[row.stage]),
+	);
+}
+
+/** Invite-link entry (the account page) inside a renewal email, tagged by stage. */
+export function renewalInviteUrl(origin: string, stage: RenewalStage) {
+	return withUtm(
+		`${origin}/account`,
+		ownLinkTags.renewal(renewalStageRef[stage]),
+	);
 }
