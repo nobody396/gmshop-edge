@@ -22,6 +22,10 @@ import {
 	reserveSupportAwayReply,
 } from "./support-away";
 import {
+	loadSupportCodeReplyRules,
+	matchSupportCodeReply,
+} from "./support-code-replies";
+import {
 	claimSupportTopicSlot,
 	logSupportTopicLimited,
 } from "./support-topic-limit";
@@ -317,6 +321,7 @@ export async function sendWebSupportMessage(
 			conversation.topic_name,
 			input.text,
 		);
+		await maybeReplyWebSupportCode(db, api, conversation, input.text);
 		await maybeReplyWebSupportAway(db, api, conversation);
 		return { sent: true };
 	} catch (error) {
@@ -342,6 +347,7 @@ export async function sendWebSupportMessage(
 				conversation.topic_name,
 				input.text,
 			);
+			await maybeReplyWebSupportCode(db, api, conversation, input.text);
 			await maybeReplyWebSupportAway(db, api, conversation);
 			return { sent: true };
 		}
@@ -352,6 +358,55 @@ export async function sendWebSupportMessage(
 			.bind(conversation.id, input.clientMessageId)
 			.run();
 		throw error;
+	}
+}
+
+/** Fixed reply when the customer sends a configured order code (once per 10 minutes per rule). */
+export async function maybeReplyWebSupportCode(
+	db: D1Database,
+	api: Pick<Api, "sendMessage">,
+	conversation: WebConversation,
+	text: string,
+) {
+	try {
+		const hit = matchSupportCodeReply(
+			await loadSupportCodeReplyRules(db),
+			text,
+		);
+		if (!hit) return false;
+		const budget = await claimFixedWindowRateLimit(db, {
+			bucketKey: `telegram:web:code-reply:${conversation.id}:${hit.index}`,
+			limit: 1,
+			windowMs: 10 * 60_000,
+		});
+		if (!budget.allowed) return false;
+		await storeWebAdministratorReply(
+			db,
+			conversation,
+			hit.message,
+			undefined,
+			true,
+		);
+		await api
+			.sendMessage(
+				conversation.support_chat_id,
+				`🤖 自动回复\n${hit.message}`,
+				{
+					...(conversation.message_thread_id
+						? { message_thread_id: conversation.message_thread_id }
+						: {}),
+				},
+			)
+			.catch(() => undefined);
+		return true;
+	} catch {
+		console.error(
+			JSON.stringify({
+				event: "support_code_reply_failed",
+				conversationId: conversation.id,
+			}),
+		);
+		return false;
 	}
 }
 
