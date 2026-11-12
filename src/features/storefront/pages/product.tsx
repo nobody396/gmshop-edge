@@ -108,6 +108,7 @@ const ownUsageGuideProductIds = new Set([
 	"9e8b2987-1564-417e-8441-5936c5d592fa", // Telegram Premium 礼品链接
 	"f2b92a96-290c-4ffa-aaf5-a26e7a35815d", // Claude 稳定使用（订单码 + 开关打开后自动开通，见 features/claude-env）
 	claudeEnvTrafficProductId, // Claude 环境流量加购：付款后自动加到本期额度
+	"550711f1-8901-4f4f-878d-1b81ca09c9ac", // Claude 成品号（预定码 → 在线客服，详情自带拿号步骤）
 ]);
 const appleIdProductId = "c70d10e8-b781-4782-bc98-1f034bcd069a";
 
