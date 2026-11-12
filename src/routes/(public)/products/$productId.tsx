@@ -51,9 +51,14 @@ export const Route = createFileRoute("/(public)/products/$productId")({
 			throw error;
 		}
 	},
-	head: ({ loaderData, matches }) =>
+	head: ({ loaderData, matches, match }) =>
 		loaderData
-			? createProductSeoHead(loaderData, siteNameFromMatches(matches))
+			? createProductSeoHead(
+					loaderData,
+					siteNameFromMatches(matches),
+					getLocale(),
+					match.search.item,
+				)
 			: {},
 	staleTime: 30_000,
 	component: ProductRoute,

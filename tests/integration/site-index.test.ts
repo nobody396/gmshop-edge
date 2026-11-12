@@ -2,6 +2,7 @@ import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	listIndexedProducts,
+	listIndexedStaticPages,
 	renderLlmsTxt,
 	renderSitemap,
 } from "#/features/seo/server/site-index";
@@ -57,6 +58,80 @@ describe("sitemap and llms.txt", { timeout: 30_000 }, () => {
 		);
 		expect(xml).not.toContain(draftId);
 		expect(xml).not.toContain(retiredId);
+	});
+
+	it("lists spec landing URLs for public plans of multi-plan products", async () => {
+		const appleId = "44444444-4444-4444-8444-444444444444";
+		const us = "55555555-5555-4555-8555-555555555551";
+		const jp = "55555555-5555-4555-8555-555555555552";
+		const paused = "55555555-5555-4555-8555-555555555553";
+		const disabled = "55555555-5555-4555-8555-555555555554";
+		await db.batch([
+			db
+				.prepare(
+					`INSERT INTO products (id, name, description, product_type, status,
+					  tag_names, sort_order, revision, created_at, updated_at)
+					 VALUES (?, 'Apple ID 成品号', NULL, 'stock', 'active', '["Apple"]', 5, 1, 1, 1795000000000)`,
+				)
+				.bind(appleId),
+			db
+				.prepare(
+					`INSERT INTO product_sellable_items
+					 (id, product_id, name, currency, currency_decimals, price_minor,
+					  fulfillment_source, minimum_quantity, maximum_quantity, enabled,
+					  sale_disabled, sort_order, created_at, updated_at)
+					 VALUES (?1, ?5, '美区', 'CNY', 2, '1500', 'local', 1, 1, 1, 0, 1, 1, 1),
+					        (?2, ?5, '日区', 'CNY', 2, '1500', 'local', 1, 1, 1, 0, 2, 1, 1),
+					        (?3, ?5, '土区', 'CNY', 2, '1500', 'local', 1, 1, 1, 1, 3, 1, 1),
+					        (?4, ?5, '菲区', 'CNY', 2, '1500', 'local', 1, 1, 0, 0, 4, 1, 1)`,
+				)
+				.bind(us, jp, paused, disabled, appleId),
+		]);
+		const products = await listIndexedProducts(db);
+		expect(products.find((product) => product.id === appleId)).toMatchObject({
+			planCount: 2,
+			landingItemIds: [us, jp],
+		});
+		// Non-UUID ids are never honoured by the storefront, so never listed.
+		expect(
+			products.find((product) => product.id === activeId)?.landingItemIds,
+		).toEqual([]);
+		const xml = renderSitemap(products);
+		const lastmod = new Date(1_795_000_000_000).toISOString();
+		for (const id of [us, jp])
+			expect(xml).toContain(
+				`<loc>https://laoshirenvip.com/products/${appleId}?item=${id}</loc>\n    <lastmod>${lastmod}</lastmod>`,
+			);
+		expect(xml).not.toContain(paused);
+		expect(xml).not.toContain(disabled);
+	});
+
+	it("dates hand-built pages, following the App Store price snapshot", async () => {
+		const before = await listIndexedStaticPages(db);
+		expect(before.map((page) => page.path)).toEqual([
+			"/guides/apple-id-login",
+			"/guides/appstore-prices",
+			"/guides/claude-network-check",
+			"/ip-check",
+		]);
+		for (const page of before) expect(page.updatedAt).toBeGreaterThan(0);
+		await db
+			.prepare(
+				`INSERT INTO system_settings (key, value, is_secret, created_at, updated_at)
+				 VALUES ('appstore_prices.snapshot', '{}', 0, 1, 1900000000000)`,
+			)
+			.run();
+		const after = await listIndexedStaticPages(db);
+		expect(
+			after.find((page) => page.path === "/guides/appstore-prices")?.updatedAt,
+		).toBe(1_900_000_000_000);
+		const xml = renderSitemap([], [], after);
+		expect(xml).toContain(
+			`<loc>https://laoshirenvip.com/guides/appstore-prices</loc>\n    <lastmod>${new Date(1_900_000_000_000).toISOString()}</lastmod>`,
+		);
+		const entries = xml.match(/<url>[\s\S]*?<\/url>/g) ?? [];
+		expect(entries.length).toBe(6);
+		for (const entry of entries) expect(entry).toContain("<lastmod>");
 	});
 
 	it("describes the live catalog in Chinese without banned phrasing", async () => {

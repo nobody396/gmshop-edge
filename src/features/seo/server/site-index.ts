@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { appStorePricesSettingKey } from "#/features/appstore-prices/server/store";
+import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
 import {
 	reservedGuideSlugs,
 	staticGuidePages,
@@ -13,6 +16,39 @@ import { SITE_URL } from "#/lib/site-url";
 
 /** Public, indexable hand-built guide pages under /guides. */
 export const publicGuidePages = staticGuidePages;
+
+/** A hand-built, indexable page with its last content change. */
+export type IndexedStaticPage = { path: string; updatedAt: number };
+
+/** Indexable tool pages that are not guides. */
+const staticContentPages: readonly IndexedStaticPage[] = [
+	{ path: "/ip-check", updatedAt: Date.parse("2026-10-31T11:33:56Z") },
+];
+
+const defaultStaticPages: readonly IndexedStaticPage[] = [
+	...publicGuidePages.map(({ path, updatedAt }) => ({ path, updatedAt })),
+	...staticContentPages,
+];
+
+/**
+ * Hand-built pages with their lastmod. The App Store price page changes with
+ * every daily snapshot, so its lastmod follows the stored snapshot.
+ */
+export async function listIndexedStaticPages(
+	db: D1Database,
+): Promise<IndexedStaticPage[]> {
+	const snapshot = await db
+		.prepare("SELECT updated_at FROM system_settings WHERE key = ? LIMIT 1")
+		.bind(appStorePricesSettingKey)
+		.first<{ updated_at: number }>()
+		.catch(() => null);
+	const snapshotAt = Number(snapshot?.updated_at ?? 0);
+	return defaultStaticPages.map((page) =>
+		page.path === "/guides/appstore-prices" && snapshotAt > page.updatedAt
+			? { ...page, updatedAt: snapshotAt }
+			: page,
+	);
+}
 
 /** A published, stored guide as the site index needs it. */
 export type IndexedGuide = Pick<
@@ -42,7 +78,14 @@ export type IndexedProduct = {
 	currencyDecimals: number;
 	planCount: number;
 	manualOnly: boolean;
+	/**
+	 * Public plans with their own landing URL (`?item=`): only products that
+	 * sell more than one plan get them, matching the product page canonical.
+	 */
+	landingItemIds: string[];
 };
+
+const uuid = z.uuid();
 
 export async function listIndexedProducts(
 	db: D1Database,
@@ -84,6 +127,25 @@ export async function listIndexedProducts(
 			plan_count: number;
 			manual_only: number;
 		}>();
+	const items = await db
+		.prepare(
+			`SELECT item.id, item.product_id FROM product_sellable_items item
+			 WHERE item.enabled = 1 AND item.sale_disabled = 0
+			 ORDER BY item.product_id, item.sort_order, item.id`,
+		)
+		.all<{ id: string; product_id: string }>();
+	const itemsByProduct = new Map<string, string[]>();
+	for (const item of items.results)
+		itemsByProduct.set(item.product_id, [
+			...(itemsByProduct.get(item.product_id) ?? []),
+			item.id,
+		]);
+	const landingItemIds = (productId: string) => {
+		const ids = itemsByProduct.get(productId) ?? [];
+		if (productId === gptUpgradeProduct.productId || ids.length < 2) return [];
+		// The storefront only honours UUID `?item=` values.
+		return ids.filter((id) => uuid.safeParse(id).success);
+	};
 	return result.results.map((row) => ({
 		id: row.id,
 		name: row.name,
@@ -95,6 +157,7 @@ export async function listIndexedProducts(
 		currencyDecimals: Number(row.currency_decimals ?? 2),
 		planCount: Number(row.plan_count),
 		manualOnly: Boolean(row.manual_only),
+		landingItemIds: landingItemIds(row.id),
 	}));
 }
 
@@ -110,23 +173,44 @@ function escapeXml(value: string) {
 export function renderSitemap(
 	products: readonly IndexedProduct[],
 	guides: readonly IndexedGuide[] = [],
+	staticPages: readonly IndexedStaticPage[] = defaultStaticPages,
 ) {
+	const staticGuides = staticPages.filter((page) =>
+		page.path.startsWith("/guides/"),
+	);
 	const entries = [
-		{ loc: `${SITE_URL}/`, lastmod: latest(products), priority: "1.0" },
-		...products.map((product) => ({
-			loc: `${SITE_URL}/products/${product.id}`,
-			lastmod: product.updatedAt,
-			priority: "0.8",
-		})),
-		{ loc: `${SITE_URL}/guides`, lastmod: latest(guides), priority: "0.6" },
+		{
+			loc: `${SITE_URL}/`,
+			lastmod: latest([...products, ...guides, ...staticPages]),
+			priority: "1.0",
+		},
+		...products.flatMap((product) => [
+			{
+				loc: `${SITE_URL}/products/${product.id}`,
+				lastmod: product.updatedAt,
+				priority: "0.8",
+			},
+			// Item rows churn with every supplier sync, so spec pages share the
+			// product's lastmod instead of re-announcing unchanged pages.
+			...(product.landingItemIds ?? []).map((itemId) => ({
+				loc: `${SITE_URL}/products/${product.id}?item=${encodeURIComponent(itemId)}`,
+				lastmod: product.updatedAt,
+				priority: "0.7",
+			})),
+		]),
+		{
+			loc: `${SITE_URL}/guides`,
+			lastmod: latest([...guides, ...staticGuides]),
+			priority: "0.6",
+		},
 		...guides.map((guide) => ({
 			loc: `${SITE_URL}/guides/${guide.slug}`,
 			lastmod: guide.updatedAt,
 			priority: "0.6",
 		})),
-		...publicGuidePages.map((guide) => ({
-			loc: `${SITE_URL}${guide.path}`,
-			lastmod: undefined,
+		...staticPages.map((page) => ({
+			loc: `${SITE_URL}${page.path}`,
+			lastmod: page.updatedAt,
 			priority: "0.6",
 		})),
 	];

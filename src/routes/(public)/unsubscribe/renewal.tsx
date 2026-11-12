@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { RenewalUnsubscribePage } from "#/features/renewals/pages/unsubscribe";
+import { utilityPageHead } from "#/lib/seo";
 
 const searchSchema = z.object({
 	e: z.string().max(320).optional().catch(undefined),
@@ -9,7 +10,7 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute("/(public)/unsubscribe/renewal")({
 	validateSearch: searchSchema,
-	head: () => ({ meta: [{ name: "robots", content: "noindex" }] }),
+	head: () => utilityPageHead({ nofollow: true }),
 	component: RenewalUnsubscribeRoute,
 });
 
