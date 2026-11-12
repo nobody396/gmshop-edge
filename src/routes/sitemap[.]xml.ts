@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
 	listIndexedGuides,
 	listIndexedProducts,
+	listIndexedStaticPages,
 	renderSitemap,
 	textResponse,
 } from "#/features/seo/server/site-index";
@@ -12,12 +13,13 @@ export const Route = createFileRoute("/sitemap.xml")({
 		handlers: {
 			GET: async ({ request }) => {
 				const db = getDb(request).$client;
-				const [products, guides] = await Promise.all([
+				const [products, guides, staticPages] = await Promise.all([
 					listIndexedProducts(db),
 					listIndexedGuides(db),
+					listIndexedStaticPages(db),
 				]);
 				return textResponse(
-					renderSitemap(products, guides),
+					renderSitemap(products, guides, staticPages),
 					"application/xml; charset=utf-8",
 				);
 			},

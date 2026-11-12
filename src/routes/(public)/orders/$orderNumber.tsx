@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { StorefrontOrderPage } from "#/features/storefront/pages/order";
+import { utilityPageHead } from "#/lib/seo";
 
 export const Route = createFileRoute("/(public)/orders/$orderNumber")({
 	validateSearch: (search: Record<string, unknown>): { payment?: "return" } =>
 		search.payment === "return" ? { payment: "return" } : {},
+	head: () => utilityPageHead(),
 	component: OrderRoute,
 });
 

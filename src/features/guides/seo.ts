@@ -5,6 +5,11 @@ import { absoluteSiteUrl } from "#/lib/site-url";
 export const guidesIndexTitle = "使用指南";
 export const guidesIndexDescription =
 	"AI 会员充值、卡密兑换、账号登录与网络自查的图文指南，价格与库存实时同步商城。";
+/** Search title and snippet for /guides; the visible heading stays short. */
+export const guidesIndexSeoTitle =
+	"AI 会员充值与账号使用指南：ChatGPT、Claude、Gemini、X 怎么选、怎么兑换";
+export const guidesIndexSeoDescription =
+	"老实人AI 使用指南：ChatGPT、Claude、Gemini、X 订阅各规格怎么选，价格、覆盖规则和质保对比，下单兑换步骤；Claude、Google 美国长效接码教程，Apple ID 登录 App Store 方法，各区 App Store 会员价对比和 Claude 网络自查。";
 
 function iso(timestampMs: number) {
 	return new Date(timestampMs).toISOString();
@@ -83,10 +88,10 @@ export function createGuideSeoHead(guide: PublicGuideData, siteName: string) {
 }
 
 export function createGuidesIndexSeoHead(siteName: string) {
-	const title = `${guidesIndexTitle}｜${siteName}`;
+	const title = `${guidesIndexSeoTitle}｜${siteName}`;
 	const head = createDefaultSeoHead({
 		title,
-		description: guidesIndexDescription,
+		description: guidesIndexSeoDescription,
 		path: "/guides",
 		siteName,
 	});

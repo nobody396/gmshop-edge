@@ -11,8 +11,10 @@ import {
 } from "#/layouts/components/data/sidebar-data";
 import { Main } from "#/layouts/components/main";
 import { DashboardLayout } from "#/layouts/dashboard";
+import { utilityPageHead } from "#/lib/seo";
 
 export const Route = createFileRoute("/admin")({
+	head: () => utilityPageHead({ nofollow: true }),
 	gcTime: 0,
 	loader: async ({ location }) => {
 		let bootstrap: Awaited<ReturnType<typeof getAdminBootstrapFn>>;

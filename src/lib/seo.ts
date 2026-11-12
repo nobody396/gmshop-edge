@@ -126,6 +126,46 @@ export function createHomeSeoHead(matches: readonly RouteLoaderMatch[]) {
 	};
 }
 
+/** Robots policy for pages that must never appear in search results. */
+export const NOINDEX_FOLLOW = "noindex, follow";
+export const NOINDEX_NOFOLLOW = "noindex, nofollow";
+
+/**
+ * Head for utility pages (cart, checkout, sign-in, orders, account, …): keeps
+ * them out of search indexes while letting crawlers follow their links. Every
+ * non-content route declares its robots policy through this one helper.
+ */
+export function utilityPageHead(
+	input: {
+		title?: string;
+		matches?: readonly RouteLoaderMatch[];
+		/** Private pages whose links should not be followed either. */
+		nofollow?: boolean;
+	} = {},
+) {
+	const siteName = siteNameFromMatches(input.matches ?? []);
+	return {
+		meta: [
+			...(input.title ? [{ title: `${input.title} – ${siteName}` }] : []),
+			{
+				name: "robots",
+				content: input.nofollow ? NOINDEX_NOFOLLOW : NOINDEX_FOLLOW,
+			},
+		],
+	};
+}
+
+/** True when a route head asks search engines not to index the page. */
+export function headIsNoindex(head: { meta?: readonly unknown[] } | undefined) {
+	return (head?.meta ?? []).some(
+		(tag) =>
+			!!tag &&
+			typeof tag === "object" &&
+			(tag as { name?: unknown }).name === "robots" &&
+			/\bnoindex\b/i.test(String((tag as { content?: unknown }).content)),
+	);
+}
+
 /** JSON inside <script> must not be able to close the element. */
 export function jsonLdScript(value: unknown) {
 	return {
