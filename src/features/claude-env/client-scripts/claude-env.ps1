@@ -3,6 +3,8 @@
 # 客户前提：① 自己有能用的代理订阅（没装 Clash Verge Rev 的，脚本自动安装并把原软件里的订阅导入）
 #           ② 有我们发的开通码（CE1- 开头）
 # 链路：客户电脑 → 客户的梯子（自动挑能通的节点）→ 我们的中转 → 客户专属静态 IP → Claude
+# 自带网络模式：-Socks5 'socks5://用户名:密码@地址:端口'，不用开通码、不经中转，这条 SOCKS5 直接当专属节点（前置仍是客户的梯子）；
+#   出口所在地和时区在写入配置后经它实测，其余流程和开通码模式完全一样。
 # 需要管理员权限（改时区服务、定位、系统环境变量、网卡 IPv6、安装 Clash Verge Rev）；
 # 不是管理员时什么都不改，提示客户用「终端（管理员）」重新运行，退出码 5。
 # 没装 Clash Verge Rev 时：自动下载官方固定版本（SHA-256 校验）静默安装，把原来代理软件（FlClash、Clash for Windows、
@@ -10,12 +12,13 @@
 #
 # 测试用环境变量（客户不需要）：
 #   CE_CODE=CE1-...    不交互，直接用这个开通码
+#   CE_SOCKS5=socks5://… 同 -Socks5（自带网络模式）
 #   CE_TEST_ROOT=/path 压测沙箱：系统级读写全部改为沙箱文件，控制接口走 $CE_TEST_ROOT/verge-mihomo.sock
 #   CE_CURL=/path      测试用的 curl 替身
 #   CE_TEST_HOOK=/path 沙箱里代替「下载 / 安装 / 启动 Clash Verge」的测试脚本（只在 CE_TEST_ROOT 下生效）
 #   CE_SQLITE=/path    沙箱里读 SQLite 用的 sqlite3（真机用系统自带的 winsqlite3.dll）
 #   CE_TEST_NOT_ADMIN=1 模拟不是管理员
-param([string]$Code = "")
+param([string]$Code = "", [string]$Socks5 = "")
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 
@@ -43,6 +46,9 @@ if (-not $isAdmin) {
 $GROUP_NAME = "Claude静态IP"
 $NODE_NAME = "Claude静态IP-节点"
 $FRONT_NAME = "Claude静态IP-前置"
+$BYO = if ($Socks5) { $Socks5 } else { [string]$env:CE_SOCKS5 }
+$PX_TYPE = "http"
+if ($BYO) { $GROUP_NAME = "Claude专属"; $NODE_NAME = "Claude专属-节点"; $FRONT_NAME = "Claude专属-前置"; $PX_TYPE = "socks5" }
 $CLAUDE_SUFFIXES = "claude.ai claude.com clau.de anthropic.com claudeusercontent.com claudemcpclient.com claudemcpcontent.com modelcontextprotocol.io servd-anthropic-website.b-cdn.net sentry.io datadoghq.com growthbook.io usefathom.com segment.io siftscience.com statsig.com statsigapi.net hcaptcha.com challenges.cloudflare.com recaptcha.net stripe.com stripe.network stripecdn.com withpersona.com intercom.io intercomcdn.com"
 $CLAUDE_KEYWORDS = "claude anthropic browser-intake"
 $ANTHROPIC_CIDR = "160.79.104.0/21"
@@ -98,10 +104,19 @@ $DESKTOP_MODE_FILES += @($DESKTOP_DIRS | ForEach-Object { Join-Path $_ "claude_d
 $DESKTOP_3P_RE = '("deploymentMode"\s*:\s*)"3p"'
 $UTF8 = New-Object System.Text.UTF8Encoding($false)
 
-function OK($m)   { Write-Host "✔ $m" -ForegroundColor Green }
-function WARN($m) { Write-Host "! $m" -ForegroundColor Yellow }
-function ERR($m)  { Write-Host "✘ $m" -ForegroundColor Red }
-function STEP($n, $m) { Write-Host ""; Write-Host "[$n] $m" }
+# 自带网络模式下客户看到的用词：不提中转、不提 IP（开通码模式原样输出）
+function BW($m) {
+  if (-not $BYO) { return $m }
+  $m = [string]$m
+  foreach ($r in @(@("梯子→中转→专属IP", "梯子→专属网络"), @("（只走 IPv4）", ""), @("IPv6", "v6 网络"), @("Fake-IP，交给专属 IP 远端解析", "Fake 解析，交给专属网络远端解析"),
+                   @("电脑时区 = IP 时区", "电脑时区 = 专属网络所在地时区"), @("，IP 是 ", "，专属网络所在地是 "), @("专属 IP", "专属网络"), @("专属IP", "专属网络"),
+                   @("到中转的这一跳", "到专属网络的这一跳"), @("我们中转", "专属网络"), @("中转地址", "第三方 API 地址"))) { $m = $m.Replace($r[0], $r[1]) }
+  $m
+}
+function OK($m)   { Write-Host "✔ $(BW $m)" -ForegroundColor Green }
+function WARN($m) { Write-Host "! $(BW $m)" -ForegroundColor Yellow }
+function ERR($m)  { Write-Host "✘ $(BW $m)" -ForegroundColor Red }
+function STEP($n, $m) { Write-Host ""; Write-Host "[$n] $(BW $m)" }
 function DIE($m)  { ERR $m; Write-Host ""; Write-Host "请把这个窗口截图发给客服。"; exit 1 }
 function ReadText($p) { if (Test-Path -LiteralPath $p) { [IO.File]::ReadAllText($p) } else { "" } }
 function WriteText($p, $s) { $d = Split-Path -Parent $p; if ($d -and -not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }; [IO.File]::WriteAllText($p, $s, $UTF8) }
@@ -695,20 +710,35 @@ $null = CurlX -s -m 10 -o NUL -x "http://127.0.0.1:$MIXED_PORT" "https://www.goo
 if ($LASTEXITCODE -ne 0) { DIE "梯子不通：通过 Clash 打不开 Google。请先确认你的梯子能正常使用。" }
 OK "梯子可用"
 
-# ===== 2. 开通码 =====
-STEP 2 "读取开通码"
-if (-not $Code) { $Code = $env:CE_CODE }
-if (-not $Code) { $sec = Read-Host "请粘贴开通码（CE1- 开头，粘贴后不显示），回车" -AsSecureString; $Code = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)) }
-$Code = ($Code -replace '\s', '')
-if (-not $Code.StartsWith("CE1-")) { DIE "开通码格式不对：应以 CE1- 开头。" }
-$b64 = $Code.Substring(4).Replace('-', '+').Replace('_', '/'); switch ($b64.Length % 4) { 2 { $b64 += "==" } 3 { $b64 += "=" } }
-$cj = $null; try { $cj = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) | ConvertFrom-Json } catch {}
+# ===== 2. 开通码 / 自带网络 =====
 $SAFE = '^[A-Za-z0-9._-]+$'
-$PX_HOST = [string]$cj.host; $PX_PORT = [string]$cj.port; $PX_USER = [string]$cj.user; $PX_PASS = [string]$cj.pass; $PX_IP = [string]$cj.ip; $TZNAME = [string]$cj.tz
-if (-not ($cj -and $PX_HOST -match $SAFE -and $PX_PORT -match '^\d{1,5}$' -and $PX_USER -match $SAFE -and $PX_PASS -match $SAFE -and $PX_IP -match '^\d{1,3}(\.\d{1,3}){3}$' -and $TZNAME -match '^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$')) { DIE "开通码无效或不完整，请向客服重新获取。" }
-$WINTZ = $TZ_MAP[$TZNAME]
-if (-not $WINTZ) { DIE "暂不支持这个时区（$TZNAME），请截图发给客服。" }
-OK "你的专属 IP：$PX_IP（时区 $TZNAME）"
+if ($BYO) {
+  STEP 2 "读取专属网络"
+  $BYO = ($BYO -replace '\s', '')
+  $bm = [regex]::Match($BYO, '^socks5h?://([^:@/]+):([^@/]+)@([A-Za-z0-9.-]+):([0-9]{1,5})/?$')
+  if ($bm.Success) { $PX_USER = $bm.Groups[1].Value; $PX_PASS = $bm.Groups[2].Value; $PX_HOST = $bm.Groups[3].Value; $PX_PORT = $bm.Groups[4].Value }
+  else {
+    $bm = [regex]::Match($BYO, '^([A-Za-z0-9.-]+):([0-9]{1,5}):([^:]+):(.+)$')
+    if (-not $bm.Success) { DIE "专属网络的格式不对：应为 socks5://用户名:密码@地址:端口。请向客服重新获取这条命令。" }
+    $PX_HOST = $bm.Groups[1].Value; $PX_PORT = $bm.Groups[2].Value; $PX_USER = $bm.Groups[3].Value; $PX_PASS = $bm.Groups[4].Value
+  }
+  if (-not ($PX_USER -match $SAFE -and $PX_PASS -match $SAFE -and [int]$PX_PORT -ge 1 -and [int]$PX_PORT -le 65535)) { DIE "专属网络的账号或密码含有不支持的字符，请向客服重新获取这条命令。" }
+  $PX_IP = ""; $TZNAME = ""; $WINTZ = ""
+  OK "已读取专属网络（出口所在地写入配置后实测）"
+} else {
+  STEP 2 "读取开通码"
+  if (-not $Code) { $Code = $env:CE_CODE }
+  if (-not $Code) { $sec = Read-Host "请粘贴开通码（CE1- 开头，粘贴后不显示），回车" -AsSecureString; $Code = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)) }
+  $Code = ($Code -replace '\s', '')
+  if (-not $Code.StartsWith("CE1-")) { DIE "开通码格式不对：应以 CE1- 开头。" }
+  $b64 = $Code.Substring(4).Replace('-', '+').Replace('_', '/'); switch ($b64.Length % 4) { 2 { $b64 += "==" } 3 { $b64 += "=" } }
+  $cj = $null; try { $cj = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) | ConvertFrom-Json } catch {}
+  $PX_HOST = [string]$cj.host; $PX_PORT = [string]$cj.port; $PX_USER = [string]$cj.user; $PX_PASS = [string]$cj.pass; $PX_IP = [string]$cj.ip; $TZNAME = [string]$cj.tz
+  if (-not ($cj -and $PX_HOST -match $SAFE -and $PX_PORT -match '^\d{1,5}$' -and $PX_USER -match $SAFE -and $PX_PASS -match $SAFE -and $PX_IP -match '^\d{1,3}(\.\d{1,3}){3}$' -and $TZNAME -match '^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$')) { DIE "开通码无效或不完整，请向客服重新获取。" }
+  $WINTZ = $TZ_MAP[$TZNAME]
+  if (-not $WINTZ) { DIE "暂不支持这个时区（$TZNAME），请截图发给客服。" }
+  OK "你的专属 IP：$PX_IP（时区 $TZNAME）"
+}
 
 # ===== 3. 写入 Clash（全局扩展脚本，不动原订阅） =====
 STEP 3 "写入 Clash Verge 分流规则"
@@ -743,7 +773,7 @@ function main(config, profileName) {
     mine.push({ name: F, type: "url-test", hidden: true, url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50, lazy: false, proxies: cands });
     front = F;
   }
-  var node = { name: N, type: "http", server: "@HOST@", port: @PORT@, username: "@USER@", password: "@PASS@", udp: false };
+  var node = { name: N, type: "@TYPE@", server: "@HOST@", port: @PORT@, username: "@USER@", password: "@PASS@", udp: false };
   if (front) node["dialer-proxy"] = front;
   config.proxies.push(node);
   config["proxy-groups"] = mine.concat(groups);
@@ -766,11 +796,35 @@ function main(config, profileName) {
 }
 // <<< claude-env END
 '@
-$block = $block.Replace("@G@", $GROUP_NAME).Replace("@N@", $NODE_NAME).Replace("@F@", $FRONT_NAME).Replace("@SUFFIX@", (JsArr $CLAUDE_SUFFIXES)).Replace("@KEYWORD@", (JsArr $CLAUDE_KEYWORDS)).Replace("@CIDR@", (JsArr $ANTHROPIC_CIDR)).Replace("@CIDR6@", (JsArr $ANTHROPIC_CIDR6)).Replace("@HOST@", $PX_HOST).Replace("@PORT@", $PX_PORT).Replace("@USER@", $PX_USER).Replace("@PASS@", $PX_PASS)
+$block = $block.Replace("@G@", $GROUP_NAME).Replace("@N@", $NODE_NAME).Replace("@F@", $FRONT_NAME).Replace("@SUFFIX@", (JsArr $CLAUDE_SUFFIXES)).Replace("@KEYWORD@", (JsArr $CLAUDE_KEYWORDS)).Replace("@CIDR@", (JsArr $ANTHROPIC_CIDR)).Replace("@CIDR6@", (JsArr $ANTHROPIC_CIDR6)).Replace("@TYPE@", $PX_TYPE).Replace("@HOST@", $PX_HOST).Replace("@PORT@", $PX_PORT).Replace("@USER@", $PX_USER).Replace("@PASS@", $PX_PASS)
 $js = $js.TrimEnd() + "`n" + ($block -replace "`r`n", "`n")
 if (-not $js.EndsWith("`n")) { $js += "`n" }
 WriteText $SCRIPT_JS $js
 OK "已写入全局扩展脚本：Claude、后台上报、人机验证、付款、实名都走专属 IP；你原来的订阅和节点不变"
+
+# 自带网络：让扩展脚本先生效，再经专属网络实测出口和所在地时区（不信命令行传来的值）
+if ($BYO) {
+  Write-Host "  正在让新规则生效，并经专属网络确认出口所在地（断网几秒）…"
+  Stop-VergeAll; Start-Sleep -Seconds 1; Start-Verge
+  if (-not (Wait-Ctl 60)) { DIE "Clash Verge 重启后连不上。" }
+  for ($i = 0; $i -lt 15; $i++) { $null = CurlX -s -m 3 -o NUL -x "http://127.0.0.1:$MIXED_PORT" "https://www.google.com/generate_204"; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 2 }
+  $trc = ""
+  for ($i = 0; $i -lt 6; $i++) { $trc = CurlX -s -m 12 -x "http://127.0.0.1:$MIXED_PORT" "https://claude.ai/cdn-cgi/trace"; $PX_IP = TraceIp $trc; if ($PX_IP) { break }; Start-Sleep -Seconds 3 }
+  if ($PX_IP -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { DIE "专属网络连不上：经它打不开 Claude。请确认你的梯子能用；还不行就把这个窗口截图发给客服。" }
+  $lm = [regex]::Match([string]$trc, '(?m)^loc=(\S+)'); $BYO_LOC = if ($lm.Success) { $lm.Groups[1].Value } else { "" }
+  $info = JParse (CurlX -s -m 12 -x "http://127.0.0.1:$MIXED_PORT" "https://ipinfo.io/$PX_IP/json")
+  $TZNAME = [string]$info.timezone; $BYO_CITY = [string]$info.city
+  if ($TZNAME -notmatch '^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$') {
+    $info = JParse (CurlX -s -m 12 -x "http://127.0.0.1:$MIXED_PORT" "http://ip-api.com/json/$($PX_IP)?fields=timezone,city")
+    $TZNAME = [string]$info.timezone; $BYO_CITY = [string]$info.city
+  }
+  if ($TZNAME -notmatch '^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$') { DIE "查不到专属网络所在地的时区，请稍后重新运行；还不行就把这个窗口截图发给客服。" }
+  $WINTZ = $TZ_MAP[$TZNAME]
+  if (-not $WINTZ) { DIE "暂不支持这个时区（$TZNAME），请截图发给客服。" }
+  $where = if ($BYO_CITY) { $BYO_CITY } elseif ($BYO_LOC) { $BYO_LOC } else { "海外" }
+  OK "专属网络已连通：出口在 $where（$(if ($BYO_LOC) { $BYO_LOC } else { '?' })），时区 $TZNAME"
+  if ($BYO_LOC -and $BYO_LOC -ne "US") { WARN "专属网络的出口不在美国（$BYO_LOC），请截图问一下客服" }
+}
 
 # ===== 4. 清理环境变量 =====
 STEP 4 "清理环境变量（中转地址、指向别处的代理等）"
@@ -882,7 +936,7 @@ $cfgJ = JParse (Ctl "GET" "/configs" $null)
 if ($cfgJ.mode -ne "rule") { $null = Ctl "PATCH" "/configs" '{"mode":"rule"}' }
 for ($i = 0; $i -lt 15; $i++) { $null = CurlX -s -m 3 -o NUL -x "http://127.0.0.1:$MIXED_PORT" "https://www.google.com/generate_204"; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 2 }
 $v6 = TraceIp (CurlX -6 -s -m 6 "https://claude.ai/cdn-cgi/trace")
-if ($v6 -and $v6 -ne $PX_IP) { Write-Host "  发现 IPv6 绕过 Clash（$v6），关闭网卡 IPv6"; Disable-V6 }
+if ($v6 -and $v6 -ne $PX_IP) { Write-Host "  $(BW "发现 IPv6 绕过 Clash（$v6），关闭网卡 IPv6")"; Disable-V6 }
 
 # ===== 7. 严格验收 =====
 STEP 7 "严格验收"
@@ -945,9 +999,15 @@ if (-not $still.Count) { Chk "没有其他代理软件同时运行" "ok" } else 
 Write-Host ""
 if ($script:FAILN -eq 0) {
   Write-Host "全部 $($script:PASS) 项验收通过 ✅" -ForegroundColor Green
-  Write-Host "  专属 IP：$PX_IP（$TZNAME）"
-  Write-Host "  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端"
-  Write-Host "  再用浏览器打开 https://laoshirenvip.com/ip-check ，确认浏览器这一侧的时区、语言也一致"
+  if ($BYO) {
+    Write-Host "  专属网络出口：$(if ($BYO_CITY) { $BYO_CITY } else { $PX_IP })（$TZNAME）"
+    Write-Host "  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端"
+    Write-Host "  浏览器打开 https://claude.ai/cdn-cgi/trace ，看到 loc=US 就可以登录了"
+  } else {
+    Write-Host "  专属 IP：$PX_IP（$TZNAME）"
+    Write-Host "  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端"
+    Write-Host "  再用浏览器打开 https://laoshirenvip.com/ip-check ，确认浏览器这一侧的时区、语言也一致"
+  }
   Write-Host "  提醒：这些 Claude 号不要在插着国内 SIM 卡的安卓手机上登录；Windows 上优先用 Claude Code 和网页版"
   exit 0
 } else {

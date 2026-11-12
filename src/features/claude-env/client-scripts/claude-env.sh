@@ -4,7 +4,8 @@
 # 客户前提：① 自己有能用的代理订阅（没装 Clash Verge Rev 的，脚本自动安装并把原软件里的订阅导入）
 #             梯子装在路由器上（软路由）、电脑上没有代理软件的：找不到订阅时输入 R，脚本只装 Clash Verge Rev，
 #             不要订阅，到中转的那一跳由路由器代理出国
-#           ② 有我们发的开通码（CE1- 开头）
+#           ② 有我们发的开通码（CE1- 开头）；或者自带网络模式：--socks5 'socks5://用户名:密码@地址:端口'
+#             （成品号配套的专属网络，不经过我们的中转；出口所在地、时区运行时实测）
 # 链路：客户电脑 → 客户的梯子（自动挑能通的节点）→ 我们的中转 → 客户专属静态 IP → Claude
 # 脚本完成：写入 Clash 分流（Claude、上报、验证、付款、实名全部走专属 IP）→ 关自动时区并改时区
 #           → 系统语言英语/地区美国 → 关定位 → 清理环境变量 → 关遥测 → 清理 Claude Code 与桌面版旧标识
@@ -12,6 +13,7 @@
 #
 # 测试用环境变量（客户不需要）：
 #   CE_CODE=CE1-...   不交互，直接用这个开通码
+#   CE_SOCKS5=socks5://… 同 --socks5（自带网络模式）
 #   CE_DRY_RUN=1      不改本机任何东西：配置只写到临时目录，其余只读检查
 #   CE_TEST_ROOT=/path 压测沙箱：所有系统级命令（退出/打开 App、sudo、launchctl、networksetup、defaults 写入）只记日志不执行，
 #                     控制接口只找 $CE_TEST_ROOT/verge-mihomo.sock，时区/语言/定位/launchctl 读写沙箱里的文件
@@ -57,12 +59,31 @@ CC_ID_KEYS="userID anonymousId machineID remoteControlMachineId cachedStatsigGat
 SHELL_FILES="$HOME/.zshrc $HOME/.zprofile $HOME/.zshenv $HOME/.zlogin $HOME/.bash_profile $HOME/.bashrc $HOME/.profile"
 LOC_PANE="x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
 DRY="${CE_DRY_RUN:-}"
+# 自带网络模式：--socks5 'socks5://用户名:密码@地址:端口'（成品号配套的专属网络）。不用开通码，节点直连这条 SOCKS5，
+# 前置照样是客户自己的梯子；分组名用中性名字，给客户看的文字不出现 IP / 静态 / 中转
+BYO="${CE_SOCKS5:-}"
+case "${1:-}" in
+  --socks5) BYO="${2:-}"; [ $# -ge 2 ] && shift 2 || shift ;;
+  --socks5=*) BYO="${1#--socks5=}"; shift ;;
+esac
+PX_TYPE=http
+if [ -n "$BYO" ]; then
+  GROUP_NAME="Claude专属"; NODE_NAME="Claude专属-节点"; FRONT_NAME="Claude专属-前置"; PX_TYPE=socks5
+fi
+# 自带网络模式下给客户看的文字：把开通码模式的说法换成「专属网络」
+byo_words() {
+  if [ -z "$BYO" ]; then printf '%s' "$*"; return; fi
+  printf '%s' "$*" | sed -e 's/梯子→中转→专属IP/梯子→专属网络/g; s/路由器→中转→专属IP/路由器→专属网络/g' \
+    -e 's/（只走 IPv4）//g; s/IPv6/v6 网络/g; s/Fake-IP，交给专属 IP 远端解析/Fake 解析，交给专属网络远端解析/g' \
+    -e 's/电脑时区 = IP 时区/电脑时区 = 专属网络所在地时区/g; s/，IP 是 /，专属网络所在地是 /g' \
+    -e 's/专属 IP/专属网络/g; s/专属IP/专属网络/g; s/到中转的这一跳/到专属网络的这一跳/g; s/我们中转/专属网络/g; s/中转地址/第三方 API 地址/g'
+}
 TS=$(date +%Y%m%d-%H%M%S)
 
-c_ok()   { printf '\033[32m✔ %s\033[0m\n' "$*"; }
-c_warn() { printf '\033[33m! %s\033[0m\n' "$*"; }
-c_err()  { printf '\033[31m✘ %s\033[0m\n' "$*"; }
-step()   { printf '\n\033[1m[%s] %s\033[0m\n' "$1" "$2"; }
+c_ok()   { printf '\033[32m✔ %s\033[0m\n' "$(byo_words "$*")"; }
+c_warn() { printf '\033[33m! %s\033[0m\n' "$(byo_words "$*")"; }
+c_err()  { printf '\033[31m✘ %s\033[0m\n' "$(byo_words "$*")"; }
+step()   { printf '\n\033[1m[%s] %s\033[0m\n' "$1" "$(byo_words "$2")"; }
 die()    { c_err "$*"; printf '\n请把这个窗口截图发给客服。\n'; exit 1; }
 ask()    { local a; read -r -p "$1 " a </dev/tty; printf '%s' "$a"; }
 
@@ -708,22 +729,41 @@ else
   c_ok "梯子可用"
 fi
 
-# ===== 2. 开通码 =====
-step 2 "读取开通码"
-CODE="${CE_CODE:-${1:-}}"
-if [ -z "$CODE" ]; then printf '请粘贴开通码（CE1- 开头，粘贴后不显示），回车：'; read -r -s CODE </dev/tty; echo; fi
-CODE=$(printf '%s' "$CODE" | tr -d ' \r\n')
-case "$CODE" in CE1-*) ;; *) die "开通码格式不对：应以 CE1- 开头。";; esac
-B64=$(printf '%s' "${CODE#CE1-}" | tr '_-' '/+')
-case $(( ${#B64} % 4 )) in 2) B64="$B64==";; 3) B64="$B64=";; esac
-CJ=$(printf '%s' "$B64" | base64 -D 2>/dev/null)
-PX_HOST=$(jget "$CJ" 'o.host'); PX_PORT=$(jget "$CJ" 'o.port'); PX_USER=$(jget "$CJ" 'o.user')
-PX_PASS=$(jget "$CJ" 'o.pass'); PX_IP=$(jget "$CJ" 'o.ip'); TZNAME=$(jget "$CJ" 'o.tz')
-SAFE='^[A-Za-z0-9._-]+$'
-[[ "$PX_HOST" =~ $SAFE ]] && [[ "$PX_PORT" =~ ^[0-9]{1,5}$ ]] && [[ "$PX_USER" =~ $SAFE ]] && [[ "$PX_PASS" =~ $SAFE ]] \
-  && [[ "$PX_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && [[ "$TZNAME" =~ ^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$ ]] \
-  || die "开通码无效或不完整，请向客服重新获取。"
-c_ok "你的专属 IP：${PX_IP}（时区 ${TZNAME}）"
+# ===== 2. 开通码 / 自带网络 =====
+if [ -n "$BYO" ]; then
+  step 2 "读取专属网络"
+  BYO=$(printf '%s' "$BYO" | tr -d ' \r\n')
+  SAFE='^[A-Za-z0-9._-]+$'
+  if [[ "$BYO" =~ ^socks5h?://([^:@/]+):([^@/]+)@([A-Za-z0-9.-]+):([0-9]{1,5})/?$ ]]; then
+    PX_USER=${BASH_REMATCH[1]}; PX_PASS=${BASH_REMATCH[2]}; PX_HOST=${BASH_REMATCH[3]}; PX_PORT=${BASH_REMATCH[4]}
+  elif [[ "$BYO" =~ ^([A-Za-z0-9.-]+):([0-9]{1,5}):([^:]+):(.+)$ ]]; then
+    PX_HOST=${BASH_REMATCH[1]}; PX_PORT=${BASH_REMATCH[2]}; PX_USER=${BASH_REMATCH[3]}; PX_PASS=${BASH_REMATCH[4]}
+  else
+    die "专属网络的格式不对：应为 socks5://用户名:密码@地址:端口。请向客服重新获取这条命令。"
+  fi
+  [[ "$PX_USER" =~ $SAFE ]] && [[ "$PX_PASS" =~ $SAFE ]] && [ "$PX_PORT" -ge 1 ] && [ "$PX_PORT" -le 65535 ] \
+    || die "专属网络的账号或密码含有不支持的字符，请向客服重新获取这条命令。"
+  PX_IP=""; TZNAME=""
+  c_ok "已读取专属网络（出口所在地写入配置后实测）"
+else
+  step 2 "读取开通码"
+  CODE="${CE_CODE:-${1:-}}"
+  if [ -z "$CODE" ]; then printf '请粘贴开通码（CE1- 开头，粘贴后不显示），回车：'; read -r -s CODE </dev/tty; echo; fi
+  CODE=$(printf '%s' "$CODE" | tr -d ' \r\n')
+  case "$CODE" in CE1-*) ;; *) die "开通码格式不对：应以 CE1- 开头。";; esac
+  B64=$(printf '%s' "${CODE#CE1-}" | tr '_-' '/+')
+  case $(( ${#B64} % 4 )) in 2) B64="$B64==";; 3) B64="$B64=";; esac
+  CJ=$(printf '%s' "$B64" | base64 -D 2>/dev/null)
+  PX_HOST=$(jget "$CJ" 'o.host'); PX_PORT=$(jget "$CJ" 'o.port'); PX_USER=$(jget "$CJ" 'o.user')
+  PX_PASS=$(jget "$CJ" 'o.pass'); PX_IP=$(jget "$CJ" 'o.ip'); TZNAME=$(jget "$CJ" 'o.tz')
+  SAFE='^[A-Za-z0-9._-]+$'
+  [[ "$PX_HOST" =~ $SAFE ]] && [[ "$PX_PORT" =~ ^[0-9]{1,5}$ ]] && [[ "$PX_USER" =~ $SAFE ]] && [[ "$PX_PASS" =~ $SAFE ]] \
+    && [[ "$PX_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && [[ "$TZNAME" =~ ^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$ ]] \
+    || die "开通码无效或不完整，请向客服重新获取。"
+  c_ok "你的专属 IP：${PX_IP}（时区 ${TZNAME}）"
+fi
+
+restart_verge() { sysrun osascript -e 'quit app "Clash Verge"' 2>/dev/null; sleep 4; sysrun open -a "Clash Verge"; SOCK=""; for _ in $(seq 1 20); do sleep 2; find_ctl && break; done; }
 
 # ===== 3. 写入 Clash（全局扩展脚本，不动原订阅） =====
 step 3 "写入 Clash Verge 分流规则"
@@ -759,7 +799,7 @@ function main(config, profileName) {
     mine.push({ name: F, type: "url-test", hidden: true, url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50, lazy: false, proxies: cands });
     front = F;
   }
-  var node = { name: N, type: "http", server: "$PX_HOST", port: $PX_PORT, username: "$PX_USER", password: "$PX_PASS", udp: false };
+  var node = { name: N, type: "$PX_TYPE", server: "$PX_HOST", port: $PX_PORT, username: "$PX_USER", password: "$PX_PASS", udp: false };
   if (front) node["dialer-proxy"] = front;
   config.proxies.push(node);
   config["proxy-groups"] = mine.concat(groups);
@@ -798,6 +838,34 @@ if node -e 1 2>/dev/null; then
 fi
 if [ -n "$ROUTER" ]; then c_ok "已写入全局扩展脚本：Claude、后台上报、人机验证、付款、实名都走专属 IP；到中转的这一跳由你路由器上的梯子代理"
 else c_ok "已写入全局扩展脚本：Claude、后台上报、人机验证、付款、实名都走专属 IP；你原来的订阅和节点不变"; fi
+
+# 自带网络：让扩展脚本先生效，再经专属网络实测出口和所在地时区（不信命令行传来的值）
+if [ -n "$BYO" ]; then
+  if [ -n "$DRY" ]; then
+    c_warn "测试模式：不重启 Clash Verge，出口所在地按当前电脑时区"; PX_IP="0.0.0.0"; TZNAME=$(sys_tz)
+  else
+    printf '  正在让新规则生效，并经专属网络确认出口所在地（断网几秒）…\n'
+    restart_verge
+    [ -n "$SOCK" ] || die "Clash Verge 重启后连不上。"
+    for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null -x "http://127.0.0.1:$MIXED_PORT" https://www.google.com/generate_204 && break; sleep 2; done
+    TRC=""
+    for _ in 1 2 3 4 5 6; do
+      TRC=$(curl -s -m 12 -x "http://127.0.0.1:$MIXED_PORT" https://claude.ai/cdn-cgi/trace)
+      PX_IP=$(printf '%s\n' "$TRC" | trace_ip); [ -n "$PX_IP" ] && break; sleep 3
+    done
+    [[ "$PX_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "专属网络连不上：经它打不开 Claude。请确认你的梯子能用；还不行就把这个窗口截图发给客服。"
+    BYO_LOC=$(printf '%s\n' "$TRC" | awk -F= '/^loc=/{print $2}')
+    INFO=$(curl -s -m 12 -x "http://127.0.0.1:$MIXED_PORT" "https://ipinfo.io/$PX_IP/json")
+    TZNAME=$(jget "$INFO" 'o.timezone'); BYO_CITY=$(jget "$INFO" 'o.city')
+    if ! [[ "$TZNAME" =~ ^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$ ]]; then
+      INFO=$(curl -s -m 12 -x "http://127.0.0.1:$MIXED_PORT" "http://ip-api.com/json/$PX_IP?fields=timezone,city")
+      TZNAME=$(jget "$INFO" 'o.timezone'); BYO_CITY=$(jget "$INFO" 'o.city')
+    fi
+    [[ "$TZNAME" =~ ^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$ ]] || die "查不到专属网络所在地的时区，请稍后重新运行；还不行就把这个窗口截图发给客服。"
+    c_ok "专属网络已连通：出口在 ${BYO_CITY:-${BYO_LOC:-海外}}（${BYO_LOC:-?}），时区 ${TZNAME}"
+    [ "${BYO_LOC:-US}" = US ] || c_warn "专属网络的出口不在美国（${BYO_LOC}），请截图问一下客服"
+  fi
+fi
 
 # ===== 4. 清理环境变量 =====
 step 4 "清理环境变量（中转地址、指向别处的代理等）"
@@ -922,7 +990,6 @@ EOF
   c_ok "以上都已备份到 ~/.claude-env-backup/$TS"
 
   step 6 "重启 Clash Verge 使配置生效（断网几秒）"
-  restart_verge() { sysrun osascript -e 'quit app "Clash Verge"' 2>/dev/null; sleep 4; sysrun open -a "Clash Verge"; SOCK=""; for _ in $(seq 1 20); do sleep 2; find_ctl && break; done; }
   restart_verge
   if [ -z "$SOCK" ] && [ -n "$TUN_ON" ]; then
     # 开着 TUN 内核没起来：先关掉虚拟网卡让 Clash Verge 正常运行（客户不能断网），验收里会提示
@@ -939,7 +1006,7 @@ EOF
   for _ in $(seq 1 15); do curl -s -m 3 -o /dev/null -x "http://127.0.0.1:$MIXED_PORT" https://www.google.com/generate_204 && break; sleep 2; done
   V6=$(curl -6 -s -m 6 https://claude.ai/cdn-cgi/trace | trace_ip)
   if [ -n "$V6" ] && [ "$V6" != "$PX_IP" ]; then
-    printf '  发现 IPv6 绕过 Clash（%s），关闭网卡 IPv6（需要开机密码）\n' "$V6"
+    printf '  %s\n' "$(byo_words "发现 IPv6 绕过 Clash（${V6}），关闭网卡 IPv6（需要开机密码）")"
     sys_services | while read -r svc; do sysrun sudo networksetup -setv6off "$svc" 2>/dev/null; done
   fi
 fi
@@ -1012,9 +1079,15 @@ STILL=$(running_others | cut -d'|' -f1 | paste -sd '、' -)
 printf '\n'
 if [ "$FAILN" = 0 ]; then
   printf '\033[1;32m全部 %s 项验收通过 ✅\033[0m\n' "$PASS"
-  printf '  专属 IP：%s（%s）\n' "$PX_IP" "$TZNAME"
-  printf '  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端\n'
-  printf '  再用浏览器打开 https://laoshirenvip.com/ip-check ，确认浏览器这一侧的时区、语言也一致\n'
+  if [ -n "$BYO" ]; then
+    printf '  专属网络出口：%s（%s）\n' "${BYO_CITY:-$PX_IP}" "$TZNAME"
+    printf '  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端\n'
+    printf '  浏览器打开 https://claude.ai/cdn-cgi/trace ，看到 loc=US 就可以登录了\n'
+  else
+    printf '  专属 IP：%s（%s）\n' "$PX_IP" "$TZNAME"
+    printf '  最后一步：重启电脑一次（让英文语言生效），重启后再打开浏览器、Claude 桌面版和终端\n'
+    printf '  再用浏览器打开 https://laoshirenvip.com/ip-check ，确认浏览器这一侧的时区、语言也一致\n'
+  fi
   printf '  提醒：这些 Claude 号不要在插着国内 SIM 卡的安卓手机上登录\n'
   exit 0
 else
