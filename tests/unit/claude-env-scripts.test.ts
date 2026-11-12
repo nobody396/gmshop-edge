@@ -15,12 +15,7 @@ const copies = join(root, "src/features/claude-env/client-scripts");
 const sourceDir = resolve(
 	process.env.CLAUDE_ENV_SETUP_DIR ?? join(root, "..", "claude-env-setup"),
 );
-const names = [
-	"claude-env.sh",
-	"claude-env.ps1",
-	"claude-clean.sh",
-	"claude-clean.ps1",
-] as const;
+const names = ["claude-env.sh", "claude-env.ps1"] as const;
 
 describe("hosted claude-env scripts", () => {
 	for (const name of names) {
@@ -44,13 +39,11 @@ describe("hosted claude-env scripts", () => {
 	}
 
 	it("keeps the PowerShell UTF-8 BOM", () => {
-		for (const name of ["claude-env.ps1", "claude-clean.ps1"] as const) {
-			const bytes = claudeEnvScriptBytes(name);
-			expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
-		}
+		const bytes = claudeEnvScriptBytes("claude-env.ps1");
+		expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
 	});
 
-	it("serves every script as text/plain with a short cache", async () => {
+	it("serves both scripts as text/plain with a short cache", async () => {
 		for (const name of names) {
 			const response = handleClaudeEnvScriptRequest(
 				new Request(`https://laoshirenvip.com/${name}`),
