@@ -1,5 +1,10 @@
 import { useEffect } from "react";
-import { detectInAppBrowser, type InAppBrowser, isInviteRef } from "./sources";
+import {
+	detectInAppBrowser,
+	type InAppBrowser,
+	isFlowHost,
+	isInviteRef,
+} from "./sources";
 
 /** First-party cookie holding the visitor's first landing (first-touch). */
 export const firstTouchCookieName = "gmshop_ft";
@@ -88,38 +93,36 @@ export function captureFirstTouch(input: {
 	};
 }
 
-// Hosts a customer comes back from mid-purchase; a return from checkout is not
-// a new marketing touch.
-const paymentHosts = [
-	"alipay.com",
-	"alipayobjects.com",
-	"stripe.com",
-	"cryptomus.com",
-	"zpayz.cn",
-	"tenpay.com",
-	"pay.weixin.qq.com",
-	"paypal.com",
-];
-
-function sameSiteOrPayment(host: string, siteHost: string) {
+function sameSiteOrFlow(host: string, siteHost: string) {
 	const site = siteHost.replace(/^www\./, "");
-	return [site, ...paymentHosts].some(
-		(domain) => host === domain || host.endsWith(`.${domain}`),
-	);
+	return host === site || host.endsWith(`.${site}`) || isFlowHost(host);
 }
 
-// Order pages are where checkout returns land; untagged, they are never a new touch.
-const orderReturnPath = /^\/(?:account\/)?orders(?:\/|$)/;
+// Where checkout and sign-in returns land; untagged, they are never a new touch.
+const returnPath =
+	/^\/(?:(?:account\/)?orders|sign-in|register|forgot-password|verify-email-sent|api\/auth)(?:\/|$)/;
 
 function carriesSource(touch: Touch) {
 	return Boolean(touch.s || touch.m || touch.c || touch.f || touch.r);
 }
 
 /**
+ * The touch to store as first touch: a referrer from one of our own flows
+ * (sign-in provider, payment, challenge) or any referrer on a return from a
+ * social sign-in is dropped, never recorded as where the visitor came from.
+ */
+export function firstTouchFrom(touch: Touch, authReturn = false): Touch {
+	if (!touch.r || !(authReturn || isFlowHost(touch.r))) return touch;
+	const { r: _dropped, ...rest } = touch;
+	return rest;
+}
+
+/**
  * Whether a landing should replace the last-touch cookie: campaign tags, an
- * invite code or an external referrer. A landing referred by a payment page or
- * one of our own subdomains, or an untagged order page (checkout return), is
- * never written. An in-app browser alone counts only on a tab's first landing
+ * invite code or an external referrer. Never written: a landing referred by a
+ * payment page, sign-in provider, challenge page or one of our own subdomains;
+ * the return from a social sign-in this tab started; an untagged order or
+ * sign-in page. An in-app browser alone counts only on a tab's first landing
  * and never replaces a last touch that carries tags, an invite or a referrer.
  */
 export function lastTouchFrom(
@@ -127,14 +130,39 @@ export function lastTouchFrom(
 	siteHost: string,
 	firstLandingInTab: boolean,
 	existing: Touch | null = null,
+	authReturn = false,
 ): Touch | null {
-	if (touch.r && sameSiteOrPayment(touch.r, siteHost)) return null;
+	if (authReturn) return null;
+	if (touch.r && sameSiteOrFlow(touch.r, siteHost)) return null;
 	const tagged = Boolean(touch.s || touch.m || touch.c || touch.f);
 	if (tagged || touch.r) return touch;
-	if (orderReturnPath.test(touch.p)) return null;
+	if (returnPath.test(touch.p)) return null;
 	return touch.i && firstLandingInTab && !(existing && carriesSource(existing))
 		? touch
 		: null;
+}
+
+const authRedirectKey = "gmshop_auth_redirect";
+const authReturnWindowMs = 30 * 60_000;
+
+/** Call right before leaving for a social sign-in provider. */
+export function markAuthRedirect() {
+	try {
+		sessionStorage.setItem(authRedirectKey, String(Date.now()));
+	} catch {
+		// Without storage the provider-host rules still apply.
+	}
+}
+
+/** True once for the first page load after a social sign-in this tab started. */
+function consumeAuthReturn(now: number) {
+	try {
+		const startedAt = Number(sessionStorage.getItem(authRedirectKey));
+		sessionStorage.removeItem(authRedirectKey);
+		return startedAt > 0 && now - startedAt < authReturnWindowMs;
+	} catch {
+		return false;
+	}
 }
 
 function readTouchCookie(name: string): Touch | null {
@@ -181,20 +209,23 @@ function firstLandingInTab() {
 export function useFirstTouchAttribution() {
 	useEffect(() => {
 		try {
+			const now = Date.now();
 			const touch = captureFirstTouch({
 				href: window.location.href,
 				referrer: document.referrer,
-				now: Date.now(),
+				now,
 				userAgent: navigator.userAgent,
 				telegramWebview: "TelegramWebviewProxy" in window,
 			});
+			const authReturn = consumeAuthReturn(now);
 			if (!readCookie(firstTouchCookieName))
-				writeCookie(firstTouchCookieName, touch);
+				writeCookie(firstTouchCookieName, firstTouchFrom(touch, authReturn));
 			const last = lastTouchFrom(
 				touch,
 				window.location.hostname,
 				firstLandingInTab(),
 				readTouchCookie(lastTouchCookieName),
+				authReturn,
 			);
 			if (last) writeCookie(lastTouchCookieName, last);
 		} catch {

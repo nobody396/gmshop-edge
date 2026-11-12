@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	captureFirstTouch,
+	firstTouchFrom,
 	lastTouchFrom,
 } from "#/features/attribution/first-touch";
 import {
@@ -8,8 +9,10 @@ import {
 	parseLastTouchCookie,
 } from "#/features/attribution/server/order-attribution";
 import {
+	classifyHost,
 	classifySource,
 	detectInAppBrowser,
+	isFlowHost,
 } from "#/features/attribution/sources";
 import { ownLinkTags, tagOwnLinks, withUtm } from "#/features/attribution/utm";
 
@@ -328,5 +331,124 @@ describe("own link tags", () => {
 		).toBe(
 			'<a href="https://laoshirenvip.com/products/x?item=1&amp;y=2&amp;utm_source=announcement&amp;utm_medium=email&amp;utm_campaign=claude-launch#buy">买</a> <a href="{{unsubscribe_url}}">退订</a>',
 		);
+	});
+});
+
+describe("sign-in, payment and challenge returns", () => {
+	const flowReferrers = [
+		"accounts.google.com",
+		"accounts.google.com.hk",
+		"accounts.youtube.com",
+		"appleid.apple.com",
+		"login.microsoftonline.com",
+		"login.live.com",
+		"access.line.me",
+		"open.weixin.qq.com",
+		"oauth.telegram.org",
+		"challenges.cloudflare.com",
+		"mclient.alipay.com",
+		"checkout.stripe.com",
+	];
+	const base = { v: 1 as const, p: "/", t: 9 };
+	const emailTouch = { ...base, s: "renewal", m: "email", c: "recall" };
+
+	it.each(flowReferrers)("never classifies %s as a source", (host) => {
+		expect(isFlowHost(host)).toBe(true);
+		expect(classifyHost(host)).toBeNull();
+		// Even when an old cookie still carries it as the referrer.
+		expect(classifySource({ referrerHost: host })).toBe("direct");
+		expect(classifySource({ referrerHost: host, inApp: "wechat" })).toBe(
+			"wechat_in_app",
+		);
+		expect(
+			classifySource({
+				referrerHost: host,
+				utmSource: "renewal",
+				utmMedium: "email",
+			}),
+		).toBe("email");
+	});
+
+	it("keeps real search, social and webmail referrers as they were", () => {
+		expect(isFlowHost("www.google.com")).toBe(false);
+		expect(classifySource({ referrerHost: "www.google.com" })).toBe("search");
+		expect(classifySource({ referrerHost: "www.google.com.hk" })).toBe(
+			"search",
+		);
+		expect(classifySource({ referrerHost: "mail.google.com" })).toBe("search");
+		expect(classifySource({ referrerHost: "mail.qq.com" })).toBe("social");
+		expect(classifySource({ referrerHost: "t.me" })).toBe("social");
+		expect(isFlowHost("notaccounts.google.com")).toBe(false);
+		expect(isFlowHost("github.com")).toBe(false);
+	});
+
+	it.each(flowReferrers)("never writes a last touch from %s", (host) => {
+		for (const firstLanding of [true, false])
+			expect(
+				lastTouchFrom(
+					{ ...base, r: host, i: "wechat" },
+					"laoshirenvip.com",
+					firstLanding,
+					emailTouch,
+				),
+			).toBeNull();
+		expect(
+			lastTouchFrom({ ...base, r: host }, "laoshirenvip.com", true, null),
+		).toBeNull();
+	});
+
+	it("drops sign-in referrers from the first touch", () => {
+		expect(
+			firstTouchFrom({ ...base, r: "accounts.google.com", i: "wechat" }),
+		).toEqual({ ...base, i: "wechat" });
+		expect(firstTouchFrom({ ...base, r: "www.baidu.com" })).toEqual({
+			...base,
+			r: "www.baidu.com",
+		});
+		// GitHub/Discord sign-in shares its host with real referrers: the
+		// sign-in this tab started marks the return instead.
+		expect(firstTouchFrom({ ...base, r: "github.com" })).toEqual({
+			...base,
+			r: "github.com",
+		});
+		expect(firstTouchFrom({ ...base, r: "github.com" }, true)).toEqual(base);
+	});
+
+	it("skips the return from a social sign-in this tab started", () => {
+		expect(
+			lastTouchFrom({ ...base, r: "github.com" }, "laoshirenvip.com", false),
+		).toEqual({ ...base, r: "github.com" });
+		expect(
+			lastTouchFrom(
+				{ ...base, r: "github.com" },
+				"laoshirenvip.com",
+				true,
+				emailTouch,
+				true,
+			),
+		).toBeNull();
+	});
+
+	it.each([
+		"/sign-in",
+		"/register",
+		"/forgot-password",
+		"/verify-email-sent",
+		"/api/auth/callback/google",
+	])("skips an untagged landing on %s", (path) => {
+		expect(
+			lastTouchFrom(
+				{ ...base, p: path, i: "wechat" },
+				"laoshirenvip.com",
+				true,
+			),
+		).toBeNull();
+		expect(
+			lastTouchFrom(
+				{ ...base, p: path, s: "renewal", m: "email" },
+				"laoshirenvip.com",
+				false,
+			),
+		).toEqual({ ...base, p: path, s: "renewal", m: "email" });
 	});
 });

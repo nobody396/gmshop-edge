@@ -9,6 +9,7 @@ import { Captcha, Input, Password } from "#/components/pro/base/fields/input";
 import { AuthProviderLogo } from "#/components/provider-logo";
 import { Button } from "#/components/ui/button";
 import { Label } from "#/components/ui/label";
+import { markAuthRedirect } from "#/features/attribution/first-touch";
 import { authClient } from "#/features/auth/auth-client";
 import { useAuthAnimation } from "#/features/auth/components/auth-animation-context";
 import { useTurnstile } from "#/features/auth/components/turnstile";
@@ -371,6 +372,8 @@ export function UserAuthForm({
 		if (typeof window !== "undefined")
 			window.sessionStorage.setItem("gmshop.post_auth_redirect", redirectTo);
 		if (provider.providerType === "social") {
+			// The provider's redirect back is not a new traffic source.
+			markAuthRedirect();
 			await authClient.signIn.social({
 				provider: provider.providerId as
 					| "apple"
