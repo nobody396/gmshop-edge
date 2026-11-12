@@ -935,7 +935,7 @@ function finish(
 		.run();
 }
 
-async function loadBrand(db: D1Database) {
+export async function loadBrand(db: D1Database) {
 	const row = await db
 		.prepare(
 			"SELECT value FROM system_settings WHERE key = 'site.name' LIMIT 1",

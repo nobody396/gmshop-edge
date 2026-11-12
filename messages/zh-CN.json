@@ -2744,5 +2744,15 @@
 	"promotion_after_balance": "余额 {amount}",
 	"agent_access_renewable": "你已有分站，有效期至 {date}（北京时间）。现在购买就是续费，自动延长 3 个月，店铺地址、商品、订单和余额都不变。",
 	"agent_access_renewed": "分站已续费，有效期延长至 {date}（北京时间）。",
-	"agent_access_term": "分站有效期至 {date}（北京时间），到期前会发邮件提醒续费。"
+	"agent_access_term": "分站有效期至 {date}（北京时间），到期前会发邮件提醒续费。",
+	"notifications_event_unpaid_order_followup": "未付款订单跟进",
+	"unpaid_followup_email_subject": "你的订单还没完成，需要帮忙吗？",
+	"unpaid_followup_email_intro": "你刚才选的「{item}」还没付款，订单已自动关闭。",
+	"unpaid_followup_email_help_title": "如果是付款时遇到问题：",
+	"unpaid_followup_email_usdt_tip": "· 用 USDT 不方便的话，可以换成支付宝，扫码就能付",
+	"unpaid_followup_email_plan_tip": "· 不确定买哪个规格，可以直接问客服",
+	"unpaid_followup_email_reorder": "重新下单：{url}",
+	"unpaid_followup_email_support": "联系客服：{url}",
+	"unpaid_followup_email_signature": "—— {brand}",
+	"unpaid_followup_email_unsubscribe": "不想再收到这类邮件？退订：{url}"
 }

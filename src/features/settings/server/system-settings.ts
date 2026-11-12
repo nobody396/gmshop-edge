@@ -66,6 +66,7 @@ const definitions = {
 	"commerce.supplier_api_enabled": z.boolean(),
 	"notifications.renewal_reminders_enabled": z.boolean(),
 	"notifications.renewal_recall_enabled": z.boolean(),
+	"notifications.unpaid_followup_enabled": z.boolean(),
 } as const;
 
 export type SettingKey = keyof typeof definitions;
@@ -102,6 +103,7 @@ const defaults: Record<SettingKey, SettingValue> = {
 	"commerce.supplier_api_enabled": false,
 	"notifications.renewal_reminders_enabled": true,
 	"notifications.renewal_recall_enabled": false,
+	"notifications.unpaid_followup_enabled": false,
 };
 
 export async function listSystemSettings(db: D1Database) {

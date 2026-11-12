@@ -2744,5 +2744,15 @@
 	"promotion_after_balance": "Balance {amount}",
 	"agent_access_renewable": "You already have a store, active until {date} (Beijing time). Buying now renews it for 3 more months; your store address, products, orders and balance stay the same.",
 	"agent_access_renewed": "Store renewed, now active until {date} (Beijing time).",
-	"agent_access_term": "Store active until {date} (Beijing time). We will email you before it expires."
+	"agent_access_term": "Store active until {date} (Beijing time). We will email you before it expires.",
+	"notifications_event_unpaid_order_followup": "Unpaid order follow-up",
+	"unpaid_followup_email_subject": "Your order isn't finished yet. Need a hand?",
+	"unpaid_followup_email_intro": "You picked “{item}” a little while ago, but it wasn't paid, so the order has closed automatically.",
+	"unpaid_followup_email_help_title": "If something went wrong while paying:",
+	"unpaid_followup_email_usdt_tip": "· If USDT isn't convenient, you can pay with Alipay instead — just scan the QR code",
+	"unpaid_followup_email_plan_tip": "· Not sure which option to choose? Just ask our support team",
+	"unpaid_followup_email_reorder": "Order again: {url}",
+	"unpaid_followup_email_support": "Contact support: {url}",
+	"unpaid_followup_email_signature": "— {brand}",
+	"unpaid_followup_email_unsubscribe": "Don't want emails like this? Unsubscribe: {url}"
 }

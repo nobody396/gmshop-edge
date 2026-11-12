@@ -32,6 +32,7 @@ import { publishPendingInventoryEvents } from "#/features/supplier-api/server/in
 import { publishPendingSupplierOrders } from "#/features/suppliers/server/outbox";
 import { runTelegramMaintenance } from "#/features/telegram/server/maintenance";
 import { ensureOwnerAlertWebhook } from "#/features/telegram/server/owner-actions";
+import { runUnpaidOrderFollowups } from "#/features/unpaid-followup/server/scheduler";
 import { runMaintenance } from "#/server/scheduled/maintenance";
 
 export { runMaintenance };
@@ -134,6 +135,11 @@ export async function runScheduledCommerceWork(
 	const renewals = await runRenewalReminders(env.DB, {
 		now: scheduledAt,
 	}).catch(() => ({ status: "failed" as const }));
+	// Unpaid-order follow-up email: off by default (notifications.unpaid_followup_enabled),
+	// own D1 budget, isolated like renewals.
+	const unpaidFollowups = await runUnpaidOrderFollowups(env.DB, {
+		now: scheduledAt,
+	}).catch(() => ({ status: "failed" as const }));
 	// Owner automation (balance guard, pricing guard, weekly report): each is
 	// off by default, self-throttled per Beijing period and isolated from the rest.
 	const balanceGuard = await runBalanceGuard({
@@ -224,6 +230,7 @@ export async function runScheduledCommerceWork(
 		refunds,
 		notificationEvents,
 		renewals,
+		unpaidFollowups,
 		notifications,
 		telegram,
 		ownerWebhook,

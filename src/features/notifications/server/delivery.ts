@@ -10,6 +10,11 @@ import {
 	type EmailProviderId,
 	sendProviderEmail,
 } from "#/features/notifications/server/email-provider";
+import {
+	unpaidFollowupEmailEvent,
+	unpaidFollowupKeyPrefix,
+	unpaidFollowupStopReason,
+} from "#/features/unpaid-followup/server/guard";
 import { DomainError } from "#/lib/domain-error";
 import type { SupportedLocale } from "#/lib/locales";
 import type { NotificationQueueMessage } from "#/server/queue/types";
@@ -34,6 +39,7 @@ const approvedSenderEvents = new Set([
 	claudeEnvExpiryEmailEvent,
 	claudeEnvTrafficEmailEvent,
 	announcementEmailEvent,
+	unpaidFollowupEmailEvent,
 ]);
 
 type EmailMessage = z.output<typeof emailMessageSchema>;
@@ -354,7 +360,9 @@ export async function processEmailNotification(
 	for (const config of configs) {
 		// Re-check before every provider attempt: a slow failing provider must
 		// not give a refund time to complete before the fallback gets the content.
-		const stop = await stopForRefund(db, row);
+		const stop =
+			(await stopForUnpaidFollowup(db, row, message.to)) ??
+			(await stopForRefund(db, row));
 		if (stop) return stop;
 		const result = await tryEmailConfig(
 			runtime.commerceSecret,
@@ -475,6 +483,40 @@ const withdrawnDeliverySql = `SELECT 1 FROM delivery_records d
   OR g.status IN ('refunded', 'revoked') OR ce.status = 'revoked')`;
 
 const refundingRecheckMs = 5 * 60_000;
+
+// Unpaid-order follow-up: re-checked right before the provider, after the claim
+// and on every retry. A customer who paid, unsubscribed or became ineligible,
+// or a switched-off (or re-activated) feature, cancels the queued email.
+async function stopForUnpaidFollowup(
+	db: D1Database,
+	row: DeliveryRow,
+	recipient: string,
+) {
+	if (row.event !== unpaidFollowupEmailEvent) return null;
+	const orderId = row.idempotency_key.startsWith(unpaidFollowupKeyPrefix)
+		? row.idempotency_key.slice(unpaidFollowupKeyPrefix.length)
+		: "";
+	const now = Date.now();
+	const reason = orderId
+		? await unpaidFollowupStopReason(db, orderId, now, recipient)
+		: "not_claimed";
+	if (!reason) return null;
+	await db.batch([
+		db
+			.prepare(
+				`UPDATE notification_deliveries SET status = 'suppressed', error_code = ?,
+				 next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'`,
+			)
+			.bind(`unpaid_followup_${reason}`, now, row.id),
+		db
+			.prepare(
+				`UPDATE unpaid_order_followups SET status = 'cancelled', status_reason = ?,
+				 updated_at = ? WHERE order_id = ? AND status IN ('sending','sent')`,
+			)
+			.bind(reason, now, orderId),
+	]);
+	return { duplicate: false, status: "suppressed" } as const;
+}
 
 // Checked right before content goes to a provider (after the claim): a
 // completed refund suppresses the email; a refund still in flight parks it

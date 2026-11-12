@@ -2862,3 +2862,51 @@ export const emailUnsubscribes = sqliteTable(
 	},
 	(table) => [primaryKey({ columns: [table.recipientHash, table.scope] })],
 );
+
+/** One row per expired unpaid order considered for the follow-up email (drizzle/0056). */
+export const unpaidOrderFollowups = sqliteTable(
+	"unpaid_order_followups",
+	{
+		orderId: text("order_id")
+			.primaryKey()
+			.references(() => shopOrders.id, { onDelete: "cascade" }),
+		recipientHash: text("recipient_hash"),
+		status: text("status", {
+			enum: ["sending", "sent", "skipped", "cancelled", "failed"],
+		}).notNull(),
+		statusReason: text("status_reason"),
+		locale: text("locale"),
+		productId: text("product_id"),
+		sellableItemId: text("sellable_item_id"),
+		usdtHint: integer("usdt_hint").notNull().default(0),
+		/** Activation generation the claim belongs to; re-checked before sending. */
+		activationAt: integer("activation_at"),
+		notificationDeliveryId: text("notification_delivery_id"),
+		sentAt: integer("sent_at"),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		index("unpaid_order_followups_status_idx").on(
+			table.status,
+			table.updatedAt,
+		),
+		check(
+			"unpaid_order_followups_status_check",
+			sql`${table.status} IN ('sending','sent','skipped','cancelled','failed')`,
+		),
+	],
+);
+
+/** Atomic 30-day cooldown reservation per recipient (email hash). */
+export const unpaidFollowupRecipients = sqliteTable(
+	"unpaid_followup_recipients",
+	{
+		recipientHash: text("recipient_hash").primaryKey(),
+		orderId: text("order_id")
+			.notNull()
+			.references(() => shopOrders.id, { onDelete: "cascade" }),
+		reservedAt: integer("reserved_at").notNull(),
+	},
+	(table) => [index("unpaid_followup_recipients_order_idx").on(table.orderId)],
+);

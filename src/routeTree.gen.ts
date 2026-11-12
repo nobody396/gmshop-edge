@@ -66,6 +66,7 @@ import { Route as ApiTelegramWebhookRouteImport } from './routes/api/telegram/we
 import { Route as ApiTelegramOwnerWebhookRouteImport } from './routes/api/telegram/owner-webhook'
 import { Route as ApiShopInvoiceOrderRouteImport } from './routes/api/shop/invoice-order'
 import { Route as ApiPublicAppstorePricesRouteImport } from './routes/api/public/appstore-prices'
+import { Route as ApiOpsUnpaidFollowupRouteImport } from './routes/api/ops/unpaid-followup'
 import { Route as ApiOpsRestockRouteImport } from './routes/api/ops/restock'
 import { Route as ApiOpsRedeemRestockRouteImport } from './routes/api/ops/redeem-restock'
 import { Route as ApiOpsRedeemCutoverRouteImport } from './routes/api/ops/redeem-cutover'
@@ -443,6 +444,11 @@ const ApiShopInvoiceOrderRoute = ApiShopInvoiceOrderRouteImport.update({
 const ApiPublicAppstorePricesRoute = ApiPublicAppstorePricesRouteImport.update({
   id: '/api/public/appstore-prices',
   path: '/api/public/appstore-prices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOpsUnpaidFollowupRoute = ApiOpsUnpaidFollowupRouteImport.update({
+  id: '/api/ops/unpaid-followup',
+  path: '/api/ops/unpaid-followup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOpsRestockRoute = ApiOpsRestockRouteImport.update({
@@ -1052,6 +1058,7 @@ export interface FileRoutesByFullPath {
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/ops/unpaid-followup': typeof ApiOpsUnpaidFollowupRoute
   '/api/public/appstore-prices': typeof ApiPublicAppstorePricesRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
@@ -1194,6 +1201,7 @@ export interface FileRoutesByTo {
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/ops/unpaid-followup': typeof ApiOpsUnpaidFollowupRoute
   '/api/public/appstore-prices': typeof ApiPublicAppstorePricesRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
@@ -1348,6 +1356,7 @@ export interface FileRoutesById {
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
   '/api/ops/redeem-restock': typeof ApiOpsRedeemRestockRoute
   '/api/ops/restock': typeof ApiOpsRestockRouteWithChildren
+  '/api/ops/unpaid-followup': typeof ApiOpsUnpaidFollowupRoute
   '/api/public/appstore-prices': typeof ApiPublicAppstorePricesRoute
   '/api/shop/invoice-order': typeof ApiShopInvoiceOrderRoute
   '/api/telegram/owner-webhook': typeof ApiTelegramOwnerWebhookRoute
@@ -1501,6 +1510,7 @@ export interface FileRouteTypes {
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
+    | '/api/ops/unpaid-followup'
     | '/api/public/appstore-prices'
     | '/api/shop/invoice-order'
     | '/api/telegram/owner-webhook'
@@ -1643,6 +1653,7 @@ export interface FileRouteTypes {
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
+    | '/api/ops/unpaid-followup'
     | '/api/public/appstore-prices'
     | '/api/shop/invoice-order'
     | '/api/telegram/owner-webhook'
@@ -1796,6 +1807,7 @@ export interface FileRouteTypes {
     | '/api/ops/redeem-cutover'
     | '/api/ops/redeem-restock'
     | '/api/ops/restock'
+    | '/api/ops/unpaid-followup'
     | '/api/public/appstore-prices'
     | '/api/shop/invoice-order'
     | '/api/telegram/owner-webhook'
@@ -1879,6 +1891,7 @@ export interface RootRouteChildren {
   ApiOpsRedeemCutoverRoute: typeof ApiOpsRedeemCutoverRoute
   ApiOpsRedeemRestockRoute: typeof ApiOpsRedeemRestockRoute
   ApiOpsRestockRoute: typeof ApiOpsRestockRouteWithChildren
+  ApiOpsUnpaidFollowupRoute: typeof ApiOpsUnpaidFollowupRoute
   ApiPublicAppstorePricesRoute: typeof ApiPublicAppstorePricesRoute
   ApiShopInvoiceOrderRoute: typeof ApiShopInvoiceOrderRoute
   ApiTelegramOwnerWebhookRoute: typeof ApiTelegramOwnerWebhookRoute
@@ -2319,6 +2332,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/appstore-prices'
       fullPath: '/api/public/appstore-prices'
       preLoaderRoute: typeof ApiPublicAppstorePricesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/unpaid-followup': {
+      id: '/api/ops/unpaid-followup'
+      path: '/api/ops/unpaid-followup'
+      fullPath: '/api/ops/unpaid-followup'
+      preLoaderRoute: typeof ApiOpsUnpaidFollowupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ops/restock': {
@@ -3328,6 +3348,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOpsRedeemCutoverRoute: ApiOpsRedeemCutoverRoute,
   ApiOpsRedeemRestockRoute: ApiOpsRedeemRestockRoute,
   ApiOpsRestockRoute: ApiOpsRestockRouteWithChildren,
+  ApiOpsUnpaidFollowupRoute: ApiOpsUnpaidFollowupRoute,
   ApiPublicAppstorePricesRoute: ApiPublicAppstorePricesRoute,
   ApiShopInvoiceOrderRoute: ApiShopInvoiceOrderRoute,
   ApiTelegramOwnerWebhookRoute: ApiTelegramOwnerWebhookRoute,
@@ -3379,3 +3400,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
