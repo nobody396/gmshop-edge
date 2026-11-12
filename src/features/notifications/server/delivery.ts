@@ -22,6 +22,7 @@ export const agentAccessReadyEmailEvent = "agent_access_ready";
 export const claudeEnvReadyEmailEvent = "claude_env_ready";
 export const claudeEnvExpiryEmailEvent = "claude_env_expiring";
 export const claudeEnvTrafficEmailEvent = "claude_env_traffic";
+export const announcementEmailEvent = "product_announcement";
 export const supportReplyEmailSender =
 	"老实人AI VIP <no-reply@laoshirenvip.com>";
 // Events that may only leave through the approved Cloudflare sender, never a
@@ -32,6 +33,7 @@ const approvedSenderEvents = new Set([
 	claudeEnvReadyEmailEvent,
 	claudeEnvExpiryEmailEvent,
 	claudeEnvTrafficEmailEvent,
+	announcementEmailEvent,
 ]);
 
 type EmailMessage = z.output<typeof emailMessageSchema>;

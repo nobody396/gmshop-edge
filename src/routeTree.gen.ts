@@ -71,6 +71,7 @@ import { Route as ApiOpsRedeemRestockRouteImport } from './routes/api/ops/redeem
 import { Route as ApiOpsRedeemCutoverRouteImport } from './routes/api/ops/redeem-cutover'
 import { Route as ApiOpsAttributionRouteImport } from './routes/api/ops/attribution'
 import { Route as ApiOpsAppstorePricesRouteImport } from './routes/api/ops/appstore-prices'
+import { Route as ApiOpsAnnouncementEmailRouteImport } from './routes/api/ops/announcement-email'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminDownloadAssetsRouteImport } from './routes/api/admin/download-assets'
 import { Route as AdminSuppliersProductsRouteImport } from './routes/admin/suppliers/products'
@@ -467,6 +468,11 @@ const ApiOpsAttributionRoute = ApiOpsAttributionRouteImport.update({
 const ApiOpsAppstorePricesRoute = ApiOpsAppstorePricesRouteImport.update({
   id: '/api/ops/appstore-prices',
   path: '/api/ops/appstore-prices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOpsAnnouncementEmailRoute = ApiOpsAnnouncementEmailRouteImport.update({
+  id: '/api/ops/announcement-email',
+  path: '/api/ops/announcement-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -1040,6 +1046,7 @@ export interface FileRoutesByFullPath {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/announcement-email': typeof ApiOpsAnnouncementEmailRoute
   '/api/ops/appstore-prices': typeof ApiOpsAppstorePricesRoute
   '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
@@ -1181,6 +1188,7 @@ export interface FileRoutesByTo {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/announcement-email': typeof ApiOpsAnnouncementEmailRoute
   '/api/ops/appstore-prices': typeof ApiOpsAppstorePricesRoute
   '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
@@ -1334,6 +1342,7 @@ export interface FileRoutesById {
   '/admin/suppliers/products': typeof AdminSuppliersProductsRoute
   '/api/admin/download-assets': typeof ApiAdminDownloadAssetsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/ops/announcement-email': typeof ApiOpsAnnouncementEmailRoute
   '/api/ops/appstore-prices': typeof ApiOpsAppstorePricesRoute
   '/api/ops/attribution': typeof ApiOpsAttributionRoute
   '/api/ops/redeem-cutover': typeof ApiOpsRedeemCutoverRoute
@@ -1486,6 +1495,7 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/announcement-email'
     | '/api/ops/appstore-prices'
     | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
@@ -1627,6 +1637,7 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/announcement-email'
     | '/api/ops/appstore-prices'
     | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
@@ -1779,6 +1790,7 @@ export interface FileRouteTypes {
     | '/admin/suppliers/products'
     | '/api/admin/download-assets'
     | '/api/auth/$'
+    | '/api/ops/announcement-email'
     | '/api/ops/appstore-prices'
     | '/api/ops/attribution'
     | '/api/ops/redeem-cutover'
@@ -1861,6 +1873,7 @@ export interface RootRouteChildren {
   ApiSiteLogoRoute: typeof ApiSiteLogoRoute
   ApiAdminDownloadAssetsRoute: typeof ApiAdminDownloadAssetsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiOpsAnnouncementEmailRoute: typeof ApiOpsAnnouncementEmailRoute
   ApiOpsAppstorePricesRoute: typeof ApiOpsAppstorePricesRoute
   ApiOpsAttributionRoute: typeof ApiOpsAttributionRoute
   ApiOpsRedeemCutoverRoute: typeof ApiOpsRedeemCutoverRoute
@@ -2341,6 +2354,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ops/appstore-prices'
       fullPath: '/api/ops/appstore-prices'
       preLoaderRoute: typeof ApiOpsAppstorePricesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ops/announcement-email': {
+      id: '/api/ops/announcement-email'
+      path: '/api/ops/announcement-email'
+      fullPath: '/api/ops/announcement-email'
+      preLoaderRoute: typeof ApiOpsAnnouncementEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -3302,6 +3322,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSiteLogoRoute: ApiSiteLogoRoute,
   ApiAdminDownloadAssetsRoute: ApiAdminDownloadAssetsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiOpsAnnouncementEmailRoute: ApiOpsAnnouncementEmailRoute,
   ApiOpsAppstorePricesRoute: ApiOpsAppstorePricesRoute,
   ApiOpsAttributionRoute: ApiOpsAttributionRoute,
   ApiOpsRedeemCutoverRoute: ApiOpsRedeemCutoverRoute,
@@ -3358,13 +3379,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

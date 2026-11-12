@@ -42,6 +42,7 @@ const publicPostPatterns = [
 	/^\/api\/ops\/restock\/reconcile$/,
 	/^\/api\/ops\/restock\/swap$/,
 	/^\/api\/ops\/agent-access\/ready-email$/,
+	/^\/api\/ops\/announcement-email$/,
 	// Gateway / Mac runner bearer tokens are checked by the handlers.
 	/^\/api\/ops\/supplier-topup\/(?:offer|claim|result)$/,
 	/^\/api\/ops\/claude-env\/traffic\/purchases$/,
