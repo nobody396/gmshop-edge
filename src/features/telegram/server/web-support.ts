@@ -321,8 +321,8 @@ export async function sendWebSupportMessage(
 			conversation.topic_name,
 			input.text,
 		);
-		await maybeReplyWebSupportCode(db, api, conversation, input.text);
-		await maybeReplyWebSupportAway(db, api, conversation);
+		if (!(await maybeReplyWebSupportCode(db, api, conversation, input.text)))
+			await maybeReplyWebSupportAway(db, api, conversation);
 		return { sent: true };
 	} catch (error) {
 		if (isMissingTopicError(error)) {
@@ -347,8 +347,8 @@ export async function sendWebSupportMessage(
 				conversation.topic_name,
 				input.text,
 			);
-			await maybeReplyWebSupportCode(db, api, conversation, input.text);
-			await maybeReplyWebSupportAway(db, api, conversation);
+			if (!(await maybeReplyWebSupportCode(db, api, conversation, input.text)))
+				await maybeReplyWebSupportAway(db, api, conversation);
 			return { sent: true };
 		}
 		await db
@@ -361,7 +361,10 @@ export async function sendWebSupportMessage(
 	}
 }
 
-/** Fixed reply when the customer sends a configured order code (once per 10 minutes per rule). */
+/**
+ * Fixed reply when the customer sends a configured order code (once per 10 minutes per rule).
+ * Returns true when the message matched a code rule, so the caller skips the away note.
+ */
 export async function maybeReplyWebSupportCode(
 	db: D1Database,
 	api: Pick<Api, "sendMessage">,
@@ -379,7 +382,8 @@ export async function maybeReplyWebSupportCode(
 			limit: 1,
 			windowMs: 10 * 60_000,
 		});
-		if (!budget.allowed) return false;
+		// Already answered this code moments ago: still not a case for the away note.
+		if (!budget.allowed) return true;
 		await storeWebAdministratorReply(
 			db,
 			conversation,

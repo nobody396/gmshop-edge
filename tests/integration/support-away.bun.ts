@@ -394,6 +394,52 @@ test("concurrent customer messages get one acknowledgement per activation, off s
 	).toHaveLength(2);
 });
 
+test("a reservation code gets only its fixed reply, never the away note on top", async () => {
+	await command("/away guide https://laoshirenvip.com/#self-service-recharge");
+	await command("/away on");
+	await db
+		.prepare(
+			"INSERT OR REPLACE INTO system_settings (key, value) VALUES ('telegram.support.code_auto_replies', ?)",
+		)
+		.bind(
+			JSON.stringify([
+				{ prefixes: ["claude-pro-acct-"], message: "已收到预定码，请加 QQ" },
+			]),
+		)
+		.run();
+	for (const text of [
+		"Claude Pro 成品号预定码 claude-pro-acct-AT5Q-MFQW-VY2D",
+		// Same code again inside the 10-minute window: no repeat, still no away note.
+		"claude-pro-acct-AT5Q-MFQW-VY2D",
+	])
+		await run(() =>
+			sendWebSupportMessage(db, customerRequest(), {
+				clientMessageId: crypto.randomUUID(),
+				text,
+				locale: "zh-CN",
+			}),
+		);
+	const response = await run(() =>
+		currentWebSupportConversation(db, customerRequest(), 0),
+	);
+	expect(response.replies).toHaveLength(1);
+	expect(response.replies[0]).toMatchObject({ text: "已收到预定码，请加 QQ" });
+	expect(sent.some((item) => item.text?.includes("老板，我这会儿不在"))).toBe(
+		false,
+	);
+	// An ordinary question afterwards still gets the away note.
+	await run(() =>
+		sendWebSupportMessage(db, customerRequest(), {
+			clientMessageId: crypto.randomUUID(),
+			text: "多久能到",
+			locale: "zh-CN",
+		}),
+	);
+	expect(sent.some((item) => item.text?.includes("老板，我这会儿不在"))).toBe(
+		true,
+	);
+});
+
 test("disabled mode preserves normal customer delivery without an away reply", async () => {
 	await run(() =>
 		sendWebSupportMessage(db, customerRequest(), {
