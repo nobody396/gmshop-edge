@@ -62,6 +62,9 @@ describe("signed and customer API boundaries", () => {
 			false,
 		);
 		expect(publicRequest("/api/ops/agent-access/other", "POST")).toBe(false);
+		expect(publicRequest("/api/ops/unpaid-followup", "POST")).toBe(true);
+		expect(publicRequest("/api/ops/unpaid-followup", "GET")).toBe(false);
+		expect(publicRequest("/api/ops/unpaid-followup/extra", "POST")).toBe(false);
 		expect(publicRequest("/api/ops/restock", "PATCH")).toBe(false);
 		expect(publicRequest("/api/ops/restock/extra", "GET")).toBe(false);
 		expect(publicRequest("/api/ops/restock/extra", "POST")).toBe(false);

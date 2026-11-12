@@ -71,6 +71,11 @@ export async function prepareCustomerDataDeletion(
 			.bind(...scope.bindings),
 		db
 			.prepare(
+				`DELETE FROM unpaid_order_followups WHERE order_id IN (${orderIds})`,
+			)
+			.bind(...scope.bindings),
+		db
+			.prepare(
 				`UPDATE shop_order_items SET input_values_json = '{}',
 				 sensitive_input_values_json = '{}', updated_at = ?
 				 WHERE order_id IN (${orderIds})`,

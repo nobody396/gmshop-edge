@@ -2862,3 +2862,40 @@ export const emailUnsubscribes = sqliteTable(
 	},
 	(table) => [primaryKey({ columns: [table.recipientHash, table.scope] })],
 );
+
+/** One row per expired unpaid order considered for the follow-up email (drizzle/0056). */
+export const unpaidOrderFollowups = sqliteTable(
+	"unpaid_order_followups",
+	{
+		orderId: text("order_id")
+			.primaryKey()
+			.references(() => shopOrders.id, { onDelete: "cascade" }),
+		recipientHash: text("recipient_hash"),
+		status: text("status", {
+			enum: ["sending", "sent", "skipped", "failed"],
+		}).notNull(),
+		statusReason: text("status_reason"),
+		locale: text("locale"),
+		productId: text("product_id"),
+		sellableItemId: text("sellable_item_id"),
+		usdtHint: integer("usdt_hint").notNull().default(0),
+		notificationDeliveryId: text("notification_delivery_id"),
+		sentAt: integer("sent_at"),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		index("unpaid_order_followups_recipient_idx").on(
+			table.recipientHash,
+			table.sentAt,
+		),
+		index("unpaid_order_followups_status_idx").on(
+			table.status,
+			table.updatedAt,
+		),
+		check(
+			"unpaid_order_followups_status_check",
+			sql`${table.status} IN ('sending','sent','skipped','failed')`,
+		),
+	],
+);

@@ -63,7 +63,7 @@ const refundedOrderCondition = (alias: string) =>
 	   AND rf.status = 'succeeded'))`;
 
 /** Orders placed by staff (any role other than customer/guest), by account or by email. */
-const staffOrderCondition = (userId: string, email: string) =>
+export const staffOrderCondition = (userId: string, email: string) =>
 	`EXISTS (SELECT 1 FROM users su, json_each(su.role_ids) assigned
 	  JOIN roles sr ON sr.id = assigned.value
 	  WHERE sr.name NOT IN ('customer','guest')
@@ -935,7 +935,7 @@ function finish(
 		.run();
 }
 
-async function loadBrand(db: D1Database) {
+export async function loadBrand(db: D1Database) {
 	const row = await db
 		.prepare(
 			"SELECT value FROM system_settings WHERE key = 'site.name' LIMIT 1",
@@ -951,7 +951,7 @@ async function loadBrand(db: D1Database) {
 	}
 }
 
-function normalizedRecipient(email: string | null | undefined) {
+export function normalizedRecipient(email: string | null | undefined) {
 	const normalized = email?.trim().toLowerCase();
 	if (
 		!normalized ||
