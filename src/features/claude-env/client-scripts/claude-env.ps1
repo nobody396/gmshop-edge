@@ -749,6 +749,15 @@ $js = ReadText $SCRIPT_JS
 $js = [regex]::Replace($js, "(?ms)^" + [regex]::Escape($MARK_BEGIN) + ".*?^" + [regex]::Escape($MARK_END) + "\r?\n?", "")
 if ($js -notmatch "__ceUserMain") { $js = [regex]::Replace($js, "function\s+main\s*\(", "function __ceUserMain(") }
 # 与 claude-env.sh 中的脚本块逐字一致（测试会比对）
+$SNIFF_JS = @'
+  // 自带网络：TUN 下按 SNI 认出验证、付款、上报等域名（macOS 的系统 DNS 常在局域网、不经过 Clash，光靠 IP 认不出）
+  var sn = config.sniffer && typeof config.sniffer === "object" ? config.sniffer : {};
+  if (sn.enable !== true) { sn.enable = true; if (!sn.sniff) sn.sniff = { TLS: { ports: [443, 8443] }, HTTP: { ports: [80, "8080-8880"], "override-destination": true } }; }
+  if (sn["parse-pure-ip"] === undefined) sn["parse-pure-ip"] = true;
+  if (sn["force-dns-mapping"] === undefined) sn["force-dns-mapping"] = true;
+  config.sniffer = sn;
+'@
+$SNIFF_JS = ($SNIFF_JS -replace "`r`n", "`n") + "`n"
 $block = @'
 // >>> claude-env BEGIN
 function main(config, profileName) {
@@ -792,11 +801,12 @@ function main(config, profileName) {
     SUFFIX.forEach(function (d) { pol["+." + d] = ["https://1.1.1.1/dns-query#" + G, "https://8.8.8.8/dns-query#" + G]; });
     config.dns["nameserver-policy"] = pol;
   }
-  return config;
+@SNIFF@  return config;
 }
 // <<< claude-env END
 '@
 $block = $block.Replace("@G@", $GROUP_NAME).Replace("@N@", $NODE_NAME).Replace("@F@", $FRONT_NAME).Replace("@SUFFIX@", (JsArr $CLAUDE_SUFFIXES)).Replace("@KEYWORD@", (JsArr $CLAUDE_KEYWORDS)).Replace("@CIDR@", (JsArr $ANTHROPIC_CIDR)).Replace("@CIDR6@", (JsArr $ANTHROPIC_CIDR6)).Replace("@TYPE@", $PX_TYPE).Replace("@HOST@", $PX_HOST).Replace("@PORT@", $PX_PORT).Replace("@USER@", $PX_USER).Replace("@PASS@", $PX_PASS)
+$block = $block.Replace("@SNIFF@", $(if ($BYO) { $SNIFF_JS } else { "" }))
 $js = $js.TrimEnd() + "`n" + ($block -replace "`r`n", "`n")
 if (-not $js.EndsWith("`n")) { $js += "`n" }
 WriteText $SCRIPT_JS $js
@@ -958,8 +968,16 @@ $rt = if (Test-Path -LiteralPath $CV_CFG) { ReadText $CV_CFG } else { "" }
 if ($rt.Contains("dns-query#$GROUP_NAME")) { Chk "Claude 域名走海外加密 DNS（不经过国内 DNS）" "ok" }
 elseif ($rt -match '(?m)^\s*enhanced-mode:\s*fake-ip') { Chk "Claude 域名不在本机解析（Fake-IP，交给专属 IP 远端解析）" "ok" }
 else { Chk "Claude 域名走海外加密 DNS" "没生效，多半是 Clash Verge「设置」里开了「DNS 覆写」：关掉后重新运行本命令" }
+if ($BYO) {
+  # 自带网络：内核的延迟测试对 SOCKS5 + 前置不可靠，直接经 Clash 让 Claude 回报出口，和写入前实测的一致才算通
+  # 刚重启完 Clash Verge，第一下可能还在建链：最多试 5 次
+  $linkIp = ""
+  for ($i = 0; $i -lt 5; $i++) { $linkIp = TraceIp (CurlX -s -m 15 -x "http://127.0.0.1:$MIXED_PORT" "https://claude.ai/cdn-cgi/trace"); if ($linkIp -and $linkIp -eq $PX_IP) { break }; Start-Sleep -Seconds 3 }
+  if ($linkIp -and $linkIp -eq $PX_IP) { Chk "链路 梯子→专属网络 连通（Claude 看到的出口和实测一致）" "ok" } else { Chk "链路 梯子→专属网络 连通" "不通，请截图发给客服" }
+} else {
 $delay = (JParse (Ctl "GET" ("/proxies/" + [uri]::EscapeDataString($NODE_NAME) + "/delay?timeout=8000&url=" + [uri]::EscapeDataString("https://claude.ai/cdn-cgi/trace")) $null)).delay
 if ($delay) { Chk "链路 梯子→中转→专属IP 连通（${delay}ms）" "ok" } else { Chk "链路 梯子→中转→专属IP 连通" "不通，请截图发给客服" }
+}
 foreach ($d in "claude.ai", "claude.com", "anthropic.com", "challenges.cloudflare.com") {
   $ip = TraceIp (DTrace "https://$d/cdn-cgi/trace")
   if ($ip -eq $PX_IP) { Chk "$d 看到的出口 = $PX_IP（不设代理直连，证明 TUN 接管）" "ok" } else { Chk "$d 看到的出口" ("看到的是 " + $(if ($ip) { $ip } else { "连不上" })) }

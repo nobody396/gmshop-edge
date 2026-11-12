@@ -775,6 +775,14 @@ SCRIPT_JS="$OUT_DIR/Script.js"
 sed -i '' "/^${MARK_BEGIN//\//\\/}/,/^${MARK_END//\//\\/}/d" "$SCRIPT_JS"
 grep -q '__ceUserMain' "$SCRIPT_JS" || sed -i '' -E 's/function[[:space:]]+main[[:space:]]*\(/function __ceUserMain(/' "$SCRIPT_JS"
 jsarr() { local s; s=$(printf '"%s",' "$@"); printf '[%s]' "${s%,}"; }
+SNIFF_JS=""
+[ -n "$BYO" ] && SNIFF_JS='  // 自带网络：TUN 下按 SNI 认出验证、付款、上报等域名（macOS 的系统 DNS 常在局域网、不经过 Clash，光靠 IP 认不出）
+  var sn = config.sniffer && typeof config.sniffer === "object" ? config.sniffer : {};
+  if (sn.enable !== true) { sn.enable = true; if (!sn.sniff) sn.sniff = { TLS: { ports: [443, 8443] }, HTTP: { ports: [80, "8080-8880"], "override-destination": true } }; }
+  if (sn["parse-pure-ip"] === undefined) sn["parse-pure-ip"] = true;
+  if (sn["force-dns-mapping"] === undefined) sn["force-dns-mapping"] = true;
+  config.sniffer = sn;
+'
 cat >>"$SCRIPT_JS" <<EOF
 $MARK_BEGIN
 function main(config, profileName) {
@@ -818,7 +826,7 @@ function main(config, profileName) {
     SUFFIX.forEach(function (d) { pol["+." + d] = ["https://1.1.1.1/dns-query#" + G, "https://8.8.8.8/dns-query#" + G]; });
     config.dns["nameserver-policy"] = pol;
   }
-  return config;
+${SNIFF_JS}  return config;
 }
 $MARK_END
 EOF
@@ -1031,10 +1039,22 @@ if [ -z "$DRY" ]; then
   if grep -qF "dns-query#$GROUP_NAME" "$CV_CFG" 2>/dev/null; then chk "Claude 域名走海外加密 DNS（不经过国内 DNS）" ok
   elif grep -qE '^[[:space:]]*enhanced-mode:[[:space:]]*fake-ip' "$CV_CFG" 2>/dev/null; then chk "Claude 域名不在本机解析（Fake-IP，交给专属 IP 远端解析）" ok
   else chk "Claude 域名走海外加密 DNS" "没生效，多半是 Clash Verge「设置」里开了「DNS 覆写」：关掉后重新运行本命令"; fi
-  DELAY=$(jget "$(ctl GET "/proxies/$(urlenc "$NODE_NAME")/delay?timeout=8000&url=$(urlenc https://claude.ai/cdn-cgi/trace)")" 'o.delay')
-  if [ -n "$ROUTER" ]; then
+  if [ -n "$BYO" ]; then
+    # 自带网络：内核的延迟测试对 SOCKS5 + 前置不可靠，直接经 Clash 让 Claude 回报出口，和写入前实测的一致才算通
+    # 刚重启完 Clash Verge，第一下可能还在建链：最多试 5 次
+    LINK_IP=""
+    for _ in 1 2 3 4 5; do
+      LINK_IP=$(curl -s -m 15 -x "http://127.0.0.1:$MIXED_PORT" https://claude.ai/cdn-cgi/trace | trace_ip)
+      [ -n "$LINK_IP" ] && [ "$LINK_IP" = "$PX_IP" ] && break; sleep 3
+    done
+    if [ -n "$ROUTER" ]; then HOP="路由器"; else HOP="梯子"; fi
+    if [ -n "$LINK_IP" ] && [ "$LINK_IP" = "$PX_IP" ]; then chk "链路 ${HOP}→专属网络 连通（Claude 看到的出口和实测一致）" ok
+    else chk "链路 ${HOP}→专属网络 连通" "不通，请截图发给客服"; fi
+  elif [ -n "$ROUTER" ]; then
+    DELAY=$(jget "$(ctl GET "/proxies/$(urlenc "$NODE_NAME")/delay?timeout=8000&url=$(urlenc https://claude.ai/cdn-cgi/trace)")" 'o.delay')
     [ -n "$DELAY" ] && chk "链路 路由器→中转→专属IP 连通（${DELAY}ms）" ok || chk "链路 路由器→中转→专属IP 连通" "不通。多半是路由器没让这台电脑到 ${PX_HOST} 的流量走梯子（它在海外，国内直连会被墙）：请在路由器里让 ${PX_HOST} 走代理，再重新运行；还不行就截图发给客服"
   else
+    DELAY=$(jget "$(ctl GET "/proxies/$(urlenc "$NODE_NAME")/delay?timeout=8000&url=$(urlenc https://claude.ai/cdn-cgi/trace)")" 'o.delay')
     [ -n "$DELAY" ] && chk "链路 梯子→中转→专属IP 连通（${DELAY}ms）" ok || chk "链路 梯子→中转→专属IP 连通" "不通，请截图发给客服"
   fi
 fi
