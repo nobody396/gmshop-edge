@@ -174,6 +174,18 @@ export const guideProducts = {
 		productId: "e5c81556-03be-43fd-bf3f-e248c16cc34d",
 		itemId: "bb584d1c-4444-4581-a2e1-5ddeab2f0f87",
 	},
+	claudeacctpro: {
+		productId: "550711f1-8901-4f4f-878d-1b81ca09c9ac",
+		itemId: "9c3adf97-3884-4776-b099-acf041e61625",
+	},
+	claudeacct5x: {
+		productId: "550711f1-8901-4f4f-878d-1b81ca09c9ac",
+		itemId: "25d1790d-9982-49c3-a658-54d2dd9bb75b",
+	},
+	claudeacct20x: {
+		productId: "550711f1-8901-4f4f-878d-1b81ca09c9ac",
+		itemId: "f67ed870-d119-4191-8bfa-c23f02128ae9",
+	},
 	geminiready: {
 		productId: "b99dfd6a-2206-4dc9-aea9-85e86c3f8d66",
 		itemId: "a3fc7472-b5f5-45b2-93e4-0123a8d2c9e4",
@@ -274,6 +286,7 @@ export function guideStep(a: readonly string[]): GuideStep {
 			"team",
 			"points",
 			"claude",
+			"claudeacct",
 			"claudeenv",
 			"compute",
 			"x",
@@ -429,6 +442,20 @@ export function guideStep(a: readonly string[]): GuideStep {
 		if (!target) return question("claude_target", ["claudepro", "claudefive"]);
 		if (target === "claudepro" || target === "claudefive")
 			return result(target, target === "claudepro" ? undefined : "kyc");
+	}
+	if (family === "claudeacct") {
+		if (!current)
+			return question("claudeacct_target", [
+				"claudeacctpro",
+				"claudeacct5x",
+				"claudeacct20x",
+			]);
+		if (
+			current === "claudeacctpro" ||
+			current === "claudeacct5x" ||
+			current === "claudeacct20x"
+		)
+			return result(current);
 	}
 	if (family === "points") {
 		if (!current)

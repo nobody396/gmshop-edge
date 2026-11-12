@@ -28,6 +28,14 @@ const standardDeliveryTime =
 	"The recharge code and recharge link are issued automatically after payment, usually within 1 minute; view them on the order page.";
 const immediate = standardDeliveryTime;
 const manual = "Processed online after payment confirmation";
+const readyAccountDelivery =
+	"A reservation code is delivered automatically after payment; send the whole delivery text to the online support at the bottom right of the site and add the QQ contact to receive the account";
+const readyAccountTime =
+	"Pre-order: usually within 24 hours, within 48 hours when busy; bulk orders go first";
+const readyAccountWarranty =
+	"First sign-in only: if you cannot sign in within 24 hours of receiving the account, send a screenshot to support and we replace it after verification; bans, lost membership, verification requests or any other problem after the first sign-in are not covered";
+const readyAccountRestrictions =
+	"Ready-made account, cannot be applied to your own account; testing at laoshirenvip.com/ip-check (100 points) before signing in is recommended; no network environment included, add Stable Claude setup if needed; pre-order with no cancellation or refund; invoices available (6% fee)";
 const manualDeliveryTime =
 	"Usually completed within 1–30 minutes. During peak periods, delivery may take longer but will not exceed 3 hours. Track delivery status and contents on the order page.";
 
@@ -248,6 +256,49 @@ Before you buy
 Warranty
 - Within 24 hours of delivery, if an unclaimed link cannot be claimed, contact support for a replacement after verification.
 - Links already claimed (including by someone else after posting in a group) and banned or restricted accounts are not covered.`,
+	},
+	"550711f1-8901-4f4f-878d-1b81ca09c9ac": {
+		name: "Claude ready-made account｜1 month (pre-order)",
+		description: `A US Claude account with the membership already active, no KYC, invoices available. Ordering is a pre-order; delivery is usually within 24 hours. Three plans: Pro, Max 5X and Max 20X.
+
+Read these 6 points before ordering
+1. This is a ready-made account: we deliver a Claude account with the membership already active; it is not applied to your own account. To upgrade your own account, buy "Claude membership" instead.
+2. Ordering is a pre-order: after payment, copy the whole delivery text and send it to the online support at the bottom right of the site, then add the QQ contact from the reply to receive the account. Usually delivered within 24 hours, within 48 hours when busy; bulk orders go first. Orders cannot be cancelled after payment.
+3. Test your environment first (recommended): before signing in, open https://laoshirenvip.com/ip-check ; a score of 100 makes the sign-in more stable.
+4. Not sure how to set up the environment? Add "Stable Claude setup" and we configure a dedicated environment for you.
+5. First sign-in only: sign in and check within 24 hours of receiving the account; if you cannot sign in, contact support for a replacement.
+6. Invoices available: after payment, apply at https://laoshirenvip.com/invoice ; a 6% invoicing fee applies and the invoice arrives by email in 1–3 business days.
+
+Plans
+- Claude Pro: the standard membership.
+- Claude Max 5X: 5 times Pro usage per 5 hours and per week.
+- Claude Max 20X: the official $200 tier (now called Ultra), 10 times Pro weekly usage with no 5-hour limit; for heavy Claude Code use.
+All are US accounts, no KYC, 1-month membership. Nothing renews automatically; place a new order to keep using it. Claude's official page decides the exact usage.
+
+How to get your account
+1. After payment, copy the delivery text (the whole paragraph) from the order page.
+2. Send it to the online support at the bottom right of the site and add the QQ contact from the reply.
+3. Once the account is ready, support sends the sign-in email and sign-in method on QQ.
+4. Sign in and check within 24 hours.
+
+How to sign in
+1. Recommended: run the environment check at https://laoshirenvip.com/ip-check ; 100 is best.
+2. In the same browser (a separate browser or private window is best), open https://claude.ai .
+3. Enter the delivered email, choose "Continue with email", receive the code the way support tells you, and finish signing in.
+4. Check the plan under Settings → Billing.
+5. For Claude Code: run claude, choose to sign in with a Claude account, and approve in the same browser.
+
+Staying stable
+- One person per account; do not share.
+- Keep one network and one device; avoid switching often.
+- Re-test the environment after changing networks.
+- Do not use it for distillation, reverse proxies or bulk calls.
+
+Warranty
+- First sign-in only: if you cannot sign in within 24 hours of receiving the account, send a screenshot of the error to support; after verification we replace it.
+- Bans, lost membership, verification requests or any other problem after the first sign-in are not covered.
+- No network environment is included; add "Stable Claude setup" if you need one.
+- Payment is a pre-order: no cancellation and no refund.`,
 	},
 	"b99dfd6a-2206-4dc9-aea9-85e86c3f8d66": {
 		name: "Gemini Ultra 20X｜1 month",
@@ -870,6 +921,36 @@ ${claudeRestrictions}`,
 			"Gemini Ultra 20X ready-made account with Google AI Ultra for 1 month; it cannot be applied to your own account",
 			"First sign-in only: sign in and check soon after delivery; contact support if the first sign-in fails",
 			"Do not share the account or switch IPs or devices frequently; restrictions or bans are not covered",
+		),
+	},
+	"9c3adf97-3884-4776-b099-acf041e61625": {
+		name: "Claude Pro｜Ready-made account｜1 month",
+		policy: policy(
+			readyAccountDelivery,
+			readyAccountTime,
+			"Claude Pro ready-made account: US account, no KYC, 1-month membership",
+			readyAccountWarranty,
+			readyAccountRestrictions,
+		),
+	},
+	"25d1790d-9982-49c3-a658-54d2dd9bb75b": {
+		name: "Claude Max 5X｜Ready-made account｜1 month",
+		policy: policy(
+			readyAccountDelivery,
+			readyAccountTime,
+			"Claude Max 5X ready-made account: US account, no KYC, 1-month membership; 5 times Pro usage per 5 hours and per week",
+			readyAccountWarranty,
+			readyAccountRestrictions,
+		),
+	},
+	"f67ed870-d119-4191-8bfa-c23f02128ae9": {
+		name: "Claude Max 20X｜Ready-made account｜1 month",
+		policy: policy(
+			readyAccountDelivery,
+			readyAccountTime,
+			"Claude Max 20X ready-made account: US account, no KYC, 1-month membership; the official $200 tier (now called Ultra), 10 times Pro weekly usage, no 5-hour limit",
+			readyAccountWarranty,
+			readyAccountRestrictions,
 		),
 	},
 	"ee138689-0a97-4d1d-9763-839fb75fc59d": {
