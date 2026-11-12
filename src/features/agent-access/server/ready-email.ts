@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ownLinkTags, withUtm } from "#/features/attribution/utm";
 import {
 	agentAccessReadyEmailEvent,
 	enqueueEmailNotification,
@@ -348,10 +349,13 @@ export async function enqueueAgentAccessReadyEmail(
 		locale,
 		domain,
 		email: row.email,
-		orderUrl: new URL(
-			`/account/orders/${encodeURIComponent(row.order_number)}`,
-			origin,
-		).toString(),
+		orderUrl: withUtm(
+			new URL(
+				`/account/orders/${encodeURIComponent(row.order_number)}`,
+				origin,
+			).toString(),
+			ownLinkTags.orderEmail("agent_access_ready"),
+		),
 		requestedSubdomain: row.requested_subdomain,
 		subdomainFallback: row.subdomain_fallback,
 		termExpiresAt: row.term_expires_at,

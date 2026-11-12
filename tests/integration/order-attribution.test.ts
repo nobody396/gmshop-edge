@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordOrderAttribution } from "#/features/attribution/server/order-attribution";
@@ -12,14 +13,17 @@ import { applyMigrations } from "./migrations";
 const now = Date.UTC(2026, 9, 21, 4, 0, 0);
 const hour = 3_600_000;
 
-function cookieRequest(touch?: object) {
+function cookieRequest(touch?: object, last?: object) {
+	const cookies = [
+		"PARAGLIDE_LOCALE=zh-CN",
+		...(touch
+			? [`gmshop_ft=${encodeURIComponent(JSON.stringify(touch))}`]
+			: []),
+		...(last ? [`gmshop_lt=${encodeURIComponent(JSON.stringify(last))}`] : []),
+	];
 	return new Request("https://laoshirenvip.com/_serverFn/checkout", {
 		method: "POST",
-		headers: touch
-			? {
-					cookie: `PARAGLIDE_LOCALE=zh-CN; gmshop_ft=${encodeURIComponent(JSON.stringify(touch))}`,
-				}
-			: {},
+		headers: touch || last ? { cookie: cookies.join("; ") } : {},
 	});
 }
 
@@ -225,5 +229,279 @@ describe("order attribution", { timeout: 30_000 }, () => {
 			env,
 		);
 		expect(invalid.status).toBe(400);
+	});
+
+	it("stores the latest non-direct touch next to the first touch", async () => {
+		await recordOrderAttribution(
+			db,
+			"search-paid",
+			cookieRequest(
+				{ v: 1, r: "www.baidu.com", p: "/", t: 10 },
+				{
+					v: 1,
+					s: "renewal",
+					m: "email",
+					c: "renew_3d",
+					p: "/products/plus",
+					t: 20,
+					i: "wechat",
+				},
+			),
+		);
+		await recordOrderAttribution(
+			db,
+			"ai-paid",
+			cookieRequest(
+				{ v: 1, p: "/", t: 11, i: "wechat" },
+				{ v: 1, p: "/", t: 12, f: 1 },
+			),
+		);
+		await recordOrderAttribution(
+			db,
+			"ai-pending",
+			cookieRequest({ v: 1, p: "/", t: 13, i: "telegram" }),
+		);
+		const rows = await db
+			.prepare(
+				`SELECT order_id, source_category, in_app_browser, last_source_category,
+				 last_utm_source, last_utm_campaign, last_landing_path, last_seen_at,
+				 last_in_app_browser FROM order_attribution ORDER BY order_id`,
+			)
+			.all();
+		expect(rows.results).toEqual([
+			{
+				order_id: "ai-paid",
+				source_category: "wechat_in_app",
+				in_app_browser: "wechat",
+				last_source_category: "referral",
+				last_utm_source: null,
+				last_utm_campaign: null,
+				last_landing_path: "/",
+				last_seen_at: 12,
+				last_in_app_browser: null,
+			},
+			{
+				order_id: "ai-pending",
+				source_category: "telegram_in_app",
+				in_app_browser: "telegram",
+				last_source_category: null,
+				last_utm_source: null,
+				last_utm_campaign: null,
+				last_landing_path: null,
+				last_seen_at: null,
+				last_in_app_browser: null,
+			},
+			{
+				order_id: "search-paid",
+				source_category: "search",
+				in_app_browser: null,
+				last_source_category: "email",
+				last_utm_source: "renewal",
+				last_utm_campaign: "renew_3d",
+				last_landing_path: "/products/plus",
+				last_seen_at: 20,
+				last_in_app_browser: "wechat",
+			},
+		]);
+	});
+
+	it("reports first- and last-touch channels with campaign breakdowns", async () => {
+		await recordOrderAttribution(
+			db,
+			"search-paid",
+			cookieRequest(
+				{ v: 1, r: "www.baidu.com", p: "/" },
+				{ v: 1, s: "renewal", m: "email", c: "renew_3d", p: "/" },
+			),
+		);
+		await recordOrderAttribution(
+			db,
+			"ai-paid",
+			cookieRequest(
+				{ v: 1, r: "chatgpt.com", p: "/" },
+				{ v: 1, s: "renewal", m: "email", c: "recall", p: "/" },
+			),
+		);
+		await recordOrderAttribution(
+			db,
+			"ai-pending",
+			cookieRequest({ v: 1, r: "chatgpt.com", p: "/" }),
+		);
+		await recordOrderAttribution(
+			db,
+			"direct-yesterday",
+			cookieRequest({ v: 1, p: "/", f: 1 }),
+		);
+		const report = await loadAttributionReport(db, 7, now);
+		// The original first-touch shape stays as it was.
+		expect(report.rows.map((row) => [row.date, row.category])).toEqual([
+			["2026-10-21", "ai"],
+			["2026-10-21", "search"],
+			["2026-10-21", "unattributed"],
+			["2026-10-20", "referral"],
+		]);
+		expect(report.firstTouch.byChannel.totals).toEqual([
+			{
+				date: "total",
+				channel: "ai",
+				currency: "CNY",
+				orders: 2,
+				paidOrders: 1,
+				paidAmountMinor: "12000",
+			},
+			expect.objectContaining({ channel: "referral", paidOrders: 1 }),
+			expect.objectContaining({ channel: "search", paidOrders: 1 }),
+			expect.objectContaining({ channel: "unattributed", paidOrders: 1 }),
+		]);
+		// No last-touch cookie: falls back to the first touch.
+		expect(report.lastTouch.byChannel.rows).toEqual([
+			{
+				date: "2026-10-21",
+				channel: "ai",
+				currency: "CNY",
+				orders: 1,
+				paidOrders: 0,
+				paidAmountMinor: "0",
+			},
+			{
+				date: "2026-10-21",
+				channel: "email",
+				currency: "CNY",
+				orders: 2,
+				paidOrders: 2,
+				paidAmountMinor: "16000",
+			},
+			expect.objectContaining({ date: "2026-10-21", channel: "unattributed" }),
+			expect.objectContaining({ date: "2026-10-20", channel: "referral" }),
+		]);
+		expect(report.lastTouch.byCampaign.totals).toEqual(
+			expect.arrayContaining([
+				{
+					date: "total",
+					channel: "email",
+					utmSource: "renewal",
+					utmMedium: "email",
+					utmCampaign: "recall",
+					currency: "CNY",
+					orders: 1,
+					paidOrders: 1,
+					paidAmountMinor: "12000",
+				},
+				{
+					date: "total",
+					channel: "email",
+					utmSource: "renewal",
+					utmMedium: "email",
+					utmCampaign: "renew_3d",
+					currency: "CNY",
+					orders: 1,
+					paidOrders: 1,
+					paidAmountMinor: "4000",
+				},
+			]),
+		);
+		expect(report.firstTouch.byCampaign.rows).toContainEqual(
+			expect.objectContaining({
+				date: "2026-10-21",
+				channel: "ai",
+				utmSource: null,
+				orders: 2,
+			}),
+		);
+	});
+});
+
+describe("order attribution last-touch migration", { timeout: 30_000 }, () => {
+	it("keeps existing first-touch rows and accepts the new categories", async () => {
+		const miniflare = new Miniflare({
+			modules: true,
+			script: "export default { fetch() { return new Response('ok') } }",
+			d1Databases: { DB: crypto.randomUUID() },
+		});
+		try {
+			const db = await miniflare.getD1Database("DB");
+			await applyMigrations(db, "0054_alipay_qr_split.sql");
+			await db.batch([
+				db.prepare(
+					`INSERT INTO shop_orders
+					 (id, order_number, status, currency, currency_decimals,
+					  subtotal_minor, total_minor, expires_at, created_at, updated_at)
+					 VALUES ('o1', 'GMo1', 'completed', 'CNY', 2, '100', '100', 1, 1, 1),
+					        ('o2', 'GMo2', 'completed', 'CNY', 2, '100', '100', 1, 1, 1)`,
+				),
+				db.prepare(
+					`INSERT INTO order_attribution
+					 (order_id, source_category, referrer_host, utm_source, utm_medium,
+					  utm_campaign, landing_path, first_seen_at, created_at)
+					 VALUES ('o1', 'search', 'www.baidu.com', 's', 'm', 'c', '/p', 5, 6)`,
+				),
+			]);
+			const migration = await readFile(
+				new URL(
+					"../../drizzle/0055_order_attribution_last_touch.sql",
+					import.meta.url,
+				),
+				"utf8",
+			);
+			await db.batch(
+				migration
+					.split("--> statement-breakpoint")
+					.map((statement) => statement.trim())
+					.filter(Boolean)
+					.map((statement) => db.prepare(statement)),
+			);
+			expect(
+				await db.prepare("SELECT * FROM order_attribution").first(),
+			).toEqual({
+				order_id: "o1",
+				source_category: "search",
+				referrer_host: "www.baidu.com",
+				utm_source: "s",
+				utm_medium: "m",
+				utm_campaign: "c",
+				landing_path: "/p",
+				first_seen_at: 5,
+				in_app_browser: null,
+				last_source_category: null,
+				last_referrer_host: null,
+				last_utm_source: null,
+				last_utm_medium: null,
+				last_utm_campaign: null,
+				last_landing_path: null,
+				last_seen_at: null,
+				last_in_app_browser: null,
+				created_at: 6,
+			});
+			await db
+				.prepare(
+					`INSERT INTO order_attribution
+					 (order_id, source_category, in_app_browser, last_source_category)
+					 VALUES ('o2', 'wechat_in_app', 'wechat', 'referral')`,
+				)
+				.run();
+			await expect(
+				db
+					.prepare(
+						"UPDATE order_attribution SET last_source_category = 'unknown' WHERE order_id = 'o2'",
+					)
+					.run(),
+			).rejects.toThrow(/CHECK/);
+			await expect(
+				db
+					.prepare(
+						"UPDATE order_attribution SET in_app_browser = 'line' WHERE order_id = 'o2'",
+					)
+					.run(),
+			).rejects.toThrow(/CHECK/);
+			// Deleting an order still cascades to its attribution row.
+			await db.prepare("DELETE FROM shop_orders WHERE id = 'o1'").run();
+			expect(
+				await db
+					.prepare("SELECT COUNT(*) AS n FROM order_attribution")
+					.first("n"),
+			).toBe(1);
+		} finally {
+			await miniflare.dispose();
+		}
 	});
 });

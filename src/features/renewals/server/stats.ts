@@ -6,7 +6,7 @@ import {
 	renewalExpiresAt,
 	renewalStages,
 } from "../domain";
-import { renewalOrigin, renewalSiteDomain } from "./links";
+import { renewalInviteUrl, renewalOrigin, renewalSiteDomain } from "./links";
 import { loadRenewalSettings } from "./settings";
 
 const dayMs = 86_400_000;
@@ -210,7 +210,7 @@ export async function previewRenewalEmails(db: D1Database, now = Date.now()) {
 			brand,
 			renewUrl: `${origin}/r/renew/EXAMPLE_TOKEN`,
 			unsubscribeUrl: `${origin}/unsubscribe/renewal?e=${encodeURIComponent(maskEmail(email))}&sig=…`,
-			inviteUrl: `${origin}/account`,
+			inviteUrl: renewalInviteUrl(origin, stage),
 			// Eligible recall recipients get a personal code; the preview shows its shape.
 			recallCoupon:
 				stage === "recall"

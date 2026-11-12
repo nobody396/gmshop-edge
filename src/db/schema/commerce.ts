@@ -710,6 +710,20 @@ export const shopOrders = sqliteTable(
 	],
 );
 
+const attributionCategories = [
+	"search",
+	"ai",
+	"social",
+	"email",
+	"referral",
+	"wechat_in_app",
+	"telegram_in_app",
+	"qq_in_app",
+	"direct",
+	"other",
+] as const;
+const attributionInAppBrowsers = ["wechat", "telegram", "qq"] as const;
+
 export const orderAttribution = sqliteTable(
 	"order_attribution",
 	{
@@ -717,7 +731,7 @@ export const orderAttribution = sqliteTable(
 			.primaryKey()
 			.references(() => shopOrders.id, { onDelete: "cascade" }),
 		sourceCategory: text("source_category", {
-			enum: ["search", "ai", "social", "direct", "other", "unknown"],
+			enum: [...attributionCategories, "unknown"],
 		}).notNull(),
 		referrerHost: text("referrer_host"),
 		utmSource: text("utm_source"),
@@ -725,6 +739,20 @@ export const orderAttribution = sqliteTable(
 		utmCampaign: text("utm_campaign"),
 		landingPath: text("landing_path"),
 		firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }),
+		inAppBrowser: text("in_app_browser", { enum: attributionInAppBrowsers }),
+		/** Latest non-direct touch; NULL means none was recorded (reports fall back to first touch). */
+		lastSourceCategory: text("last_source_category", {
+			enum: attributionCategories,
+		}),
+		lastReferrerHost: text("last_referrer_host"),
+		lastUtmSource: text("last_utm_source"),
+		lastUtmMedium: text("last_utm_medium"),
+		lastUtmCampaign: text("last_utm_campaign"),
+		lastLandingPath: text("last_landing_path"),
+		lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+		lastInAppBrowser: text("last_in_app_browser", {
+			enum: attributionInAppBrowsers,
+		}),
 		createdAt: integer("created_at", { mode: "timestamp_ms" })
 			.notNull()
 			.default(sql`(unixepoch() * 1000)`),
@@ -732,7 +760,19 @@ export const orderAttribution = sqliteTable(
 	(table) => [
 		check(
 			"order_attribution_category_check",
-			sql`${table.sourceCategory} IN ('search','ai','social','direct','other','unknown')`,
+			sql`${table.sourceCategory} IN ('search','ai','social','email','referral','wechat_in_app','telegram_in_app','qq_in_app','direct','other','unknown')`,
+		),
+		check(
+			"order_attribution_last_category_check",
+			sql`${table.lastSourceCategory} IS NULL OR ${table.lastSourceCategory} IN ('search','ai','social','email','referral','wechat_in_app','telegram_in_app','qq_in_app','direct','other')`,
+		),
+		check(
+			"order_attribution_in_app_check",
+			sql`${table.inAppBrowser} IS NULL OR ${table.inAppBrowser} IN ('wechat','telegram','qq')`,
+		),
+		check(
+			"order_attribution_last_in_app_check",
+			sql`${table.lastInAppBrowser} IS NULL OR ${table.lastInAppBrowser} IN ('wechat','telegram','qq')`,
 		),
 	],
 );

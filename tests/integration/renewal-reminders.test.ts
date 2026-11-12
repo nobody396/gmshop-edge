@@ -357,7 +357,7 @@ describe("renewal reminders", { timeout: 120_000 }, () => {
 		expect(message.text).toContain("/unsubscribe/renewal?e=");
 		expect(message.text).not.toMatch(/优惠|coupon|BACK-|回购码/i);
 		expect(message.text).toContain(
-			"邀请好友下单：好友立减、不用注册，你拿更多返利，可抵下次消费。领取邀请链接：https://laoshirenvip.com/account",
+			"邀请好友下单：好友立减、不用注册，你拿更多返利，可抵下次消费。领取邀请链接：https://laoshirenvip.com/account?utm_source=renewal&utm_medium=email&utm_campaign=renew_3d",
 		);
 		expect(message.headers).toEqual({
 			"List-Unsubscribe": expect.stringMatching(
@@ -951,7 +951,7 @@ describe("renewal reminders", { timeout: 120_000 }, () => {
 				.first("click_token"),
 		);
 		expect(await resolveRenewalClick(db, token, remind3dDue + 1_000)).toBe(
-			"https://laoshirenvip.com/products/product-plus?item=item-plus&ref=renew_3d#purchase-options",
+			"https://laoshirenvip.com/products/product-plus?item=item-plus&ref=renew_3d&utm_source=renewal&utm_medium=email&utm_campaign=renew_3d#purchase-options",
 		);
 		await resolveRenewalClick(db, token, remind3dDue + 2_000);
 		expect(

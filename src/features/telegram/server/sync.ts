@@ -1,4 +1,5 @@
 import { Api, GrammyError } from "grammy";
+import { ownLinkTags, withUtm } from "#/features/attribution/utm";
 import { loadRuntimeAuthProviders } from "#/features/auth/server/provider-runtime";
 import { isSafeWebhookUrl } from "#/lib/webhook-url";
 import { loadRuntimeConfig } from "#/server/runtime-config";
@@ -158,7 +159,10 @@ export function miniAppUrl(
 		orders: "/account/orders",
 		account: "/account/settings",
 	}[target];
-	return new URL(path, origin).toString();
+	return withUtm(
+		new URL(path, origin).toString(),
+		ownLinkTags.telegramBot(`miniapp_${target}`),
+	);
 }
 
 async function setCommands(api: Api) {

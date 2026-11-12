@@ -382,10 +382,19 @@ describe("quoted ChatGPT upgrades", { timeout: 30_000 }, () => {
 			)
 			.first<string>("message_encrypted");
 		expect(encrypted).toBeTruthy();
+		const text = JSON.parse(
+			await decryptNotificationMessage(encrypted ?? "", secret),
+		).text;
+		expect(text).toContain(upgradeDeliveryContent(statusUrl));
+		// Our own links are tagged; the invite line closes a storefront delivery email.
+		expect(text).toMatch(
+			/https:\/\/shop\.example\/account\/orders\/GM[0-9A-F]+\?utm_source=order_email&utm_medium=email&utm_campaign=delivery_ready\n/,
+		);
 		expect(
-			JSON.parse(await decryptNotificationMessage(encrypted ?? "", secret))
-				.text,
-		).toContain(upgradeDeliveryContent(statusUrl));
+			text.endsWith(
+				"\n\nInvite friends to order: they save, and you earn credit for your next purchase. Get your invite link: https://shop.example/account?utm_source=order_email&utm_medium=email&utm_campaign=delivery_invite",
+			),
+		).toBe(true);
 	});
 	it("backs off transient failures, suppresses duplicates, and recovers through the scheduler", async () => {
 		const d = await paid();
