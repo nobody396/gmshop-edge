@@ -3,6 +3,8 @@ import { claudeEnvScriptFiles } from "../client-scripts/scripts.generated";
 const paths = {
 	"/claude-env.sh": "claude-env.sh",
 	"/claude-env.ps1": "claude-env.ps1",
+	"/claude-clean.sh": "claude-clean.sh",
+	"/claude-clean.ps1": "claude-clean.ps1",
 } as const;
 
 const decoded = new Map<string, Uint8Array<ArrayBuffer>>();
