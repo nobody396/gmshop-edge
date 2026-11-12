@@ -231,6 +231,57 @@ describe("order attribution", { timeout: 30_000 }, () => {
 		expect(invalid.status).toBe(400);
 	});
 
+	it("ignores sign-in returns stored in older cookies", async () => {
+		await recordOrderAttribution(
+			db,
+			"search-paid",
+			cookieRequest(
+				{ v: 1, r: "accounts.google.com", p: "/", t: 10 },
+				{ v: 1, r: "accounts.google.com", p: "/account", t: 20 },
+			),
+		);
+		await recordOrderAttribution(
+			db,
+			"ai-paid",
+			cookieRequest(
+				{ v: 1, r: "www.baidu.com", p: "/", t: 11 },
+				{
+					v: 1,
+					r: "accounts.google.com",
+					s: "renewal",
+					m: "email",
+					c: "recall",
+					p: "/account",
+					t: 21,
+				},
+			),
+		);
+		const rows = await db
+			.prepare(
+				`SELECT order_id, source_category, referrer_host, last_source_category,
+				 last_referrer_host, last_utm_campaign FROM order_attribution ORDER BY order_id`,
+			)
+			.all();
+		expect(rows.results).toEqual([
+			{
+				order_id: "ai-paid",
+				source_category: "search",
+				referrer_host: "www.baidu.com",
+				last_source_category: "email",
+				last_referrer_host: null,
+				last_utm_campaign: "recall",
+			},
+			{
+				order_id: "search-paid",
+				source_category: "direct",
+				referrer_host: null,
+				last_source_category: null,
+				last_referrer_host: null,
+				last_utm_campaign: null,
+			},
+		]);
+	});
+
 	it("stores the latest non-direct touch next to the first touch", async () => {
 		await recordOrderAttribution(
 			db,

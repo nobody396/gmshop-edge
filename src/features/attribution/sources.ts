@@ -118,11 +118,47 @@ function matchesHost(host: string, domain: string) {
 	return host === domain || host.endsWith(`.${domain}`);
 }
 
+// Hosts our own flows bounce through: payment checkouts, the sign-in providers
+// auth-factory can enable (Google, Apple, Microsoft, LINE, WeChat, Telegram)
+// and human-verification challenges. Arriving from one is a return, never a
+// marketing touch. GitHub and Discord sign-in share their hosts with real
+// referrers, so those returns are recognized by markAuthRedirect instead.
+const flowHosts = [
+	"alipay.com",
+	"alipayobjects.com",
+	"stripe.com",
+	"cryptomus.com",
+	"zpayz.cn",
+	"tenpay.com",
+	"pay.weixin.qq.com",
+	"paypal.com",
+	"accounts.youtube.com",
+	"appleid.apple.com",
+	"login.microsoftonline.com",
+	"login.microsoft.com",
+	"login.live.com",
+	"access.line.me",
+	"open.weixin.qq.com",
+	"oauth.telegram.org",
+	"challenges.cloudflare.com",
+];
+
+/** Payment, sign-in or challenge host (see flowHosts), including accounts.google.* */
+export function isFlowHost(host: string | null | undefined) {
+	const value = host?.trim().toLowerCase().replace(/\.$/, "");
+	if (!value) return false;
+	return (
+		flowHosts.some((domain) => matchesHost(value, domain)) ||
+		/(^|\.)accounts\.google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(value)
+	);
+}
+
 export function classifyHost(
 	host: string | null | undefined,
 ): SourceCategory | null {
 	const value = host?.trim().toLowerCase().replace(/\.$/, "");
-	if (!value) return null;
+	// A flow host (sign-in, payment, challenge) is no referrer at all.
+	if (!value || isFlowHost(value)) return null;
 	if (aiHosts.some((domain) => matchesHost(value, domain))) return "ai";
 	if (
 		searchHosts.some((domain) => matchesHost(value, domain)) ||

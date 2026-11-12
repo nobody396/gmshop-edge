@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { firstTouchCookieName, lastTouchCookieName } from "../first-touch";
-import { classifySource, inAppBrowsers } from "../sources";
+import { classifySource, inAppBrowsers, isFlowHost } from "../sources";
 
 const touchSchema = z.object({
 	v: z.literal(1),
@@ -49,6 +49,27 @@ function categoryOf(touch: ParsedTouch) {
 	});
 }
 
+/** A sign-in, payment or challenge host is never stored as a referrer. */
+function withoutFlowReferrer(touch: ParsedTouch | null): ParsedTouch | null {
+	if (!touch?.r || !isFlowHost(touch.r)) return touch;
+	return { ...touch, r: undefined };
+}
+
+/**
+ * Cookies written before flow hosts were excluded may hold a last touch that
+ * is only a sign-in or payment return (e.g. accounts.google.com, no tags);
+ * that is no touch at all, so the order falls back to its first touch.
+ */
+function lastTouchOrNull(touch: ParsedTouch | null): ParsedTouch | null {
+	if (
+		touch?.r &&
+		isFlowHost(touch.r) &&
+		!(touch.s || touch.m || touch.c || touch.f)
+	)
+		return null;
+	return withoutFlowReferrer(touch);
+}
+
 function seenAt(touch: ParsedTouch, now: number) {
 	return touch.t && touch.t <= now ? touch.t : null;
 }
@@ -67,8 +88,8 @@ export async function recordOrderAttribution(
 ) {
 	try {
 		const cookies = request.headers.get("cookie");
-		const touch = parseFirstTouchCookie(cookies);
-		const last = parseLastTouchCookie(cookies);
+		const touch = withoutFlowReferrer(parseFirstTouchCookie(cookies));
+		const last = lastTouchOrNull(parseLastTouchCookie(cookies));
 		const now = Date.now();
 		await db
 			.prepare(
