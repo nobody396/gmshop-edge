@@ -108,23 +108,48 @@ function sameSiteOrPayment(host: string, siteHost: string) {
 	);
 }
 
+// Order pages are where checkout returns land; untagged, they are never a new touch.
+const orderReturnPath = /^\/(?:account\/)?orders(?:\/|$)/;
+
+function carriesSource(touch: Touch) {
+	return Boolean(touch.s || touch.m || touch.c || touch.f || touch.r);
+}
+
 /**
  * Whether a landing should replace the last-touch cookie: campaign tags, an
- * invite code or an external referrer (not our own subdomains or a payment
- * page). An in-app browser alone counts only on a tab's first landing, so
- * reloads inside WeChat do not erase the email click that opened the page.
+ * invite code or an external referrer. A landing referred by a payment page or
+ * one of our own subdomains, or an untagged order page (checkout return), is
+ * never written. An in-app browser alone counts only on a tab's first landing
+ * and never replaces a last touch that carries tags, an invite or a referrer.
  */
 export function lastTouchFrom(
 	touch: Touch,
 	siteHost: string,
 	firstLandingInTab: boolean,
+	existing: Touch | null = null,
 ): Touch | null {
-	const referrer =
-		touch.r && !sameSiteOrPayment(touch.r, siteHost) ? touch.r : undefined;
+	if (touch.r && sameSiteOrPayment(touch.r, siteHost)) return null;
 	const tagged = Boolean(touch.s || touch.m || touch.c || touch.f);
-	if (!tagged && !referrer && !(touch.i && firstLandingInTab)) return null;
-	const { r: _dropped, ...rest } = touch;
-	return referrer ? { ...rest, r: referrer } : rest;
+	if (tagged || touch.r) return touch;
+	if (orderReturnPath.test(touch.p)) return null;
+	return touch.i && firstLandingInTab && !(existing && carriesSource(existing))
+		? touch
+		: null;
+}
+
+function readTouchCookie(name: string): Touch | null {
+	const raw = document.cookie
+		.split(";")
+		.map((part) => part.trim())
+		.find((part) => part.startsWith(`${name}=`))
+		?.slice(name.length + 1);
+	if (!raw) return null;
+	try {
+		const value = JSON.parse(decodeURIComponent(raw));
+		return value && typeof value === "object" && value.v === 1 ? value : null;
+	} catch {
+		return null;
+	}
 }
 
 function readCookie(name: string) {
@@ -169,6 +194,7 @@ export function useFirstTouchAttribution() {
 				touch,
 				window.location.hostname,
 				firstLandingInTab(),
+				readTouchCookie(lastTouchCookieName),
 			);
 			if (last) writeCookie(lastTouchCookieName, last);
 		} catch {

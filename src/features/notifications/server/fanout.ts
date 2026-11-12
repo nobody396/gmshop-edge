@@ -4,7 +4,7 @@ import {
 	redeemUrlForOrder,
 	withRedeemHost,
 } from "#/features/redeem-warehouse/redeem-host";
-import { loadOrderGrowth } from "#/features/storefront/server/order-growth";
+import { isGrowthEligibleOrder } from "#/features/storefront/server/order-growth";
 import { formatMinorAmount } from "#/lib/format";
 import { type SupportedLocale, supportedLocales } from "#/lib/locales";
 import { m } from "#/paraglide/messages";
@@ -165,28 +165,9 @@ export async function fanOutPendingCommerceNotifications(
 						: withRedeemHost(plaintext, await redeemUrlForOrder(db, order.id));
 			}
 			const rendered = renderNotificationTemplate(template.body, values);
-			// Same eligibility as the order page's invite block: paid storefront
-			// orders only, never agent-access or supplier-API (agents' customers).
 			const invite =
-				row.event_type === "delivery.ready" &&
-				(await loadOrderGrowth(
-					db,
-					{
-						id: order.id,
-						status: order.status,
-						refundedAt: order.refunded_at,
-					},
-					{ signedIn: Boolean(order.user_id) },
-				))
-					? m.promotion_invite_email_line(
-							{
-								url: withUtm(
-									new URL("/account", siteOrigin).toString(),
-									ownLinkTags.orderEmail("delivery_invite"),
-								),
-							},
-							{ locale },
-						)
+				row.event_type === "delivery.ready"
+					? await deliveryInviteLine(db, order, siteOrigin, locale)
 					: null;
 			await enqueueConfiguredEmailNotification(db, {
 				event,
@@ -217,6 +198,40 @@ export async function fanOutPendingCommerceNotifications(
 		await markOutboxPublished(db, row.id);
 	}
 	return { processed: rows.results.length, deliveries: delivered };
+}
+
+/**
+ * One invite line for the delivery email, only for orders that may show the
+ * order page's invite block (never agent-access, supplier-API or refunded
+ * orders). Best effort: any failure drops the line, never the email.
+ */
+export async function deliveryInviteLine(
+	db: D1Database,
+	order: Pick<OrderRow, "id" | "status" | "refunded_at">,
+	siteOrigin: string,
+	locale: SupportedLocale,
+) {
+	try {
+		if (
+			!(await isGrowthEligibleOrder(db, {
+				id: order.id,
+				status: order.status,
+				refundedAt: order.refunded_at,
+			}))
+		)
+			return null;
+		return m.promotion_invite_email_line(
+			{
+				url: withUtm(
+					new URL("/account", siteOrigin).toString(),
+					ownLinkTags.orderEmail("delivery_invite"),
+				),
+			},
+			{ locale },
+		);
+	} catch {
+		return null;
+	}
 }
 
 async function loadBuildNotificationChannel(

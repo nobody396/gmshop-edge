@@ -4,6 +4,7 @@ import { agentAccessProducts } from "#/features/agent-access/products";
 import {
 	crossSellProductPath,
 	crossSellSettingKey,
+	isGrowthEligibleOrder,
 	loadOrderGrowth,
 	parseCrossSellSetting,
 	resolveItemLinkPath,
@@ -93,6 +94,50 @@ describe("order growth blocks", { timeout: 60_000 }, () => {
 			),
 		]);
 		expect(await loadOrderGrowth(db, order("o-api"), signedIn)).toBeNull();
+		// The delivery email's narrow check agrees with the order page.
+		expect(
+			await isGrowthEligibleOrder(db, { ...order("o1"), refundedAt: 1 }),
+		).toBe(false);
+		expect(await isGrowthEligibleOrder(db, order("o-agent"))).toBe(false);
+		expect(await isGrowthEligibleOrder(db, order("o-api"))).toBe(false);
+		expect(await isGrowthEligibleOrder(db, order("o1"))).toBe(true);
+		expect(
+			await isGrowthEligibleOrder(db, order("o1", "pending_payment")),
+		).toBe(false);
+		expect(await isGrowthEligibleOrder(db, order("o-empty"))).toBe(false);
+	});
+
+	it("handles a many-SKU order without exceeding D1's bound-parameter limit", async () => {
+		const ids = Array.from({ length: 40 }, (_, index) => `bulk-${index}`);
+		await db.batch(
+			ids.map((id) =>
+				db
+					.prepare(
+						`INSERT INTO product_sellable_items
+						 (id, product_id, name, price_minor, currency, currency_decimals, enabled,
+						  sale_disabled, promotion_budget_minor, referral_budget_minor, sort_order, created_at, updated_at)
+						 VALUES (?, 'product-other', ?, '1000', 'CNY', 2, 1, 0, '0', '0', 0, 1, 1)`,
+					)
+					.bind(id, id),
+			),
+		);
+		// Every purchased item recommends three others: 120 candidate ids.
+		await setCrossSell(
+			db,
+			Object.fromEntries(
+				ids.map((id, index) => [
+					id,
+					[1, 2, 3].map((step) => `rec-${index}-${step}`),
+				]),
+			),
+		);
+		await seedOrder(db, "o-bulk", ids);
+		await expect(
+			loadOrderGrowth(db, order("o-bulk"), signedIn),
+		).resolves.toMatchObject({ crossSell: [] });
+		await expect(isGrowthEligibleOrder(db, order("o-bulk"))).resolves.toBe(
+			true,
+		);
 	});
 
 	it.each([

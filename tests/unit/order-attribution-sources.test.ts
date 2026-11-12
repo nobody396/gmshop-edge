@@ -207,13 +207,57 @@ describe("order attribution sources", () => {
 			expect(
 				lastTouchFrom({ ...base, r: host }, "www.laoshirenvip.com", true),
 			).toBeNull();
+		// A payment return is rejected outright, even in a fresh WeChat webview.
+		expect(
+			lastTouchFrom(
+				{ ...base, r: "mclient.alipay.com", i: "wechat" },
+				"laoshirenvip.com",
+				true,
+			),
+		).toBeNull();
 		expect(
 			lastTouchFrom(
 				{ ...base, r: "checkout.stripe.com", s: "renewal" },
 				"laoshirenvip.com",
 				false,
 			),
-		).toEqual({ ...base, s: "renewal" });
+		).toBeNull();
+		// An untagged order page is a checkout return, not a new touch…
+		expect(
+			lastTouchFrom(
+				{ ...base, p: "/orders/GM1", i: "wechat" },
+				"laoshirenvip.com",
+				true,
+			),
+		).toBeNull();
+		// …but a tagged order link from our email is.
+		expect(
+			lastTouchFrom(
+				{ ...base, p: "/account/orders/GM1", s: "order_email" },
+				"laoshirenvip.com",
+				false,
+			),
+		).toEqual({ ...base, p: "/account/orders/GM1", s: "order_email" });
+		// In-app alone never replaces a last touch with tags, invite or referrer.
+		for (const existing of [
+			{ ...base, s: "renewal", m: "email" },
+			{ ...base, f: 1 as const },
+			{ ...base, r: "www.zhihu.com" },
+		])
+			expect(
+				lastTouchFrom(
+					{ ...base, i: "wechat" },
+					"laoshirenvip.com",
+					true,
+					existing,
+				),
+			).toBeNull();
+		expect(
+			lastTouchFrom({ ...base, i: "wechat" }, "laoshirenvip.com", true, {
+				...base,
+				i: "qq",
+			}),
+		).toEqual({ ...base, i: "wechat" });
 		expect(
 			lastTouchFrom({ ...base, i: "wechat" }, "laoshirenvip.com", true),
 		).toEqual({ ...base, i: "wechat" });
