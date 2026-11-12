@@ -104,10 +104,11 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 			)
 			.all<{ name: string }>();
-		expect(tables.results).toHaveLength(93);
+		expect(tables.results).toHaveLength(94);
 		expect(tables.results.map((table) => table.name)).toEqual(
 			expect.arrayContaining([
 				"unpaid_order_followups",
+				"unpaid_followup_recipients",
 				"owner_action_requests",
 				"gpt_upgrade_orders",
 				"telegram_web_support_conversations",

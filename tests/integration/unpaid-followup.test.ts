@@ -1,15 +1,20 @@
 import { Miniflare } from "miniflare";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentAccessProducts } from "#/features/agent-access/products";
 import { decryptNotificationMessage } from "#/features/notifications/secrets";
+import { processNotificationDelivery } from "#/features/notifications/server/delivery";
 import { recipientHash } from "#/features/notifications/server/recipient-policy";
 import { verifyRenewalUnsubscribe } from "#/features/renewals/server/links";
+import { identityExclusion } from "#/features/unpaid-followup/server/eligibility";
 import { renderUnpaidFollowupEmail } from "#/features/unpaid-followup/server/email";
 import {
 	handleUnpaidFollowupRequest,
 	previewUnpaidFollowups,
 } from "#/features/unpaid-followup/server/ops";
 import {
+	assessUnpaidOrder,
+	claimFollowup,
+	loadFollowupOrder,
 	priceDifferenceProductId,
 	runUnpaidOrderFollowups,
 } from "#/features/unpaid-followup/server/scheduler";
@@ -17,6 +22,7 @@ import {
 	loadUnpaidFollowupSettings,
 	setUnpaidFollowupEnabled,
 } from "#/features/unpaid-followup/server/settings";
+import { encryptSecret } from "#/lib/secrets";
 import { loadRuntimeConfig } from "#/server/runtime-config";
 import { applyMigrations } from "./migrations";
 
@@ -50,6 +56,7 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 	}, 120_000);
 
 	afterEach(async () => {
+		vi.useRealTimers();
 		await miniflare.dispose();
 	}, 60_000);
 
@@ -174,7 +181,7 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 		]);
 	});
 
-	it("never sends twice: reruns and a lost claim reuse the same delivery", async () => {
+	it("never sends twice: reruns and an unfinished claim settle from the delivery row", async () => {
 		await setUnpaidFollowupEnabled(db, true, activatedAt);
 		await seedOrder(db, {
 			id: "o1",
@@ -184,24 +191,244 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 		await runUnpaidOrderFollowups(db, { now: sendAt });
 		expect(
 			await runUnpaidOrderFollowups(db, { now: sendAt + minute }),
-		).toMatchObject({
-			sent: 0,
-			skipped: 0,
+		).toMatchObject({ sent: 0, skipped: 0 });
+		// Enqueued, but the claim was never finalized (crash before the UPDATE).
+		await db
+			.prepare(
+				"UPDATE unpaid_order_followups SET status = 'sending', notification_delivery_id = NULL, sent_at = NULL, updated_at = ?",
+			)
+			.bind(sendAt)
+			.run();
+		// A second abandoned order from the same address becomes due meanwhile.
+		await seedOrder(db, {
+			id: "o2",
+			email: "buyer@mail-buyer.cn",
+			attempt: "usdt",
+			createdAt: createdAt + 16 * minute,
 		});
-		// A crash after enqueueing but before the claim was finalized: the row is gone.
-		await db.prepare("DELETE FROM unpaid_order_followups").run();
-		await runUnpaidOrderFollowups(db, { now: sendAt + 2 * minute });
+		const later = await runUnpaidOrderFollowups(db, {
+			now: sendAt + 16 * minute,
+		});
+		expect(later).toMatchObject({ recovered: 1, sent: 0, skipped: 1 });
 		const rows = await deliveries();
 		expect(rows).toHaveLength(1);
 		expect(await followups()).toEqual([
 			{ order_id: "o1", status: "sent", status_reason: null, usdt_hint: 1 },
+			{
+				order_id: "o2",
+				status: "skipped",
+				status_reason: "recent_followup",
+				usdt_hint: 0,
+			},
 		]);
-		const notifications = await db
+		const settled = await db
 			.prepare(
 				"SELECT notification_delivery_id FROM unpaid_order_followups WHERE order_id = 'o1'",
 			)
 			.first<{ notification_delivery_id: string }>();
-		expect(notifications?.notification_delivery_id).toBe(rows[0]?.id);
+		expect(settled?.notification_delivery_id).toBe(rows[0]?.id);
+	});
+
+	it("a failed enqueue keeps the claim and the recipient's cooldown", async () => {
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		await db
+			.prepare(
+				"CREATE TRIGGER fail_delivery BEFORE INSERT ON notification_deliveries BEGIN SELECT RAISE(ABORT, 'storage down'); END",
+			)
+			.run();
+		await seedOrder(db, {
+			id: "o1",
+			email: "buyer@mail-buyer.cn",
+			attempt: "usdt",
+		});
+		await runUnpaidOrderFollowups(db, { now: sendAt });
+		expect(await followups()).toEqual([
+			{
+				order_id: "o1",
+				status: "failed",
+				status_reason: "enqueue_failed",
+				usdt_hint: 1,
+			},
+		]);
+		await db.prepare("DROP TRIGGER fail_delivery").run();
+		await seedOrder(db, {
+			id: "o2",
+			email: "buyer@mail-buyer.cn",
+			attempt: "usdt",
+			createdAt: createdAt + 10 * minute,
+		});
+		await runUnpaidOrderFollowups(db, { now: sendAt + 10 * minute });
+		expect(
+			(await followups()).find((row) => row.order_id === "o2"),
+		).toMatchObject({
+			status: "skipped",
+			status_reason: "recent_followup",
+		});
+		expect(await deliveries()).toEqual([]);
+	});
+
+	it("claims are atomic per address: overlapping runs cannot take two orders for one email", async () => {
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		await seedOrder(db, {
+			id: "o1",
+			email: "race@mail-buyer.cn",
+			attempt: "usdt",
+		});
+		await seedOrder(db, {
+			id: "o2",
+			email: "race@mail-buyer.cn",
+			attempt: "usdt",
+		});
+		const assess = async (id: string) => {
+			const order = await loadFollowupOrder(db, { id });
+			if (!order) throw new Error("missing order");
+			return assessUnpaidOrder(db, order, sendAt);
+		};
+		// Both runs assessed before either claimed: both look eligible.
+		const [a, b] = await Promise.all([assess("o1"), assess("o2")]);
+		expect([a.eligible, b.eligible]).toEqual([true, true]);
+		const hash = await recipientHash("race@mail-buyer.cn");
+		const claims = await Promise.all([
+			claimFollowup(db, a, hash, activatedAt, sendAt),
+			claimFollowup(db, b, hash, activatedAt, sendAt),
+		]);
+		expect(claims.filter(Boolean)).toHaveLength(1);
+		const reservation = await db
+			.prepare("SELECT COUNT(*) AS n FROM unpaid_followup_recipients")
+			.first<{ n: number }>();
+		expect(reservation?.n).toBe(1);
+		expect(
+			(await followups()).filter((row) => row.status === "sending"),
+		).toHaveLength(1);
+		// A reservation older than 30 days is taken over.
+		await db
+			.prepare("UPDATE unpaid_followup_recipients SET reserved_at = ?")
+			.bind(sendAt - 31 * 86_400_000)
+			.run();
+		await seedOrder(db, {
+			id: "o3",
+			email: "race@mail-buyer.cn",
+			attempt: "usdt",
+		});
+		const c = await assess("o3");
+		expect(c.eligible).toBe(true);
+		expect(await claimFollowup(db, c, hash, activatedAt, sendAt)).toBe(true);
+	});
+
+	it("re-checks eligibility right before the provider and cancels queued emails", async () => {
+		const sent: unknown[] = [];
+		const binding = {
+			send: async (value: unknown) => {
+				sent.push(value);
+				return { messageId: "mock" };
+			},
+		} as unknown as SendEmail;
+		const deliver = async (orderId: string) => {
+			const row = await db
+				.prepare(
+					"SELECT id FROM notification_deliveries WHERE idempotency_key = ?",
+				)
+				.bind(`unpaid_followup:${orderId}`)
+				.first<{ id: string }>();
+			return processNotificationDelivery(db, row?.id ?? "", {
+				cloudflareEmail: binding,
+			});
+		};
+		const reasonOf = async (orderId: string) =>
+			(await followups()).find((row) => row.order_id === orderId);
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		// The delivery path reads the real clock; pin only Date to the test timeline.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(sendAt + 2 * minute);
+		for (const id of [
+			"o-ok",
+			"o-paid",
+			"o-bought",
+			"o-unsub",
+			"o-stale",
+			"o-off",
+		])
+			await seedOrder(db, {
+				id,
+				email: `${id}@mail-buyer.cn`,
+				attempt: "usdt",
+			});
+		await runUnpaidOrderFollowups(db, { now: sendAt, d1Budget: 1_000 });
+		expect(await deliveries()).toHaveLength(6);
+		// After queueing: the order got paid late, the address bought another
+		// order, and another address unsubscribed.
+		await db
+			.prepare(
+				"UPDATE shop_orders SET status = 'paid', paid_at = ?, paid_minor = total_minor WHERE id = 'o-paid'",
+			)
+			.bind(sendAt + minute)
+			.run();
+		await seedOrder(db, {
+			id: "x-bought",
+			email: "o-bought@mail-buyer.cn",
+			status: "completed",
+			paidAt: sendAt + minute,
+			createdAt: sendAt,
+		});
+		await db
+			.prepare(
+				"INSERT INTO email_unsubscribes (recipient_hash, scope, created_at) VALUES (?, 'renewal', 1)",
+			)
+			.bind(await recipientHash("o-unsub@mail-buyer.cn"))
+			.run();
+		await expect(deliver("o-ok")).resolves.toMatchObject({
+			status: "accepted",
+		});
+		for (const [id, reason] of [
+			["o-paid", "paid"],
+			["o-bought", "paid_later"],
+			["o-unsub", "unsubscribed"],
+		] as const) {
+			await expect(deliver(id)).resolves.toMatchObject({
+				status: "suppressed",
+			});
+			expect(await reasonOf(id)).toMatchObject({
+				status: "cancelled",
+				status_reason: reason,
+			});
+		}
+		// Queue stalled for hours: "just now" is no longer true.
+		vi.setSystemTime(expiresAt + 4 * 3_600_000);
+		await expect(deliver("o-stale")).resolves.toMatchObject({
+			status: "suppressed",
+		});
+		expect(await reasonOf("o-stale")).toMatchObject({
+			status: "cancelled",
+			status_reason: "stale",
+		});
+		vi.setSystemTime(sendAt + 4 * minute);
+		// Switched off, then on again (a new activation generation): the queued
+		// email from the earlier generation is cancelled, not sent.
+		await setUnpaidFollowupEnabled(db, false, sendAt + 2 * minute);
+		await setUnpaidFollowupEnabled(db, true, sendAt + 3 * minute);
+		await expect(deliver("o-off")).resolves.toMatchObject({
+			status: "suppressed",
+		});
+		expect(await reasonOf("o-off")).toMatchObject({
+			status: "cancelled",
+			status_reason: "disabled",
+		});
+		expect(sent).toHaveLength(1);
+		const codes = await db
+			.prepare(
+				"SELECT error_code FROM notification_deliveries WHERE status = 'suppressed' ORDER BY error_code",
+			)
+			.all<{ error_code: string }>();
+		expect(codes.results.map((row) => row.error_code)).toEqual([
+			"unpaid_followup_disabled",
+			"unpaid_followup_paid",
+			"unpaid_followup_paid_later",
+			"unpaid_followup_stale",
+			"unpaid_followup_unsubscribed",
+		]);
+		// A retry of an accepted email does not send again.
+		await expect(deliver("o-ok")).resolves.toMatchObject({ duplicate: true });
+		expect(sent).toHaveLength(1);
 	});
 
 	it("omits the USDT line when the attempt was Alipay or no Alipay channel can take the order", async () => {
@@ -258,6 +485,16 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 				`INSERT INTO payment_channels (id, name, provider, currency, enabled, per_payment_max_minor)
 				 VALUES ('ch-qr', '支付宝扫码', 'alipay_qr', 'CNY', 1, '5000')`,
 			),
+			db
+				.prepare(
+					"UPDATE product_sellable_items SET price_minor = '4000' WHERE id = ?",
+				)
+				.bind(itemId),
+			db
+				.prepare(
+					"UPDATE product_sellable_items SET price_minor = '9000' WHERE id = ?",
+				)
+				.bind(otherItemId),
 		]);
 		await seedOrder(db, {
 			id: "o-small",
@@ -270,6 +507,7 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 			email: "l@mail-buyer.cn",
 			attempt: "usdt",
 			priceMinor: "9000",
+			itemId: otherItemId,
 		});
 		await runUnpaidOrderFollowups(db, { now: sendAt });
 		expect(
@@ -277,6 +515,95 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 				(await followups()).map((row) => [row.order_id, row.usdt_hint]),
 			),
 		).toEqual({ "o-large": 0, "o-small": 1 });
+	});
+
+	it("quotes Alipay like checkout does: channel fees count against the QR cap", async () => {
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		await db.batch([
+			db.prepare(
+				"UPDATE payment_channels SET enabled = 0 WHERE id = 'ch-alipay'",
+			),
+			// 5000 cap, 1% fee: goods of 5000 cost 5051 at checkout, 4900 cost 4950.
+			db.prepare(
+				`INSERT INTO payment_channels (id, name, provider, currency, enabled, per_payment_max_minor, fee_bps)
+				 VALUES ('ch-qr', '支付宝扫码', 'alipay_qr', 'CNY', 1, '5000', 100)`,
+			),
+			db
+				.prepare(
+					"UPDATE product_sellable_items SET price_minor = '5000' WHERE id = ?",
+				)
+				.bind(itemId),
+			db
+				.prepare(
+					"UPDATE product_sellable_items SET price_minor = '4900' WHERE id = ?",
+				)
+				.bind(otherItemId),
+		]);
+		await seedOrder(db, {
+			id: "o-at-cap",
+			email: "cap@mail-buyer.cn",
+			attempt: "usdt",
+			priceMinor: "5000",
+		});
+		await seedOrder(db, {
+			id: "o-under",
+			email: "under@mail-buyer.cn",
+			attempt: "usdt",
+			priceMinor: "4900",
+			itemId: otherItemId,
+		});
+		await runUnpaidOrderFollowups(db, { now: sendAt });
+		expect(
+			Object.fromEntries(
+				(await followups()).map((row) => [row.order_id, row.usdt_hint]),
+			),
+		).toEqual({ "o-at-cap": 0, "o-under": 1 });
+	});
+
+	it("does not advertise Alipay through an EPay channel configured for WeChat Pay", async () => {
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		await db
+			.prepare(
+				"UPDATE payment_channels SET credential_encrypted = ? WHERE id = 'ch-alipay'",
+			)
+			.bind(await epayCredential("wxpay"))
+			.run();
+		await seedOrder(db, {
+			id: "o-wx",
+			email: "wx@mail-buyer.cn",
+			attempt: "usdt",
+		});
+		await runUnpaidOrderFollowups(db, { now: sendAt });
+		expect(await followups()).toEqual([
+			{ order_id: "o-wx", status: "sent", status_reason: null, usdt_hint: 0 },
+		]);
+		const [delivery] = await deliveries();
+		expect(
+			(await message(delivery?.message_encrypted ?? "")).text,
+		).not.toContain("支付宝");
+	});
+
+	it("identity checks are index-backed (no per-minute table scans)", async () => {
+		const sql = (await import("node:fs")).readFileSync(
+			new URL(
+				"../../src/features/unpaid-followup/server/eligibility.ts",
+				import.meta.url,
+			),
+			"utf8",
+		);
+		const query = /`(WITH identity AS[\s\S]*?AS agent)`/.exec(sql)?.[1];
+		expect(query).toBeTruthy();
+		const plan = await db
+			.prepare(`EXPLAIN QUERY PLAN ${query}`)
+			.bind("u-1", "a@mail-buyer.cn", "a@mail-buyer.cn")
+			.all<{ detail: string }>();
+		const details = plan.results.map((row) => row.detail).join("\n");
+		expect(details).not.toMatch(
+			/SCAN (users|aa|agent_access_orders|k|au|supplier_api)/,
+		);
+		expect(details).toMatch(/users_lower_email_idx/);
+		expect(details).toMatch(/agent_access_orders_email_idx/);
+		expect(await identityExclusion(db, null, "a@mail-buyer.cn")).toBeNull();
 	});
 
 	it("renders the English version from the order locale", async () => {
@@ -390,7 +717,11 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 				`INSERT INTO users (id, name, email, email_verified, enabled, role_ids)
 				 VALUES ('u-staff','Staff','staff@mail-buyer.cn',1,1,'["r-admin"]'),
 				        ('u-agent','Agent','agent@mail-buyer.cn',1,1,'[]'),
-				        ('u-reseller','Reseller','reseller@mail-buyer.cn',1,1,'[]')`,
+				        ('u-reseller','Reseller','reseller@mail-buyer.cn',1,1,'[]'),
+				        ('u-allow','Allowed','allow@mail-buyer.cn',1,1,'[]')`,
+			),
+			db.prepare(
+				"INSERT INTO supplier_api_allowed_users (user_id, created_at, updated_at) VALUES ('u-allow',1,1)",
 			),
 			db.prepare(
 				"INSERT INTO supplier_api_keys (id, user_id, name, key_id, secret_encrypted, created_at, updated_at) VALUES ('key-1','u-reseller','Main','kid','enc',1,1)",
@@ -412,6 +743,8 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 				{ email: "reseller@mail-buyer.cn", userId: "u-reseller" },
 				"agent",
 			],
+			// Allowlisted agent checking out as a guest with the account email.
+			["o-allowlisted-guest", { email: "Allow@Mail-Buyer.cn" }, "agent"],
 			["o-api", { email: "api@mail-buyer.cn" }, "agent_api_order"],
 			[
 				"o-agent-access",
@@ -485,14 +818,12 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 		await db.batch([
 			db
 				.prepare(
-					`INSERT INTO unpaid_order_followups (order_id, recipient_hash, status, sent_at, created_at, updated_at)
-					 VALUES ('x-recent', ?, 'sent', ?, ?, ?)`,
+					`INSERT INTO unpaid_followup_recipients (recipient_hash, order_id, reserved_at)
+					 VALUES (?, 'x-recent', ?)`,
 				)
 				.bind(
 					await recipientHash("recent@mail-buyer.cn"),
 					sendAt - 29 * 86_400_000,
-					1,
-					1,
 				),
 			db.prepare(
 				"INSERT INTO agent_access_orders (order_item_id,user_id,kind,email,state,created_at,updated_at) VALUES ('x-paid-later-item','u-agent','subsite','Agent@Mail-Buyer.cn','active',1,1)",
@@ -718,9 +1049,15 @@ async function seedBase(db: D1Database) {
 		),
 		db.prepare(
 			`INSERT INTO payment_channels (id, name, provider, currency, enabled, default_token, default_network)
-			 VALUES ('ch-usdt', 'USDT', 'gmpay', 'CNY', 1, 'USDT', 'TRC20'),
-			        ('ch-alipay', '支付宝', 'epay', 'CNY', 1, '', '')`,
+			 VALUES ('ch-usdt', 'USDT', 'gmpay', 'CNY', 1, 'USDT', 'TRC20')`,
 		),
+		db
+			.prepare(
+				`INSERT INTO payment_channels (id, name, provider, currency, enabled,
+				 default_token, default_network, credential_encrypted, credential_key_version)
+				 VALUES ('ch-alipay', '支付宝', 'epay', 'CNY', 1, '', '', ?, 1)`,
+			)
+			.bind(await epayCredential("alipay")),
 		db
 			.prepare(
 				`INSERT INTO products (id, name, product_type, status, created_at, updated_at)
@@ -863,4 +1200,17 @@ async function seedOrder(db: D1Database, input: SeedOrder) {
 				),
 		);
 	await db.batch(statements);
+}
+
+async function epayCredential(paymentMethod: "alipay" | "wxpay") {
+	return encryptSecret(
+		JSON.stringify({
+			baseUrl: "https://pay.mail-buyer.cn",
+			pid: "1001",
+			secretKey: "epay-secret-key",
+			paymentMethod,
+		}),
+		secret,
+		"payment-credential",
+	);
 }
