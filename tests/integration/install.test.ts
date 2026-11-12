@@ -89,6 +89,7 @@ describe("GMShop installation", { timeout: 30_000 }, () => {
 			"0054_alipay_qr_split.sql",
 			"0055_order_attribution_last_touch.sql",
 			"0056_unpaid_order_followups.sql",
+			"0057_guide_seo_descriptions.sql",
 		]);
 		const legacyTables = await database
 			.prepare(
