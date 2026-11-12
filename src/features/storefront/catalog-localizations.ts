@@ -259,14 +259,14 @@ Warranty
 	},
 	"550711f1-8901-4f4f-878d-1b81ca09c9ac": {
 		name: "Claude ready-made account｜1 month (pre-order)",
-		description: `A US Claude account with the membership already active, no KYC, invoices available. Ordering is a pre-order; delivery is usually within 24 hours. Three plans: Pro, Max 5X and Max 20X.
+		description: `A US Claude account with the membership already active, no KYC, delivered together with a matched dedicated network and a one-line setup command; invoices available. Ordering is a pre-order; delivery is usually within 24 hours. Three plans: Pro, Max 5X and Max 20X.
 
 Read these 6 points before ordering
 1. This is a ready-made account: we deliver a Claude account with the membership already active; it is not applied to your own account. To upgrade your own account, buy "Claude membership" instead.
-2. Ordering is a pre-order: after payment, copy the whole delivery text and send it to the online support at the bottom right of the site, then add the QQ contact from the reply to receive the account. Usually delivered within 24 hours, within 48 hours when busy; bulk orders go first. Orders cannot be cancelled after payment.
-3. Test your environment first (recommended): before signing in, open https://laoshirenvip.com/ip-check ; a score of 100 makes the sign-in more stable.
-4. Not sure how to set up the environment? Add "Stable Claude setup" and we configure a dedicated environment for you.
-5. First sign-in only: sign in and check within 24 hours of receiving the account; if you cannot sign in, contact support for a replacement.
+2. Ordering is a pre-order: after payment, copy the whole delivery text and send it to the online support at the bottom right of the site, then add the QQ contact from the reply to receive the account. Usually delivered within 24 hours, within 48 hours when orders are busy; bulk orders go first. No cancellation after payment.
+3. A matched dedicated network is included: a US network paired with this account, delivered together with it. Always sign in and use the account through it so the account environment stays consistent and is less likely to trigger risk checks.
+4. One command sets up your computer: the delivery includes one command for Mac and one for Windows. Run it and it installs Clash Verge, connects the dedicated network (only Claude uses it; everything else stays as it is), removes old API settings and old device identifiers, sets the time zone and language to match the network's location, and finishes with an automatic check. You need a working proxy of your own.
+5. First sign-in only: please sign in and check the account as soon as you receive it; if you cannot sign in, contact support for a replacement.
 6. Invoices available: after payment, apply at https://laoshirenvip.com/invoice ; a 6% invoicing fee applies and the invoice arrives by email in 1–3 business days.
 
 Plans
@@ -278,26 +278,26 @@ All are US accounts, no KYC, 1-month membership. Nothing renews automatically; p
 How to get your account
 1. After payment, copy the delivery text (the whole paragraph) from the order page.
 2. Send it to the online support at the bottom right of the site and add the QQ contact from the reply.
-3. Once the account is ready, support sends the sign-in email and sign-in method on QQ.
-4. Sign in and check within 24 hours.
+3. Once the account is ready, we send the account details, the dedicated network and the setup command together, with step-by-step instructions.
+4. Sign in and check as soon as you receive it.
 
 How to sign in
-1. Recommended: run the environment check at https://laoshirenvip.com/ip-check ; 100 is best.
-2. In the same browser (a separate browser or private window is best), open https://claude.ai .
-3. Enter the delivered email, choose "Continue with email", receive the code the way support tells you, and finish signing in.
+1. Turn on your own proxy first, then run the setup command from the delivery once (Terminal on Mac, PowerShell as administrator on Windows) until every item is ticked.
+2. Open https://claude.ai/cdn-cgi/trace in your browser; loc=US means the network is working.
+3. In the same browser (a separate browser or private window is best), open https://claude.ai , enter the delivered email, choose "Continue with email", get the code the way the delivery describes, and finish signing in.
 4. Check the plan under Settings → Billing.
 5. For Claude Code: run claude, choose to sign in with a Claude account, and approve in the same browser.
 
 Staying stable
 - One person per account; do not share.
-- Keep one network and one device; avoid switching often.
-- Re-test the environment after changing networks.
+- Sign in only on the computer you set up; do not sign in on your phone.
+- Always use the included dedicated network; avoid switching networks and devices.
 - Do not use it for distillation, reverse proxies or bulk calls.
 
 Warranty
-- First sign-in only: if you cannot sign in within 24 hours of receiving the account, send a screenshot of the error to support; after verification we replace it.
+- First sign-in only: please sign in and check as soon as you receive the account; if you cannot sign in, send a screenshot of the error to support; after verification we replace it.
 - Bans, lost membership, verification requests or any other problem after the first sign-in are not covered.
-- No network environment is included; add "Stable Claude setup" if you need one.
+- The dedicated network comes with the account; if the setup command does not finish, contact support for help.
 - Payment is a pre-order: no cancellation and no refund.`,
 	},
 	"b99dfd6a-2206-4dc9-aea9-85e86c3f8d66": {
