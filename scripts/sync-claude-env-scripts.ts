@@ -1,6 +1,7 @@
 /**
  * Copies the customer setup scripts from the claude-env-setup repo and
- * regenerates the embedded copy served at /claude-env.sh and /claude-env.ps1.
+ * regenerates the embedded copy served at /claude-env.sh, /claude-env.ps1,
+ * /claude-clean.sh and /claude-clean.ps1 (cleanup-only, for ready-made accounts).
  *
  *   bun scripts/sync-claude-env-scripts.ts [path/to/claude-env-setup]
  *
@@ -15,7 +16,12 @@ import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const source = resolve(process.argv[2] ?? join(root, "..", "claude-env-setup"));
 const target = join(root, "src/features/claude-env/client-scripts");
-const names = ["claude-env.sh", "claude-env.ps1"] as const;
+const names = [
+	"claude-env.sh",
+	"claude-env.ps1",
+	"claude-clean.sh",
+	"claude-clean.ps1",
+] as const;
 
 const entries: string[] = [];
 for (const name of names) {
