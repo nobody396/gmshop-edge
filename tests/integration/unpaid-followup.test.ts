@@ -1,6 +1,7 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentAccessProducts } from "#/features/agent-access/products";
+import { prepareCustomerDataDeletion } from "#/features/customers/server/privacy";
 import { decryptNotificationMessage } from "#/features/notifications/secrets";
 import { processNotificationDelivery } from "#/features/notifications/server/delivery";
 import { recipientHash } from "#/features/notifications/server/recipient-policy";
@@ -604,6 +605,162 @@ describe("unpaid order follow-up email", { timeout: 120_000 }, () => {
 		expect(details).toMatch(/users_lower_email_idx/);
 		expect(details).toMatch(/agent_access_orders_email_idx/);
 		expect(await identityExclusion(db, null, "a@mail-buyer.cn")).toBeNull();
+	});
+
+	it("only treats Cryptomus as USDT when the channel says so", async () => {
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		await db
+			.prepare(
+				`INSERT INTO payment_channels (id, name, provider, currency, enabled, default_token, default_network)
+				 VALUES ('ch-btc', 'Crypto', 'cryptomus', 'CNY', 1, 'BTC', 'BTC'),
+				        ('ch-any', 'Crypto (any coin)', 'cryptomus', 'CNY', 1, '', ''),
+				        ('ch-cusdt', 'Crypto USDT', 'cryptomus', 'CNY', 1, 'USDT', 'TRC20')`,
+			)
+			.run();
+		for (const [id, channel] of [
+			["o-btc", "ch-btc"],
+			["o-any", "ch-any"],
+			["o-cusdt", "ch-cusdt"],
+		] as const)
+			await seedOrder(db, {
+				id,
+				email: `${id}@mail-buyer.cn`,
+				attempt: null,
+				pricingChannelId: channel,
+			});
+		await runUnpaidOrderFollowups(db, { now: sendAt });
+		expect(
+			Object.fromEntries(
+				(await followups()).map((row) => [row.order_id, row.usdt_hint]),
+			),
+		).toEqual({ "o-any": 0, "o-btc": 0, "o-cusdt": 1 });
+	});
+
+	it("customer data deletion stops queued follow-ups and keeps the orders unclaimable", async () => {
+		const sent: unknown[] = [];
+		const binding = {
+			send: async (value: unknown) => {
+				sent.push(value);
+				return { messageId: "mock" };
+			},
+		} as unknown as SendEmail;
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(sendAt + 2 * minute);
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		await seedOrder(db, {
+			id: "o1",
+			email: "gone@mail-buyer.cn",
+			attempt: "usdt",
+		});
+		// Same guest, a second abandoned order that is not due yet.
+		await seedOrder(db, {
+			id: "o2",
+			email: "gone@mail-buyer.cn",
+			attempt: "usdt",
+			createdAt: createdAt + 16 * minute,
+		});
+		await runUnpaidOrderFollowups(db, { now: sendAt });
+		const [queued] = await deliveries();
+		expect(queued?.status).toBe("pending");
+		const deletion = await prepareCustomerDataDeletion(
+			db,
+			"o1",
+			sendAt + minute,
+		);
+		await db.batch(deletion.statements);
+		await db
+			.prepare(
+				"INSERT INTO email_unsubscribes (recipient_hash, scope, created_at) VALUES (?, 'renewal', 1)",
+			)
+			.bind(await recipientHash("gone@mail-buyer.cn"))
+			.run();
+		await runUnpaidOrderFollowups(db, { now: sendAt + 16 * minute });
+		const hashes = await db
+			.prepare(
+				"SELECT order_id, recipient_hash FROM unpaid_order_followups ORDER BY order_id",
+			)
+			.all<{ order_id: string; recipient_hash: string | null }>();
+		expect(hashes.results).toEqual([
+			{ order_id: "o1", recipient_hash: null },
+			{ order_id: "o2", recipient_hash: null },
+		]);
+		expect(await followups()).toEqual([
+			{
+				order_id: "o1",
+				status: "cancelled",
+				status_reason: "customer_deleted",
+				usdt_hint: 1,
+			},
+			{
+				order_id: "o2",
+				status: "skipped",
+				status_reason: "customer_deleted",
+				usdt_hint: 0,
+			},
+		]);
+		// Even without the tombstone, the anonymized order is never claimed again.
+		await db
+			.prepare("DELETE FROM unpaid_order_followups WHERE order_id = 'o1'")
+			.run();
+		await runUnpaidOrderFollowups(db, { now: sendAt + 17 * minute });
+		expect(
+			(await followups()).find((row) => row.order_id === "o1"),
+		).toMatchObject({
+			status: "skipped",
+			status_reason: "customer_deleted",
+		});
+		const rows = await deliveries();
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ status: "suppressed" });
+		const code = await db
+			.prepare("SELECT error_code FROM notification_deliveries")
+			.first<{ error_code: string }>();
+		expect(code?.error_code).toBe("unpaid_followup_customer_deleted");
+		await expect(
+			processNotificationDelivery(db, rows[0]?.id ?? "", {
+				cloudflareEmail: binding,
+			}),
+		).resolves.toMatchObject({ status: "suppressed" });
+		expect(sent).toEqual([]);
+	});
+
+	it("the send-time guard refuses a queued message whose recipient no longer matches the order", async () => {
+		const sent: unknown[] = [];
+		const binding = {
+			send: async (value: unknown) => {
+				sent.push(value);
+				return { messageId: "mock" };
+			},
+		} as unknown as SendEmail;
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(sendAt + 2 * minute);
+		await setUnpaidFollowupEnabled(db, true, activatedAt);
+		await seedOrder(db, {
+			id: "o1",
+			email: "first@mail-buyer.cn",
+			attempt: "usdt",
+		});
+		await runUnpaidOrderFollowups(db, { now: sendAt });
+		await db
+			.prepare(
+				"UPDATE shop_orders SET contact_email = 'second@mail-buyer.cn', normalized_contact_email = 'second@mail-buyer.cn' WHERE id = 'o1'",
+			)
+			.run();
+		const [queued] = await deliveries();
+		await expect(
+			processNotificationDelivery(db, queued?.id ?? "", {
+				cloudflareEmail: binding,
+			}),
+		).resolves.toMatchObject({ status: "suppressed" });
+		expect(await followups()).toEqual([
+			{
+				order_id: "o1",
+				status: "cancelled",
+				status_reason: "recipient_changed",
+				usdt_hint: 1,
+			},
+		]);
+		expect(sent).toEqual([]);
 	});
 
 	it("renders the English version from the order locale", async () => {

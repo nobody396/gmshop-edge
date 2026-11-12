@@ -4,6 +4,7 @@ import {
 } from "#/features/notifications/server/recipient-policy";
 import {
 	identityExclusion,
+	isDeletedCustomerEmail,
 	isUnsubscribed,
 	orderAnyPaymentSql,
 	paymentHistory,
@@ -28,6 +29,8 @@ export async function unpaidFollowupStopReason(
 	db: D1Database,
 	orderId: string,
 	now: number,
+	/** The queued message's actual recipient. */
+	recipient: string,
 ) {
 	const row = await db
 		.prepare(
@@ -68,7 +71,9 @@ export async function unpaidFollowupStopReason(
 		return "paid";
 	if (now > row.expires_at + unpaidFollowupStaleAfterMs) return "stale";
 	const email = row.email?.trim().toLowerCase();
-	if (!email) return "no_email";
+	if (!email || isDeletedCustomerEmail(email)) return "customer_deleted";
+	// The queued message must still go to the order's current contact address.
+	if (recipient.trim().toLowerCase() !== email) return "recipient_changed";
 	const identity = await identityExclusion(db, row.user_id, email);
 	if (identity) return identity;
 	const history = await paymentHistory(

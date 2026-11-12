@@ -361,7 +361,8 @@ export async function processEmailNotification(
 		// Re-check before every provider attempt: a slow failing provider must
 		// not give a refund time to complete before the fallback gets the content.
 		const stop =
-			(await stopForUnpaidFollowup(db, row)) ?? (await stopForRefund(db, row));
+			(await stopForUnpaidFollowup(db, row, message.to)) ??
+			(await stopForRefund(db, row));
 		if (stop) return stop;
 		const result = await tryEmailConfig(
 			runtime.commerceSecret,
@@ -486,14 +487,18 @@ const refundingRecheckMs = 5 * 60_000;
 // Unpaid-order follow-up: re-checked right before the provider, after the claim
 // and on every retry. A customer who paid, unsubscribed or became ineligible,
 // or a switched-off (or re-activated) feature, cancels the queued email.
-async function stopForUnpaidFollowup(db: D1Database, row: DeliveryRow) {
+async function stopForUnpaidFollowup(
+	db: D1Database,
+	row: DeliveryRow,
+	recipient: string,
+) {
 	if (row.event !== unpaidFollowupEmailEvent) return null;
 	const orderId = row.idempotency_key.startsWith(unpaidFollowupKeyPrefix)
 		? row.idempotency_key.slice(unpaidFollowupKeyPrefix.length)
 		: "";
 	const now = Date.now();
 	const reason = orderId
-		? await unpaidFollowupStopReason(db, orderId, now)
+		? await unpaidFollowupStopReason(db, orderId, now, recipient)
 		: "not_claimed";
 	if (!reason) return null;
 	await db.batch([

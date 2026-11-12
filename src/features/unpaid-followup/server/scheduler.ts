@@ -30,6 +30,7 @@ import { decryptSecret } from "#/lib/secrets";
 import { loadRuntimeConfig, type RuntimeConfig } from "#/server/runtime-config";
 import {
 	identityExclusion,
+	isDeletedCustomerEmail,
 	isUnsubscribed,
 	orderAnyPaymentSql,
 	paymentHistory,
@@ -75,7 +76,10 @@ const alipayProviders: ReadonlySet<string> = new Set([
 	"alipay_wap",
 	"alipay_qr",
 ]);
-const usdtProviders: ReadonlySet<string> = new Set(["gmpay", "cryptomus"]);
+/** GMPay is an Epusdt-compatible gateway: it only takes USDT. Any other
+ * provider (e.g. Cryptomus, which also takes BTC/ETH…) needs explicit USDT
+ * evidence on the channel or the attempt. */
+const usdtOnlyProviders: ReadonlySet<string> = new Set(["gmpay"]);
 
 export type UnpaidFollowupSkipReason =
 	| "not_expired"
@@ -86,6 +90,7 @@ export type UnpaidFollowupSkipReason =
 	| "upgrade_order"
 	| "test_item"
 	| "no_email"
+	| "customer_deleted"
 	| "test_email"
 	| "staff"
 	| "agent"
@@ -277,6 +282,7 @@ export async function assessUnpaidOrder(
 	)
 		return skip("test_item");
 	if (!email || !isEmailAddress(email)) return skip("no_email");
+	if (isDeletedCustomerEmail(email)) return skip("customer_deleted");
 	if (isInternalIdentityEmail(email) || isReservedEmailRecipient(email))
 		return skip("test_email");
 	const identity = await identityExclusion(db, order.user_id, email);
@@ -304,6 +310,14 @@ export async function assessUnpaidOrder(
 		usdtHint: await usdtToAlipayHint(db, order, items.results, now, secret),
 	};
 }
+
+type UsedChannel = {
+	provider: string;
+	default_token: string;
+	channel_currency: string;
+	/** The attempt's payment currency (null for the priced-for channel). */
+	currency: string | null;
+};
 
 type AlipayChannelRow = {
 	channel_id: string;
@@ -363,26 +377,28 @@ export async function usdtToAlipayHint(
 ) {
 	const attempted = await db
 		.prepare(
-			`SELECT DISTINCT pc.provider, pc.default_token, pa.currency
+			`SELECT DISTINCT pc.provider, pc.default_token,
+			 pc.currency AS channel_currency, pa.currency
 			 FROM payment_attempts pa JOIN payment_channels pc ON pc.id = pa.channel_id
 			 WHERE pa.order_id = ?`,
 		)
 		.bind(order.id)
-		.all<{ provider: string; default_token: string; currency: string }>();
+		.all<UsedChannel>();
 	let used = attempted.results;
 	if (!used.length && order.pricing_channel_id) {
 		const priced = await db
 			.prepare(
-				`SELECT provider, default_token, currency FROM payment_channels
-				 WHERE id = ? LIMIT 1`,
+				`SELECT provider, default_token, currency AS channel_currency,
+				 NULL AS currency FROM payment_channels WHERE id = ? LIMIT 1`,
 			)
 			.bind(order.pricing_channel_id)
-			.first<{ provider: string; default_token: string; currency: string }>();
+			.first<UsedChannel>();
 		used = priced ? [priced] : [];
 	}
-	const isUsdt = (channel: (typeof used)[number]) =>
-		usdtProviders.has(channel.provider) ||
-		channel.currency.toUpperCase() === "USDT" ||
+	const isUsdt = (channel: UsedChannel) =>
+		usdtOnlyProviders.has(channel.provider) ||
+		channel.currency?.toUpperCase() === "USDT" ||
+		channel.channel_currency.toUpperCase() === "USDT" ||
 		channel.default_token.toUpperCase().startsWith("USDT");
 	if (
 		!used.length ||

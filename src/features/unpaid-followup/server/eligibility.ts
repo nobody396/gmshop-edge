@@ -62,6 +62,11 @@ export async function paymentHistory(
 	};
 }
 
+/** Address left behind by customer data deletion (privacy.ts anonymization). */
+export function isDeletedCustomerEmail(email: string) {
+	return email.trim().toLowerCase().endsWith("@invalid.gmshop");
+}
+
 /** Opted out of any of our marketing-type emails (every scope counts). */
 export async function isUnsubscribed(db: D1Database, hash: string) {
 	const row = await db

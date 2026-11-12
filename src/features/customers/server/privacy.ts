@@ -69,11 +69,31 @@ export async function prepareCustomerDataDeletion(
 		db
 			.prepare(`DELETE FROM renewal_reminders WHERE order_id IN (${orderIds})`)
 			.bind(...scope.bindings),
+		// Unpaid-order follow-ups: stop anything still queued for this customer,
+		// and leave a tombstone without personal data on every order so none of
+		// them can be claimed (and re-sent) after the address is anonymized.
 		db
 			.prepare(
-				`DELETE FROM unpaid_order_followups WHERE order_id IN (${orderIds})`,
+				`UPDATE notification_deliveries SET status = 'suppressed',
+				 error_code = 'unpaid_followup_customer_deleted', next_attempt_at = NULL,
+				 updated_at = ? WHERE event = 'unpaid_order_followup'
+				 AND status IN ('pending','failed')
+				 AND idempotency_key IN (SELECT 'unpaid_followup:' || id FROM shop_orders
+				  WHERE ${scope.condition})`,
 			)
-			.bind(...scope.bindings),
+			.bind(now, ...scope.bindings),
+		db
+			.prepare(
+				`INSERT INTO unpaid_order_followups
+				 (order_id, recipient_hash, status, status_reason, created_at, updated_at)
+				 SELECT id, NULL, 'skipped', 'customer_deleted', ?, ? FROM shop_orders
+				 WHERE ${scope.condition}
+				 ON CONFLICT(order_id) DO UPDATE SET recipient_hash = NULL,
+				 status = CASE WHEN unpaid_order_followups.status IN ('sending','sent')
+				  THEN 'cancelled' ELSE unpaid_order_followups.status END,
+				 status_reason = 'customer_deleted', updated_at = excluded.updated_at`,
+			)
+			.bind(now, now, ...scope.bindings),
 		db
 			.prepare(
 				`DELETE FROM unpaid_followup_recipients WHERE order_id IN (${orderIds})`,
