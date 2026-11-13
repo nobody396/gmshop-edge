@@ -64,9 +64,9 @@ export const listShopOrdersFn = createServerFn({ method: "GET" })
 		);
 		const search = data.search ? `%${data.search}%` : null;
 		const where = search
-			? "WHERE o.order_number LIKE ? OR o.contact_email LIKE ? OR u.name LIKE ?"
+			? "WHERE o.order_number LIKE ? OR o.contact_email LIKE ? OR u.name LIKE ? OR o.admin_note LIKE ?"
 			: "";
-		const bindings = search ? [search, search, search] : [];
+		const bindings = search ? [search, search, search, search] : [];
 		const [count, rows] = await db.$client.batch([
 			db.$client
 				.prepare(
