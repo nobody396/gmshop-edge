@@ -54,6 +54,9 @@ CLAUDE_DESKTOP_DIR="$HOME/Library/Application Support/Claude"
 # 桌面版「第三方 API 模式」开关（deploymentMode：3p=接第三方 API、登录不了自己的账号；1p=官方登录）；读的是 Claude-3p 那份，API 一键配置也会写 Claude 那份
 DESKTOP_MODE_FILES="$HOME/Library/Application Support/Claude-3p/claude_desktop_config.json|$CLAUDE_DESKTOP_DIR/claude_desktop_config.json"
 desktop_3p_files() { local f IFS='|'; for f in $DESKTOP_MODE_FILES; do [ -f "$f" ] && grep -Eq '"deploymentMode"[[:space:]]*:[[:space:]]*"3p"' "$f" && printf '%s\n' "$f"; done; return 0; }
+# 第三方 API 配置库：里面有「已选用」的 Gateway 配置时，光改 deploymentMode 不够，桌面版仍显示「· Gateway」（11-13 客户实测）
+DESKTOP_LIB="$HOME/Library/Application Support/Claude-3p/configLibrary"
+desktop_lib_applied() { [ -f "$DESKTOP_LIB/_meta.json" ] && grep -q '"appliedId"' "$DESKTOP_LIB/_meta.json"; }
 # Claude Code 本地的设备/实验/统计标识（删除后自动重新生成，不会退出登录）
 CC_ID_KEYS="userID anonymousId machineID remoteControlMachineId cachedStatsigGates cachedGrowthBookFeatures cachedGrowthBookFeaturesAt cachedDynamicConfigs cachedExperimentData cachedExperimentFeatures metricsStatusCache metricsStatusCacheByPrincipal clientDataCache groveConfigCache passesEligibilityCache modelAccessCache firstStartTime numStartups"
 SHELL_FILES="$HOME/.zshrc $HOME/.zprofile $HOME/.zshenv $HOME/.zlogin $HOME/.bash_profile $HOME/.bashrc $HOME/.profile"
@@ -138,7 +141,7 @@ set_lang() { # 英语放第一位，原来的其他语言按原顺序保留（�
   if [ -n "$TR" ]; then
     echo "set language en-US" >>"$TR/sys.log"
     { echo en-US; grep -vxE 'en-US|en' "$TR/lang" 2>/dev/null; } >"$TR/lang.new"; mv "$TR/lang.new" "$TR/lang"
-    echo en_US >"$TR/locale"; return 0
+    [ -f "$TR/culture_stuck" ] || echo en_US >"$TR/locale"; return 0
   fi
   local rest=() l
   while IFS= read -r l; do l=$(printf '%s' "$l" | tr -d ' ",'); case "$l" in ''|'('|')'|en-US|en) ;; *) rest+=("$l");; esac; done < <(defaults read -g AppleLanguages 2>/dev/null)
@@ -941,7 +944,12 @@ if [ -z "$DRY" ]; then
   [ "$(sys_tz)" = "$TZNAME" ] || set_tz "$TZNAME"
   c_ok "已关闭「自动设置时区」，电脑时区：$(sys_tz)"
   if [ "$(sys_lang)" != en-US ] || [ "$(sys_locale)" != en_US ]; then set_lang; fi
-  c_ok "系统语言：英语排第一（原来的中文等保留在后面，输入法不变），地区：美国。重启电脑后生效"
+  if [ "$(sys_lang)" != en-US ] || [ "$(sys_locale)" != en_US ]; then set_lang; fi   # 改完读回，不对再改一次
+  if [ "$(sys_lang)" = en-US ] && [ "$(sys_locale)" = en_US ]; then
+    c_ok "系统语言：英语排第一（原来的中文等保留在后面，输入法不变），地区：美国。重启电脑后生效"
+  else
+    c_warn "系统语言/地区没改成功（当前 $(sys_lang) / $(sys_locale)）。请手动改：系统设置 → 通用 → 语言与地区，把 English 拖到第一位、地区选「美国」，改完重新运行本命令"
+  fi
   fix_browser_langs
   if [ "$(loc_on)" != false ]; then
     printf '  需要你手动关一下「定位服务」：已打开设置页，把最上面「定位服务」的开关关掉（会让你输入开机密码）\n'
@@ -984,6 +992,11 @@ if [ -z "$DRY" ]; then
     c_ok "Claude 桌面版：设备标识和本机配置快照已清理（登录状态保留）"
   fi
   M3=$(desktop_3p_files)
+  if desktop_lib_applied; then
+    sysrun osascript -e 'quit app "Claude"' 2>/dev/null; sleep 2
+    mkdir -p "$BK/desktop-mode"; mv "$DESKTOP_LIB" "$BK/desktop-mode/configLibrary"
+    c_ok "Claude 桌面版：之前第三方 API 的 Gateway 配置已移走（已备份）"
+  fi
   if [ -n "$M3" ]; then
     sysrun osascript -e 'quit app "Claude"' 2>/dev/null; sleep 2
     mkdir -p "$BK/desktop-mode"; i=0
@@ -1058,11 +1071,13 @@ if [ -z "$DRY" ]; then
     [ -n "$DELAY" ] && chk "链路 梯子→中转→专属IP 连通（${DELAY}ms）" ok || chk "链路 梯子→中转→专属IP 连通" "不通，请截图发给客服"
   fi
 fi
+# 每项最多试 3 次：刚重启完 Clash、梯子偶尔抖一下时单次请求会失败，不能直接判不通（11-13 客户首跑 3 项误报，重跑全过）
+try3() { local r="" i; for i in 1 2 3; do r=$("$@" | trace_ip); [ "$r" = "$PX_IP" ] && break; [ "$i" -lt 3 ] && sleep 3; done; printf '%s' "$r"; }
 for d in claude.ai claude.com anthropic.com challenges.cloudflare.com; do
-  IP_T=$(dtrace "https://$d/cdn-cgi/trace" | trace_ip)
+  IP_T=$(try3 dtrace "https://$d/cdn-cgi/trace")
   [ "$IP_T" = "$PX_IP" ] && chk "$d 看到的出口 = ${PX_IP}（不设代理直连，证明 TUN 接管）" ok || chk "$d 看到的出口" "看到的是 ${IP_T:-连不上}"
 done
-IP_P=$(curl -s -m 15 -x "http://127.0.0.1:$MIXED_PORT" https://api.anthropic.com/cdn-cgi/trace | trace_ip)
+IP_P=$(try3 curl -s -m 15 -x "http://127.0.0.1:$MIXED_PORT" https://api.anthropic.com/cdn-cgi/trace)
 [ "$IP_P" = "$PX_IP" ] && chk "Claude Code 通道出口 = $PX_IP" ok || chk "Claude Code 通道出口" "看到的是 ${IP_P:-连不上}"
 V6=$(curl -6 -s -m 6 https://claude.ai/cdn-cgi/trace | trace_ip)
 { [ -z "$V6" ] || [ "$V6" = "$PX_IP" ]; } && chk "无 IPv6 绕过" ok || chk "无 IPv6 绕过" "IPv6 直连看到 $V6"
@@ -1091,7 +1106,7 @@ if [ -z "$DRY" ]; then
   RES=""; for p in "$HOME"/.claude.json.backup* "$HOME/.claude/backups" "$HOME/.claude/statsig" "$HOME/.claude/telemetry"; do [ -e "$p" ] && RES="$RES ${p/#$HOME/~}"; done
   [ -z "$RES" ] && chk "旧配置备份和遥测缓存已清除" ok || chk "旧配置备份和遥测缓存已清除" "还在：$RES"
   [ -e "$CLAUDE_DESKTOP_DIR/ant-did" ] || [ -e "$CLAUDE_DESKTOP_DIR/sentry" ] && chk "Claude 桌面版设备标识已清除" "还在" || chk "Claude 桌面版设备标识已清除" ok
-  [ -z "$(desktop_3p_files)" ] && chk "Claude 桌面版用官方账号登录（没接第三方 API）" ok || chk "Claude 桌面版用官方账号登录（没接第三方 API）" "还在第三方 API 模式，请把本窗口截图发客服"
+  { [ -z "$(desktop_3p_files)" ] && ! desktop_lib_applied; } && chk "Claude 桌面版用官方账号登录（没接第三方 API）" ok || chk "Claude 桌面版用官方账号登录（没接第三方 API）" "还在第三方 API 模式，请把本窗口截图发客服"
 fi
 STILL=$(running_others | cut -d'|' -f1 | paste -sd '、' -)
 [ -z "$STILL" ] && chk "没有其他代理软件同时运行" ok || chk "没有其他代理软件同时运行" "还在运行：${STILL}，请退出"
@@ -1111,6 +1126,6 @@ if [ "$FAILN" = 0 ]; then
   printf '  提醒：这些 Claude 号不要在插着国内 SIM 卡的安卓手机上登录\n'
   exit 0
 else
-  printf '\033[1;31m%s 项通过，%s 项没通过 ✘\033[0m\n请把这个窗口截图发给客服。\n' "$PASS" "$FAILN"
+  printf '\033[1;31m%s 项通过，%s 项没通过 ✘\033[0m\n上面红字里写了怎么改的，先照着改；改完（或没写怎么改）就把同一条命令再运行一次。还有红字，再把这个窗口截图发给客服。\n' "$PASS" "$FAILN"
   exit 4
 fi
