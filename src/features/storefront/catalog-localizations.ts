@@ -303,7 +303,7 @@ Warranty
 	"b99dfd6a-2206-4dc9-aea9-85e86c3f8d66": {
 		name: "Gemini Ultra 20X｜1 month",
 		description: `Google AI Ultra 20X plan (Google's $199.99/month tier) for 1 month. Two options:
-- Ready-made account: a Google account with Ultra active is delivered automatically after payment; it is not applied to your own account.
+- Ready-made account: a reservation code is delivered automatically after payment; send it to support and we send you a Google account with Ultra active by hand. It is not applied to your own account.
 - Applied to your own account (¥100 more than the ready-made account): a CDK is delivered automatically after payment; send it to support and we activate Ultra on your own Google account.
 
 Included
@@ -313,7 +313,7 @@ Included
 Account, password and recovery email, in the format "account----password----recovery email". Some accounts also come with a 2FA key at the end: "account----password----recovery email----2FA key".
 
 [Ready-made account] How to use
-1. View the delivered account details on the order page.
+1. After payment, copy the reservation code from the order page and send it to Telegram support https://t.me/laoshirenai_support_bot; support sends the account details by hand. Support is online 08:00–22:00 (UTC+8).
 2. Open https://gemini.google.com and sign in with the delivered account and password.
 3. If Google asks you to verify, enter the delivered recovery email address when prompted; if your details include a 2FA key, you can also add it to an authenticator app (such as Google Authenticator) and enter the 6-digit code.
 4. After signing in, check that the plan shows Ultra.
@@ -916,8 +916,8 @@ ${claudeRestrictions}`,
 	"a3fc7472-b5f5-45b2-93e4-0123a8d2c9e4": {
 		name: "Gemini Ultra｜Ready-made account｜1 month",
 		policy: policy(
-			"Delivered automatically after payment: a Google account with Ultra 20X active (account, password, recovery email; some accounts also include a 2FA key)",
-			"Automatic, usually within 1 minute; view it on the order page",
+			"A reservation code is delivered automatically after payment; send it to support and we send a Google account with Ultra 20X active (account, password, recovery email; some accounts also include a 2FA key)",
+			"Reservation code within 1 minute; the account is sent by support by hand, online 08:00–22:00 (UTC+8)",
 			"Gemini Ultra 20X ready-made account with Google AI Ultra for 1 month; it cannot be applied to your own account",
 			"First sign-in only: sign in and check soon after delivery; contact support if the first sign-in fails",
 			"Do not share the account or switch IPs or devices frequently; restrictions or bans are not covered",
