@@ -126,7 +126,7 @@ const copy = {
 		"Click “Show code”, copy the line for your computer and paste it into a terminal (Mac: search “Terminal” in Launchpad; Windows: right-click Start → Terminal (Admin)).",
 	],
 	step4: [
-		"先了解会改动什么：命令会把系统语言里的英语排到第一位（中文和输入法保留）、地区改为美国、时区改成和专属 IP 一致、关闭定位；Mac 会要求输入一次开机密码（输入时不显示）。看到「全部验收通过 ✅」就成功；有红色项目请截图发客服。",
+		"先了解会改动什么：命令会把系统语言里的英语排到第一位（中文和输入法保留）、地区改为美国、时区改成和专属环境所在地一致、关闭定位；Mac 会要求输入一次开机密码（输入时不显示）。看到「全部验收通过 ✅」就成功；有红色项目，先按提示改，再把同一条命令重新运行一次，还有红色再截图发客服。",
 		"What will change: the command puts English first in system languages (Chinese and input methods stay), sets the region to US, matches the time zone to your IP and turns off Location. A Mac asks for your login password once (it is not shown as you type). “All checks passed ✅” means success; if anything is red, send a screenshot to support.",
 	],
 	step5: [
@@ -206,7 +206,7 @@ const statusCopy: Record<
 	needs_replace: {
 		label: ["更换中", "Replacing"],
 		text: [
-			"这个 IP 没通过我们的质量检查，我们正在为你换一个更好的（24 小时内），无需操作。",
+			"这个专属环境没通过我们的质量检查，我们正在为你换一个更好的（24 小时内），无需操作。",
 			"The IP did not pass our quality check. We are replacing it with a better one (within 24 hours); nothing to do on your side.",
 		],
 		tone: "wait",
