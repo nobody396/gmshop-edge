@@ -102,6 +102,9 @@ $DESKTOP_DIRS = @((Join-Path $env:APPDATA "Claude"), (Join-Path $env:LOCALAPPDAT
 $DESKTOP_MODE_FILES = @("Claude-3p", "Claude", "Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Claude-3p", "Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Claude") | ForEach-Object { Join-Path (Join-Path $env:LOCALAPPDATA $_) "claude_desktop_config.json" }
 $DESKTOP_MODE_FILES += @($DESKTOP_DIRS | ForEach-Object { Join-Path $_ "claude_desktop_config.json" })
 $DESKTOP_3P_RE = '("deploymentMode"\s*:\s*)"3p"'
+# 第三方 API 配置库：里面有「已选用」的 Gateway 配置时，光改 deploymentMode 不够，桌面版仍显示「· Gateway」（11-13 客户实测）
+$DESKTOP_LIBS = @("Claude-3p", "Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Claude-3p") | ForEach-Object { Join-Path (Join-Path $env:LOCALAPPDATA $_) "configLibrary" }
+function Get-AppliedLibs { @($DESKTOP_LIBS | Where-Object { (ReadText (Join-Path $_ "_meta.json")) -match '"appliedId"' }) }
 $UTF8 = New-Object System.Text.UTF8Encoding($false)
 
 # 自带网络模式下客户看到的用词：不提中转、不提 IP（开通码模式原样输出）
@@ -146,7 +149,7 @@ function Set-LangUS {
   SysLog "set language en-US"
   if ($TR) {
     $rest = (ReadText (TFile "lang")) -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "en-US" -and $_ -ne "en" }
-    WriteText (TFile "lang") ((@("en-US") + $rest) -join "`n"); WriteText (TFile "culture") "en-US"; WriteText (TFile "geo") "244"; return
+    WriteText (TFile "lang") ((@("en-US") + $rest) -join "`n"); if (-not (Test-Path (TFile "culture_stuck"))) { WriteText (TFile "culture") "en-US" }; WriteText (TFile "geo") "244"; return
   }
   $old = Get-WinUserLanguageList
   $new = New-WinUserLanguageList "en-US"
@@ -887,8 +890,13 @@ if ($TUN_ON) { OK "TUN（虚拟网卡）设为开启，严格路由开启" } els
 if ((Get-TzAuto) -ne "4") { Set-TzAutoOff }
 if ((Get-SysTz) -ne $WINTZ) { Set-SysTz $WINTZ }
 OK "已关闭「自动设置时区」，电脑时区：$(Get-SysTz)"
-if ((Get-LangFirst) -ne "en-US" -or (Get-Culture2) -ne "en-US" -or (Get-Geo) -ne "244") { Set-LangUS }
-OK "系统语言：英语排第一（原来的中文和输入法保留），区域格式和国家/地区：美国。重启电脑后生效"
+# 改完读回：Set-Culture 偶尔不生效（11-13 客户首跑区域格式仍是 zh-CN），读回不对就再改一次，还不对当场给手动步骤
+for ($i = 0; $i -lt 2 -and ((Get-LangFirst) -ne "en-US" -or (Get-Culture2) -ne "en-US" -or (Get-Geo) -ne "244"); $i++) {
+  try { Set-LangUS } catch { SysLog "set language failed: $($_.Exception.Message)" }
+  if (-not $TR) { Start-Sleep -Seconds 1 }
+}
+if ((Get-LangFirst) -eq "en-US" -and (Get-Culture2) -eq "en-US" -and (Get-Geo) -eq "244") { OK "系统语言：英语排第一（原来的中文和输入法保留），区域格式和国家/地区：美国。重启电脑后生效" }
+else { WARN "系统语言/区域没改成功（当前 $(Get-LangFirst) / $(Get-Culture2) / $(Get-Geo)）。请手动改：设置 → 时间和语言 → 语言和区域，「Windows 显示语言」选 English (United States)、「国家或地区」选美国、「区域格式」选 English (United States)，改完重新运行本命令" }
 Fix-BrowserLangs
 if ((Get-Loc) -ne "Deny") { Set-LocDeny }
 if ((Get-Loc) -eq "Deny") { OK "定位服务已关闭" } else { WARN "定位服务仍开着（验收会标出）" }
@@ -916,6 +924,12 @@ foreach ($d in $DESKTOP_DIRS) {
   foreach ($n in "ant-did", "ant-device-registry.json", "sentry", "Crashpad", "machine-id", ".machine-id") { $p = Join-Path $d $n; if (Test-Path -LiteralPath $p) { Move-Item -LiteralPath $p $dst -Force } }
 }
 if ($deskSeen) { OK "Claude 桌面版：设备标识和本机配置快照已清理（登录状态保留）" }
+$libs = Get-AppliedLibs
+if ($libs.Count) {
+  Stop-App "Claude"; Start-Sleep -Seconds 2
+  $i = 0; foreach ($l in $libs) { $i++; $dst = Join-Path $BK "desktop-mode"; New-Item -ItemType Directory -Force -Path $dst | Out-Null; Move-Item -LiteralPath $l (Join-Path $dst "$i-configLibrary") -Force }
+  OK "Claude 桌面版：之前第三方 API 的 Gateway 配置已移走（已备份）"
+}
 $mode3p = @($DESKTOP_MODE_FILES | Select-Object -Unique | Where-Object { (ReadText $_) -match $DESKTOP_3P_RE })
 if ($mode3p.Count) {
   Stop-App "Claude"; Start-Sleep -Seconds 2
@@ -978,11 +992,13 @@ if ($BYO) {
 $delay = (JParse (Ctl "GET" ("/proxies/" + [uri]::EscapeDataString($NODE_NAME) + "/delay?timeout=8000&url=" + [uri]::EscapeDataString("https://claude.ai/cdn-cgi/trace")) $null)).delay
 if ($delay) { Chk "链路 梯子→中转→专属IP 连通（${delay}ms）" "ok" } else { Chk "链路 梯子→中转→专属IP 连通" "不通，请截图发给客服" }
 }
+# 每项最多试 3 次：刚重启完 Clash、梯子偶尔抖一下时单次请求会失败，不能直接判不通（11-13 客户首跑 3 项误报，重跑全过）
+function Try3($sb) { $r = ""; for ($i = 0; $i -lt 3; $i++) { $r = & $sb; if ($r -eq $PX_IP) { return $r }; if ($i -lt 2 -and -not $TR) { Start-Sleep -Seconds 3 } }; return $r }
 foreach ($d in "claude.ai", "claude.com", "anthropic.com", "challenges.cloudflare.com") {
-  $ip = TraceIp (DTrace "https://$d/cdn-cgi/trace")
+  $ip = Try3 { TraceIp (DTrace "https://$d/cdn-cgi/trace") }
   if ($ip -eq $PX_IP) { Chk "$d 看到的出口 = $PX_IP（不设代理直连，证明 TUN 接管）" "ok" } else { Chk "$d 看到的出口" ("看到的是 " + $(if ($ip) { $ip } else { "连不上" })) }
 }
-$ipP = TraceIp (CurlX -s -m 15 -x "http://127.0.0.1:$MIXED_PORT" "https://api.anthropic.com/cdn-cgi/trace")
+$ipP = Try3 { TraceIp (CurlX -s -m 15 -x "http://127.0.0.1:$MIXED_PORT" "https://api.anthropic.com/cdn-cgi/trace") }
 if ($ipP -eq $PX_IP) { Chk "Claude Code 通道出口 = $PX_IP" "ok" } else { Chk "Claude Code 通道出口" ("看到的是 " + $(if ($ipP) { $ipP } else { "连不上" })) }
 $v6 = TraceIp (CurlX -6 -s -m 6 "https://claude.ai/cdn-cgi/trace")
 if (-not $v6 -or $v6 -eq $PX_IP) { Chk "无 IPv6 绕过" "ok" } else { Chk "无 IPv6 绕过" "IPv6 直连看到 $v6" }
@@ -1010,7 +1026,7 @@ if (-not $res.Count) { Chk "旧配置备份和遥测缓存已清除" "ok" } else
 $dleft = @(); foreach ($d in $DESKTOP_DIRS) { foreach ($n in "ant-did", "sentry", "machine-id") { if (Test-Path -LiteralPath (Join-Path $d $n)) { $dleft += $n } } }
 if (-not $dleft.Count) { Chk "Claude 桌面版设备标识已清除" "ok" } else { Chk "Claude 桌面版设备标识已清除" "还在" }
 $m3 = @($DESKTOP_MODE_FILES | Select-Object -Unique | Where-Object { (ReadText $_) -match $DESKTOP_3P_RE })
-if (-not $m3.Count) { Chk "Claude 桌面版用官方账号登录（没接第三方 API）" "ok" } else { Chk "Claude 桌面版用官方账号登录（没接第三方 API）" "还在第三方 API 模式，请把本窗口截图发客服" }
+if (-not $m3.Count -and -not (Get-AppliedLibs).Count) { Chk "Claude 桌面版用官方账号登录（没接第三方 API）" "ok" } else { Chk "Claude 桌面版用官方账号登录（没接第三方 API）" "还在第三方 API 模式，请把本窗口截图发客服" }
 $still = @(); foreach ($c in $OTHER_CLIENTS) { if (Get-Running $c[1]) { $still += $c[0] } }
 if (-not $still.Count) { Chk "没有其他代理软件同时运行" "ok" } else { Chk "没有其他代理软件同时运行" ("还在运行：" + ($still -join "、") + "，请退出") }
 
@@ -1030,6 +1046,6 @@ if ($script:FAILN -eq 0) {
   exit 0
 } else {
   Write-Host "$($script:PASS) 项通过，$($script:FAILN) 项没通过 ✘" -ForegroundColor Red
-  Write-Host "请把这个窗口截图发给客服。"
+  Write-Host "上面红字里写了怎么改的，先照着改；改完（或没写怎么改）就把同一条命令再运行一次。还有红字，再把这个窗口截图发给客服。"
   exit 4
 }
