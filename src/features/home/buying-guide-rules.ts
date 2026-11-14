@@ -186,6 +186,10 @@ export const guideProducts = {
 		productId: "550711f1-8901-4f4f-878d-1b81ca09c9ac",
 		itemId: "f67ed870-d119-4191-8bfa-c23f02128ae9",
 	},
+	gptacct: {
+		productId: "faea6781-0e8d-4cf2-ae21-684028307ccb",
+		itemId: "2cc62526-ee22-47f9-9756-955af720ab55",
+	},
 	geminiready: {
 		productId: "b99dfd6a-2206-4dc9-aea9-85e86c3f8d66",
 		itemId: "a3fc7472-b5f5-45b2-93e4-0123a8d2c9e4",
@@ -285,6 +289,7 @@ export function guideStep(a: readonly string[]): GuideStep {
 			"gpt",
 			"team",
 			"points",
+			"gptacct",
 			"claude",
 			"claudeacct",
 			"claudeenv",
@@ -548,6 +553,7 @@ export function guideStep(a: readonly string[]): GuideStep {
 			return result(current);
 	}
 	if (family === "suno") return result("suno");
+	if (family === "gptacct") return result("gptacct");
 	if (family === "telegram") {
 		if (!current) return question("tg_target", ["tg3", "tg6", "tg12"]);
 		if (current === "tg3" || current === "tg6" || current === "tg12")

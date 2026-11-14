@@ -511,6 +511,8 @@ function guideCopy(): Record<string, string> {
 		gmailus_hint: m.guide_gmailus_hint(),
 		gmailrandom: m.guide_gmailrandom(),
 		gmailrandom_hint: m.guide_gmailrandom_hint(),
+		gptacct: m.guide_gptacct(),
+		gptacct_hint: m.guide_gptacct_hint(),
 		claudeacct: m.guide_claudeacct(),
 		claudeacct_hint: m.guide_claudeacct_hint(),
 		claudeacct_target: m.guide_claudeacct_target(),

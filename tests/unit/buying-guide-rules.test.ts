@@ -371,6 +371,14 @@ it("sends Free accounts to India card-paid Go and covers the newer catalog", () 
 		kind: "result",
 		product: "suno",
 	});
+	expect(guideStep(["gptacct"])).toEqual({
+		kind: "result",
+		product: "gptacct",
+	});
+	expect(guideProducts.gptacct).toEqual({
+		productId: "faea6781-0e8d-4cf2-ae21-684028307ccb",
+		itemId: "2cc62526-ee22-47f9-9756-955af720ab55",
+	});
 	expect(guideStep(["apple"])).toMatchObject({
 		kind: "question",
 		options: ["appleus", "applejp", "appletr", "appleph"],
