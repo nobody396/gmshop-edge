@@ -142,7 +142,8 @@ export const appStorePriceApps: readonly AppStoreAppConfig[] = [
 				appleNames: ["Claude Ultra - Monthly", "Claude Ultra"],
 				otrPlan: "max-20x",
 				hint: "官方 $200 档，每周 Pro 的 10 倍、无 5 小时限制（原 Max 20x）",
-				hintEn: "Official $200 tier, 10x Pro weekly usage, no 5-hour limit (formerly Max 20x)",
+				hintEn:
+					"Official $200 tier, 10x Pro weekly usage, no 5-hour limit (formerly Max 20x)",
 			},
 		],
 	},
