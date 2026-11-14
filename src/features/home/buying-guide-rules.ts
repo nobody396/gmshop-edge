@@ -222,9 +222,9 @@ export const guideProducts = {
 		productId: "e4acdd84-af47-45fd-99c6-29cb7a2d38b1",
 		itemId: "6bf0239d-d096-489e-b50a-b70fc417b5fc",
 	},
-	gmailrandom: {
+	gmailusold: {
 		productId: "e4acdd84-af47-45fd-99c6-29cb7a2d38b1",
-		itemId: "f7dd6de9-9bdb-552a-9f38-e5b918a343b5",
+		itemId: "7c1d3e2a-6b3a-43c6-a4fb-60a8637edf9d",
 	},
 	appleus: {
 		productId: "c70d10e8-b781-4782-bc98-1f034bcd069a",
@@ -568,12 +568,12 @@ export function guideStep(a: readonly string[]): GuideStep {
 			return question("gmail_target", [
 				"gmailus",
 				"gmailusno2fa",
-				"gmailrandom",
+				"gmailusold",
 			]);
 		if (
 			current === "gmailus" ||
 			current === "gmailusno2fa" ||
-			current === "gmailrandom"
+			current === "gmailusold"
 		)
 			return result(current);
 	}

@@ -396,7 +396,7 @@ it("sends Free accounts to India card-paid Go and covers the newer catalog", () 
 		product: "gmailus",
 	});
 	expect(guideStep(["gmail"])).toMatchObject({
-		options: ["gmailus", "gmailusno2fa", "gmailrandom"],
+		options: ["gmailus", "gmailusno2fa", "gmailusold"],
 	});
 	expect(guideStep(["gmail", "gmailusno2fa"])).toEqual({
 		kind: "result",
