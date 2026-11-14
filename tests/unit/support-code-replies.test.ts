@@ -18,7 +18,7 @@ describe("support code auto replies", () => {
 		expect(
 			matchSupportCodeReply(
 				rules,
-				"请把这一整段复制，发给网站右下角的在线客服：Claude Max 20X 成品号预定码 claude-20x-acct-ABCD-EFGH-JKLM",
+				"请把这一整段复制，发给网站右下角的在线客服：Claude Ultra 成品号预定码 claude-20x-acct-ABCD-EFGH-JKLM",
 			),
 		).toEqual({ index: 0, message: "已收到你的 Claude 成品号预定码" });
 		expect(matchSupportCodeReply(rules, "CLAUDE-PRO-ACCT-AAAA")).not.toBeNull();

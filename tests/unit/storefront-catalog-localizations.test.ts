@@ -131,3 +131,27 @@ it.each([
 	);
 	expect(localizeSellableItem(itemId, "zh-CN", fallback)).toBe(fallback);
 });
+
+it("names the Claude ready-made account plans Pro, Max and Ultra in English", () => {
+	const productFallback = {
+		name: "Claude 成品号｜1个月（预定）",
+		description: "",
+	};
+	const product = localizeProduct(
+		"550711f1-8901-4f4f-878d-1b81ca09c9ac",
+		"en-US",
+		productFallback,
+	);
+	expect(product.description).toContain("Three plans: Pro, Max and Ultra.");
+	expect(
+		[
+			"9c3adf97-3884-4776-b099-acf041e61625",
+			"25d1790d-9982-49c3-a658-54d2dd9bb75b",
+			"f67ed870-d119-4191-8bfa-c23f02128ae9",
+		].map((id) => localizeSellableItem(id, "en-US", fallback).name),
+	).toEqual([
+		"Claude Pro｜Ready-made account｜1 month",
+		"Claude Max｜Ready-made account｜1 month",
+		"Claude Ultra｜Ready-made account｜1 month",
+	]);
+});
