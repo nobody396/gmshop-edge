@@ -140,22 +140,29 @@ Notes
 - If redemption fails, contact us through Support`,
 	},
 	"e4acdd84-af47-45fd-99c6-29cb7a2d38b1": {
-		name: "Gmail｜US personal account｜New with 2FA",
-		description: `US personal Gmail account. Brand new and unused, registered in the US, with 2-step verification (2FA) turned on and no original phone number attached. Delivered automatically after payment.
+		name: "Gmail｜Personal account｜New, unused",
+		description: `Personal Gmail accounts, brand new and unused, with no original phone number attached. Delivered automatically after payment. Choose the option you need.
 
-What you receive
-One line of details: email----password----2FA key. No recovery email is included.
-Add your own recovery email after signing in.
+Options
+- US, with 2FA: registered in the US with 2-step verification (2FA) on. You receive email----password----2FA key. No recovery email is included.
+- US, no 2FA: registered in the US, 2FA off. You receive email----password----recovery email. No 2FA key is included.
+- Random region, no 2FA: region is random and not guaranteed, 2FA off. You receive email----password----recovery email. No 2FA key is included.
+- For the no-2FA options, only the recovery email address is provided, not its password. No option includes the original phone number; add your own recovery email after signing in.
 
-How to sign in
-1. Use a clean US network, ideally a US node and a private window, and open gmail.com.
-2. Enter the email and password.
-3. When asked for a 6-digit code, add the 2FA key to an authenticator app (such as Google Authenticator, "Enter a setup key") and enter the code it shows.
-4. After signing in, change the password and add your own recovery email.
+How to sign in (no 2FA: US / random region)
+1. Use a stable, clean network (a US network for the US option) and a private window, open gmail.com, and enter the email and password.
+2. If asked to choose a verification method, pick "Confirm your recovery email" and enter the third part of the details (the recovery email address). The product images show how.
+3. No 2FA does not mean no verification; Google may still ask for other checks. If that option is missing, or you are asked for a recovery email code or a phone, contact Support first and do not keep retrying.
+4. After signing in, change the password, switch to your own recovery email, and turn on your own 2FA.
+
+How to sign in (US, with 2FA)
+1. Use a stable, clean US network and a private window, and open gmail.com.
+2. Enter the email and password. When asked for a 6-digit code, add the 2FA key to an authenticator app (such as Google Authenticator, "Enter a setup key") and enter the code it shows.
+3. After signing in, change the password and add your own recovery email.
 
 Before you buy
 - Switching IPs often, juggling several accounts in one browser, or signing in to many at once can trigger Google's risk checks and a phone verification request.
-- Up to 5 per order; sign in to each account separately.
+- Sign in to each account separately. Up to 5 per order for the two US options, up to 3 per order for random region.
 
 Warranty
 - First sign-in is covered: if an account cannot sign in within 24 hours of delivery (wrong password or disabled), contact Support and we will replace it after checking.
@@ -911,11 +918,31 @@ ${claudeRestrictions}`,
 	"20a6011a-779d-43fa-a843-47fa76e31abf": {
 		name: "US personal Gmail｜New, unused｜2FA on",
 		policy: policy(
-			"Delivered automatically after payment: email, password, recovery email, and 2FA key",
+			"Delivered automatically after payment: email, password, and 2FA key (no recovery email)",
 			"Automatic, usually within 1 minute; view it on the order page",
 			"US personal Gmail, brand new and unused, 2FA turned on, no original phone number",
 			"First sign-in is covered: if it cannot sign in within 24 hours of delivery, we replace it after checking",
 			"Bans, risk checks, or phone verification after a successful sign-in are not covered; sign in from a clean US network",
+		),
+	},
+	"6bf0239d-d096-489e-b50a-b70fc417b5fc": {
+		name: "US personal Gmail｜New, unused｜No 2FA",
+		policy: policy(
+			"Delivered automatically after payment: email, password, and recovery email (recovery email password not included)",
+			"Automatic; view it on the order page",
+			"US personal Gmail, brand new and unused, no 2FA, no original phone number",
+			"First sign-in is covered: if it cannot sign in within 24 hours of delivery, we replace it after checking",
+			"No 2FA does not mean no verification; you may be asked for the recovery email or a phone. Bans, risk checks, or phone verification after a successful sign-in are not covered; sign in from a clean US network",
+		),
+	},
+	"f7dd6de9-9bdb-552a-9f38-e5b918a343b5": {
+		name: "Random-region personal Gmail｜New, unused｜No 2FA",
+		policy: policy(
+			"Delivered automatically after payment: email, password, and recovery email (recovery email password not included)",
+			"Automatic; view it on the order page",
+			"Random-region personal Gmail, brand new and unused, no 2FA, no original phone number; region not guaranteed",
+			"First sign-in is covered: if it cannot sign in within 24 hours of delivery, we replace it after checking",
+			"No 2FA does not mean no verification; you may be asked for the recovery email or a phone. Bans, risk checks, or phone verification after a successful sign-in are not covered",
 		),
 	},
 	"d387ff70-1566-444a-9c75-fe4934df7d47": {
