@@ -302,7 +302,7 @@ FAQ
 	},
 	"550711f1-8901-4f4f-878d-1b81ca09c9ac": {
 		name: "Claude ready-made account｜1 month (pre-order)",
-		description: `A US Claude account with the membership already active, no KYC, delivered together with a matched dedicated network and a one-line setup command; invoices available. Ordering is a pre-order; delivery is usually within 24 hours. Three plans: Pro, Max 5X and Max 20X.
+		description: `A US Claude account with the membership already active, no KYC, delivered together with a matched dedicated network and a one-line setup command; invoices available. Ordering is a pre-order; delivery is usually within 24 hours. Three plans: Pro, Max and Ultra.
 
 Read these 6 points before ordering
 1. This is a ready-made account: we deliver a Claude account with the membership already active; it is not applied to your own account. To upgrade your own account, buy "Claude membership" instead.
@@ -314,8 +314,8 @@ Read these 6 points before ordering
 
 Plans
 - Claude Pro: the standard membership.
-- Claude Max 5X: 5 times Pro usage per 5 hours and per week.
-- Claude Max 20X: the official $200 tier (now called Ultra), 10 times Pro weekly usage with no 5-hour limit; for heavy Claude Code use.
+- Claude Max: 5 times Pro usage per 5 hours and per week (formerly Max 5X, the official $100 tier).
+- Claude Ultra: 10 times Pro weekly usage with no 5-hour limit; for heavy Claude Code use (formerly Max 20X, the official $200 tier).
 All are US accounts, no KYC, 1-month membership. Nothing renews automatically; place a new order to keep using it. Claude's official page decides the exact usage.
 
 How to get your account
@@ -987,21 +987,21 @@ ${claudeRestrictions}`,
 		),
 	},
 	"25d1790d-9982-49c3-a658-54d2dd9bb75b": {
-		name: "Claude Max 5X｜Ready-made account｜1 month",
+		name: "Claude Max｜Ready-made account｜1 month",
 		policy: policy(
 			readyAccountDelivery,
 			readyAccountTime,
-			"Claude Max 5X ready-made account: US account, no KYC, 1-month membership; 5 times Pro usage per 5 hours and per week",
+			"Claude Max ready-made account: US account, no KYC, 1-month membership; 5 times Pro usage per 5 hours and per week (formerly Max 5X, the $100 tier)",
 			readyAccountWarranty,
 			readyAccountRestrictions,
 		),
 	},
 	"f67ed870-d119-4191-8bfa-c23f02128ae9": {
-		name: "Claude Max 20X｜Ready-made account｜1 month",
+		name: "Claude Ultra｜Ready-made account｜1 month",
 		policy: policy(
 			readyAccountDelivery,
 			readyAccountTime,
-			"Claude Max 20X ready-made account: US account, no KYC, 1-month membership; the official $200 tier (now called Ultra), 10 times Pro weekly usage, no 5-hour limit",
+			"Claude Ultra ready-made account: US account, no KYC, 1-month membership; 10 times Pro weekly usage, no 5-hour limit (formerly Max 20X, the $200 tier)",
 			readyAccountWarranty,
 			readyAccountRestrictions,
 		),
