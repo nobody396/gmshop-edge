@@ -100,7 +100,7 @@ function item(id: string, name: string) {
 		showOnOrderPage: true,
 		allowResend: false,
 		saleDisabled: false,
-		availableStock: 5,
+		stockBand: "limited",
 		channelPrices: [],
 		policy: {
 			delivery: "",

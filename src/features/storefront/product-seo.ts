@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { gptUpgradeProduct } from "#/features/gpt-upgrade/products";
 import { getStorefrontProductFn } from "#/features/storefront/server/catalog";
+import { stockBandInStock } from "#/features/storefront/stock-band";
 import { formatMinorAmountWithSymbol } from "#/lib/format";
 import type { SupportedLocale } from "#/lib/locales";
 import { jsonLdScript } from "#/lib/seo";
@@ -60,11 +61,7 @@ export function productPriceSummary(
 		offerCount: priced.length,
 		inStock:
 			!product.saleDisabled &&
-			plans.some(
-				(item) =>
-					item.availableStock < 0 ||
-					item.availableStock >= item.minimumQuantity,
-			),
+			plans.some((item) => stockBandInStock(item.stockBand)),
 	};
 }
 
@@ -91,7 +88,7 @@ export function publicSellableItems(product: StorefrontProduct) {
 function itemInStock(product: StorefrontProduct, item: SellableItem) {
 	return (
 		!product.saleDisabled &&
-		(item.availableStock < 0 || item.availableStock >= item.minimumQuantity)
+		stockBandInStock(item.stockBand)
 	);
 }
 

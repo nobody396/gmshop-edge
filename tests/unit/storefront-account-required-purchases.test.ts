@@ -40,9 +40,10 @@ describe("storefront account-required purchase guidance", () => {
 		const card = source("src/features/storefront/components/product-card.tsx");
 		const catalog = source("src/features/storefront/server/catalog.ts");
 
-		expect(product).toContain("count: stockCount(item.availableStock)");
-		expect(product).toContain('count > 99 ? "99+" : count');
-		expect(card).toContain("product.displayStockQuantity");
+		expect(product).toContain("stockBandLabel(item.stockBand)");
+		expect(product).not.toContain("m.store_stock(");
+		expect(card).toContain("stockBandLabel(product.stockBand)");
+		expect(card).not.toContain("m.store_stock(");
 		expect(card).not.toContain("store_low_stock");
 		expect(catalog).toContain("AS display_stock_quantity");
 		expect(card).not.toContain("m.store_sales(");

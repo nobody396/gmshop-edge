@@ -64,7 +64,7 @@ describe("catalog sale-disabled state", { timeout: 30_000 }, () => {
 		});
 		await expect(loadCartSellableItem(db, sellableItemId)).resolves.toBeNull();
 		await expect(presentCart(db, "customer")).resolves.toMatchObject({
-			items: [{ sellableItemId, availableStock: 1, issues: ["sale_disabled"] }],
+			items: [{ sellableItemId, stockBand: "low", issues: ["sale_disabled"] }],
 		});
 		await expect(
 			createOrder(db, "product-disabled-order"),
@@ -112,7 +112,7 @@ describe("catalog sale-disabled state", { timeout: 30_000 }, () => {
 		});
 		await expect(loadCartSellableItem(db, sellableItemId)).resolves.toBeNull();
 		await expect(presentCart(db, "customer")).resolves.toMatchObject({
-			items: [{ sellableItemId, availableStock: 1, issues: ["sale_disabled"] }],
+			items: [{ sellableItemId, stockBand: "low", issues: ["sale_disabled"] }],
 		});
 		await expect(createOrder(db, "sku-disabled-order")).rejects.toMatchObject({
 			code: "sellable_item_unavailable",

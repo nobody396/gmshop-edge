@@ -77,6 +77,8 @@ import {
 } from "#/features/storefront/components/volume-price-table";
 import { paymentChannelLabel } from "#/features/storefront/payment-channel-label";
 import { purchaseMaximum } from "#/features/storefront/product-quantity";
+import { stockBandInStock } from "#/features/storefront/stock-band";
+import { stockBandLabel } from "#/features/storefront/stock-band-label";
 import {
 	productPriceSummary,
 	type StorefrontProduct,
@@ -551,13 +553,7 @@ export function StorefrontProductPage({
 																			? m.store_sale_disabled()
 																			: !isAvailable(item)
 																				? m.store_sold_out()
-																				: item.availableStock >= 0
-																					? m.store_stock({
-																							count: stockCount(
-																								item.availableStock,
-																							),
-																						})
-																					: null}
+																				: stockBandLabel(item.stockBand)}
 																</span>
 															</span>
 														</button>
@@ -588,15 +584,13 @@ export function StorefrontProductPage({
 													<span className="font-medium leading-snug">
 														{item.name}
 													</span>
-													{item.availableStock >= 0 ? (
-														<span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-															{m.store_stock({
-																count: stockCount(item.availableStock),
-															})}
-														</span>
-													) : !isAvailable(item) ? (
+													{item.contactOnly ? null : !isAvailable(item) ? (
 														<span className="shrink-0 text-muted-foreground text-xs">
 															{m.store_sold_out()}
+														</span>
+													) : stockBandLabel(item.stockBand) ? (
+														<span className="shrink-0 text-muted-foreground text-xs">
+															{stockBandLabel(item.stockBand)}
 														</span>
 													) : null}
 													{item.contactOnly ? (
@@ -1327,7 +1321,7 @@ function SellableItemSummary({
 					/>
 				</span>
 			) : null}
-			{sellableItem.availableStock === 0 ? (
+			{sellableItem.stockBand === "out" ? (
 				<span className="basis-full text-destructive text-sm">
 					{m.store_sold_out()}
 				</span>
@@ -1461,11 +1455,6 @@ function ProductPriceLine({ product }: { product: Product }) {
 	);
 }
 
-/** Big stock counts read as noise; past 99 the exact number no longer helps. */
-function stockCount(count: number) {
-	return count > 99 ? "99+" : count;
-}
-
 /**
  * Phones: the buy buttons sit below the plan list, often screens away. Keep a
  * slim price + buy bar on screen whenever those buttons are out of view.
@@ -1561,10 +1550,7 @@ function openSupportChat() {
 }
 
 function isAvailable(sellableItem: SellableItem) {
-	return (
-		sellableItem.availableStock < 0 ||
-		sellableItem.availableStock >= sellableItem.minimumQuantity
-	);
+	return stockBandInStock(sellableItem.stockBand);
 }
 function deliveryPromise(sellableItem: SellableItem) {
 	if (

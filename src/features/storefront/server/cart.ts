@@ -10,6 +10,7 @@ import {
 import { DomainError } from "#/lib/domain-error";
 import { getDb } from "#/server/db.server";
 import { resolveStoreAccount } from "./account";
+import { stockBand } from "../stock-band";
 import { storefrontStockExpression } from "./stock-availability";
 
 const CART_TTL_MS = 30 * 86_400_000;
@@ -84,10 +85,12 @@ export const previewStoreCartFn = createServerFn({ method: "POST" })
 				if (stock === 0) issues.push("sold_out");
 				if (
 					item.quantity < Number(row.minimum_quantity) ||
-					item.quantity > maximum ||
-					(stock >= 0 && item.quantity > stock)
+					item.quantity > maximum
 				)
 					issues.push("quantity_unavailable");
+				// Customers learn "not enough stock", never how many are left.
+				else if (stock > 0 && item.quantity > stock)
+					issues.push("insufficient_stock");
 				return {
 					sellableItemId: item.sellableItemId,
 					quantity: item.quantity,
@@ -97,7 +100,7 @@ export const previewStoreCartFn = createServerFn({ method: "POST" })
 					currencyDecimals: Number(row.currency_decimals),
 					minimumQuantity: Number(row.minimum_quantity),
 					maximumQuantity: maximum,
-					availableStock: stock,
+					stockBand: stockBand(stock, Number(row.minimum_quantity)),
 					productId: String(row.product_id),
 					productName: String(row.product_name),
 					deliveryComponentId: String(row.delivery_component_id),
@@ -551,10 +554,12 @@ export async function presentCart(db: D1Database, userId: string) {
 			if (stock === 0) issues.push("sold_out");
 			if (
 				item.quantity < Number(row.minimum_quantity) ||
-				item.quantity > maximum ||
-				(stock >= 0 && item.quantity > stock)
+				item.quantity > maximum
 			)
 				issues.push("quantity_unavailable");
+			// Customers learn "not enough stock", never how many are left.
+			else if (stock > 0 && item.quantity > stock)
+				issues.push("insufficient_stock");
 			return {
 				sellableItemId: item.sellableItemId,
 				quantity: item.quantity,
@@ -564,7 +569,7 @@ export async function presentCart(db: D1Database, userId: string) {
 				currencyDecimals: Number(row.currency_decimals),
 				minimumQuantity: Number(row.minimum_quantity),
 				maximumQuantity: maximum,
-				availableStock: stock,
+				stockBand: stockBand(stock, Number(row.minimum_quantity)),
 				productId: String(row.product_id),
 				productName: String(row.product_name),
 				deliveryComponentId: String(row.delivery_component_id),

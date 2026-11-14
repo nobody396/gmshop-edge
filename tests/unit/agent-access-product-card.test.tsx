@@ -12,8 +12,7 @@ vi.mock("#/paraglide/messages", () => ({
 	m: new Proxy(
 		{},
 		{
-			get: (_, key) => (input?: { count: number }) =>
-				key === "store_stock" ? `Stock ${input?.count}` : String(key),
+			get: (_, key) => () => String(key),
 		},
 	),
 }));
@@ -38,8 +37,7 @@ const product: StorefrontCatalogProduct = {
 	listPriceMinor: null,
 	currency: "CNY",
 	currencyDecimals: 2,
-	availableStock: -1,
-	displayStockQuantity: -1,
+	stockBand: "unlimited",
 	hasManualFulfillment: false,
 	hasAutomaticFulfillment: true,
 	salesCount: 0,
@@ -54,18 +52,19 @@ describe("access product inventory sentinel", () => {
 		expect(html).not.toContain("Stock -1");
 		expect(html).toContain("¥199.00");
 	});
-	it("preserves normal product stock counts", () => {
+	it("shows a stock band, never the exact count", () => {
 		const html = renderToStaticMarkup(
 			<StorefrontProductCard
-				product={{ ...product, productType: "stock", displayStockQuantity: 5 }}
+				product={{ ...product, productType: "stock", stockBand: "limited" }}
 			/>,
 		);
-		expect(html).toContain("Stock 5");
+		expect(html).toContain("store_stock_limited");
+		expect(html).not.toMatch(/Stock \d/);
 	});
 	it("preserves sold-out products", () => {
 		const html = renderToStaticMarkup(
 			<StorefrontProductCard
-				product={{ ...product, productType: "stock", displayStockQuantity: 0 }}
+				product={{ ...product, productType: "stock", stockBand: "out" }}
 			/>,
 		);
 		expect(html).toContain("store_sold_out");
