@@ -40,7 +40,7 @@ function item(overrides: Partial<Item>): Item {
 		showOnOrderPage: true,
 		allowResend: false,
 		saleDisabled: false,
-		availableStock: 3,
+		stockBand: "low",
 		channelPrices: [],
 		policy: {
 			delivery: "",
@@ -84,13 +84,13 @@ describe("product SEO", () => {
 		expect(
 			productPriceSummary(
 				product({
-					sellableItems: [item({ availableStock: 0 })],
+					sellableItems: [item({ stockBand: "out" })],
 				}),
 			),
 		).toMatchObject({ inStock: false });
 		expect(
 			productPriceSummary(
-				product({ sellableItems: [item({ availableStock: -1 })] }),
+				product({ sellableItems: [item({ stockBand: "unlimited" })] }),
 			),
 		).toMatchObject({ inStock: true });
 		expect(productPriceSummary(product({ saleDisabled: true }))).toMatchObject({
@@ -137,8 +137,8 @@ describe("product SEO", () => {
 	});
 
 	it("lists one Offer per sellable plan with its public price and stock", () => {
-		const go = item({ name: "Go", priceMinor: "4000", availableStock: 0 });
-		const pro = item({ name: "Pro", priceMinor: "120000", availableStock: -1 });
+		const go = item({ name: "Go", priceMinor: "4000", stockBand: "out" });
+		const pro = item({ name: "Pro", priceMinor: "120000", stockBand: "unlimited" });
 		const paused = item({
 			name: "停售",
 			priceMinor: "100",

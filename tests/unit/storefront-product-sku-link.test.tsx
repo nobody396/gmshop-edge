@@ -7,13 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	productId: "product",
 	items: [
-		{ id: "go", name: "Go", availableStock: 10, minimumQuantity: 1 },
-		{ id: "ios", name: "iOS 20X", availableStock: 50, minimumQuantity: 1 },
-		{ id: "500", name: "Pro 500", availableStock: 50, minimumQuantity: 2 },
+		{ id: "go", name: "Go", stockBand: "limited", minimumQuantity: 1 },
+		{ id: "ios", name: "iOS 20X", stockBand: "plenty", minimumQuantity: 1 },
+		{ id: "500", name: "Pro 500", stockBand: "plenty", minimumQuantity: 2 },
 		{
 			id: "quote",
 			name: "Quote only",
-			availableStock: 50,
+			stockBand: "plenty",
 			minimumQuantity: 1,
 			saleDisabled: true,
 			contactOnly: true,

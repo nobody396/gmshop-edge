@@ -19,6 +19,7 @@ import {
 } from "#/components/ui/dialog";
 import { StoreMoney } from "#/features/exchange-rates/currency-context";
 import { getStorefrontProductFn } from "#/features/storefront/server/catalog";
+import { stockBandInStock } from "#/features/storefront/stock-band";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
 import {
@@ -315,8 +316,7 @@ function GuideResult({
 				{copy.unavailable}
 			</output>
 		);
-	const available =
-		item.availableStock < 0 || item.availableStock >= item.minimumQuantity;
+	const available = stockBandInStock(item.stockBand);
 	const allowed = available && (!step.warning || accepted);
 	return (
 		<div className="space-y-4">

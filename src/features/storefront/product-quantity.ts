@@ -1,8 +1,8 @@
+import { type StockBand, stockBandPurchaseMaximum } from "./stock-band";
+
 export function purchaseMaximum(item: {
-	availableStock: number;
+	stockBand: StockBand;
 	maximumQuantity: number;
 }) {
-	return item.availableStock < 0
-		? item.maximumQuantity
-		: Math.min(item.maximumQuantity, item.availableStock);
+	return stockBandPurchaseMaximum(item.stockBand, item.maximumQuantity);
 }

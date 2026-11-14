@@ -13,6 +13,7 @@ import {
 	localizeProduct,
 	localizeSellableItem,
 } from "../catalog-localizations";
+import { stockBand } from "../stock-band";
 import { unlistedProductFilter } from "../unlisted-products";
 import {
 	paymentChannelIsVisible,
@@ -148,7 +149,6 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				  WHERE stock_item.product_id = p.id AND stock_item.enabled = 1 AND stock_item.sale_disabled = 0
 				   AND stock_item.fulfillment_source <> 'manual'
 				 ) ELSE NULL END AS display_stock_quantity,
-				 ${storefrontStockExpression("p", "s")} AS available_stock,
 			 COALESCE((SELECT SUM(item.quantity) FROM shop_order_items item JOIN shop_orders sold_order ON sold_order.id = item.order_id WHERE item.product_id = p.id AND sold_order.status IN ('paid','completed','fulfilling','refunding','refunded')), 0) AS sales_count
 			 FROM products p
 			 JOIN product_sellable_items s ON s.id = (
@@ -199,11 +199,11 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 						row.list_price_minor == null ? null : String(row.list_price_minor),
 					currency: String(row.currency),
 					currencyDecimals: Number(row.currency_decimals),
-					availableStock: Number(row.available_stock),
-					displayStockQuantity:
+					// A band only: the exact count never leaves the server.
+					stockBand:
 						row.display_stock_quantity == null
 							? null
-							: Number(row.display_stock_quantity),
+							: stockBand(Number(row.display_stock_quantity)),
 					hasManualFulfillment: Boolean(row.has_manual_fulfillment),
 					hasAutomaticFulfillment: Boolean(row.has_automatic_fulfillment),
 					salesCount: Number(row.sales_count),
@@ -377,7 +377,11 @@ function presentSellableItem(
 		allowResend: Boolean(row.allow_resend),
 		saleDisabled: Boolean(row.sale_disabled),
 		contactOnly: Boolean(row.contact_only),
-		availableStock: Number(row.available_stock),
+		// A band only: orders are still checked against the real count server-side.
+		stockBand: stockBand(
+			Number(row.available_stock),
+			Number(row.minimum_quantity),
+		),
 		channelPrices: channelPrices.map((price) => ({
 			id: String(price.id),
 			name: String(price.name),

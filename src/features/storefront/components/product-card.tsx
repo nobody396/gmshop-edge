@@ -12,6 +12,7 @@ import {
 	primaryCategory,
 } from "#/features/home/category-sidebar";
 import type { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
+import { stockBandLabel } from "#/features/storefront/stock-band-label";
 import { productThumbnailUrl } from "#/features/storefront/thumbnail";
 import { m } from "#/paraglide/messages";
 
@@ -25,19 +26,15 @@ export function StorefrontProductCard({
 	product: StorefrontCatalogProduct;
 }) {
 	const currency = useCurrency();
-	// Negative counts are the existing non-stock/unlimited sentinel, not inventory.
-	const displayStockQuantity =
-		product.displayStockQuantity != null && product.displayStockQuantity < 0
-			? null
-			: product.displayStockQuantity;
-	const available = displayStockQuantity !== 0;
+	// The server sends a band, never the exact count; untracked stock has no label.
+	const available = product.stockBand !== "out";
 	const isFree = BigInt(product.maxPriceMinor) === 0n;
 	const singlePrice = product.maxPriceMinor === product.priceMinor;
 	const hasDiscount =
 		singlePrice &&
 		product.listPriceMinor != null &&
 		BigInt(product.listPriceMinor) > BigInt(product.priceMinor);
-	const availability = stockLabel(displayStockQuantity);
+	const availability = product.stockBand === "out" ? m.store_sold_out() : null;
 	const price = isFree
 		? m.store_price_free()
 		: currency.format(
@@ -66,12 +63,7 @@ export function StorefrontProductCard({
 					? m.store_manual_delivery()
 					: m.store_auto_delivery()
 			: null;
-	const stock =
-		displayStockQuantity != null && displayStockQuantity > 0
-			? m.store_stock({
-					count: displayStockQuantity > 99 ? "99+" : displayStockQuantity,
-				})
-			: null;
+	const stock = stockBandLabel(product.stockBand);
 	// A shrunken cover turns into unreadable text; the brand mark reads at any size.
 	const category = primaryCategory(product.tags);
 	const cover = hasCategoryIcon(category) ? (
@@ -220,7 +212,3 @@ function productMark(name: string) {
 	return first ? first.toUpperCase() : "·";
 }
 
-function stockLabel(displayStockQuantity: number | null) {
-	if (displayStockQuantity === 0) return m.store_sold_out();
-	return null;
-}

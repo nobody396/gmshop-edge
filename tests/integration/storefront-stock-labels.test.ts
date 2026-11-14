@@ -166,7 +166,9 @@ describe("customer stock labels and product summaries", {
 				"utf8",
 			);
 			expect(source).not.toMatch(/store_procurement|hasProcurement/);
-			expect(source).toContain("m.store_stock(");
+			// Bands only (owner 2026-11-14): no exact count reaches customers.
+			expect(source).toContain("stockBandLabel(");
+			expect(source).not.toContain("m.store_stock(");
 		}
 		const catalog = readFileSync(
 			new URL(
@@ -176,5 +178,6 @@ describe("customer stock labels and product summaries", {
 			"utf8",
 		);
 		expect(catalog).not.toContain("hasProcurement");
+		expect(catalog).not.toContain("availableStock:");
 	});
 });

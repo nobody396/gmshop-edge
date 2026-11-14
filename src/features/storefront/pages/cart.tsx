@@ -218,8 +218,12 @@ export function StorefrontCartPage() {
 								("minimumQuantity" in item ? item.minimumQuantity : 1) ?? 1;
 							const maximumQuantity =
 								typeof item.maximumQuantity === "number" &&
-								typeof item.availableStock === "number"
-									? purchaseMaximum(item)
+								"stockBand" in item &&
+								item.stockBand
+									? purchaseMaximum({
+											stockBand: item.stockBand,
+											maximumQuantity: item.maximumQuantity,
+										})
 									: 1_000;
 							const quantityAdjustable = maximumQuantity > minimumQuantity;
 							return (
@@ -500,6 +504,8 @@ function cartIssueMessage(issue: string) {
 	if (issue === "unavailable") return m.store_cart_issue_unavailable();
 	if (issue === "sold_out") return m.store_cart_issue_sold_out();
 	if (issue === "quantity_unavailable") return m.store_cart_issue_quantity();
+	if (issue === "insufficient_stock")
+		return m.store_cart_issue_insufficient_stock();
 	if (issue === "price_changed") return m.store_cart_issue_price_changed();
 	return m.store_cart_item_issue();
 }

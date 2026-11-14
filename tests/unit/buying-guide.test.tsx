@@ -25,7 +25,7 @@ vi.mock("#/features/storefront/server/catalog", () => ({
 						priceMinor: "15000",
 						currency: "CNY",
 						currencyDecimals: 2,
-						availableStock: mock.stock,
+						stockBand: mock.stock === 0 ? "out" : "limited",
 						minimumQuantity: 1,
 						saleDisabled: mock.disabled,
 						policy: {
