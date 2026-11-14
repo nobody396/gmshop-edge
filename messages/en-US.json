@@ -2699,6 +2699,8 @@
 	"guide_gmail_target": "Which Gmail?",
 	"guide_gmailus": "US, with 2FA",
 	"guide_gmailus_hint": "More reliable for overseas sign-ups",
+	"guide_gmailusno2fa": "US, no 2FA",
+	"guide_gmailusno2fa_hint": "US account, set up security yourself",
 	"guide_gmailrandom": "Random region, no 2FA",
 	"guide_gmailrandom_hint": "Cheaper, fine for everyday use",
 	"guide_gptacct": "ChatGPT Plus ready-made account",

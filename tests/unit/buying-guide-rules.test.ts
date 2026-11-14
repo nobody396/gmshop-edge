@@ -395,6 +395,17 @@ it("sends Free accounts to India card-paid Go and covers the newer catalog", () 
 		kind: "result",
 		product: "gmailus",
 	});
+	expect(guideStep(["gmail"])).toMatchObject({
+		options: ["gmailus", "gmailusno2fa", "gmailrandom"],
+	});
+	expect(guideStep(["gmail", "gmailusno2fa"])).toEqual({
+		kind: "result",
+		product: "gmailusno2fa",
+	});
+	expect(guideProducts.gmailusno2fa).toEqual({
+		productId: "e4acdd84-af47-45fd-99c6-29cb7a2d38b1",
+		itemId: "6bf0239d-d096-489e-b50a-b70fc417b5fc",
+	});
 	expect(guideStep(["claudeenv", "envquarter"])).toEqual({
 		kind: "result",
 		product: "envquarter",

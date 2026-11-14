@@ -218,6 +218,10 @@ export const guideProducts = {
 		productId: "e4acdd84-af47-45fd-99c6-29cb7a2d38b1",
 		itemId: "20a6011a-779d-43fa-a843-47fa76e31abf",
 	},
+	gmailusno2fa: {
+		productId: "e4acdd84-af47-45fd-99c6-29cb7a2d38b1",
+		itemId: "6bf0239d-d096-489e-b50a-b70fc417b5fc",
+	},
 	gmailrandom: {
 		productId: "e4acdd84-af47-45fd-99c6-29cb7a2d38b1",
 		itemId: "f7dd6de9-9bdb-552a-9f38-e5b918a343b5",
@@ -560,8 +564,17 @@ export function guideStep(a: readonly string[]): GuideStep {
 			return result(current);
 	}
 	if (family === "gmail") {
-		if (!current) return question("gmail_target", ["gmailus", "gmailrandom"]);
-		if (current === "gmailus" || current === "gmailrandom")
+		if (!current)
+			return question("gmail_target", [
+				"gmailus",
+				"gmailusno2fa",
+				"gmailrandom",
+			]);
+		if (
+			current === "gmailus" ||
+			current === "gmailusno2fa" ||
+			current === "gmailrandom"
+		)
 			return result(current);
 	}
 	if (family === "claudeenv") {

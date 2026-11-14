@@ -2699,6 +2699,8 @@
 	"guide_gmail_target": "要哪种 Gmail？",
 	"guide_gmailus": "美区，带 2FA",
 	"guide_gmailus_hint": "注册海外服务更稳",
+	"guide_gmailusno2fa": "美区，不带 2FA",
+	"guide_gmailusno2fa_hint": "美区账号，自己设置安全项",
 	"guide_gmailrandom": "随机地区，不带 2FA",
 	"guide_gmailrandom_hint": "便宜，够日常用",
 	"guide_gptacct": "ChatGPT Plus 成品号",
