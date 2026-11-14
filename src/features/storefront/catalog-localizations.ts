@@ -257,6 +257,49 @@ Warranty
 - Within 24 hours of delivery, if an unclaimed link cannot be claimed, contact support for a replacement after verification.
 - Links already claimed (including by someone else after posting in a group) and banned or restricted accounts are not covered.`,
 	},
+	"faea6781-0e8d-4cf2-ae21-684028307ccb": {
+		name: "ChatGPT Plus ready-made account｜1 month",
+		description: `A ChatGPT account with the Plus membership already active, 1-month membership, 30-day warranty. Ordering is a pre-order; delivery is usually within 24 hours.
+
+Read these 5 points before ordering
+1. This is a ready-made account: we deliver a ChatGPT account with Plus already active; it is not applied to your own account. To upgrade your own account, buy "ChatGPT membership" instead.
+2. Ordering is a pre-order: after payment, copy the whole delivery text and send it to the online support at the bottom right of the site, then add the QQ contact from the reply to receive the account. Usually delivered within 24 hours. No cancellation after payment.
+3. 30-day warranty: if the membership drops within 30 days, contact support and we replace the account after verification.
+4. Delivery is complete once the account details are sent; no refunds. Problems are handled by replacement under the warranty.
+5. The membership lasts 1 month and does not renew automatically; place a new order to keep using it.
+
+Included
+- One ChatGPT account with the Plus membership active for 1 month.
+- OpenAI's official page decides the exact Plus benefits and usage.
+
+How to get your account
+1. After payment, copy the delivery text (the whole paragraph) from the order page.
+2. Send it to the online support at the bottom right of the site and add the QQ contact from the reply.
+3. We send you the account details, usually within 24 hours.
+4. Sign in and check as soon as you receive it.
+
+How to sign in
+1. Open https://chatgpt.com , click "Log in" and sign in with the delivered account details.
+2. If a verification code is required, get it the way the delivery describes.
+3. After signing in, click your avatar at the bottom left → Settings and check that the plan shows Plus.
+
+Staying stable
+- One person per account; do not share.
+- Avoid switching devices and networks frequently.
+- Ask support before changing the password or email.
+- Follow OpenAI's usage policies; do not use the account for bulk calls or prohibited uses.
+
+Warranty
+- 30-day warranty: if the membership drops (back to Free) within 30 days of delivery, send a screenshot to support; after verification we replace the account.
+- If you cannot sign in after delivery, send a screenshot to support; after verification we replace the account.
+- Bans for breaking OpenAI's rules, and sign-in problems caused by changing the account details yourself, are not covered.
+- Payment is a pre-order: no cancellation. Delivery is complete once the account details are sent; no refunds; problems are handled by replacement under the warranty.
+
+FAQ
+- What is the difference from the membership recharge? A ready-made account is a new account we deliver with the membership already active; the membership recharge applies the membership to your own account.
+- How long does it take? Usually within 24 hours.
+- Does it renew automatically? No. The membership ends after 1 month; place a new order to keep using it.`,
+	},
 	"550711f1-8901-4f4f-878d-1b81ca09c9ac": {
 		name: "Claude ready-made account｜1 month (pre-order)",
 		description: `A US Claude account with the membership already active, no KYC, delivered together with a matched dedicated network and a one-line setup command; invoices available. Ordering is a pre-order; delivery is usually within 24 hours. Three plans: Pro, Max 5X and Max 20X.
@@ -921,6 +964,16 @@ ${claudeRestrictions}`,
 			"Gemini Ultra 20X ready-made account with Google AI Ultra for 1 month; it cannot be applied to your own account",
 			"First sign-in only: sign in and check soon after delivery; contact support if the first sign-in fails",
 			"Do not share the account or switch IPs or devices frequently; restrictions or bans are not covered",
+		),
+	},
+	"2cc62526-ee22-47f9-9756-955af720ab55": {
+		name: "ChatGPT Plus｜Ready-made account｜1 month",
+		policy: policy(
+			"A reservation code is delivered automatically after payment; send the whole delivery text to the online support at the bottom right of the site and add the QQ contact from the reply to receive the account",
+			"Pre-order; usually delivered within 24 hours",
+			"ChatGPT Plus ready-made account: an account with Plus already active, 1-month membership",
+			"30-day warranty: if the membership drops within 30 days of delivery, send a screenshot to support and we replace the account after verification; bans for breaking the rules or problems caused by changing the account details yourself are not covered",
+			"Ready-made account, cannot be applied to your own account; payment is a pre-order with no cancellation; delivery is complete once the account details are sent, no refunds, problems are handled by replacement under the warranty",
 		),
 	},
 	"9c3adf97-3884-4776-b099-acf041e61625": {
