@@ -119,6 +119,15 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 				  WHERE sale_item.product_id = p.id AND sale_item.enabled = 1
 				   AND sale_item.sale_disabled = 0
 				 ) THEN 1 ELSE 0 END AS effective_sale_disabled,
+				 CASE WHEN p.sale_disabled = 0 AND NOT EXISTS (
+				  SELECT 1 FROM product_sellable_items sale_item
+				  WHERE sale_item.product_id = p.id AND sale_item.enabled = 1
+				   AND sale_item.sale_disabled = 0
+				 ) AND EXISTS (
+				  SELECT 1 FROM product_sellable_items quote_item
+				  WHERE quote_item.product_id = p.id AND quote_item.enabled = 1
+				   AND quote_item.contact_only = 1
+				 ) THEN 1 ELSE 0 END AS contact_only,
 				 (SELECT COUNT(*) FROM product_sellable_items variant_item
 				  WHERE variant_item.product_id = p.id AND variant_item.enabled = 1
 				   AND variant_item.sale_disabled = 0) AS variant_count,
@@ -169,6 +178,8 @@ export const listStorefrontCatalogFn = createServerFn({ method: "GET" })
 						| "download"
 						| "automation",
 					saleDisabled: Boolean(row.effective_sale_disabled),
+					// Nothing buyable online, but a quote-only plan: the card says "contact support", not "paused".
+					contactOnly: Boolean(row.contact_only),
 					tags: JSON.parse(String(row.tags_json)) as string[],
 					coverUrl: row.cover_object_key
 						? `/api/shop/products/${row.id}/cover?v=${row.updated_at}`
@@ -365,6 +376,7 @@ function presentSellableItem(
 		showOnOrderPage: Boolean(row.show_on_order_page),
 		allowResend: Boolean(row.allow_resend),
 		saleDisabled: Boolean(row.sale_disabled),
+		contactOnly: Boolean(row.contact_only),
 		availableStock: Number(row.available_stock),
 		channelPrices: channelPrices.map((price) => ({
 			id: String(price.id),

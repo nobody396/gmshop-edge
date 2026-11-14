@@ -200,6 +200,10 @@ export const productSellableItems = sqliteTable(
 		saleDisabled: integer("sale_disabled", { mode: "boolean" })
 			.notNull()
 			.default(false),
+		// Quote-only: price stays public, buying goes through support. Triggers keep sale_disabled = 1.
+		contactOnly: integer("contact_only", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		// Billing cycle that opts the item into renewal reminders; NULL = no reminders.
 		reminderCycleDays: integer("reminder_cycle_days"),
 		...timestamps,

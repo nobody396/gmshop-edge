@@ -14,6 +14,7 @@ import {
 	CircleCheck,
 	Clock3,
 	Globe2,
+	Headset,
 	LogIn,
 	Minus,
 	PackageCheck,
@@ -85,6 +86,7 @@ import { initialPaymentChannelId } from "#/features/storefront/schema";
 import { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { getProductPricingFn } from "#/features/storefront/server/price-functions";
 import { useFitStickyTop } from "#/features/storefront/sticky-top";
+import { webSupportOpenEvent } from "#/features/telegram/web-support-contract";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";
 import { getLocale } from "#/paraglide/runtime";
@@ -261,6 +263,8 @@ export function StorefrontProductPage({
 		quantity >= selectedItem.minimumQuantity &&
 		maximumQuantity != null &&
 		quantity <= maximumQuantity;
+	// Quote-only plans keep their prices public; buying goes through the support chat.
+	const contactOnly = Boolean(selectedItem?.contactOnly);
 	const entitlement = selectedItem ? entitlementSummary(selectedItem) : null;
 	const buyNow = () => {
 		if (!selectedItem) return;
@@ -308,6 +312,7 @@ export function StorefrontProductPage({
 			selectedItem.id !== gptUpgradeProduct.itemId ? (
 				<MobileBuyBar
 					canPurchase={canPurchase}
+					contactOnly={contactOnly}
 					channel={
 						selectedItem.channelPrices.find(
 							(channel) => channel.id === checkoutChannelId,
@@ -472,6 +477,12 @@ export function StorefrontProductPage({
 							<p>{m.store_alipay_fee_notice()}</p>
 						</div>
 					)}
+					{contactOnly && !data.saleDisabled ? (
+						<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-primary/25 bg-primary/10 px-3.5 py-3 text-primary text-sm leading-6">
+							<Headset className="mt-0.5 size-4 shrink-0" />
+							<p>{m.store_contact_only_description()}</p>
+						</div>
+					) : null}
 					{data.saleDisabled ? (
 						<div className="mt-4 flex max-w-2xl items-start gap-2.5 rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-destructive text-sm leading-6">
 							<Ban className="mt-0.5 size-4 shrink-0" />
@@ -534,17 +545,19 @@ export function StorefrontProductPage({
 																	)}
 																</span>
 																<span className="shrink-0 text-muted-foreground text-[11px] tabular-nums">
-																	{item.saleDisabled
-																		? m.store_sale_disabled()
-																		: !isAvailable(item)
-																			? m.store_sold_out()
-																			: item.availableStock >= 0
-																				? m.store_stock({
-																						count: stockCount(
-																							item.availableStock,
-																						),
-																					})
-																				: null}
+																	{item.contactOnly
+																		? m.store_contact_only()
+																		: item.saleDisabled
+																			? m.store_sale_disabled()
+																			: !isAvailable(item)
+																				? m.store_sold_out()
+																				: item.availableStock >= 0
+																					? m.store_stock({
+																							count: stockCount(
+																								item.availableStock,
+																							),
+																						})
+																					: null}
 																</span>
 															</span>
 														</button>
@@ -586,7 +599,11 @@ export function StorefrontProductPage({
 															{m.store_sold_out()}
 														</span>
 													) : null}
-													{item.saleDisabled ? (
+													{item.contactOnly ? (
+														<span className="shrink-0 text-primary text-xs">
+															{m.store_contact_only()}
+														</span>
+													) : item.saleDisabled ? (
 														<span className="shrink-0 text-destructive text-xs">
 															{m.store_sale_disabled()}
 														</span>
@@ -664,70 +681,74 @@ export function StorefrontProductPage({
 									pricing={pricing.data?.[selectedItem.id]}
 									quantity={quantity}
 								/>
-								{selectedItem.minimumQuantity !==
-									selectedItem.maximumQuantity && (
-									<div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-2">
-										<div className="grid w-fit gap-2">
-											<Label htmlFor="product-quantity">
-												{m.store_quantity()}
-											</Label>
-											<div className="flex h-11 items-center rounded-xl bg-muted/50 p-1">
-												<Button
-													aria-label={m.store_quantity_decrease()}
-													className="size-9 rounded-lg"
-													disabled={quantity <= selectedItem.minimumQuantity}
-													onClick={() =>
-														setQuantity((current) =>
-															Math.max(
-																selectedItem.minimumQuantity,
-																current - 1,
-															),
-														)
-													}
-													size="icon"
-													type="button"
-													variant="ghost"
-												>
-													<Minus />
-												</Button>
-												<Input
-													className="h-9 w-16 border-0 bg-transparent px-1 text-center shadow-none focus-visible:ring-0"
-													id="product-quantity"
-													max={maximumQuantity}
-													min={selectedItem.minimumQuantity}
-													onChange={(event) =>
-														setQuantity(Number(event.target.value))
-													}
-													type="number"
-													value={quantity}
-												/>
-												<Button
-													aria-label={m.store_quantity_increase()}
-													className="size-9 rounded-lg"
-													disabled={
-														maximumQuantity == null ||
-														quantity >= maximumQuantity
-													}
-													onClick={() =>
-														setQuantity((current) =>
-															Math.min(maximumQuantity ?? current, current + 1),
-														)
-													}
-													size="icon"
-													type="button"
-													variant="ghost"
-												>
-													<Plus />
-												</Button>
+								{!contactOnly &&
+									selectedItem.minimumQuantity !==
+										selectedItem.maximumQuantity && (
+										<div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-2">
+											<div className="grid w-fit gap-2">
+												<Label htmlFor="product-quantity">
+													{m.store_quantity()}
+												</Label>
+												<div className="flex h-11 items-center rounded-xl bg-muted/50 p-1">
+													<Button
+														aria-label={m.store_quantity_decrease()}
+														className="size-9 rounded-lg"
+														disabled={quantity <= selectedItem.minimumQuantity}
+														onClick={() =>
+															setQuantity((current) =>
+																Math.max(
+																	selectedItem.minimumQuantity,
+																	current - 1,
+																),
+															)
+														}
+														size="icon"
+														type="button"
+														variant="ghost"
+													>
+														<Minus />
+													</Button>
+													<Input
+														className="h-9 w-16 border-0 bg-transparent px-1 text-center shadow-none focus-visible:ring-0"
+														id="product-quantity"
+														max={maximumQuantity}
+														min={selectedItem.minimumQuantity}
+														onChange={(event) =>
+															setQuantity(Number(event.target.value))
+														}
+														type="number"
+														value={quantity}
+													/>
+													<Button
+														aria-label={m.store_quantity_increase()}
+														className="size-9 rounded-lg"
+														disabled={
+															maximumQuantity == null ||
+															quantity >= maximumQuantity
+														}
+														onClick={() =>
+															setQuantity((current) =>
+																Math.min(
+																	maximumQuantity ?? current,
+																	current + 1,
+																),
+															)
+														}
+														size="icon"
+														type="button"
+														variant="ghost"
+													>
+														<Plus />
+													</Button>
+												</div>
 											</div>
+											<QuantityTotal
+												pricing={pricing.data?.[selectedItem.id]}
+												quantity={quantity}
+												sellableItem={selectedItem}
+											/>
 										</div>
-										<QuantityTotal
-											pricing={pricing.data?.[selectedItem.id]}
-											quantity={quantity}
-											sellableItem={selectedItem}
-										/>
-									</div>
-								)}
+									)}
 							</>
 						) : (
 							<p className="text-muted-foreground">{m.store_select_plan()}</p>
@@ -735,7 +756,16 @@ export function StorefrontProductPage({
 					</div>
 					<div className="mt-5" ref={purchaseActions}>
 						<div className="grid gap-2 sm:grid-cols-2">
-							{requiresSignIn && canPurchase ? (
+							{contactOnly ? (
+								<Button
+									className="h-12 rounded-xl sm:col-span-2"
+									onClick={openSupportChat}
+									type="button"
+								>
+									<Headset />
+									{m.store_contact_only_action()}
+								</Button>
+							) : requiresSignIn && canPurchase ? (
 								<Button asChild className="h-12 rounded-xl">
 									<Link search={{ redirect: checkoutPath }} to="/sign-in">
 										<LogIn />
@@ -761,7 +791,7 @@ export function StorefrontProductPage({
 											: m.store_buy_now()}
 								</Button>
 							)}
-							{selectedItem?.id !== gptUpgradeProduct.itemId ? (
+							{selectedItem?.id !== gptUpgradeProduct.itemId && !contactOnly ? (
 								<Button
 									className="h-12 rounded-xl"
 									disabled={!canPurchase}
@@ -798,7 +828,7 @@ export function StorefrontProductPage({
 							itemId={selectedItem.id}
 						/>
 					) : null}
-					{selectedItem ? (
+					{selectedItem && !contactOnly ? (
 						<div className="mt-5 grid gap-3">
 							{delivery ? (
 								<PurchaseHighlight icon={ShieldCheck}>
@@ -1420,7 +1450,12 @@ function ProductPriceLine({ product }: { product: Product }) {
 			</span>
 			<span aria-hidden="true">·</span>
 			<span>
-				{summary.inStock ? m.seo_product_stock_in() : m.seo_product_stock_out()}
+				{summary.inStock
+					? m.seo_product_stock_in()
+					: !product.saleDisabled &&
+							product.sellableItems.some((item) => item.contactOnly)
+						? m.store_contact_only()
+						: m.seo_product_stock_out()}
 			</span>
 		</p>
 	);
@@ -1441,6 +1476,7 @@ function MobileBuyBar({
 	pricing,
 	quantity,
 	canPurchase,
+	contactOnly,
 	onBuy,
 	target,
 }: {
@@ -1449,6 +1485,7 @@ function MobileBuyBar({
 	pricing: ItemPricing | undefined;
 	quantity: number;
 	canPurchase: boolean;
+	contactOnly: boolean;
 	onBuy: () => void;
 	target: RefObject<HTMLDivElement | null>;
 }) {
@@ -1490,20 +1527,37 @@ function MobileBuyBar({
 						/>
 					</strong>
 				</div>
-				<Button
-					className="h-11 shrink-0 rounded-xl px-6"
-					disabled={!canPurchase}
-					onClick={onBuy}
-					tabIndex={actionsVisible ? -1 : undefined}
-				>
-					<Zap />
-					{sellableItem.saleDisabled
-						? m.store_sale_disabled()
-						: m.store_buy_now()}
-				</Button>
+				{contactOnly ? (
+					<Button
+						className="h-11 shrink-0 rounded-xl px-6"
+						onClick={openSupportChat}
+						tabIndex={actionsVisible ? -1 : undefined}
+						type="button"
+					>
+						<Headset />
+						{m.store_contact_only_action()}
+					</Button>
+				) : (
+					<Button
+						className="h-11 shrink-0 rounded-xl px-6"
+						disabled={!canPurchase}
+						onClick={onBuy}
+						tabIndex={actionsVisible ? -1 : undefined}
+					>
+						<Zap />
+						{sellableItem.saleDisabled
+							? m.store_sale_disabled()
+							: m.store_buy_now()}
+					</Button>
+				)}
 			</div>
 		</div>
 	);
+}
+
+/** Opens the site's own support chat (bottom right). */
+function openSupportChat() {
+	window.dispatchEvent(new Event(webSupportOpenEvent));
 }
 
 function isAvailable(sellableItem: SellableItem) {

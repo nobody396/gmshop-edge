@@ -18,6 +18,7 @@ type SkuRow = {
 	price_minor: string;
 	stock_quantity: number;
 	sku_sale_disabled: number;
+	sku_contact_only: number;
 };
 
 const ELIGIBLE_PRODUCTS = `
@@ -50,6 +51,7 @@ const ELIGIBLE_SKUS = `
 	SELECT item.product_id, item.id AS sku_id, item.name AS sku_name,
 	 COALESCE(listing.price_minor, item.price_minor) AS price_minor,
 	 item.sale_disabled AS sku_sale_disabled,
+	 item.contact_only AS sku_contact_only,
 	 ${storefrontStockExpression("product", "item")} AS stock_quantity
 	 FROM product_sellable_items item
 	 JOIN supplier_export_listings listing ON listing.sellable_item_id = item.id
@@ -188,6 +190,8 @@ function assembleProducts(products: ProductRow[], skus: SkuRow[]) {
 			sale_disabled:
 				Boolean(product.product_sale_disabled) ||
 				Boolean(sku.sku_sale_disabled),
+			// Quote-only SKUs are always sale_disabled too; partners show "contact support" instead of "paused".
+			contact_only: Boolean(sku.sku_contact_only),
 		})),
 	}));
 }
