@@ -22,6 +22,9 @@
 #   CE_ROUTER=1       梯子在路由器上（软路由）：需要导入订阅时不找订阅也不问，直接按软路由配置（客服可让客户这样运行）
 # 没装 Clash Verge Rev 时：自动下载官方固定版本（SHA-256 校验）装到「应用程序」，把原来代理软件（FlClash、Clash for Windows、
 # Clash Party / Mihomo Party、Clash Nyanpasu、v2rayN）里正在用的订阅导入进去，再关掉原来的软件和它设的系统代理。
+# 整个脚本包在 main 里、最后一行才调用：客户用 curl | bash 时 bash 边下载边执行，第 [3] 步重载 Clash 会断网几秒，
+# 下载被掐断时以前会只执行前半截；现在 bash 必须读到文件末尾才开始执行，截断时只报语法错误、什么都不做。
+main() {
 set -uo pipefail
 
 GROUP_NAME="Claude静态IP"
@@ -1129,3 +1132,6 @@ else
   printf '\033[1;31m%s 项通过，%s 项没通过 ✘\033[0m\n上面红字里写了怎么改的，先照着改；改完（或没写怎么改）就把同一条命令再运行一次。还有红字，再把这个窗口截图发给客服。\n' "$PASS" "$FAILN"
   exit 4
 fi
+}
+
+main "$@"
