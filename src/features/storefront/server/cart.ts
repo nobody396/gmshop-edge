@@ -9,8 +9,8 @@ import {
 } from "#/features/storefront/schema";
 import { DomainError } from "#/lib/domain-error";
 import { getDb } from "#/server/db.server";
-import { resolveStoreAccount } from "./account";
 import { stockBand } from "../stock-band";
+import { resolveStoreAccount } from "./account";
 import { storefrontStockExpression } from "./stock-availability";
 
 const CART_TTL_MS = 30 * 86_400_000;

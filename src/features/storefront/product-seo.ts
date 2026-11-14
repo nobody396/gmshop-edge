@@ -86,10 +86,7 @@ export function publicSellableItems(product: StorefrontProduct) {
 }
 
 function itemInStock(product: StorefrontProduct, item: SellableItem) {
-	return (
-		!product.saleDisabled &&
-		stockBandInStock(item.stockBand)
-	);
+	return !product.saleDisabled && stockBandInStock(item.stockBand);
 }
 
 /**

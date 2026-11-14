@@ -211,4 +211,3 @@ function productMark(name: string) {
 	const first = name.trim().charAt(0);
 	return first ? first.toUpperCase() : "·";
 }
-
