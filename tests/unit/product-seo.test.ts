@@ -138,7 +138,11 @@ describe("product SEO", () => {
 
 	it("lists one Offer per sellable plan with its public price and stock", () => {
 		const go = item({ name: "Go", priceMinor: "4000", stockBand: "out" });
-		const pro = item({ name: "Pro", priceMinor: "120000", stockBand: "unlimited" });
+		const pro = item({
+			name: "Pro",
+			priceMinor: "120000",
+			stockBand: "unlimited",
+		});
 		const paused = item({
 			name: "停售",
 			priceMinor: "100",

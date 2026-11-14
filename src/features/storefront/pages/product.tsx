@@ -77,8 +77,6 @@ import {
 } from "#/features/storefront/components/volume-price-table";
 import { paymentChannelLabel } from "#/features/storefront/payment-channel-label";
 import { purchaseMaximum } from "#/features/storefront/product-quantity";
-import { stockBandInStock } from "#/features/storefront/stock-band";
-import { stockBandLabel } from "#/features/storefront/stock-band-label";
 import {
 	productPriceSummary,
 	type StorefrontProduct,
@@ -88,6 +86,8 @@ import { initialPaymentChannelId } from "#/features/storefront/schema";
 import { listStorefrontCatalogFn } from "#/features/storefront/server/catalog";
 import { getProductPricingFn } from "#/features/storefront/server/price-functions";
 import { useFitStickyTop } from "#/features/storefront/sticky-top";
+import { stockBandInStock } from "#/features/storefront/stock-band";
+import { stockBandLabel } from "#/features/storefront/stock-band-label";
 import { webSupportOpenEvent } from "#/features/telegram/web-support-contract";
 import { cn } from "#/lib/utils";
 import { m } from "#/paraglide/messages";

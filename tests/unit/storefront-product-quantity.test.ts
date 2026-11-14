@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { purchaseMaximum } from "#/features/storefront/product-quantity";
-import { STOCK_BAND_THRESHOLDS, stockBand } from "#/features/storefront/stock-band";
+import {
+	STOCK_BAND_THRESHOLDS,
+	stockBand,
+} from "#/features/storefront/stock-band";
 
 describe("storefront product quantity", () => {
 	it("uses the configured maximum for delivery without finite stock", () => {
