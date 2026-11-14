@@ -68,7 +68,7 @@ const productEnglish: Record<string, ProductLocalization> = {
 	"ba540b83-388d-45d1-9dcb-25c3da3f9956": {
 		name: "Claude Membership Recharge",
 		description:
-			"Claude Pro and Claude Max membership recharge. Before ordering, run the Claude account self-check on the redemption site (redeem.laoshirenvip.com/#kyc): finish KYC first if it is flagged, otherwise the account is usually KYC-exempt. Claude may still ask for KYC later; that is outside our control and the subscription may not arrive. So we recommend finishing KYC before every recharge. Only accounts registered before 2026-09-15 are accepted. Select a plan to review eligibility, warranty, and restrictions.",
+			"Claude Pro, Claude Max and Claude Ultra membership recharge. Before ordering, run the Claude account self-check on the redemption site (redeem.laoshirenvip.com/#kyc): finish KYC first if it is flagged, otherwise the account is usually KYC-exempt. Claude may still ask for KYC later; that is outside our control and the subscription may not arrive. So we recommend finishing KYC before every recharge. Only accounts registered before 2026-09-15 are accepted. Select a plan to review eligibility, warranty, and restrictions.",
 	},
 	"3e60e88d-a0bd-4723-bc9e-ff45f6dafa16": {
 		name: "X Subscription｜4-in-1｜X Premium + Grok + Grok Bot + Cursor",
@@ -833,24 +833,24 @@ const sellableItemEnglish: Record<string, SellableItemLocalization> = {
 		policy: claudePolicy(claudeRestrictions),
 	},
 	"d3a2050e-1c65-4c7e-9ad7-3c8892ef412e": {
-		name: "Claude Max 5X｜iOS｜1 month",
+		name: "Claude Max｜iOS｜1 month",
 		policy: claudePolicy(claudeMaxRestrictions),
 	},
 	"34c18e6b-c4d5-4289-9c6b-ab47fa027182": {
-		name: "Claude Max 20X｜1 month",
+		name: "Claude Ultra｜1 month",
 		policy: claudePolicy(claudeMaxRestrictions),
 	},
 	"88a570bd-557e-48a1-aa4f-b7e4c5a9b908": {
-		name: "Claude Max 20X｜Physical card｜1 month",
+		name: "Claude Ultra｜Physical card｜1 month",
 		policy: policy(
 			automatic,
 			immediate,
-			"Claude Max 20X (paid by physical card), 1 month. To redeem, copy Claude's sessionKey in a desktop browser, then confirm the account email and organization on the redemption page; your current Claude subscription must expire first; accounts subscribed through the App Store / Google Play cannot use it.",
+			"Claude Ultra (paid by physical card; formerly Max 20X, the official $200 tier), 1 month. To redeem, copy Claude's sessionKey in a desktop browser, then confirm the account email and organization on the redemption page; your current Claude subscription must expire first; accounts subscribed through the App Store / Google Play cannot use it.",
 			"Subscription warranty; a dropped subscription is restored first, otherwise handled by the remaining days",
-			`Important｜Claude Max identity verification (KYC)
+			`Important｜Claude identity verification (KYC)
 Use an account that has passed KYC or is KYC-exempt. KYC is Claude's official requirement and unrelated to our recharge; we do not complete or guarantee it. If Claude still asks for verification during redemption, the page gives you the official link; nothing is paid and the code is not used until it is done.
 
-New accounts cannot recharge 20X; the account must be registered for at least one month.
+New accounts cannot recharge Ultra; the account must be registered for at least one month.
 
 ${claudeRestrictions}`,
 		),
