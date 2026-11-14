@@ -123,6 +123,84 @@ describe("catalog sale-disabled state", { timeout: 30_000 }, () => {
 		});
 	});
 
+	it("keeps a quote-only SKU sale-disabled even when someone resumes sales", async () => {
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET contact_only = 1, updated_at = 2 WHERE id = ?",
+			)
+			.bind(sellableItemId)
+			.run();
+		const stored = () =>
+			db
+				.prepare(
+					"SELECT contact_only, sale_disabled FROM product_sellable_items WHERE id = ?",
+				)
+				.bind(sellableItemId)
+				.first<{ contact_only: number; sale_disabled: number }>();
+		await expect(stored()).resolves.toEqual({
+			contact_only: 1,
+			sale_disabled: 1,
+		});
+		// An admin "resume sales", an ops call or the restock job must not reopen checkout.
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET sale_disabled = 0 WHERE id = ?",
+			)
+			.bind(sellableItemId)
+			.run();
+		await expect(stored()).resolves.toEqual({
+			contact_only: 1,
+			sale_disabled: 1,
+		});
+
+		const supplierCatalog = await listSupplierCatalog(db, {
+			page: 1,
+			pageSize: 10,
+		});
+		expect(supplierCatalog.items[0]).toMatchObject({
+			sale_disabled: false,
+			skus: [{ id: sellableItemId, sale_disabled: true, contact_only: true }],
+		});
+		await expect(loadCartSellableItem(db, sellableItemId)).resolves.toBeNull();
+		await expect(presentCart(db, "customer")).resolves.toMatchObject({
+			items: [{ sellableItemId, issues: ["sale_disabled"] }],
+		});
+		await expect(createOrder(db, "quote-only-order")).rejects.toMatchObject({
+			code: "sellable_item_unavailable",
+		});
+
+		// Turning quote-only off is the one way back to online sales.
+		await db
+			.prepare(
+				"UPDATE product_sellable_items SET contact_only = 0, sale_disabled = 0 WHERE id = ?",
+			)
+			.bind(sellableItemId)
+			.run();
+		await expect(stored()).resolves.toEqual({
+			contact_only: 0,
+			sale_disabled: 0,
+		});
+	});
+
+	it("never inserts a quote-only SKU that is still on sale", async () => {
+		await db
+			.prepare(
+				`INSERT INTO product_sellable_items
+				 (id, product_id, name, currency, currency_decimals, price_minor,
+				  fulfillment_source, minimum_quantity, maximum_quantity, enabled,
+				  contact_only, sale_disabled, created_at, updated_at)
+				 VALUES ('quote-only-sku', ?, 'Quote SKU', 'USD', 2, '1000', 'local', 1, 1, 1, 1, 0, 1, 1)`,
+			)
+			.bind(productId)
+			.run();
+		const row = await db
+			.prepare(
+				"SELECT sale_disabled FROM product_sellable_items WHERE id = 'quote-only-sku'",
+			)
+			.first<{ sale_disabled: number }>();
+		expect(row?.sale_disabled).toBe(1);
+	});
+
 	it("does not allow the product-level control to create a hidden sale state", async () => {
 		await db
 			.prepare("UPDATE products SET status = 'draft' WHERE id = ?")

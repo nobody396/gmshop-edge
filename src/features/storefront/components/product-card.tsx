@@ -1,7 +1,7 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
-import { Ban, Zap } from "lucide-react";
+import { Ban, Headset, Zap } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Skeleton } from "#/components/ui/skeleton";
 import { useCurrency } from "#/features/exchange-rates/currency-context";
@@ -98,7 +98,12 @@ export function StorefrontProductCard({
 			)}
 		</div>
 	);
-	const status = product.saleDisabled ? (
+	const status = product.contactOnly ? (
+		<Badge className="max-w-full bg-primary/10 text-primary [&>svg]:shrink-0">
+			<Headset />
+			<span className="truncate">{m.store_contact_only()}</span>
+		</Badge>
+	) : product.saleDisabled ? (
 		<Badge className="max-w-full [&>svg]:shrink-0" variant="destructive">
 			<Ban />
 			<span className="truncate">{m.store_sale_disabled()}</span>
@@ -143,7 +148,11 @@ export function StorefrontProductCard({
 						<p className="truncate text-muted-foreground text-xs">
 							{[
 								variants,
-								product.saleDisabled ? m.store_sale_disabled() : delivery,
+								product.contactOnly
+									? m.store_contact_only()
+									: product.saleDisabled
+										? m.store_sale_disabled()
+										: delivery,
 								stock,
 								availability,
 							]

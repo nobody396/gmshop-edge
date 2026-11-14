@@ -10,6 +10,14 @@ const mocks = vi.hoisted(() => ({
 		{ id: "go", name: "Go", availableStock: 10, minimumQuantity: 1 },
 		{ id: "ios", name: "iOS 20X", availableStock: 50, minimumQuantity: 1 },
 		{ id: "500", name: "Pro 500", availableStock: 50, minimumQuantity: 2 },
+		{
+			id: "quote",
+			name: "Quote only",
+			availableStock: 50,
+			minimumQuantity: 1,
+			saleDisabled: true,
+			contactOnly: true,
+		},
 	],
 	addToCart: vi.fn(() => true),
 }));
@@ -146,6 +154,26 @@ describe("product SKU deep links", () => {
 		open("missing");
 		expect(container.querySelector('[aria-pressed="true"]')).toBeNull();
 		expect(button("store_buy_now").disabled).toBe(true);
+	});
+	it("turns a quote-only SKU into a support button with no cart or checkout", () => {
+		const opened = vi.fn();
+		window.addEventListener("gmshop:web-support:open", opened);
+		open("quote");
+		const labels = [...container.querySelectorAll("button")].map(
+			(b) => b.textContent ?? "",
+		);
+		expect(labels.some((label) => label.includes("store_add_to_cart"))).toBe(
+			false,
+		);
+		expect(labels.some((label) => label.includes("store_buy_now"))).toBe(false);
+		expect(labels.some((label) => label.includes("store_sale_disabled"))).toBe(
+			false,
+		);
+		expect(container.textContent).toContain("store_contact_only_description");
+		expect(container.querySelector("#product-quantity")).toBeNull();
+		act(() => button("store_contact_only_action").click());
+		expect(opened).toHaveBeenCalledTimes(1);
+		window.removeEventListener("gmshop:web-support:open", opened);
 	});
 	it("resets selection when navigating between SKU links on the same product", () => {
 		open("ios");

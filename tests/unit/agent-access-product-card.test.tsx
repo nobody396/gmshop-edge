@@ -29,6 +29,7 @@ const product: StorefrontCatalogProduct = {
 	description: "One-time",
 	productType: "automation",
 	saleDisabled: false,
+	contactOnly: false,
 	tags: [],
 	coverUrl: null,
 	sellableItemId: "access-sku",
