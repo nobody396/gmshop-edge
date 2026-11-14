@@ -144,7 +144,7 @@ Notes
 		description: `Personal Gmail accounts, brand new and unused, with no original phone number attached. Delivered automatically after payment. Choose the option you need.
 
 Options
-- US, with 2FA: registered in the US with 2-step verification (2FA) on. You receive email----password----2FA key. No recovery email is included.
+- US, with 2FA: registered in the US with 2-step verification (2FA) on. You receive email----password----2FA key; some batches also include a recovery email (email----password----recovery email----2FA key).
 - US, no 2FA: registered in the US, 2FA off. You receive email----password----recovery email. No 2FA key is included.
 - Random region, no 2FA: region is random and not guaranteed, 2FA off. You receive email----password----recovery email. No 2FA key is included.
 - For the no-2FA options, only the recovery email address is provided, not its password. No option includes the original phone number; add your own recovery email after signing in.
@@ -918,7 +918,7 @@ ${claudeRestrictions}`,
 	"20a6011a-779d-43fa-a843-47fa76e31abf": {
 		name: "US personal Gmail｜New, unused｜2FA on",
 		policy: policy(
-			"Delivered automatically after payment: email, password, and 2FA key (no recovery email)",
+			"Delivered automatically after payment: email, password, and 2FA key (some batches also include a recovery email)",
 			"Automatic, usually within 1 minute; view it on the order page",
 			"US personal Gmail, brand new and unused, 2FA turned on, no original phone number",
 			"First sign-in is covered: if it cannot sign in within 24 hours of delivery, we replace it after checking",
